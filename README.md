@@ -14,10 +14,10 @@ Gateway (useful if you are polling the Powerwall frequently for trending data).
 
 ### Key Features
 
-    * Works with Tesla Energy Gateways - Powerwall+ 
-    * Simple access through easy to use functions using customer credentials
-    * Will cache authentication to reduce load on Powerwall Gateway
-    * Will cache responses for 5s to limit number of calls to Powerwall Gateway
+* Works with Tesla Energy Gateways - Powerwall+ 
+* Simple access through easy to use functions using customer credentials
+* Will cache authentication to reduce load on Powerwall Gateway
+* Will cache responses for 5s to limit number of calls to Powerwall Gateway
 
 NOTE: This module requires that you (or your installer) have set up customer credentials
 on your Powerwall Gateway.
