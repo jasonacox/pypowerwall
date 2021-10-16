@@ -8,7 +8,9 @@ Python module to interface with Tesla Energy Gateways for Powerwall and solar po
 ## Description
 
 This python module can be used to monitor and control Tesla Energy Gateway Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and
-poll API endpoints on the Gateway.  
+poll API endpoints on the Gateway.  This module will cache the authentication headers 
+and API call responses for up to 5s to help reduce the number of calls made to the
+Gateway (useful if you are polling the Powerwall frequently for trending data).
 
 ### Key Features
 
@@ -32,7 +34,7 @@ You can clone this repo or install the package with pip:
 ## Programming with pyPowerwall
 
 After importing pypowerwall, you create a handle for your Powerwall device and can
-start using the class functions to pull data.  Here is an example:
+start using the class functions to poll data.  Here is an example:
 
 ```python
     import pypowerwall
@@ -66,8 +68,8 @@ start using the class functions to pull data.  Here is an example:
     Powerwall(host, password, email, timezone)
 
  Functions 
-    poll(api, jsonformat)   # Fetch data from Powerwall API URI
-    level()                 # Fetch battery power level percentage (float)
+    poll(api, jsonformat)   # Fetch data from Powerwall API URI (return json if True)
+    level()                 # Fetch battery power level percentage
     power()                 # Fetch power data returned as dictionary
     site(verbose)           # Fetch site sensor data (W or raw json if verbose=True)
     solar(verbose):         # Fetch solar sensor data (W or raw json if verbose=True)
