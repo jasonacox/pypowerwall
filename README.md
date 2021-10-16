@@ -54,11 +54,13 @@ start using the class functions to poll data.  Here is an example:
 
     # Display Basic Power Data
     print("Battery power level: %0.0f%%" % pw.level())
-    print("Power response: %r" % pw.power())
+
     print("Grid Power: %0.2fkW" % (float(pw.grid())/1000.0))
     print("Solar Power: %0.2fkW" % (float(pw.solar())/1000.0))
     print("Battery Power: %0.2fkW" % (float(pw.battery())/1000.0))
     print("Home Power: %0.2fkW" % (float(pw.home())/1000.0))
+
+    print("Combined Power Metrics: %r" % pw.power())
 
 ```
 
@@ -75,6 +77,8 @@ start using the class functions to poll data.  Here is an example:
     solar(verbose):         # Fetch solar sensor data (W or raw json if verbose=True)
     battery(verbose):       # Fetch battery sensor data (W or raw json if verbose=True)
     load(verbose)           # Fetch load sensor data (W or raw json if verbose=True)
+    grid()                  # Alias for site()
+    home()                  # Alias for load()
 ```
 
 ## Credits and References
