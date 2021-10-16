@@ -75,4 +75,10 @@ start using the class functions to pull data.  Here is an example:
     load(verbose)           # Fetch load sensor data (W or raw json if verbose=True)
 ```
 
+## Credits and References
+
+* Tesla Powerwall 2 – Local Gateway API documentation – https://github.com/vloschiavo/powerwall2
+* Python Tesla Powerwall API – https://github.com/jrester/tesla_powerwall
+* TESLA PowerWall 2 Security Shenanigans – https://github.com/hackerschoice/thc-tesla-powerwall2-hack
+* Powerwall Monitoring – https://github.com/mihailescu2m/powerwall_monitor
 
