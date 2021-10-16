@@ -30,4 +30,4 @@ jobs:
           python -m pip install --upgrade requests
 
       - name: "Run test.py on ${{ matrix.python-version }}"
-        run: "python -m test.py"
+        run: "python test.py"
