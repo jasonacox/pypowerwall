@@ -12,8 +12,6 @@ poll API endpoints on the Gateway.
 
 pyPowerwall will cache the authentication headers and API call responses for up to 5s to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
-### Key Features
-
 * Works with Tesla Energy Gateways - Powerwall+ 
 * Simple access through easy to use functions using customer credentials
 * Will cache authentication to reduce load on Powerwall Gateway
