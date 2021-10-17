@@ -34,8 +34,7 @@ class handler(BaseHTTPRequestHandler):
             valid = True
             self.send_response(200)
             self.send_header('Content-type','application/json')
-            self.send_header('AuthCookie','1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==')
-            self.send_header('UserRecord','1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer123456==')
+            self.send_header('cookie','AuthCookie=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==; UserRecord=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer123456==')
             self.end_headers()
             message = '{"email":"test@example.com","firstname":"Tesla","lastname":"Energy","roles":["Home_Owner"],"token":"1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==","provider":"Basic","loginTime":"2021-10-17T00:39:09.852064316-07:00"}'              
             # TODO: Add check for right login credentials or send 401

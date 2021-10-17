@@ -45,7 +45,7 @@ and call function to poll data.  Here is an example:
 
     # Credentials for your Powerwall - Customer Login Data
     password='password'
-    email='email@email.com'
+    email='email@example.com'
     host = "10.0.1.123"               # Address of your Powerwall Gateway
     timezone = "America/Los_Angeles"  # Your local timezone
  
