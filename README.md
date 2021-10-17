@@ -22,20 +22,14 @@ pyPowerwall will cache the authentication headers and API call responses for up 
 NOTE: This module requires that you (or your installer) have set up customer credentials
 on your Powerwall Gateway.
 
-## pyPowerwall Setup
+## Setup
 
-You can clone this repo or install the package with pip:
+You can clone this repo or install the package with pip.  Once installed, pyPowerwall can scan your local network to find th IP address of your Tesla Powerwall Gateway.
 
 ```bash
 # Install pyPowerwall
 python -m pip install pypowerwall
-```
 
-## pyPowerwall Network Scanning
-
-pyPowerwall can scan your local network to find th IP address of your Tesla Powerwall Gateway.
-
-```bash
 # Scan Network for Powerwalls
 python -m pypowerwall scan
 ```
