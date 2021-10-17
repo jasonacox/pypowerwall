@@ -22,19 +22,28 @@ Gateway (useful if you are polling the Powerwall frequently for trending data).
 NOTE: This module requires that you (or your installer) have set up customer credentials
 on your Powerwall Gateway.
 
-## pyPowerwall Setup  
+## pyPowerwall Setup
 
 You can clone this repo or install the package with pip:
 
 ```bash
- # Install pyPowerwall
- python -m pip install pypowerwall
- ```
+# Install pyPowerwall
+python -m pip install pypowerwall
+```
+
+## pyPowerwall Network Scanning
+
+pyPowerwall can scan your local network to find th IP address of your Tesla Powerwall Gateway.
+
+```bash
+# Scan Network for Powerwalls
+python -m pypowerwall scan
+```
 
 ## Programming with pyPowerwall
 
-After importing pypowerwall, you create a handle for your Powerwall device and can
-start using the class functions to poll data.  Here is an example:
+After importing pypowerwall, you simply create a handle for your Powerwall device 
+and call function to poll data.  Here is an example:
 
 ```python
     import pypowerwall
@@ -47,20 +56,31 @@ start using the class functions to poll data.  Here is an example:
     email='email@email.com'
     host = "10.0.1.123"               # Address of your Powerwall Gateway
     timezone = "America/Los_Angeles"  # Your local timezone
-    # List of timezones https://en.wikipedia.org/wiki/List_of_tz_database_time_zones 
-
+ 
     # Connect to Powerwall
     pw = pypowerwall.Powerwall(host,password,email,timezone)
 
-    # Display Basic Power Data
+    # Pull Sensor Power Data
+    grid = pw.grid()
+    solar = pw.solar()
+    battery = pw.battery()
+    home = pw.home()
+
+    # Display Data
     print("Battery power level: %0.0f%%" % pw.level())
+    print("Combined power metrics: %r" % pw.power())
+    print("")
 
-    print("Grid Power: %0.2fkW" % (float(pw.grid())/1000.0))
-    print("Solar Power: %0.2fkW" % (float(pw.solar())/1000.0))
-    print("Battery Power: %0.2fkW" % (float(pw.battery())/1000.0))
-    print("Home Power: %0.2fkW" % (float(pw.home())/1000.0))
+    # Display Power in kW
+    print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
+    print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
+    print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
+    print("Home Power: %0.2fkW" % (float(home)/1000.0))
+    print("")
 
-    print("Combined Power Metrics: %r" % pw.power())
+    # Raw JSON Payload Examples
+    print("Grid raw: %r\n" % pw.grid(verbose=True))
+    print("Solar raw: %r\n" % pw.solar(verbose=True))
 
 ```
 
