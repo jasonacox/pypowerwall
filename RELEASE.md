@@ -2,6 +2,7 @@
 
 ## v0.0.2 - Scan Function
 
+* PyPI 0.0.2
 * pyPowerwall now has a network scan function to find the IP address of Powerwalls
 ```bash
 # Scan Network for Powerwalls
@@ -27,4 +28,5 @@ Discovered 1 Powerwall Gateway
 
 ## v0.0.1 - Initial Release
 
+* PyPI 0.0.1
 * Initial Beta Release 0.0.1
