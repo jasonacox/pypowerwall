@@ -11,10 +11,10 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
 1. Build the Docker Container
 
     ```bash
-    docker build -t pypowerwall:v1 .
+    docker build -t pypowerwall:latest .
     ```
 
-2. Setup the Docker Container 
+2. Setup the Docker Container to listen on port 8675
 
     ```bash
     docker run \
@@ -22,16 +22,11 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
     -p 8675:8675 \
     --name pypowerwall \
     --restart unless-stopped \
-    pypowerwall:v1
+    -v `pwd`:/app \
+    pypowerwall
     ```
 
-3. Run the Docker Container
-
-    ```bash
-    docker start pypowerwall
-    ```
-
-4. Test the Proxy
+3. Test the Proxy
 
     ```bash
     curl -i http://localhost:8675/soe
@@ -40,6 +35,19 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
 
 ## Troubleshooting Help
 
+Check the logs: 
+
 ```bash
+# See the logs
 docker logs pypowerwall
+```
+
+If you see python errors, make sure you entered your credentials correctly in the `server.py` file.  If you didn't, edit that file and restart docker:
+
+```bash
+# Stop the server
+docker stop pypowerwall
+
+# Start the server
+docker start pypowerwall
 ```
