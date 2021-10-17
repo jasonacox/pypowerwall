@@ -1,4 +1,4 @@
-# TinyTuya Module - Proxy Server Tool
+# pyPowerWall Module - Proxy Server Tool
 # -*- coding: utf-8 -*-
 """
  Python module to interface with Tesla Solar Powerwall Gateway
@@ -21,7 +21,7 @@ pypowerwall.set_debug(True)
 
 # Credentials for your Powerwall - Customer Login Data
 password='password'
-email='email@email.com'
+email='email@example.com'
 host = "hostname"
 timezone = "America/Los_Angeles"
 

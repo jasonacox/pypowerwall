@@ -1,4 +1,4 @@
-# TinyTuya Module
+# pyPowerWall Module
 # -*- coding: utf-8 -*-
 """
  Python module to interface with Tesla Solar Powerwall Gateway
@@ -32,7 +32,7 @@ urllib3.disable_warnings() # Disable SSL warnings
 import logging
 import sys
 
-version_tuple = (0, 0, 2)
+version_tuple = (0, 0, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 

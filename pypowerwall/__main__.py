@@ -1,4 +1,4 @@
-# TinyTuya Module - Scan Function
+# pyPowerWall Module - Scan Function
 # -*- coding: utf-8 -*-
 """
  Python module to interface with Tesla Solar Powerwall Gateway
