@@ -18,7 +18,7 @@ jobs:
 
     services:
       simulator:
-        image: jasonacox:pwsimulator
+        image: jasonacox/pwsimulator
         ports:
            - 443:443
 
