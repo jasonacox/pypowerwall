@@ -4,7 +4,7 @@
 
 * PyPI 0.0.2
 * Added Proxy Server - Useful for metrics gathering tools like telegraf (see [proxy](proxy/)]).
-* Added Powerwall Simulator - Mimics Powerwall Gateway responses for testing (see [test](test/)])
+* Added Powerwall Simulator - Mimics Powerwall Gateway responses for testing (see [pwsimulator](pwsimulator/)])
 
 ## v0.0.2 - Scan Function
 
