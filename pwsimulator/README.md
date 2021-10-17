@@ -2,15 +2,9 @@
 
 You can use pyPowerwall simulator to mimic the responses from the Powerwall Gateway. This is useful for testing purposes.
 
-## Setup
+## Quick Start
 
-1. Build the Docker Container
-
-    ```bash
-    docker build -t pwsimulator:latest .
-    ```
-
-2. Setup the Docker Container to listen on port 8675
+1. Run the Docker Container to listen on port 443 (https) - pulls from Docker Hub
 
     ```bash
     docker run \
@@ -18,7 +12,31 @@ You can use pyPowerwall simulator to mimic the responses from the Powerwall Gate
     -p 443:443 \
     --name pwsimulator \
     --restart unless-stopped \
-    -v `pwd`:/app \
+    jasonacox/pwsimulator
+    ```
+
+2. Test using the [test.py](test.py) script set to use localhost as the Powerwall
+
+    ```bash
+    python3 test.py
+    ```
+
+## Build Your Own
+
+1. Build the Docker Container
+
+    ```bash
+    docker build -t pwsimulator:latest .
+    ```
+
+2. Setup the Docker Container to listen on port 443 (https)
+
+    ```bash
+    docker run \
+    -d \
+    -p 443:443 \
+    --name pwsimulator \
+    --restart unless-stopped \
     pwsimulator
     ```
 

@@ -62,7 +62,7 @@ class handler(BaseHTTPRequestHandler):
         # Meters - Aggregates
         if self.path == '/api/meters/aggregates':
             valid = False
-            if('cookie' in self.headers and self.headers['cookie'] == 'AuthCookie=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==; UserRecord=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer123456=='):
+            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
                 # Valid Login
                 self.send_response(200)
                 self.send_header('Content-type','application/json')
@@ -73,8 +73,9 @@ class handler(BaseHTTPRequestHandler):
         # Battery - SOE
         if self.path == '/api/system_status/soe':
             valid = False
-            if('cookie' in self.headers and self.headers['cookie'] == 'AuthCookie=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==; UserRecord=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer123456=='):
+            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
                 # Valid Login
+                print(self.headers['cookie'])
                 self.send_response(200)
                 self.send_header('Content-type','application/json')
                 self.end_headers()

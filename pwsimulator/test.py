@@ -8,8 +8,8 @@ pypowerwall.set_debug(True)
 # Credentials for your Powerwall - Customer Login Data
 password='password'
 email='email@example.com'
-host = "localhost"                # Change to the IP of your Powerwall
-timezone = "America/Los_Angeles"  # Change to your local timezone/tz
+host = "localhost"                #  IP of your Powerwall
+timezone = "America/Los_Angeles"  # Local timezone/tz
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
