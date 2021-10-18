@@ -14,6 +14,7 @@ You can use pyPowerwall to proxy API requests to your Tesla Energy Gateway Power
     -e PW_EMAIL='email@example.com' \
     -e PW_HOST='localhost' \
     -e PW_TIMEZONE='America/Los_Angeles' \
+    -e PW_DEBUG='no' \
     --name pypowerwall \
     --restart unless-stopped \
     jasonacox/pypowerwall

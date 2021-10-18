@@ -18,14 +18,16 @@ import os
 
 PORT = 8675
 
-pypowerwall.set_debug(True)
-
 # Credentials for your Powerwall - Check for environmental variables 
 #    and always use those if available (required for Docker)
 password = os.getenv("PW_PASSWORD", "password")
 email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "hostname")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
+debugmode = os.getenv("PW_DEBUG", "no")
+
+if(debugmode == "yes"):
+    pypowerwall.set_debug(True)
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
