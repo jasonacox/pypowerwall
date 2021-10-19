@@ -132,3 +132,4 @@ dmypy.json
 localtest.py
 upload.sh
 .powerwall
+.vscode/settings.json
