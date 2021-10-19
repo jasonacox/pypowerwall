@@ -1,8 +1,10 @@
 # pyPowerwall Proxy Server
 
-This proxy tool will handle API data gathering calls to /api/meters/aggregates (power metrics) and /api/system_status/soe (battery level). With the instructions below, you can containerize this proxy and run it as an endpoint for tools like telegraf to pull metrics without needing to authenticate.
+This proxy tool will handle authentication to the Powerwall Gateway and will proxy API calls to /api/meters/aggregates (power metrics) and /api/system_status/soe (battery level). With the instructions below, you can containerize this proxy and run it as an endpoint for tools like telegraf to pull metrics without needing to authenticate.
 
 Because pyPowerwall is designed to cache the auth and high frequency API calls, this will reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway.
+
+Docker: docker pull (jasonacox/pypowerwall)[https://hub.docker.com/r/jasonacox/pypowerwall]
 
 ## Quick Start
 
@@ -49,7 +51,6 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
     -p 8675:8675 \
     --name pypowerwall \
     --restart unless-stopped \
-    -v `pwd`:/app \
     pypowerwall
     ```
 
