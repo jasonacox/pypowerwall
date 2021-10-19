@@ -22,4 +22,5 @@ Discovered 1 Powerwall Gateway
 
 Point your browser to that address http://10.0.1.23 and you will be able to log in and see the power details and flow animation:
 
-!(portal.png)[portal.png]
+[![portal.png](portal.png)](portal.png)
+
