@@ -38,9 +38,9 @@ class handler(BaseHTTPRequestHandler):
         self.send_header('Content-type','text/plain')
         self.end_headers()
         message = "ERROR!"
-        if self.path == '/aggregates':
+        if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             message = pw.poll('/api/meters/aggregates')
-        if self.path == '/soe':
+        if self.path == '/soe' or self.path == '/api/system_status/soe':
             message = pw.poll('/api/system_status/soe')
         self.wfile.write(bytes(message, "utf8"))
 
