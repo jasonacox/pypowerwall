@@ -25,6 +25,7 @@ email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "hostname")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
+cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
@@ -32,16 +33,33 @@ if(debugmode == "yes"):
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
 
+# Set Timeout in Seconds
+pw.pwcacheexpire = int(cache_expire)
+
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header('Content-type','text/plain')
-        self.end_headers()
         message = "ERROR!"
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
+            # Meters - JSON
             message = pw.poll('/api/meters/aggregates')
         if self.path == '/soe' or self.path == '/api/system_status/soe':
+            # Battery Level - JSON
             message = pw.poll('/api/system_status/soe')
+        if self.path == '/csv':
+            # Grid,Home,Solar,Battery,Level - CSV
+            batterylevel = pw.level()
+            grid = pw.grid()
+            solar = pw.solar()
+            battery = pw.battery()
+            home = pw.home()
+            message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
+                % (grid, home, solar, battery, batterylevel)
+        
+        # Send headers
+        self.send_header('Content-type','text/plain; charset=utf-8')
+        self.send_header('Content-Length', str(len(message)))
+        self.end_headers()
         self.wfile.write(bytes(message, "utf8"))
 
 try:
