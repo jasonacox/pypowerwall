@@ -134,3 +134,4 @@ upload.sh
 .powerwall
 .vscode/settings.json
 localtest.sh
+sandbox/
