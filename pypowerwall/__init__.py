@@ -106,7 +106,7 @@ class Powerwall(object):
 
     def _close_session(self):
         # Log out
-        url = "https://%s/api/logoute" % self.host
+        url = "https://%s/api/logout" % self.host
         g = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
 
