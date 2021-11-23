@@ -100,6 +100,14 @@ and call function to poll data.  Here is an example:
     timeout = 10            # Timeout for HTTPS calls in seconds
 ```
 
+## Tools
+
+The following are some useful tools based on pypowerwall:
+
+* [Powerwall Proxy](proxy) - Use this caching proxy to handle authentication to the Powerwall Gateway and make basic read-only API calls to /api/meters/aggregates (power metrics) and /api/system_status/soe (battery level). This is handy proxy with metrics gathering tools like telegraf to pull metrics without needing to authenticate. Because pyPowerwall is designed to cache the auth and high frequency API calls, this will reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway.
+
+* [Powerwall Simulator](simulator) - A Powerwall simulator to mimic the responses from the Tesla Powerwall Gateway. This is useful for testing purposes.
+
 ## Powerwall API Listing
 
 The following APIs are a result of help from other projects as well as my own investigation. 
