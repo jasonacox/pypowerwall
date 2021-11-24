@@ -110,10 +110,13 @@ class Powerwall(object):
         g = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
 
-    def poll(self, api='/api/site_info/site_name', jsonformat=False):
+    def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False):
         # Query powerwall and return payload as string
         # First check to see if in cache
         fetch = True
+        if(api == '/api/devices/vitals'):
+            # Force true for vitals call = protobuf binary payload
+            raw = True
         if(api in self.pwcache and api in self.pwcachetime):
             # is it expired?
             if(time.time() - self.pwcachetime[api] < self.pwcacheexpire):
@@ -121,12 +124,21 @@ class Powerwall(object):
                 fetch = False
         if(fetch):
             url = "https://%s%s" % (self.host, api)
-            r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+            if(raw):
+                r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
+            else:
+                r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
             if r.status_code >= 400 and r.status_code < 500:
                 # Session Expired - get a new one
                 self._get_session()
-                r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
-            payload = r.text
+                if(raw):
+                    r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
+                else:
+                    r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+            if(raw):
+                payload = r.raw.data
+            else:
+                payload = r.text
             self.pwcache[api] = payload
             self.pwcachetime[api] = time.time()
         if(jsonformat):

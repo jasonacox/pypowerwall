@@ -1,10 +1,15 @@
 # RELEASE NOTES
 
-## v0.0.3 - Proxy Server and Simulator
+## v0.0.3 - Binary Poll Function, Proxy Server and Simulator
 
-* PyPI 0.0.2
+* PyPI 0.0.3
 * Added Proxy Server - Useful for metrics gathering tools like telegraf (see [proxy](proxy/)]).
 * Added Powerwall Simulator - Mimics Powerwall Gateway responses for testing (see [pwsimulator](pwsimulator/)])
+* Added raw binary poll capability to be able to pull *protobuf* formatted payloads like '/api/devices/vitals'.
+
+```python
+     payload = pw.poll('/api/devices/vitals')
+```
 
 ## v0.0.2 - Scan Function
 
