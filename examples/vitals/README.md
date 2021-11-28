@@ -6,13 +6,14 @@ This script, [pull_vitals.py](pull_vitals.py) pulls the Powerwall Vitals API and
 
 * Work in Progress
 * API Endpoint on Powerwall: /api/devices/vitals (protobuf binary payload)
-* Output from this script is the walk through the vital data points and a combined JSON payload.
+* Output from this script is a list of vital data points from all Tesla Energy Powerwall devices and a resulting combined JSON payload.
 
 ## Requirements
 
-Tesla is using a protobuf response for this API.  That requires the necessary protobuf definition and libraries: 
+Tesla is using a protobuf response for this API.  This requires the necessary protobuf definition and libraries:
 
 Install the protobuf python module:
+
 ```bash
 # Install protobuf
 pip install protobuf
