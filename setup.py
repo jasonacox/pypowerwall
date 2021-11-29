@@ -16,7 +16,8 @@ setuptools.setup(
     url='https://github.com/jasonacox/pypowerwall',
     packages=setuptools.find_packages(),
     install_requires=[
-        'requests',      # Used for Setup Wizard - Tuya IoT Platform calls
+        'requests',      
+        'protobuf',        
     ],
     classifiers=[
         "Programming Language :: Python :: 2",

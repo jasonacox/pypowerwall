@@ -11,6 +11,8 @@
     /api/system_status/soe - You can containerize it and run it as
     an endpoint for tools like telegraf to pull metrics.
 
+    This proxy also supports pyPowerwall data for /vitals and /strings 
+
 """
 import pypowerwall
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -55,7 +57,12 @@ class handler(BaseHTTPRequestHandler):
             home = pw.home()
             message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
                 % (grid, home, solar, battery, batterylevel)
-        
+        if self.path == '/vitals':
+            # Vitals Data - JSON
+            message = pw.vitals(jsonformat=True)
+        if self.path == '/strings':
+            # Strings Data - JSON
+            message = pw.strings(jsonformat=True)  
         # Send headers
         self.send_header('Content-type','text/plain; charset=utf-8')
         self.send_header('Content-Length', str(len(message)))

@@ -25,6 +25,8 @@ on your Powerwall Gateway.
 
 You can clone this repo or install the package with pip.  Once installed, pyPowerwall can scan your local network to find th IP address of your Tesla Powerwall Gateway.
 
+Note: pyPowerwall requires these packages (via pip): _requests_ and _protobuf_.
+
 ```bash
 # Install pyPowerwall
 python -m pip install pypowerwall
@@ -75,6 +77,12 @@ and call function to poll data.  Here is an example:
     print("Grid raw: %r\n" % pw.grid(verbose=True))
     print("Solar raw: %r\n" % pw.solar(verbose=True))
 
+    # Display Vitals
+    print("Vitals: %r\n" % pw.vitals())
+
+    # Display String Data
+    print("String Data: %r\n" % pw.strings())
+
 ```
 
 ### pyPowerwall Module Class and Functions 
@@ -85,15 +93,17 @@ and call function to poll data.  Here is an example:
     Powerwall(host, password, email, timezone)
 
  Functions 
-    poll(api, jsonformat)   # Fetch data from Powerwall API URI (return json if True)
+    poll(api, json)         # Fetch data from Powerwall API URI (return JSON if True)
     level()                 # Fetch battery power level percentage
     power()                 # Fetch power data returned as dictionary
-    site(verbose)           # Fetch site sensor data (W or raw json if verbose=True)
-    solar(verbose):         # Fetch solar sensor data (W or raw json if verbose=True)
-    battery(verbose):       # Fetch battery sensor data (W or raw json if verbose=True)
-    load(verbose)           # Fetch load sensor data (W or raw json if verbose=True)
+    site(verbose)           # Fetch site sensor data (W or raw JSON if verbose=True)
+    solar(verbose):         # Fetch solar sensor data (W or raw JSON if verbose=True)
+    battery(verbose):       # Fetch battery sensor data (W or raw JSON if verbose=True)
+    load(verbose)           # Fetch load sensor data (W or raw JSON if verbose=True)
     grid()                  # Alias for site()
     home()                  # Alias for load()
+    vitals(json)            # Fetch raw Powerwall vitals
+    strings(json, verbose)  # Fetch solar panel string data
 
  Variables
     pwcacheexpire = 5       # Set API cache timeout in seconds

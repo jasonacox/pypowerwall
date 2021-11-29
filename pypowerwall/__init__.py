@@ -16,13 +16,15 @@
     Powerwall(host, password, email, timezone)
 
  Functions 
-    poll(api, jsonformat)   # Fetch data from Powerwall API URI
-    level()                 # Fetch battery power level percentage (float)
-    power()                 # Fetch power data returned as dictionary
-    site(verbose)           # Fetch site sensor data (W or raw json if verbose=True)
-    solar(verbose):         # Fetch solar sensor data (W or raw json if verbose=True)
-    battery(verbose):       # Fetch battery sensor data (W or raw json if verbose=True)
-    load(verbose)           # Fetch load sensor data (W or raw json if verbose=True)
+    poll(api, jsonformat)           # Fetch data from Powerwall API URI
+    level()                         # Fetch battery power level percentage (float)
+    power()                         # Fetch power data returned as dictionary
+    site(verbose)                   # Fetch site sensor data (W or raw json if verbose=True)
+    solar(verbose):                 # Fetch solar sensor data (W or raw json if verbose=True)
+    battery(verbose):               # Fetch battery sensor data (W or raw json if verbose=True)
+    load(verbose)                   # Fetch load sensor data (W or raw json if verbose=True)
+    vitals(jsonformat)              # Fetch raw Powerwall vitals
+    strings(jsonformat, verbose)    # Fetch solar panel string data
 
 """
 import json, time
@@ -31,8 +33,9 @@ import urllib3
 urllib3.disable_warnings() # Disable SSL warnings
 import logging
 import sys
+from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 0, 3)
+version_tuple = (0, 1, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -183,6 +186,105 @@ class Powerwall(object):
         r = self.power()
         if(r and sensor in r):
             return r[sensor]
+
+    def vitals(self, jsonformat=False):
+        # Pull vitals payload - binary protobuf 
+        stream = self.poll('/api/devices/vitals')
+
+        # Protobuf payload processing
+        pb = tesla_pb2.DevicesWithVitals()
+        pb.ParseFromString(stream)
+        num = len(pb.devices)
+        log.debug("Found %d devices." % num)
+
+        # Decode Device Details
+        x = 0
+        output = {}
+        while(x < num):
+            # Each device
+            parent = str(pb.devices[x].device[0].device.componentParentDin.value)
+            name = str(pb.devices[x].device[0].device.din.value)
+            if name not in output.keys():
+                output[name] = {}
+                output[name]['Parent'] = parent
+                try:
+                    output[name]['partNumber'] = str(pb.devices[x].device[0].device.partNumber.value)
+                    output[name]['serialNumber'] = str(pb.devices[x].device[0].device.serialNumber.value)
+                    output[name]['manufacturer'] = str(pb.devices[x].device[0].device.manufacturer.value)
+                    output[name]['firmwareVersion'] = str(pb.devices[x].device[0].device.firmwareVersion.value)
+                    output[name]['lastCommunicationTime'] = str(pb.devices[x].device[0].device.lastCommunicationTime.seconds)
+                except:
+                    log.debug("Error: Expected fields missing - skipping.")
+            # Capture all vital data points
+            for y in pb.devices[x].vitals:
+                vital_name = str(y.name)
+                vital_value = None
+                if(y.HasField('boolValue')):
+                    vital_value = y.boolValue
+                if(y.HasField('stringValue')):
+                    vital_value = y.stringValue
+                if(y.HasField('floatValue')):
+                    vital_value = y.floatValue
+                # Record in output dictionary
+                output[name][vital_name] = vital_value
+            x += 1
+        if (jsonformat):
+            json_out = json.dumps(output, indent=4, sort_keys=True)
+            return json_out
+        else:
+            return output
+
+    def strings(self, jsonformat=False, verbose=False):
+        result = {}
+        devicemap = ['','1','2','3','4','5','6','7','8']
+        deviceidx = 0
+        v = self.vitals(jsonformat=False)
+        for device in v:
+            if device.split('--')[0] == 'PVAC':
+                # Check for PVS data
+                look = "PVS" + str(device)[4:]
+                if look in v:
+                    # Inject the PVS string data into the dictionary
+                    for ee in v[look]:
+                        if 'String' in ee:
+                            v[device][ee] = v[look][ee]
+                if verbose:
+                    result[device] = {}
+                    result[device]['PVAC_Pout'] = v[device]['PVAC_Pout']
+                    for e in v[device]:
+                        if 'PVAC_PVCurrent' in e or 'PVAC_PVMeasuredPower' in e or \
+                            'PVAC_PVMeasuredVoltage' in e or 'PVAC_PvState' in e or \
+                            'PVS_String' in e:
+                            result[device][e] = v[device][e]
+                else:   # simplified results
+                    for e in v[device]:
+                        if 'PVAC_PVCurrent' in e or 'PVAC_PVMeasuredPower' in e or \
+                            'PVAC_PVMeasuredVoltage' in e or 'PVAC_PvState' in e or \
+                            'PVS_String' in e:
+                                name = e[-1] + devicemap[deviceidx]
+                                if 'Current' in e:
+                                    idxname = 'Current'
+                                if 'Power' in e:
+                                    idxname = 'Power'
+                                if 'Voltage' in e:
+                                    idxname = 'Voltage'
+                                if 'State' in e:
+                                    idxname = 'State'
+                                if 'Connected' in e:
+                                    idxname = 'Connected'
+                                    name = e[10] + devicemap[deviceidx]
+                                if name not in result:
+                                    result[name] = {}
+                                result[name][idxname] = v[device][e]
+                        # if
+                    # for   
+                    deviceidx += 1
+                # else
+        if (jsonformat):
+            json_out = json.dumps(result, indent=4, sort_keys=True)
+            return json_out
+        else:
+            return result
 
     # Pull Power Data from Sensor
     def site(self, verbose=False):

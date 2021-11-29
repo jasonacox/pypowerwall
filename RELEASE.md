@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## v0.1.0 - Vitals Data
+
+* PyPI 0.1.0
+* Added *protobuf* handling to support decoding the Powerwall Vitals data (requires protobuf package)
+* Added function `vitals()` to pull Powerwall Vitals
+* Added function `strings()` to pull data on solar panel strings (Voltage, Current, Power and State)
+
+```python
+     vitals = pw.vitals(jsonformat=False)
+     strings = pw.strings(jsonformat=False, verbose=False)
+```
+
 ## v0.0.3 - Binary Poll Function, Proxy Server and Simulator
 
 * PyPI 0.0.3
