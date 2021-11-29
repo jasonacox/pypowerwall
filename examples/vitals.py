@@ -6,14 +6,10 @@
  Author: Jason A. Cox
  For more information see https://github.com/jasonacox/pypowerwall
  
- * Work in Progress - /api/devices/vitals is a protobuf binary payload
-
-    Protobuf Data Format:
-    binary(tag1,length1,value1,tag2,length2,value2,..,tagN,lengthN,valueN)
-
+ * /api/devices/vitals produces a protobuf binary payload
 """
+
 import pypowerwall
-import struct
 
 # Update with your details
 password='password'
@@ -27,6 +23,16 @@ if pypowerwall.version_tuple < (0,0,3):
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
+
+# Display Vitals
+print("Vitals: %r\n" % pw.vitals())
+
+
+
+# Below is an alternative manual way to parse the protobuf payload
+
+"""
+import struct
 
 # Pull vitals payload - binary format in protobuf
 stream = pw.poll('/api/devices/vitals')
@@ -96,3 +102,4 @@ while(index < streamsize):
 
 # end while
 
+"""
