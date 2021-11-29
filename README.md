@@ -214,8 +214,6 @@ The following APIs are a result of help from other projects as well as my own in
    }
    ```
 
-* /api/devices/vitals - System Summary: Inverter, Powerwalls, Site (Binary)
-
 * /api/site_info/site_name
 
 * /api/sitemaster
@@ -223,6 +221,42 @@ The following APIs are a result of help from other projects as well as my own in
 * /api/status
 
 * /api/powerwalls
+
+* /api/devices/vitals - System Summary: Inverter, Powerwalls, Site (protobuf payload)
+
+```json
+// Strings Example:  pw.strings(True)
+{
+    "A": {
+        "Connected": true,
+        "Current": 1.81,
+        "Power": 422.0,
+        "State": "PV_Active",
+        "Voltage": 230.0
+    },
+    "B": {
+        "Connected": false,
+        "Current": 0.0,
+        "Power": 0.0,
+        "State": "PV_Active",
+        "Voltage": -2.5
+    },
+    "C": {
+        "Connected": true,
+        "Current": 4.47,
+        "Power": 892.0,
+        "State": "PV_Active",
+        "Voltage": 202.4
+    },
+    "D": {
+        "Connected": true,
+        "Current": 4.44,
+        "Power": 889.0,
+        "State": "PV_Active_Parallel",
+        "Voltage": 202.10000000000002
+    }
+}
+```
 
 ## Credits and References
 
