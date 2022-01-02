@@ -237,7 +237,7 @@ The following APIs are a result of help from other projects as well as my own in
 
 * Strings Example:  pw.strings(True)
 
-```json 
+   ```json 
    {
       "A": {
          "Connected": true,
@@ -268,7 +268,7 @@ The following APIs are a result of help from other projects as well as my own in
          "Voltage": 202.10000000000002
       }
    }
-```
+   ```
 
 ## Powerwall Scanner
 
