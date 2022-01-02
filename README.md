@@ -235,38 +235,70 @@ The following APIs are a result of help from other projects as well as my own in
 
 * /api/devices/vitals - Device Vitals: Inverter, Powerwalls, Solar, Site (protobuf payload)
 
-```json
-// Strings Example:  pw.strings(True)
-{
-    "A": {
-        "Connected": true,
-        "Current": 1.81,
-        "Power": 422.0,
-        "State": "PV_Active",
-        "Voltage": 230.0
-    },
-    "B": {
-        "Connected": false,
-        "Current": 0.0,
-        "Power": 0.0,
-        "State": "PV_Active",
-        "Voltage": -2.5
-    },
-    "C": {
-        "Connected": true,
-        "Current": 4.47,
-        "Power": 892.0,
-        "State": "PV_Active",
-        "Voltage": 202.4
-    },
-    "D": {
-        "Connected": true,
-        "Current": 4.44,
-        "Power": 889.0,
-        "State": "PV_Active_Parallel",
-        "Voltage": 202.10000000000002
-    }
-}
+* Strings Example:  pw.strings(True)
+
+```json 
+   {
+      "A": {
+         "Connected": true,
+         "Current": 1.81,
+         "Power": 422.0,
+         "State": "PV_Active",
+         "Voltage": 230.0
+      },
+      "B": {
+         "Connected": false,
+         "Current": 0.0,
+         "Power": 0.0,
+         "State": "PV_Active",
+         "Voltage": -2.5
+      },
+      "C": {
+         "Connected": true,
+         "Current": 4.47,
+         "Power": 892.0,
+         "State": "PV_Active",
+         "Voltage": 202.4
+      },
+      "D": {
+         "Connected": true,
+         "Current": 4.44,
+         "Power": 889.0,
+         "State": "PV_Active_Parallel",
+         "Voltage": 202.10000000000002
+      }
+   }
+```
+
+## Powerwall Scanner
+
+pyPowerwall has a built in feature to scan your network for available Powerwall gateways.  This will help you find the IP address of your Powerwall.
+
+```bash
+# Install pyPowerwall if you haven't already
+python -m pip install pypowerwall
+
+# Scan Network for Powerwalls
+python -m pypowerwall scan
+```
+
+Example Output
+```
+pyPowerwall Network Scanner [0.1.2]
+Scan local network for Tesla Powerwall Gateways
+
+    Your network appears to be: 10.0.1.0/24
+
+    Enter Network or press enter to use 10.0.1.0/24: 
+
+    Running Scan...
+      Host: 10.0.1.16 ... OPEN - Not a Powerwall
+      Host: 10.0.1.26 ... OPEN - Not a Powerwall
+      Host: 10.0.1.36 ... OPEN - Found Powerwall 1232100-00-E--TG123456789ABG
+      Done                           
+
+Discovered 1 Powerwall Gateway
+     10.0.1.36 [1232100-00-E--TG123456789ABG]
 ```
 
 ## Credits and References
