@@ -81,7 +81,7 @@ and call function to poll data.  Here is an example:
     print("Grid raw: %r\n" % pw.grid(verbose=True))
     print("Solar raw: %r\n" % pw.solar(verbose=True))
 
-    # Display Vitals
+    # Display Device Vitals
     print("Vitals: %r\n" % pw.vitals())
 
     # Display String Data
@@ -106,7 +106,7 @@ and call function to poll data.  Here is an example:
     load(verbose)           # Fetch load sensor data (W or raw JSON if verbose=True)
     grid()                  # Alias for site()
     home()                  # Alias for load()
-    vitals(json)            # Fetch raw Powerwall vitals
+    vitals(json)            # Fetch Powerwall device vitals
     strings(json, verbose)  # Fetch solar panel string data
     din()                   # Display DIN
     uptime()                # Display uptime - string hms format
@@ -231,7 +231,7 @@ The following APIs are a result of help from other projects as well as my own in
 
 * /api/powerwalls
 
-* /api/devices/vitals - System Summary: Inverter, Powerwalls, Site (protobuf payload)
+* /api/devices/vitals - Device Vitals: Inverter, Powerwalls, Solar, Site (protobuf payload)
 
 ```json
 // Strings Example:  pw.strings(True)
