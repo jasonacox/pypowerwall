@@ -40,7 +40,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 1, 1)
+version_tuple = (0, 1, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -118,7 +118,7 @@ class Powerwall(object):
         g = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
 
-    def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False):
+    def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False):
         # Query powerwall and return payload as string
         # First check to see if in cache
         fetch = True
@@ -132,17 +132,28 @@ class Powerwall(object):
                 fetch = False
         if(fetch):
             url = "https://%s%s" % (self.host, api)
-            if(raw):
-                r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
-            else:
-                r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
-            if r.status_code >= 400 and r.status_code < 500:
-                # Session Expired - get a new one
-                self._get_session()
+            try:
                 if(raw):
                     r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
                 else:
                     r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+            except requests.exceptions.Timeout:
+                log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
+                return None
+            except requests.exceptions.ConnectionError:
+                log.debug('ERROR Unable to connect to Powerwall at %s' % url)
+                return None
+            except:
+                log.debug('ERROR Unknown error connecting to Powerwall at %s' % url)
+                return None
+            if r.status_code >= 400 and r.status_code < 500:
+                # Session Expired - Try to get a new one unless we already tried
+                if(not recursive):
+                    self._get_session()
+                    return self.poll(api, jsonformat, raw, True)
+                else:
+                    log.debug('ERROR Unable to establish session with Powerwall at %s - check password' % url)
+                    return None
             if(raw):
                 payload = r.raw.data
             else:
@@ -195,6 +206,8 @@ class Powerwall(object):
     def vitals(self, jsonformat=False):
         # Pull vitals payload - binary protobuf 
         stream = self.poll('/api/devices/vitals')
+        if(not stream):
+            return None
 
         # Protobuf payload processing
         pb = tesla_pb2.DevicesWithVitals()
@@ -244,6 +257,8 @@ class Powerwall(object):
         devicemap = ['','1','2','3','4','5','6','7','8']
         deviceidx = 0
         v = self.vitals(jsonformat=False)
+        if(not v):
+            return None
         for device in v:
             if device.split('--')[0] == 'PVAC':
                 # Check for PVS data

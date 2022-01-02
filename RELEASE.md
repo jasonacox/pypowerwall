@@ -1,5 +1,19 @@
 # RELEASE NOTES
 
+## v0.1.2 - Error Handling and Proxy Stats
+
+* PyPI 0.1.2
+* Added better Error handling for calls to Powerwall with debug info for timeout and connection errors.
+* Added more stats to pypowerwall proxy server.py (via URI /stats and /stats/clear)
+
+```
+DEBUG:pypowerwall [0.1.2]
+
+DEBUG:loaded auth from cache file .powerwall
+DEBUG:Starting new HTTPS connection (1): 10.0.1.2:443
+DEBUG:ERROR Timeout waiting for Powerwall API https://10.0.1.2/api/devices/vitals
+```
+
 ## v0.1.1 - New System Info Functions
 
 * PyPI 0.1.1
