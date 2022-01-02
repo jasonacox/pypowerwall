@@ -18,6 +18,7 @@ import pypowerwall
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
 import json
+import time
 
 PORT = 8675
 
@@ -32,12 +33,17 @@ cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 
 # Global Stats
 proxystats = {}
+proxystats['pypowerwall'] = pypowerwall.version
 proxystats['gets'] = 0
 proxystats['errors'] = 0
 proxystats['uri'] = {}
+proxystats['ts'] = int(time.time())         # Timestamp for Now
+proxystats['start'] = int(time.time())      # Timestamp for Start 
+proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
+    print("pyPowerwall Proxy Server Started - Listening on Port %d" % PORT)
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
@@ -73,12 +79,14 @@ class handler(BaseHTTPRequestHandler):
             message = pw.strings(jsonformat=True)  
         if self.path == '/stats':
             # Give Internal Stats
+            proxystats['ts'] = int(time.time())
             message = json.dumps(proxystats)
         if self.path == '/stats/clear':
             # Clear Internal Stats
             proxystats['gets'] = 0
             proxystats['errors'] = 0
             proxystats['uri'] = {}
+            proxystats['clear'] = int(time.time())
             message = json.dumps(proxystats)
         # Count
         if message == "ERROR!" or message is None:
