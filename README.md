@@ -13,19 +13,19 @@ poll API endpoints on the Gateway.
 
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
-* Works with Tesla Energy Gateways - Powerwall+ 
+* Works with Tesla Energy Gateways - Powerwall and Powerwall+
 * Simple access through easy to use functions using customer credentials
 * Will cache authentication to reduce load on Powerwall Gateway
-* Will cache responses for 5s to limit number of calls to Powerwall Gateway
+* Will cache responses for 10s to limit number of calls to Powerwall Gateway (user definable timeout)
+* Easy access to decoded device vitals (/api/devices/vitals in JSON format)
+* Provides solar string data for Powerwall+ systems
 
-NOTE: This module requires that you (or your installer) have set up customer credentials
+NOTE: This module requires that you (or your installer) have set up *Customer Login* credentials
 on your Powerwall Gateway.
 
 ## Setup
 
 You can clone this repo or install the package with pip.  Once installed, pyPowerwall can scan your local network to find th IP address of your Tesla Powerwall Gateway.
-
-Note: pyPowerwall requires these packages (via pip): _requests_ and _protobuf_.
 
 ```bash
 # Install pyPowerwall
@@ -34,6 +34,8 @@ python -m pip install pypowerwall
 # Scan Network for Powerwalls
 python -m pypowerwall scan
 ```
+
+Note: pyPowerwall installation will attempt to install these required python packages: _requests_ and _protobuf_.
 
 ## Programming with pyPowerwall
 
