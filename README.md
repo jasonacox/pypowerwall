@@ -16,7 +16,7 @@ pyPowerwall will cache the authentication headers and API call responses to help
 * Works with Tesla Energy Gateways - Powerwall and Powerwall+
 * Simple access through easy to use functions using customer credentials
 * Will cache authentication to reduce load on Powerwall Gateway
-* Will cache responses for 10s to limit number of calls to Powerwall Gateway (user definable timeout)
+* Will cache responses for 10s to limit number of calls to Powerwall Gateway (user definable)
 * Easy access to decoded device vitals (/api/devices/vitals in JSON format)
 * Provides solar string data for Powerwall+ systems
 
