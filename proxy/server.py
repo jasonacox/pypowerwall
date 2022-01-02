@@ -17,6 +17,7 @@
 import pypowerwall
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import os
+import json
 
 PORT = 8675
 
@@ -29,6 +30,12 @@ timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 
+# Global Stats
+proxystats = {}
+proxystats['gets'] = 0
+proxystats['errors'] = 0
+proxystats['uri'] = {}
+
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
 
@@ -40,6 +47,7 @@ pw.pwcacheexpire = int(cache_expire)
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        global proxy
         self.send_response(200)
         message = "ERROR!"
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
@@ -63,6 +71,24 @@ class handler(BaseHTTPRequestHandler):
         if self.path == '/strings':
             # Strings Data - JSON
             message = pw.strings(jsonformat=True)  
+        if self.path == '/stats':
+            # Give Internal Stats
+            message = json.dumps(proxystats)
+        if self.path == '/stats/clear':
+            # Clear Internal Stats
+            proxystats['gets'] = 0
+            proxystats['errors'] = 0
+            proxystats['uri'] = {}
+            message = json.dumps(proxystats)
+        # Count
+        if message == "ERROR!" or message is None:
+            proxystats['errors'] = proxystats['errors'] + 1
+        else:
+            proxystats['gets'] = proxystats['gets'] + 1
+            if self.path in proxystats['uri']:
+                proxystats['uri'][self.path] = proxystats['uri'][self.path] + 1
+            else:
+                proxystats['uri'][self.path] = 1
         # Send headers
         self.send_header('Content-type','text/plain; charset=utf-8')
         self.send_header('Content-Length', str(len(message)))

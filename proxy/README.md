@@ -28,8 +28,17 @@ Docker: docker pull (jasonacox/pypowerwall)[https://hub.docker.com/r/jasonacox/p
 2. Test the Proxy
 
     ```bash
+    # Get Powerwall Data
     curl -i http://localhost:8675/soe
     curl -i http://localhost:8675/aggregates
+    curl -i http://localhost:8675/vitals
+    curl -i http://localhost:8675/strings
+
+    # Get Proxy Stats
+    curl -i http://localhost:8675/stats
+
+    # Clear Proxy Stats
+    curl -i http://localhost:8675/stats/clear
     ```
 
 ## Build Your Own

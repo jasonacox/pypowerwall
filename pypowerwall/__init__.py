@@ -25,6 +25,11 @@
     load(verbose)                   # Fetch load sensor data (W or raw json if verbose=True)
     vitals(jsonformat)              # Fetch raw Powerwall vitals
     strings(jsonformat, verbose)    # Fetch solar panel string data
+    din()                           # Display DIN
+    uptime()                        # Display uptime - string hms format
+    version()                       # Display system version
+    status(param)                   # Display status (JSON) or individual param
+    site_name()                     # Display site name
 
 """
 import json, time
@@ -35,7 +40,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 1, 0)
+version_tuple = (0, 1, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -299,9 +304,56 @@ class Powerwall(object):
     def load(self, verbose=False):
         return self._fetchpower('load',verbose)
 
-    # Helpful aliases
+    # Helpful Power Aliases
     def grid(self, verbose=False):
         return self.site(verbose)
 
     def home(self, verbose=False):
         return self.load(verbose)
+
+    # Shortcut Functions 
+    def site_name(self):
+        # Return site name
+        payload = self.poll('/api/site_info/site_name', jsonformat=True)
+        try:
+            site_name = payload['site_name']
+        except:
+            log.debug('ERROR unable to parse payload for site_name: %r' % payload)
+        return site_name
+
+    def status(self, param=None):
+        # Return system information
+        """ 
+          Available param:
+            din = payload['din']
+            start_time = payload['start_time-time']
+            up_time_seconds = payload['up_time_seconds']
+            is_new = payload['is_new']
+            version = payload['version']
+            githash = payload['git_hash']
+            commission_count = payload['commission_count']
+            device_type = payload['device_type']
+            sync_type = payload['sync_type']
+            leader = payload['leader']
+            followers = payload['followers']
+            cellular_disabled = payload['cellular_disabled']
+        """
+        payload = self.poll('/api/status', jsonformat=True)
+        if param is None:
+            return payload 
+        else:
+            if param in payload:
+                return payload[param]
+            else:
+                log.debug('ERROR unable to find %s in payload: %r' % (param, payload))
+                return None
+
+    def version(self):
+        return self.status('version')
+
+    def uptime(self):
+        return self.status('up_time_seconds')
+
+    def din(self):
+        return self.status('din')
+

@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## v0.1.1 - New System Info Functions
+
+* PyPI 0.1.1
+* Added stats to pypowerwall proxy server.py (via URI /stats and /stats/clear)
+* Added Information Functions: `site_name()`, `version()`, `din()`, `uptime()`, and `status()`.
+
+```python
+     # Display System Info
+     print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
+     print("System Uptime: %s\n" % pw.uptime())
+```
+
 ## v0.1.0 - Vitals Data
 
 * PyPI 0.1.0

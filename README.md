@@ -55,6 +55,10 @@ and call function to poll data.  Here is an example:
     # Connect to Powerwall
     pw = pypowerwall.Powerwall(host,password,email,timezone)
 
+    # Some System Info
+    print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
+    print("System Uptime: %s\n" % pw.uptime())
+
     # Pull Sensor Power Data
     grid = pw.grid()
     solar = pw.solar()
@@ -104,6 +108,11 @@ and call function to poll data.  Here is an example:
     home()                  # Alias for load()
     vitals(json)            # Fetch raw Powerwall vitals
     strings(json, verbose)  # Fetch solar panel string data
+    din()                   # Display DIN
+    uptime()                # Display uptime - string hms format
+    version()               # Display system version
+    status(param)           # Display status (JSON) or individual param
+    site_name()             # Display site name
 
  Variables
     pwcacheexpire = 5       # Set API cache timeout in seconds
