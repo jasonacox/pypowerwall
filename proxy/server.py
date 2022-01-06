@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t1"
+BUILD = "t2"
 
 # Credentials for your Powerwall - Check for environmental variables 
 #    and always use those if available (required for Docker)
@@ -74,6 +74,9 @@ class handler(BaseHTTPRequestHandler):
         if self.path == '/soe' or self.path == '/api/system_status/soe':
             # Battery Level - JSON
             message = pw.poll('/api/system_status/soe')
+        if self.path == '/api/status' or self.path == '/status':
+            # Powerwall Status and Firmware Version
+            message = pw.poll('/api/status')
         if self.path == '/csv':
             # Grid,Home,Solar,Battery,Level - CSV
             batterylevel = pw.level()
