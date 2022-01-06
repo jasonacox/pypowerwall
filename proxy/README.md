@@ -4,7 +4,7 @@ This proxy tool will handle authentication to the Powerwall Gateway and will pro
 
 Because pyPowerwall is designed to cache the auth and high frequency API calls, this will reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway.
 
-Docker: docker pull (jasonacox/pypowerwall)[https://hub.docker.com/r/jasonacox/pypowerwall]
+Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/pypowerwall)
 
 ## Quick Start
 
