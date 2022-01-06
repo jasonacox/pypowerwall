@@ -15,12 +15,15 @@
 
 """
 import pypowerwall
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from socketserver import ThreadingMixIn 
 import os
 import json
 import time
+import sys
 
 PORT = 8675
+BUILD = "t1"
 
 # Credentials for your Powerwall - Check for environmental variables 
 #    and always use those if available (required for Docker)
@@ -33,9 +36,10 @@ cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 
 # Global Stats
 proxystats = {}
-proxystats['pypowerwall'] = pypowerwall.version
+proxystats['pypowerwall'] = "%s Build %s" % (pypowerwall.version, BUILD)
 proxystats['gets'] = 0
 proxystats['errors'] = 0
+proxystats['timeout'] = 0
 proxystats['uri'] = {}
 proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
@@ -43,7 +47,7 @@ proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
-    print("pyPowerwall Proxy Server Started - Listening on Port %d" % PORT)
+    sys.stderr.write("pyPowerwall Proxy Server (%s Build %s) Started - Listening on Port %d - DEBUG\n" % (pypowerwall.version, BUILD, PORT))
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
@@ -51,7 +55,15 @@ pw = pypowerwall.Powerwall(host,password,email,timezone)
 # Set Timeout in Seconds
 pw.pwcacheexpire = int(cache_expire)
 
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
+
 class handler(BaseHTTPRequestHandler):
+    def address_string(self):
+        # replace function to avoid lookup delays
+        host, port = self.client_address[:2]
+        #return socket.getfqdn(host)
+        return host
     def do_GET(self):
         global proxy
         self.send_response(200)
@@ -89,8 +101,12 @@ class handler(BaseHTTPRequestHandler):
             proxystats['clear'] = int(time.time())
             message = json.dumps(proxystats)
         # Count
-        if message == "ERROR!" or message is None:
+        if message == None:
+            proxystats['timeout'] = proxystats['timeout'] + 1
+            message == "TIMEOUT!"
+        if message == "ERROR!":
             proxystats['errors'] = proxystats['errors'] + 1
+            message == "ERROR!"
         else:
             proxystats['gets'] = proxystats['gets'] + 1
             if self.path in proxystats['uri']:
@@ -104,7 +120,7 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(bytes(message, "utf8"))
 
 try:
-    with HTTPServer(('', PORT), handler) as server:
+    with ThreadingHTTPServer(('', PORT), handler) as server:
         server.serve_forever()
 except:
     print(' CANCEL \n')
