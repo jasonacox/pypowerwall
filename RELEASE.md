@@ -1,5 +1,21 @@
 # RELEASE NOTES
 
+## v0.1.3 - Powerwall Temps
+
+* PyPI 0.1.3
+* Added `temp()` function to pull Powerwall temperatures.
+
+```python
+pw.temps(jsonformat=True)
+```
+
+```json
+{
+    "TETHC--2012170-25-E--TGxxxxxxxxxxxx": 17.5,
+    "TETHC--3012170-05-B--TGxxxxxxxxxxxx": 17.700000000000003
+}
+```
+
 ## v0.1.2 - Error Handling and Proxy Stats
 
 * PyPI 0.1.2
