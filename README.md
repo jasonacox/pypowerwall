@@ -115,6 +115,7 @@ and call function to poll data.  Here is an example:
     version()               # Display system version
     status(param)           # Display status (JSON) or individual param
     site_name()             # Display site name
+    temps()                 # Display Powerwall Temperatures
 
  Variables
     pwcacheexpire = 5       # Set API cache timeout in seconds
@@ -129,22 +130,49 @@ The following are some useful tools based on pypowerwall:
 
 * [Powerwall Simulator](simulator) - A Powerwall simulator to mimic the responses from the Tesla Powerwall Gateway. This is useful for testing purposes.
 
-## Powerwall API Listing
+## Powerwall Scanner
+
+pyPowerwall has a built in feature to scan your network for available Powerwall gateways.  This will help you find the IP address of your Powerwall.
+
+```bash
+# Install pyPowerwall if you haven't already
+python -m pip install pypowerwall
+
+# Scan Network for Powerwalls
+python -m pypowerwall scan
+```
+
+Example Output
+```
+pyPowerwall Network Scanner [0.1.2]
+Scan local network for Tesla Powerwall Gateways
+
+    Your network appears to be: 10.0.1.0/24
+
+    Enter Network or press enter to use 10.0.1.0/24: 
+
+    Running Scan...
+      Host: 10.0.1.16 ... OPEN - Not a Powerwall
+      Host: 10.0.1.26 ... OPEN - Not a Powerwall
+      Host: 10.0.1.36 ... OPEN - Found Powerwall 1232100-00-E--TG123456789ABG
+      Done                           
+
+Discovered 1 Powerwall Gateway
+     10.0.1.36 [1232100-00-E--TG123456789ABG]
+```
+
+## Example API Calls
 
 The following APIs are a result of help from other projects as well as my own investigation. 
 
-* /api/login/Basic - Used to establish authentication
+* pw.poll('/api/system_status/soe') - Battery percentage (JSON with float 0-100)
 
-* /api/logout - End Session
-
-* /api/system_status/soe - Battery percentage (JSON with float 0-100)
-   Example: 
    ```json
    {"percentage":40.96227949234631}
    ```
 
-* /api/meters/aggregates - Site, Load, Solar and Battery (JSON)
-   Example: 
+* pw.poll('/api/meters/aggregates') - Site, Load, Solar and Battery (JSON)
+
    ```json
    {
       "site": {
@@ -225,17 +253,7 @@ The following APIs are a result of help from other projects as well as my own in
    }
    ```
 
-* /api/site_info/site_name
-
-* /api/sitemaster
-
-* /api/status
-
-* /api/powerwalls
-
-* /api/devices/vitals - Device Vitals: Inverter, Powerwalls, Solar, Site (protobuf payload)
-
-* Strings Example:  pw.strings(True)
+* pw.strings(jsonformat=True)
 
    ```json 
    {
@@ -270,36 +288,33 @@ The following APIs are a result of help from other projects as well as my own in
    }
    ```
 
-## Powerwall Scanner
+* pw.temps(jsonformat=True)
 
-pyPowerwall has a built in feature to scan your network for available Powerwall gateways.  This will help you find the IP address of your Powerwall.
+   ```json
+   {
+      "TETHC--2012170-25-E--TGxxxxxxxxxxxx": 17.5,
+      "TETHC--3012170-05-B--TGxxxxxxxxxxxx": 17.700000000000003
+   }
+   ```
 
-```bash
-# Install pyPowerwall if you haven't already
-python -m pip install pypowerwall
+* pw.status(jsonformat=True)
 
-# Scan Network for Powerwalls
-python -m pypowerwall scan
-```
-
-Example Output
-```
-pyPowerwall Network Scanner [0.1.2]
-Scan local network for Tesla Powerwall Gateways
-
-    Your network appears to be: 10.0.1.0/24
-
-    Enter Network or press enter to use 10.0.1.0/24: 
-
-    Running Scan...
-      Host: 10.0.1.16 ... OPEN - Not a Powerwall
-      Host: 10.0.1.26 ... OPEN - Not a Powerwall
-      Host: 10.0.1.36 ... OPEN - Found Powerwall 1232100-00-E--TG123456789ABG
-      Done                           
-
-Discovered 1 Powerwall Gateway
-     10.0.1.36 [1232100-00-E--TG123456789ABG]
-```
+   ```json
+   {
+      "din": "1232100-00-E--TGxxxxxxxxxxxx",
+      "start_time": "2022-01-05 09:20:47 +0800",
+      "up_time_seconds": "62h48m24.076725628s",
+      "is_new": false,
+      "version": "21.44.1 c58c2df3",
+      "git_hash": "c58c2df39ec207708c4cde0c747db7cf31750f29",
+      "commission_count": 8,
+      "device_type": "teg",
+      "sync_type": "v2.1",
+      "leader": "",
+      "followers": null,
+      "cellular_disabled": false
+   }
+   ```
 
 ## Credits and References
 
