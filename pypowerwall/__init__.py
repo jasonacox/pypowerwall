@@ -372,3 +372,18 @@ class Powerwall(object):
     def din(self):
         return self.status('din')
 
+    def temps(self, jsonformat=False):
+        # Temps of Powerwalls
+        temps = {}
+        devices = self.vitals()
+        for device in devices:
+            if device.startswith('TETHC'):
+                try:
+                    temps[device] = devices[device]['THC_AmbientTemp']
+                except:
+                    temps[device] = None
+        if (jsonformat):
+            json_out = json.dumps(temps, indent=4, sort_keys=True)
+            return json_out
+        else:
+            return temps
