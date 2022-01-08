@@ -30,6 +30,7 @@
     version()                       # Display system version
     status(param)                   # Display status (JSON) or individual param
     site_name()                     # Display site name
+    temps()                         # Display Powerwall Temperatures
 
 """
 import json, time
@@ -119,6 +120,15 @@ class Powerwall(object):
         self.auth = {}
 
     def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False):
+        """
+        Query Tesla Energy Gateway Powerwall for API Response
+        
+        Args:
+            api         = URI 
+            jsonformat  = If True, convert JSON response to Python Dictionary, otherwise return text
+            raw         = If True, send raw data back (useful for binary responses)
+            recursive   = If True, this is a recursive call and do not allow additional recursive calls
+        """
         # Query powerwall and return payload as string
         # First check to see if in cache
         fetch = True
@@ -171,6 +181,7 @@ class Powerwall(object):
             return payload
         
     def level(self):
+        """ Battery Level Percentage """
         # Return power level percentage for battery
         level = 0
         payload = self.poll('/api/system_status/soe', jsonformat=True)
@@ -179,6 +190,9 @@ class Powerwall(object):
         return level
     
     def power(self):
+        """
+        Power Usage for Site, Solar, Battery and Load
+        """
         # Return power for (site, solar, battery, load) as dictionary
         site = solar = battery = load = 0.0
         payload = self.poll('/api/meters/aggregates', jsonformat=True)
@@ -204,6 +218,12 @@ class Powerwall(object):
             return r[sensor]
 
     def vitals(self, jsonformat=False):
+        """
+        Device Vitals Data
+
+        Args:
+           jsonformat = If True, return JSON format otherwise return Python Dictionary
+        """
         # Pull vitals payload - binary protobuf 
         stream = self.poll('/api/devices/vitals')
         if(not stream):
@@ -253,6 +273,13 @@ class Powerwall(object):
             return output
 
     def strings(self, jsonformat=False, verbose=False):
+        """
+        Solar Strings Data (current, voltage, power, state, connected)
+
+        Args:
+           jsonformat = If True, return JSON format otherwise return Python Dictionary
+           verbose    = If True, return all String data details otherwise basics
+        """
         result = {}
         devicemap = ['','1','2','3','4','5','6','7','8']
         deviceidx = 0
@@ -306,29 +333,35 @@ class Powerwall(object):
         else:
             return result
 
-    # Pull Power Data from Sensor
+    # Pull Power Data
     def site(self, verbose=False):
+        """ Grid Usage """
         return self._fetchpower('site',verbose)
         
     def solar(self, verbose=False):
+        """" Solar Power Generation """
         return self._fetchpower('solar',verbose)
 
     def battery(self, verbose=False):
+        """ Battery Power Flow """
         return self._fetchpower('battery',verbose)
 
     def load(self, verbose=False):
+        """ Home Power Usage """
         return self._fetchpower('load',verbose)
 
     # Helpful Power Aliases
     def grid(self, verbose=False):
+        """ Grid Power Usage """
         return self.site(verbose)
 
     def home(self, verbose=False):
+        """ Home Power Usage """
         return self.load(verbose)
 
     # Shortcut Functions 
     def site_name(self):
-        # Return site name
+        """ System Site Name """
         payload = self.poll('/api/site_info/site_name', jsonformat=True)
         try:
             site_name = payload['site_name']
@@ -337,8 +370,12 @@ class Powerwall(object):
         return site_name
 
     def status(self, param=None, jsonformat=False):
-        # Return system information
         """ 
+        Return Systems Status
+
+        Args: 
+          params = only respond with this param data
+
           Available param:
             din = payload['din']
             start_time = payload['start_time-time']
@@ -367,16 +404,19 @@ class Powerwall(object):
                 return None
 
     def version(self):
+        """ Firmware Version """
         return self.status('version')
 
     def uptime(self):
+        """ System Uptime """
         return self.status('up_time_seconds')
 
     def din(self):
+        """ System DIN """
         return self.status('din')
 
     def temps(self, jsonformat=False):
-        # Temps of Powerwalls
+        """ Temperatures of Powerwalls  """
         temps = {}
         devices = self.vitals()
         for device in devices:
