@@ -180,14 +180,23 @@ class Powerwall(object):
         else:
             return payload
         
-    def level(self):
-        """ Battery Level Percentage """
+    def level(self, appvalue=False):
+        """ 
+        Battery Level Percentage 
+        
+        Args:
+            appvalue = If True, convert battery level to app scale value
+            Note: Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
+        """
         # Return power level percentage for battery
         level = 0
         payload = self.poll('/api/system_status/soe', jsonformat=True)
         if(payload is not None and 'percentage' in payload):
             level = payload['percentage']
-        return level
+        if appvalue:
+            return ((level / 0.95) - (5 / 0.95))
+        else:
+            return level
     
     def power(self):
         """
