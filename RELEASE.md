@@ -1,5 +1,16 @@
 # RELEASE NOTES
 
+## v0.1.4 - TBD (unreleased)
+
+* Added Tesla App style Battery Level Conversion optin to `level()`
+
+```python
+>>> pw.level(appvalue=True)
+39.971429212508326
+>>> pw.level()
+42.972857751882906
+```
+
 ## v0.1.3 - Powerwall Temps
 
 * PyPI 0.1.3
