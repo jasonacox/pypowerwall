@@ -336,7 +336,7 @@ class Powerwall(object):
             log.debug('ERROR unable to parse payload for site_name: %r' % payload)
         return site_name
 
-    def status(self, param=None):
+    def status(self, param=None, jsonformat=False):
         # Return system information
         """ 
           Available param:
@@ -355,7 +355,10 @@ class Powerwall(object):
         """
         payload = self.poll('/api/status', jsonformat=True)
         if param is None:
-            return payload 
+            if jsonformat:
+                return json.dumps(payload, indent=4, sort_keys=True)
+            else:
+                return payload 
         else:
             if param in payload:
                 return payload[param]
