@@ -25,6 +25,16 @@ import sys
 PORT = 8675
 BUILD = "t2"
 
+ALLOWLIST = [
+    '/api/status', '/api/site_info/site_name', '/api/meters/site',
+    '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
+    '/api/customer/registration', '/api/system_status', '/api/system_status/grid_status',
+    '/api/system/update/status', '/api/site_info', '/api/system_status/grid_faults',
+    '/api/operation', '/api/site_info/grid_codes', '/api/solars', '/api/solars/brands',
+    '/api/customer', '/api/meters', '/api/installer', 'api/networks', 
+    '/api/system/networks', '/api/meters/readings'
+    ]
+
 # Credentials for your Powerwall - Check for environmental variables 
 #    and always use those if available (required for Docker)
 password = os.getenv("PW_PASSWORD", "password")
@@ -36,7 +46,7 @@ cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 
 # Global Stats
 proxystats = {}
-proxystats['pypowerwall'] = "%s Build %s" % (pypowerwall.version, BUILD)
+proxystats['pypowerwall'] = "%s Proxy %s" % (pypowerwall.version, BUILD)
 proxystats['gets'] = 0
 proxystats['errors'] = 0
 proxystats['timeout'] = 0
@@ -47,7 +57,7 @@ proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
-    sys.stderr.write("pyPowerwall Proxy Server (%s Build %s) Started - Listening on Port %d - DEBUG\n" % (pypowerwall.version, BUILD, PORT))
+    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d - DEBUG\n" % (pypowerwall.version, BUILD, PORT))
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
@@ -71,13 +81,10 @@ class handler(BaseHTTPRequestHandler):
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
             message = pw.poll('/api/meters/aggregates')
-        if self.path == '/soe' or self.path == '/api/system_status/soe':
+        elif self.path == '/soe' or self.path == '/api/system_status/soe':
             # Battery Level - JSON
             message = pw.poll('/api/system_status/soe')
-        if self.path == '/api/status' or self.path == '/status':
-            # Powerwall Status and Firmware Version
-            message = pw.poll('/api/status')
-        if self.path == '/csv':
+        elif self.path == '/csv':
             # Grid,Home,Solar,Battery,Level - CSV
             batterylevel = pw.level()
             grid = pw.grid()
@@ -86,28 +93,37 @@ class handler(BaseHTTPRequestHandler):
             home = pw.home()
             message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
                 % (grid, home, solar, battery, batterylevel)
-        if self.path == '/vitals':
+        elif self.path == '/vitals':
             # Vitals Data - JSON
             message = pw.vitals(jsonformat=True)
-        if self.path == '/strings':
+        elif self.path == '/strings':
             # Strings Data - JSON
             message = pw.strings(jsonformat=True)  
-        if self.path == '/stats':
+        elif self.path == '/stats':
             # Give Internal Stats
             proxystats['ts'] = int(time.time())
             message = json.dumps(proxystats)
-        if self.path == '/stats/clear':
+        elif self.path == '/stats/clear':
             # Clear Internal Stats
             proxystats['gets'] = 0
             proxystats['errors'] = 0
             proxystats['uri'] = {}
             proxystats['clear'] = int(time.time())
             message = json.dumps(proxystats)
+        elif self.path == '/temps':
+            # Temps of Powerwalls 
+            message = pw.temps(jsonformat=True)
+        elif self.path in ALLOWLIST:
+            # Allowed API Call
+            message = pw.poll(self.path)
+        else:
+            message = "ERROR!"
+
         # Count
         if message == None:
             proxystats['timeout'] = proxystats['timeout'] + 1
             message == "TIMEOUT!"
-        if message == "ERROR!":
+        elif message == "ERROR!":
             proxystats['errors'] = proxystats['errors'] + 1
             message == "ERROR!"
         else:
