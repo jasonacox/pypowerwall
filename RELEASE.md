@@ -2,7 +2,7 @@
 
 ## v0.1.4 - TBD (unreleased)
 
-* Added Tesla App style Battery Level Conversion optin to `level()`
+* Added Tesla App style Battery Level Conversion option to `level()`
 
 ```python
 >>> pw.level(appvalue=True)
