@@ -41,7 +41,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 1, 3)
+version_tuple = (0, 1, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -180,12 +180,12 @@ class Powerwall(object):
         else:
             return payload
         
-    def level(self, appvalue=False):
+    def level(self, scale=False):
         """ 
         Battery Level Percentage 
         
         Args:
-            appvalue = If True, convert battery level to app scale value
+            scale = If True, convert battery level to app scale value
             Note: Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
         """
         # Return power level percentage for battery
@@ -193,7 +193,7 @@ class Powerwall(object):
         payload = self.poll('/api/system_status/soe', jsonformat=True)
         if(payload is not None and 'percentage' in payload):
             level = payload['percentage']
-        if appvalue:
+        if scale:
             return ((level / 0.95) - (5 / 0.95))
         else:
             return level

@@ -1,11 +1,13 @@
 # RELEASE NOTES
 
-## v0.1.4 - TBD (unreleased)
+## v0.1.4 - Battery Level Percentage Scaling
 
-* Added Tesla App style Battery Level Conversion option to `level()`
+* PyPI 0.1.4
+* Changed "Network Scan" default timeout to 400ms for better detection.
+* Added Tesla App style "Battery Level Percentage" Conversion option to `level()` to convert the level reading to the 95% scale used by the App. Ths converts the battery level percentage to be consistent with the Tesla App:
 
 ```python
->>> pw.level(appvalue=True)
+>>> pw.level(scale=True)
 39.971429212508326
 >>> pw.level()
 42.972857751882906
