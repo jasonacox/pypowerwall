@@ -39,7 +39,7 @@ def getmyIP():
     s.close()
     return r
 
-def scan(color=True, timeout=0.2):
+def scan(color=True, timeout=0.4):
     """
     pyPowerwall Network Scanner
 
