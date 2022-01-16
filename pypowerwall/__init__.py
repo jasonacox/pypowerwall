@@ -255,17 +255,19 @@ class Powerwall(object):
                 output[name] = {}
                 output[name]['Parent'] = parent
                 try:
-                    output[name]['partNumber'] = str(pb.devices[x].device[0].device.partNumber.value)
-                    output[name]['serialNumber'] = str(pb.devices[x].device[0].device.serialNumber.value)
-                    output[name]['manufacturer'] = str(pb.devices[x].device[0].device.manufacturer.value)
-                    output[name]['firmwareVersion'] = str(pb.devices[x].device[0].device.firmwareVersion.value)
-                    output[name]['lastCommunicationTime'] = str(pb.devices[x].device[0].device.lastCommunicationTime.seconds)
+                    output[name]['partNumber'] = str(pb.devices[x].device.device.partNumber.value)
+                    output[name]['serialNumber'] = str(pb.devices[x].device.device.serialNumber.value)
+                    output[name]['manufacturer'] = str(pb.devices[x].device.device.manufacturer.value)
+                    output[name]['firmwareVersion'] = str(pb.devices[x].device.device.firmwareVersion.value)
+                    output[name]['lastCommunicationTime'] = str(pb.devices[x].device.device.lastCommunicationTime.seconds)
                 except:
                     log.debug("Error: Expected fields missing - skipping.")
             # Capture all vital data points
             for y in pb.devices[x].vitals:
                 vital_name = str(y.name)
                 vital_value = None
+                if (y.HasField('intValue')):
+                    vital_value = y.intValue
                 if(y.HasField('boolValue')):
                     vital_value = y.boolValue
                 if(y.HasField('stringValue')):
