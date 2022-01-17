@@ -41,7 +41,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 1, 4)
+version_tuple = (0, 2, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -249,8 +249,8 @@ class Powerwall(object):
         output = {}
         while(x < num):
             # Each device
-            parent = str(pb.devices[x].device[0].device.componentParentDin.value)
-            name = str(pb.devices[x].device[0].device.din.value)
+            parent = str(pb.devices[x].device.device.componentParentDin.value)
+            name = str(pb.devices[x].device.device.din.value)
             if name not in output.keys():
                 output[name] = {}
                 output[name]['Parent'] = parent
