@@ -9,7 +9,276 @@ syntax = "proto3";
 
 package teslapower;
 
+import "google/protobuf/any.proto";
 import "google/protobuf/timestamp.proto";
+
+message ExternalAuth {
+    ExternalAuthType type = 1;
+}
+
+enum ExternalAuthType {
+    EXTERNAL_AUTH_TYPE_INVALID = 0;
+    EXTERNAL_AUTH_TYPE_PRESENCE = 1;
+    EXTERNAL_AUTH_TYPE_MTLS = 2;
+    EXTERNAL_AUTH_TYPE_HERMES_COMMAND = 4;
+}
+
+enum DeliveryChannel {
+    DELIVERY_CHANNEL_INVALID = 0;
+    DELIVERY_CHANNEL_LOCAL_HTTPS = 1;
+    DELIVERY_CHANNEL_HERMES_COMMAND = 2;
+    DELIVERY_CHANNEL_BLE = 3;
+}
+
+enum TeslaService {
+    TESLA_SERVICE_INVALID = 0;
+    TESLA_SERVICE_COMMAND = 1;
+}
+
+message Participant {
+    oneof id {
+        string din = 1;
+        int32 teslaService = 2;
+        int32 local = 3;
+        int32 authorizedClient = 4;
+    }
+}
+
+message EcuId {
+    string partNumber = 1;
+    string serialNumber = 2;
+}
+
+message Din {
+    string value = 1;
+}
+
+message FirmwareVersion {
+    string version = 1;
+    string githash = 2;
+}
+
+message AccumulatedEnergy {
+    float energyWh = 1;
+    int32 accumulationType = 2;
+    optional UInt64Value periodS = 3;
+}
+
+message InstACMeasurement {
+    float voltageVrms = 1;
+    float frequencyHz = 2;
+    optional FloatValue currentArms = 3;
+    optional FloatValue realPowerW = 4;
+    optional FloatValue reactivePowerVar = 5;
+    optional FloatValue apparentPowerVa = 6;
+}
+
+message InstDCMeasurement {
+    float voltageV = 1;
+    optional FloatValue currentA = 2;
+}
+
+message GridComplianceStatus {
+    int32 gridState = 1;
+    optional UInt32Value qualifyingTimeRemainingS = 2;
+}
+
+message NetworkInterfaceIPv4Config {
+    reserved 1;
+    bool dhcpEnabled = 2;
+    fixed32 address = 3;
+    fixed32 subnetMask = 4;
+    fixed32 gateway = 5;
+    repeated fixed32 dns = 6;
+}
+
+message Rssi {
+    sint32 value = 1;
+    optional UInt32Value signalStrengthPercent = 2;
+}
+
+message NetworkConnectivityStatus {
+    bool connectedPhysical = 1;
+    bool connectedInternet = 2;
+    bool connectedTesla = 3;
+    optional Rssi rssi = 4;
+    optional Int32Value snr = 5;
+}
+
+message NetworkInterface {
+    bytes macAddress = 1;
+    bool enabled = 2;
+    bool activeRoute = 3;
+    optional NetworkInterfaceIPv4Config ipv4Config = 4;
+    optional NetworkConnectivityStatus connectivityStatus = 5;
+}
+
+message WifiPassword {
+    string value = 1;
+}
+
+message EncryptedMessage {
+    int32 cipher = 1;
+    bytes ciphertext = 2;
+}
+
+message WifiConfig {
+    string ssid = 1;
+    optional string password = 2;
+    optional int32 securityType = 3;
+}
+
+message WifiNetwork {
+    string ssid = 1;
+    sint32 rssiValue = 2;
+    optional Rssi rssi = 3;
+    optional int32 securityType = 4;
+}
+
+message SystemUpdate {
+    int32 handshakeResult = 1;
+    int32 updateStatus = 2;
+    optional FirmwareVersion serverStagedVersion = 3;
+    uint64 totalBytes = 4;
+    uint64 bytesOffset = 5;
+    uint64 estimatedBytesPerSecond = 6;
+    uint64 lastHandshakeTimestamp = 7;
+    uint32 lastUpdateResult = 8;
+}
+
+message ErrorResponse {
+    optional Status status = 1;
+}
+
+message CommonAPIGetSystemInfoRequest {
+}
+
+message CommonAPIGetSystemInfoResponse {
+    optional EcuId deviceId = 1;
+    string din = 2;
+    optional FirmwareVersion firmwareVersion = 3;
+    reserved 4;
+    optional SystemUpdate systemUpdate = 5;
+}
+
+message CommonAPISetLocalSiteConfigRequest {}
+
+message CommonAPISetLocalSiteConfigResponse {}
+
+message CommonAPICheckForUpdateRequest {}
+
+message CommonAPICheckForUpdateResponse {}
+
+message CommonAPIClearUpdateRequest {}
+
+message CommonAPIClearUpdateResponse {}
+
+message CommonAPIPerformUpdateRequest {}
+
+message CommonAPIPerformUpdateResponse {}
+
+message CommonAPIFactoryResetRequest {}
+
+message CommonAPIFactoryResetResponse {}
+
+message CommonAPIGetNetworkingStatusRequest {}
+
+message CommonAPIGetNetworkingStatusResponse {
+    optional WifiConfig wifiConfig = 1;
+    optional NetworkInterface wifi = 2;
+    optional NetworkInterface eth = 3;
+    optional NetworkInterface gsm = 4;
+}
+
+message CommonAPIWifiScanRequest {
+    uint32 maxScanDurationS = 1;
+    repeated int32 desiredSecurityTypes = 2;
+    uint32 maximumTotalAps = 3;
+}
+
+message CommonAPIWifiScanResponse {
+    repeated WifiNetwork wifiNetworks = 1;
+}
+
+message CommonAPIConfigureWifiRequest {
+    bool enabled = 1;
+    optional WifiConfig wifiConfig = 2;
+}
+
+message CommonAPIConfigureWifiResponse {
+    optional WifiConfig wifiConfig = 1;
+    optional NetworkInterface wifi = 2;
+}
+
+message CommonAPIConfigureWifiWithEncryptedPasswordRequest {
+    bool enabled = 1;
+    optional WifiConfig wifiConfig = 2;
+    optional EncryptedMessage encryptedPassword = 3;
+}
+
+message CommonAPIConfigureWifiWithEncryptedPasswordResponse {
+    optional WifiConfig wifiConfig = 1;
+    optional NetworkInterface wifi = 2;
+    int32 result = 3;
+}
+
+message CommonAPIDeviceCertRequest {}
+
+message CommonAPIDeviceCertResponse {
+    int32 format = 1;
+    bytes deviceCert = 2;
+}
+
+message AlertLog {
+    fixed64 data = 1;
+}
+
+message AlertMatrix {
+    fixed64 data = 1;
+}
+
+message EnergySiteNetDevice {
+    optional Din din = 1;
+    optional WifiConfig wifiApConfig = 2;
+}
+
+message EnergySiteNetRecentlyAddedDevice {
+    optional Din din = 1;
+    int32 status = 2;
+}
+
+message EnergySiteNetRecentlyRemovedDevice {
+    optional Din din = 1;
+    int32 status = 2;
+}
+
+message EnergySiteNetConfig {
+    repeated EnergySiteNetDevice devices = 1;
+    repeated EnergySiteNetRecentlyAddedDevice recentlyAdded = 2;
+    repeated EnergySiteNetRecentlyRemovedDevice recentlyRemoved = 3;
+}
+
+message EnergySiteNetAPIAddDeviceRequest {
+    EnergySiteNetDevice device = 1;
+}
+
+message EnergySiteNetAPIAddDeviceResponse {
+    EnergySiteNetRecentlyAddedDevice recentlyAdded = 1;
+}
+
+message EnergySiteNetAPIRemoveDeviceRequest {
+    Din din = 1;
+}
+
+message EnergySiteNetAPIRemoveDeviceResponse {
+    EnergySiteNetRecentlyRemovedDevice recentlyRemoved = 1;
+}
+
+message EnergySiteNetAPIGetConfigRequest {}
+
+message EnergySiteNetAPIGetConfigResponse {
+    EnergySiteNetConfig config = 1;
+}
 
 message DeviceVital {
     optional string name = 1;
@@ -29,10 +298,22 @@ message UInt32Value {
     uint32 value = 1;
 }
 
+message Int32Value {
+    int32 value = 1;
+}
+
+message UInt64Value {
+    uint64 value = 1;
+}
+
+message FloatValue {
+    float value = 1;
+}
+
 message ConnectionParameters {
-    optional string ipAddress = 1;
-    optional string serialPort = 2;
-    optional string serialBaud = 3;
+    optional StringValue ipAddress = 1;
+    optional StringValue serialPort = 2;
+    optional int64 serialBaud = 3;
     optional uint32 modbusId = 4;
 }
 
@@ -43,17 +324,19 @@ message TeslaHardwareId {
 }
 
 message TeslaEnergyEcuAttributes {
-    optional int32 ecuType = 1;
+    int32 ecuType = 1;
     optional TeslaHardwareId hardwareId = 2;
+    optional PVInverterAttributes pvInverterAttributes = 3;
+    optional MeterAttributes meterAttributes = 4;
 }
 
 message GeneratorAttributes {
-    optional uint64 nameplateRealPowerW = 1;
-    optional uint64 nameplateApparentPowerVa = 2;
+    uint64 nameplateRealPowerW = 1;
+    uint64 nameplateApparentPowerVa = 2;
 }
 
 message PVInverterAttributes {
-    optional uint64 nameplateRealPowerW = 1;
+    uint64 nameplateRealPowerW = 1;
 }
 
 message MeterAttributes {
@@ -80,7 +363,7 @@ message Device {
     optional google.protobuf.Timestamp firstCommunicationTime = 8;
     optional google.protobuf.Timestamp lastCommunicationTime = 9;
     optional ConnectionParameters connectionParameters = 10;
-    repeated DeviceAttributes deviceAttributes = 11;
+    optional DeviceAttributes deviceAttributes = 11;
 }
 
 message SiteControllerConnectedDevice {
@@ -88,11 +371,154 @@ message SiteControllerConnectedDevice {
 }
 
 message SiteControllerConnectedDeviceWithVitals {
-    repeated SiteControllerConnectedDevice device = 1;
+    SiteControllerConnectedDevice device = 1;
     repeated DeviceVital vitals = 2;
     repeated string alerts = 3;
 }
 
 message DevicesWithVitals {
     repeated SiteControllerConnectedDeviceWithVitals devices = 1;
+}
+
+message SiteControllerConnectedDeviceStore {
+    repeated SiteControllerConnectedDevice siteControllerConnectedDevice = 1;
+}
+
+message BatterySystemCapabilities {
+    uint64 nominalEnergyWh = 1;
+    uint64 nominalPowerW = 2;
+}
+
+message Status {
+    int32 code = 1;
+    string message = 2;
+    repeated google.protobuf.Any details = 3;
+}
+
+message Manifest {
+    string gatewayDin = 1;
+    int32 trigger = 2;
+    google.protobuf.Timestamp generatedTime = 3;
+    repeated Device device = 4;
+    optional BatterySystemCapabilities batterySystemCapabilities = 5;
+    optional StringValue gatewayFirmwareVersion = 6;
+}
+
+message MessageEnvelope {
+    int32 deliveryChannel = 1;
+    Participant sender = 2;
+    Participant recipient = 3;
+    oneof payload {
+        CommonMessages common = 4;
+        TEGMessages teg = 5;
+        EnergySiteNetMessages energysitenet = 6;
+    }
+}
+
+message CommonMessages {
+    int32 errorResponse = 1;
+    oneof message {
+        CommonAPIGetSystemInfoRequest getSystemInfoRequest = 2;
+        CommonAPIGetSystemInfoResponse getSystemInfoResponse = 3;
+        CommonAPISetLocalSiteConfigRequest setLocalSiteConfigRequest = 4;
+        CommonAPISetLocalSiteConfigResponse setLocalSiteConfigResponse = 5;
+        CommonAPIPerformUpdateRequest performUpdateRequest = 6;
+        CommonAPIPerformUpdateResponse performUpdateResponse = 7;
+        CommonAPIFactoryResetRequest factoryResetRequest = 8;
+        CommonAPIFactoryResetResponse factoryResetResponse = 9;
+        CommonAPIWifiScanRequest wifiScanRequest = 10;
+        CommonAPIWifiScanResponse wifiScanResponse = 11;
+        CommonAPIConfigureWifiRequest configureWifiRequest = 12;
+        CommonAPIConfigureWifiResponse configureWifiResponse = 13;
+        CommonAPICheckForUpdateRequest checkForUpdateRequest = 14;
+        CommonAPICheckForUpdateResponse checkForUpdateResponse = 15;
+        CommonAPIClearUpdateRequest clearUpdateRequest = 16;
+        CommonAPIClearUpdateResponse clearUpdateResponse = 17;
+        CommonAPIDeviceCertRequest deviceCertRequest = 18;
+        CommonAPIDeviceCertResponse deviceCertResponse = 19;
+        CommonAPIConfigureWifiWithEncryptedPasswordRequest configureWifiWithEncryptedPasswordRequest = 20;
+        CommonAPIConfigureWifiWithEncryptedPasswordResponse configureWifiWithEncryptedPasswordResponse = 21;
+        CommonAPIGetNetworkingStatusRequest getNetworkingStatusRequest = 22;
+        CommonAPIGetNetworkingStatusResponse getNetworkingStatusResponse = 23;
+    }
+}
+
+message TEGMessages {
+    oneof message {
+        TEGAPIGetConfigRequest getConfigRequest = 1;
+        TEGAPIGetConfigResponse getConfigResponse = 2;
+        TEGAPISetIslandModeRequest setIslandModeRequest = 3;
+        TEGAPISetIslandModeResponse setIslandModeResponse = 4;
+        TEGAPITriggerIslandingBlackStartRequest triggerIslandingBlackStartRequest = 5;
+        TEGAPITriggerIslandingBlackStartResponse triggerIslandingBlackStartResponse = 6;
+        TEGAPITriggerAssetManifestUploadRequest triggerAssetManifestUploadRequest = 7;
+        TEGAPITriggerAssetManifestUploadResponse triggerAssetManifestUploadResponse = 8;
+    }
+}
+
+message TEGSettings {}
+
+message TEGAPIGetConfigRequest {}
+
+message TEGAPIGetConfigResponse {
+    optional TEGSettings settings = 1;
+    optional WifiConfig wifiConfig = 2;
+    optional NetworkInterface wifi = 3;
+    optional NetworkInterface eth = 4;
+    optional NetworkInterface gsm = 5;
+}
+
+message TEGAPITriggerIslandingBlackStartRequest {}
+
+message TEGAPITriggerIslandingBlackStartResponse {}
+
+message TEGAPISetIslandModeRequest {
+    int32 mode = 1;
+    bool force = 2;
+}
+
+message TEGAPISetIslandModeResponse {
+    int32 result = 1;
+}
+
+message TEGAPITriggerAssetManifestUploadRequest {}
+
+message TEGAPITriggerAssetManifestUploadResponse {}
+
+message EnergySiteNetMessages {
+    oneof message {
+        EnergySiteNetAPIAddDeviceRequest addDeviceRequest = 1;
+        EnergySiteNetAPIAddDeviceResponse addDeviceResponse = 2;
+        EnergySiteNetAPIRemoveDeviceRequest removeDeviceRequest = 3;
+        EnergySiteNetAPIRemoveDeviceResponse removeDeviceResponse = 4;
+        EnergySiteNetAPIGetConfigRequest getConfigRequest = 5;
+        EnergySiteNetAPIGetConfigResponse getConfigResponse = 6;
+    }
+}
+
+message LocalAuthAPIRequiredFactorsRequest {}
+
+message LocalAuthAPIRequiredFactorsResponse {
+    bool password = 1;
+    bool presence = 2;
+}
+
+message LocalAuthAPILoginRequest {
+    int32 Participant = 1;
+    string email = 2;
+    WifiPassword password = 3;
+}
+
+message LocalAuthAPILoginResponse {
+    int32 result = 1;
+}
+
+message LocalAuthAPILogoutRequest {}
+
+message LocalAuthAPILogoutResponse {}
+
+message LocalAuthAPICheckAuthStatusRequest {}
+
+message LocalAuthAPICheckAuthStatusResponse {
+    int32 result = 1;
 }
