@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t2"
+BUILD = "t3"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -120,7 +120,7 @@ class handler(BaseHTTPRequestHandler):
             message = "ERROR!"
 
         # Count
-        if message == None:
+        if message is None:
             proxystats['timeout'] = proxystats['timeout'] + 1
             message == "TIMEOUT!"
         elif message == "ERROR!":
