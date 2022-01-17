@@ -1,5 +1,12 @@
 # RELEASE NOTES
 
+## v0.2.0 - Tesla Protocol Buffer Scheme Update
+
+* PyPI 0.2.0
+* Breaking change to Protobuf schemea (PR #2) including:
+* Files `tesla.proto` and `tesla_pb2.py`
+* Impacted output from function `vitals()` and [examples/vitals.py](examples/vitals.py).
+
 ## v0.1.4 - Battery Level Percentage Scaling
 
 * PyPI 0.1.4
@@ -64,8 +71,8 @@ Proxy Stats
 ## v0.1.0 - Vitals Data
 
 * PyPI 0.1.0
-* Added *protobuf* handling to support decoding the Powerwall Vitals data (requires protobuf package)
-* Added function `vitals()` to pull Powerwall Vitals
+* Added *protobuf* handling to support decoding the Powerwall Device Vitals data (requires protobuf package)
+* Added function `vitals()` to pull Powerwall Device Vitals
 * Added function `strings()` to pull data on solar panel strings (Voltage, Current, Power and State)
 
 ```python
