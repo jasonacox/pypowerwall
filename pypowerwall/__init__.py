@@ -41,7 +41,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 2, 0)
+version_tuple = (0, 3, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -249,19 +249,50 @@ class Powerwall(object):
         output = {}
         while(x < num):
             # Each device
-            parent = str(pb.devices[x].device.device.componentParentDin.value)
-            name = str(pb.devices[x].device.device.din.value)
+            device = pb.devices[x].device.device
+            name = str(device.din.value)
             if name not in output.keys():
-                output[name] = {}
-                output[name]['Parent'] = parent
+                output[name] = {}                    
+                # Capture all primary fields
                 try:
-                    output[name]['partNumber'] = str(pb.devices[x].device.device.partNumber.value)
-                    output[name]['serialNumber'] = str(pb.devices[x].device.device.serialNumber.value)
-                    output[name]['manufacturer'] = str(pb.devices[x].device.device.manufacturer.value)
-                    output[name]['firmwareVersion'] = str(pb.devices[x].device.device.firmwareVersion.value)
-                    output[name]['lastCommunicationTime'] = str(pb.devices[x].device.device.lastCommunicationTime.seconds)
+                    if device.HasField("componentParentDin"):
+                        output[name]['componentParentDin'] = str(device.componentParentDin.value)
+                    if device.HasField("partNumber"):
+                        output[name]['partNumber'] = str(device.partNumber.value)
+                    if device.HasField("serialNumber"):
+                        output[name]['serialNumber'] = str(device.serialNumber.value)
+                    if device.HasField("manufacturer"):
+                        output[name]['manufacturer'] = str(device.manufacturer.value)
+                    if device.HasField("firmwareVersion"):
+                        output[name]['firmwareVersion'] = str(device.firmwareVersion.value)
+                    if device.HasField("firstCommunicationTime"):
+                        output[name]['firstCommunicationTime'] = int(device.firstCommunicationTime.seconds)                    
+                    if device.HasField("lastCommunicationTime"):
+                        output[name]['lastCommunicationTime'] = int(device.lastCommunicationTime.seconds)
                 except:
-                    log.debug("Error: Expected fields missing - skipping.")
+                    log.debug("Error: Unable to extract primary fields - skipping.")
+            if device.HasField("deviceAttributes"):
+                # Capture all attributes
+                try:
+                    attributes = device.deviceAttributes
+                    if attributes.HasField("teslaEnergyEcuAttributes"):
+                        output[name]['teslaEnergyEcuAttributes'] = {}
+                        output[name]['teslaEnergyEcuAttributes']['ecuType'] = int(attributes.teslaEnergyEcuAttributes.ecuType)
+                    if attributes.HasField("generatorAttributes"):
+                        output[name]['generatorAttributes'] = {}
+                        output[name]['generatorAttributes']['nameplateRealPowerW'] = int(attributes.generatorAttributes.nameplateRealPowerW)
+                        output[name]['generatorAttributes']['nameplateApparentPowerVa'] = int(attributes.generatorAttributes.nameplateApparentPowerVa)
+                    if attributes.HasField("pvInverterAttributes"):
+                        output[name]['pvInverterAttributes'] = {}
+                        output[name]['pvInverterAttributes']['nameplateRealPowerW'] = int(attributes.pvInverterAttributes.nameplateRealPowerW)
+                    if attributes.HasField("meterAttributes"):
+                        output[name]['meterAttributes'] = {}
+                        output[name]['meterAttributes']['meterLocation'] = []
+                        for location in attributes.meterAttributes.meterLocation:
+                            output[name]['meterAttributes']['meterLocation'].append(int(location))
+                except:
+                    log.debug("Error: Unable to extract deviceAttributes - skipping.")
+
             # Capture all vital data points
             for y in pb.devices[x].vitals:
                 vital_name = str(y.name)
@@ -276,7 +307,15 @@ class Powerwall(object):
                     vital_value = y.floatValue
                 # Record in output dictionary
                 output[name][vital_name] = vital_value
-            x += 1
+            # Capture all alerts into an array
+            alerts = pb.devices[x].alerts
+            if len(alerts) > 0:
+                output[name]['alerts'] = []
+                for a in alerts:
+                    output[name]['alerts'].append(a)
+            # Next device
+            x = x + 1
+        # Return result
         if (jsonformat):
             json_out = json.dumps(output, indent=4, sort_keys=True)
             return json_out

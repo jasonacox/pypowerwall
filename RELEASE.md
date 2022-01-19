@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## v0.3.0 - Device Vitals Alerts and Attributes
+
+* PyPI 0.3.0
+* Added alerts and additional attributes from `vitals()` output.
+* Note: API change to `vitals()` output for dependant systems.
+
 ## v0.2.0 - Tesla Protocol Buffer Scheme Update
 
 * PyPI 0.2.0
