@@ -82,20 +82,27 @@ Output example:
 
 ## Devices and Alerts
 
-Alerts will show up in the device vitals (e.g. /api/device/vitals) under different devices.  Below are a list of alerts that I have seen.  I'm looking for information on what these mean. Please submit an Issue or PR if you have more alerts or definitions we can add.  The device details below are mostly educated guesses.
+Devices and Alerts will show up in the device vitals API (e.g. /api/device/vitals).  Below are a list of the devices and alerts that I have seen.  I'm looking for information on what these mean. Please submit an Issue or PR if you have more alerts or definitions we can add.  The device details below are mostly educated guesses.
 
-| Deice | ECU Type | Description |
+```python
+    import pypowerwall
+
+    # Connect to Powerwall
+    pw = pypowerwall.Powerwall(host,password,email,timezone)
+
+    # Display Device Vitals
+    print("Device Vitals:\n %s\n" % pw.vitals(True))
+```
+
+| Device | ECU Type | Description |
 | --- | --- | --- |
 | STSTSM | 207 | Tesla Energy System |
-| --- | --- | --- |
 | TETHC | 224 | Tesla Energy Total Home Controller - Energy Storage System (ESS) |
 | TEPOD | 226 | Tesla Energy Powerwall |
 | TEPINV | 253 | Tesla Energy Powerwall Inverter |
 | TESYNC | 259 | Tesla Energy Synchronizer |
-| --- | --- | --- |
 | PVAC | 296 | Photovoltaic AC - Solar Inverter |
 | PVS | 297 | Photovoltaic Strings |
-| --- | --- | --- |
 | TESLA | x | Internal Device Attributes |
 | NERUIO | x | Wireless Revenue Grade Solar Meter |
 
