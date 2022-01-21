@@ -178,7 +178,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Component of PVAC
 
 * Alerts
-    * PVS_a018_MciString[A-D] - This indicates a solr string (DC power input into the Powerwall+ solar inverter) that is not connected.
+    * PVS_a018_MciString[A-D] - This indicates a solar string (A, B, C or D) that is not connected.
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
