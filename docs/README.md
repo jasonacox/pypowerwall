@@ -80,3 +80,24 @@ Output example:
 }
 ```
 
+## Devices and Alerts
+
+Alerts will show up in the device vitals (e.g. /api/device/vitals) under different devices.  Below are a list of alerts that I have seen.  I'm looking for information on what these mean. Please submit an Issue or PR if you have more alerts or definitions we can add:
+
+* STSTSM - Root Device for TEG
+    * GridCodesWrite - Unknown
+    * SiteMinPowerLimited - Unknown
+    * FWUpdateSucceeded - Firmware Upgrade Succeeded
+    * PodCommissionTime - Unknown
+
+* TEPINV - Inverter 
+    * PINV_a067_overvoltageNeutralChassis - Unknown
+
+* PVS - Device for Solar Strings
+    * PVS_a018_MciString[A-D] - This indaicates a solr string (DC power input into the Powerwall+ solar inveter) that is not connected. 
+
+* TESYNC - Appears to be device used to keep Powerwall systems in sync with Grid
+    * SYNC_a001_SW_App_Boot - Unknown
+
+
+
