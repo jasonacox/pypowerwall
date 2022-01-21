@@ -8,7 +8,7 @@ Python module to interface with Tesla Energy Gateways for Powerwall and solar po
 
 ## Description
 
-This python module can be used to monitor and control Tesla Energy Gateway Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and
+This python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and
 poll API endpoints on the Gateway.  
 
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
@@ -16,8 +16,8 @@ pyPowerwall will cache the authentication headers and API call responses to help
 * Works with Tesla Energy Gateways - Powerwall and Powerwall+
 * Simple access through easy to use functions using customer credentials
 * Will cache authentication to reduce load on Powerwall Gateway
-* Will cache responses for 10s to limit number of calls to Powerwall Gateway (user definable)
-* Easy access to decoded device vitals (/api/devices/vitals in JSON format)
+* Will cache responses to limit number of calls to Powerwall Gateway (optional/user definable)
+* Easy access to decoded binary device vitals (/api/devices/vitals in JSON format)
 * Provides solar string data for Powerwall+ systems
 
 NOTE: This module requires that you (or your installer) have set up *Customer Login* credentials
@@ -315,6 +315,10 @@ The following APIs are a result of help from other projects as well as my own in
       "cellular_disabled": false
    }
    ```
+* pw.vitals(jsonformat=True)
+
+   * Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/vitals-example.json)
+   * Produces device vitals and alerts. For more information see [here](https://github.com/jasonacox/pypowerwall/tree/main/docs#devices-and-alerts).
 
 ## Credits and References
 

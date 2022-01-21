@@ -94,6 +94,10 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
     print("Device Vitals:\n %s\n" % pw.vitals(True))
 ```
 
+Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/vitals-example.json)
+
+### Devices
+
 | Device | ECU Type | Description |
 | --- | --- | --- |
 | STSTSM | 207 | Tesla Energy System |
@@ -106,7 +110,7 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
 | TESLA | x | Internal Device Attributes |
 | NERUIO | x | Wireless Revenue Grade Solar Meter |
 
-### STSTSM - Tesla Energy System
+#### STSTSM - Tesla Energy System
 
 * Details
     * This appears to be the primary control unit for the Tesla Energy Systems. 
@@ -119,25 +123,27 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * PodCommissionTime - Unknown
 
-## TETHC - Tesla Energy Total Home Controller
+#### TETHC - Tesla Energy Total Home Controller
 
 * Details
-    * Appears to be controller for Powerwall
+    * Appears to be controller for Powerwall/2/+ Systems
     * ECU Type is 224
     * Part 1092170-XX-Y (Powerwall 2)
     * Part 2012170-XX-Y (Powerwall 2.1)
     * Part 3012170-XX-Y (Powerwall +)
 
-## TEPOD - Tesla Energy Powerwall
+#### TEPOD - Tesla Energy Powerwall
 
 * Details
+    * Appears to be the Powerwall battery system (not sure of what POD stands for)
     * ECU Type is 226
     * Part 1081100-XX-Y
     * Component of TETHC
 
-## TEPINV - Tesla Energy Powerwall Inverter
+#### TEPINV - Tesla Energy Powerwall Inverter
 
 * Details
+    * Appears to be the Powerwall Inverter for battery energy storage/release
     * ECU Type is 253
     * Part 1081100-XX-Y
     * Component of TETHC
@@ -145,7 +151,7 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
 * Alerts  
     * PINV_a067_overvoltageNeutralChassis - Unknown
 
-## TESYNC - Tesla Energy Synchronizer
+#### TESYNC - Tesla Energy Synchronizer
 
 * Details
     * Telsa Backup Gateway includes a synchronizer constantly monitoring grid voltage and frequency to relay grid parameters to Tesla Powerwall during Backup to Grid-tied transition.
@@ -156,7 +162,7 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
 * Alerts
     * SYNC_a001_SW_App_Boot - Unknown
 
-## PVAC - Photovoltaic AC - Solar Inverter
+#### PVAC - Photovoltaic AC - Solar Inverter
 
 * Details
     * ECU Type is 296
@@ -164,7 +170,7 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
     * Part 1538000-xx-y - 7.6kW
     * Component of TETHC
 
-## PVS - Photovoltaic Strings
+#### PVS - Photovoltaic Strings
 
 * Details
     * ECU Type is 297
@@ -174,13 +180,13 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
 * Alerts
     * PVS_a018_MciString[A-D] - This indicates a solr string (DC power input into the Powerwall+ solar inverter) that is not connected.
 
-## NEURIO - Wireless Revenue Grade Solar Meter
+#### NEURIO - Wireless Revenue Grade Solar Meter
 
 * Details
     * This is a third party (Generac) meter with Tesla proprietary firmware.  It is generally installed as a wireless meter to report on solar production.  [Link](https://neur.io/)
     * Component of STSTSM
 
-## TESLA - Internal Device Attributes
+#### TESLA - Internal Device Attributes
 
 * Details
     * This is used to describe attributes of the inverter, meters and others

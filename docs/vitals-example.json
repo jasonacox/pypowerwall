@@ -1,0 +1,318 @@
+{
+    "NEURIO--VAHxxxxxxxxxx": {
+        "NEURIO_CT0_InstRealPower": -15.920000076293945,
+        "NEURIO_CT0_Location": "solarRGM",
+        "componentParentDin": "STSTSM--1232100-00-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "1.6.1-Tesla",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "NEURIO",
+        "meterAttributes": {
+            "meterLocation": [
+                5
+            ]
+        },
+        "serialNumber": "VAHxxxxxxxxxx"
+    },
+    "PVAC--1538100-00-F--CNxxxxxxxxxxxx": {
+        "PVAC_Fout": 60.0,
+        "PVAC_GridState": "Grid_Compliant",
+        "PVAC_InvState": "INV_Grid_Connected",
+        "PVAC_Iout": 1.08,
+        "PVAC_LifetimeEnergyPV_Total": 2160960.0,
+        "PVAC_PVCurrent_A": 0.01,
+        "PVAC_PVCurrent_B": 0.0,
+        "PVAC_PVCurrent_C": 0.0,
+        "PVAC_PVCurrent_D": 0.0,
+        "PVAC_PVMeasuredPower_A": 1.0,
+        "PVAC_PVMeasuredPower_B": 0.0,
+        "PVAC_PVMeasuredPower_C": 0.0,
+        "PVAC_PVMeasuredPower_D": 0.0,
+        "PVAC_PVMeasuredVoltage_A": 10.700000000000003,
+        "PVAC_PVMeasuredVoltage_B": 33.1,
+        "PVAC_PVMeasuredVoltage_C": 10.600000000000001,
+        "PVAC_PVMeasuredVoltage_D": 9.8,
+        "PVAC_Pout": 0.0,
+        "PVAC_PvState_A": "PV_Disabled",
+        "PVAC_PvState_B": "PV_Disabled",
+        "PVAC_PvState_C": "PV_Disabled",
+        "PVAC_PvState_D": "PV_Disabled",
+        "PVAC_Qout": -10.0,
+        "PVAC_State": "PVAC_Active",
+        "PVAC_VHvMinusChassisDC": -211.0,
+        "PVAC_VL1Ground": 120.6,
+        "PVAC_VL2Ground": 120.0,
+        "PVAC_Vout": 240.8,
+        "PVI-PowerStatusSetpoint": "on",
+        "componentParentDin": "TETHC--2012170-25-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "1538100-00-F",
+        "serialNumber": "CNxxxxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 296
+        }
+    },
+    "PVS--1538100-00-F--CNxxxxxxxxxxxx": {
+        "PVS_EnableOutput": true,
+        "PVS_SelfTestState": "PVS_SelfTestOff",
+        "PVS_State": "PVS_GridSupporting",
+        "PVS_StringA_Connected": true,
+        "PVS_StringB_Connected": false,
+        "PVS_StringC_Connected": true,
+        "PVS_StringD_Connected": true,
+        "PVS_vLL": 241.5,
+        "alerts": [
+            "PVS_a018_MciStringB"
+        ],
+        "componentParentDin": "PVAC--1538100-00-F--CNxxxxxxxxxxxx",
+        "firmwareVersion": "0eb61d6819b2b3",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "1538100-00-F",
+        "serialNumber": "CNxxxxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 297
+        }
+    },
+    "STSTSM--1232100-00-E--TGxxxxxxxxxxxx": {
+        "STSTSM-Location": "Gateway",
+        "alerts": [
+            "GridCodesWrite",
+            "GridCodesWrite",
+            "PodCommissionTime",
+            "FWUpdateSucceeded"
+        ],
+        "firmwareVersion": "2021-12-14-ge0e7fa81c",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "1232100-00-E",
+        "serialNumber": "TGxxxxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 207
+        }
+    },
+    "TEPINV--1081100-10-U--Txxxxxxxxxx": {
+        "PINV_EnergyCharged": 636930.0,
+        "PINV_EnergyDischarged": 550880.0,
+        "PINV_Fout": 60.010000000000005,
+        "PINV_GridState": "Grid_Compliant",
+        "PINV_HardwareEnableLine": true,
+        "PINV_PllFrequency": 59.998000000000005,
+        "PINV_PllLocked": true,
+        "PINV_Pout": 0.65,
+        "PINV_PowerLimiter": "PWRLIM_No_Power_Limit",
+        "PINV_Qout": -0.01,
+        "PINV_ReadyForGridForming": true,
+        "PINV_State": "PINV_GridFollowing",
+        "PINV_VSplit1": 121.0,
+        "PINV_VSplit2": 120.7,
+        "PINV_Vout": 241.70000000000002,
+        "alerts": [
+            "PINV_a067_overvoltageNeutralChassis"
+        ],
+        "componentParentDin": "TETHC--3012170-05-B--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "1081100-10-U",
+        "serialNumber": "Txxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 253
+        }
+    },
+    "TEPINV--1081100-13-V--Txxxxxxxxxx": {
+        "PINV_EnergyCharged": 667810.0,
+        "PINV_EnergyDischarged": 565680.0,
+        "PINV_Fout": 60.010999999999996,
+        "PINV_GridState": "Grid_Compliant",
+        "PINV_HardwareEnableLine": true,
+        "PINV_PllFrequency": 60.001000000000005,
+        "PINV_PllLocked": true,
+        "PINV_Pout": 0.66,
+        "PINV_PowerLimiter": "PWRLIM_No_Power_Limit",
+        "PINV_Qout": -0.03,
+        "PINV_ReadyForGridForming": true,
+        "PINV_State": "PINV_GridFollowing",
+        "PINV_VSplit1": 120.80000000000001,
+        "PINV_VSplit2": 120.60000000000001,
+        "PINV_Vout": 241.4,
+        "alerts": [
+            "PINV_a067_overvoltageNeutralChassis"
+        ],
+        "componentParentDin": "TETHC--2012170-25-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "1081100-13-V",
+        "serialNumber": "Txxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 253
+        }
+    },
+    "TEPOD--1081100-10-U--Txxxxxxxxxx": {
+        "POD_ActiveHeating": false,
+        "POD_CCVhold": false,
+        "POD_ChargeComplete": false,
+        "POD_ChargeRequest": false,
+        "POD_DischargeComplete": false,
+        "POD_PermanentlyFaulted": false,
+        "POD_PersistentlyFaulted": false,
+        "POD_available_charge_power": 7000.0,
+        "POD_available_dischg_power": 12000.0,
+        "POD_enable_line": true,
+        "POD_nom_energy_remaining": 8790.0,
+        "POD_nom_energy_to_be_charged": 5420.0,
+        "POD_nom_full_pack_energy": 13896.0,
+        "POD_state": "POD_ACTIVE",
+        "componentParentDin": "TETHC--3012170-05-B--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742951,
+        "manufacturer": "TESLA",
+        "partNumber": "1081100-10-U",
+        "serialNumber": "Txxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 226
+        }
+    },
+    "TEPOD--1081100-13-V--Txxxxxxxxxx": {
+        "POD_ActiveHeating": false,
+        "POD_CCVhold": false,
+        "POD_ChargeComplete": false,
+        "POD_ChargeRequest": false,
+        "POD_DischargeComplete": false,
+        "POD_PermanentlyFaulted": false,
+        "POD_PersistentlyFaulted": false,
+        "POD_available_charge_power": 7000.0,
+        "POD_available_dischg_power": 12000.0,
+        "POD_enable_line": true,
+        "POD_nom_energy_remaining": 9011.0,
+        "POD_nom_energy_to_be_charged": 5521.0,
+        "POD_nom_full_pack_energy": 14249.0,
+        "POD_state": "POD_ACTIVE",
+        "componentParentDin": "TETHC--2012170-25-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742951,
+        "manufacturer": "TESLA",
+        "partNumber": "1081100-13-V",
+        "serialNumber": "Txxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 226
+        }
+    },
+    "TESLA--1538100-00-F--CNxxxxxxxxxxxx": {
+        "componentParentDin": "STSTSM--1232100-00-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "pvInverterAttributes": {
+            "nameplateRealPowerW": 7680
+        },
+        "serialNumber": "1538100-00-F--CNxxxxxxxxxxxx"
+    },
+    "TESLA--JBLxxxxxxxxxxx": {
+        "componentParentDin": "STSTSM--1232100-00-E--TGxxxxxxxxxxxx",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "meterAttributes": {
+            "meterLocation": [
+                1
+            ]
+        },
+        "serialNumber": "JBLxxxxxxxxxxx"
+    },
+    "TESYNC--1493315-01-F--JBLxxxxxxxxxxx": {
+        "ISLAND_FreqL1_Load": 60.010000000000005,
+        "ISLAND_FreqL1_Main": 60.010000000000005,
+        "ISLAND_FreqL2_Load": 60.010000000000005,
+        "ISLAND_FreqL2_Main": 60.010000000000005,
+        "ISLAND_FreqL3_Load": 0.0,
+        "ISLAND_FreqL3_Main": 0.0,
+        "ISLAND_GridConnected": true,
+        "ISLAND_GridState": "ISLAND_GridState_Grid_Compliant",
+        "ISLAND_L1L2PhaseDelta": -256.0,
+        "ISLAND_L1L3PhaseDelta": -256.0,
+        "ISLAND_L1MicrogridOk": true,
+        "ISLAND_L2L3PhaseDelta": -256.0,
+        "ISLAND_L2MicrogridOk": true,
+        "ISLAND_L3MicrogridOk": false,
+        "ISLAND_PhaseL1_Main_Load": 0.0,
+        "ISLAND_PhaseL2_Main_Load": 0.0,
+        "ISLAND_PhaseL3_Main_Load": -256.0,
+        "ISLAND_ReadyForSynchronization": true,
+        "ISLAND_VL1N_Load": 121.0,
+        "ISLAND_VL1N_Main": 121.0,
+        "ISLAND_VL2N_Load": 121.5,
+        "ISLAND_VL2N_Main": 121.0,
+        "ISLAND_VL3N_Load": 0.0,
+        "ISLAND_VL3N_Main": 0.0,
+        "METER_X_CTA_I": 6.2305,
+        "METER_X_CTA_InstReactivePower": -205.0,
+        "METER_X_CTA_InstRealPower": 433.0,
+        "METER_X_CTB_I": 3.983,
+        "METER_X_CTB_InstReactivePower": -53.0,
+        "METER_X_CTB_InstRealPower": -457.0,
+        "METER_X_CTC_I": 0.0,
+        "METER_X_CTC_InstReactivePower": 0.0,
+        "METER_X_CTC_InstRealPower": 0.0,
+        "METER_X_LifetimeEnergyExport": 530366.0,
+        "METER_X_LifetimeEnergyImport": 2600971.0,
+        "METER_X_VL1N": 120.37,
+        "METER_X_VL2N": 120.81,
+        "METER_X_VL3N": 0.0,
+        "METER_Y_CTA_I": 0.0,
+        "METER_Y_CTA_InstReactivePower": 0.0,
+        "METER_Y_CTA_InstRealPower": 0.0,
+        "METER_Y_CTB_I": 0.0,
+        "METER_Y_CTB_InstReactivePower": 0.0,
+        "METER_Y_CTB_InstRealPower": 0.0,
+        "METER_Y_CTC_I": 0.0,
+        "METER_Y_CTC_InstReactivePower": 0.0,
+        "METER_Y_CTC_InstRealPower": 0.0,
+        "METER_Y_LifetimeEnergyExport": 0.0,
+        "METER_Y_LifetimeEnergyImport": 2.0,
+        "METER_Y_VL1N": 120.38,
+        "METER_Y_VL2N": 120.81,
+        "METER_Y_VL3N": 0.0,
+        "SYNC_ExternallyPowered": false,
+        "SYNC_SiteSwitchEnabled": false,
+        "alerts": [
+            "SYNC_a001_SW_App_Boot"
+        ],
+        "componentParentDin": "STSTSM--1232100-00-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "1493315-01-F",
+        "serialNumber": "JBLxxxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 259
+        }
+    },
+    "TETHC--2012170-25-E--TGxxxxxxxxxxxx": {
+        "THC_AmbientTemp": 18.60000000000001,
+        "THC_State": "THC_STATE_AUTONOMOUSCONTROL",
+        "componentParentDin": "STSTSM--1232100-00-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "2012170-25-E",
+        "serialNumber": "TGxxxxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 224
+        }
+    },
+    "TETHC--3012170-05-B--TGxxxxxxxxxxxx": {
+        "THC_AmbientTemp": 19.0,
+        "THC_State": "THC_STATE_AUTONOMOUSCONTROL",
+        "componentParentDin": "STSTSM--1232100-00-E--TGxxxxxxxxxxxx",
+        "firmwareVersion": "c58c2df39ec207",
+        "lastCommunicationTime": 1642742952,
+        "manufacturer": "TESLA",
+        "partNumber": "3012170-05-B",
+        "serialNumber": "TGxxxxxxxxxxxx",
+        "teslaEnergyEcuAttributes": {
+            "ecuType": 224
+        }
+    }
+}
