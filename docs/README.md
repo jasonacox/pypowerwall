@@ -105,6 +105,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 | TEPOD | 226 | Tesla Energy Powerwall |
 | TEPINV | 253 | Tesla Energy Powerwall Inverter |
 | TESYNC | 259 | Tesla Energy Synchronizer |
+| TEMSA | 300 | Tesla Backup Switch |
 | PVAC | 296 | Photovoltaic AC - Solar Inverter |
 | PVS | 297 | Photovoltaic Strings |
 | TESLA | x | Internal Device Attributes |
@@ -131,6 +132,9 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Part 1092170-XX-Y (Powerwall 2)
     * Part 2012170-XX-Y (Powerwall 2.1)
     * Part 3012170-XX-Y (Powerwall +)
+
+ * Alerts
+    * THC_w155_Backup_Genealogy_Updated - Unknown
 
 #### TEPOD - Tesla Energy Powerwall
 
@@ -161,6 +165,13 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts
     * SYNC_a001_SW_App_Boot - Unknown
+
+#### TEMSA - Tesla Backup Switch
+
+* Details
+    * Tesla Backup Switch is designed to simplify installation of your Powerwall system. It plugs into your meter socket panel, with the meter plugging directly into the Backup Switch. Within the Backup Switch housing, the contactor controls your system’s connection to the grid. The controller provides energy usage monitoring, providing you with precise, real-time data of your home’s energy consumption.
+    * ECU Type is 300
+    * Part 1624171-XX-E
 
 #### PVAC - Photovoltaic AC - Solar Inverter
 
