@@ -1,8 +1,11 @@
 # pyPowerwall
 
+![License](https://img.shields.io/github/license/jasonacox/pypowerwall)
+![PyPI Downloads](https://img.shields.io/pypi/dm/pypowerwall)
 [![PyPI version](https://badge.fury.io/py/pypowerwall.svg)](https://badge.fury.io/py/pypowerwall)
 [![CI](https://github.com/jasonacox/pypowerwall/actions/workflows/test.yml/badge.svg)](https://github.com/jasonacox/pypowerwall/actions/workflows/test.yml)
 [![simtest](https://github.com/jasonacox/pypowerwall/actions/workflows/simtest.yml/badge.svg)](https://github.com/jasonacox/pypowerwall/actions/workflows/simtest.yml)
+![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)
 
 Python module to interface with Tesla Energy Gateways for Powerwall and solar power data.
 
