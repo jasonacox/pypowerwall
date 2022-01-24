@@ -1,5 +1,7 @@
 # pyPowerwall Simulator
 
+![Docker Pulls](https://img.shields.io/docker/pulls/jasonacox/pwsimulator)
+
 You can use pyPowerwall simulator to mimic the responses from the Powerwall Gateway. This is useful for testing purposes.
 
 ## Quick Start
