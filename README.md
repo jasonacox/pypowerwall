@@ -102,23 +102,24 @@ and call function to poll data.  Here is an example:
     Powerwall(host, password, email, timezone)
 
  Functions 
-    poll(api, json)         # Fetch data from Powerwall API URI (return JSON if True)
-    level()                 # Fetch battery power level percentage
-    power()                 # Fetch power data returned as dictionary
-    site(verbose)           # Fetch site sensor data (W or raw JSON if verbose=True)
-    solar(verbose):         # Fetch solar sensor data (W or raw JSON if verbose=True)
-    battery(verbose):       # Fetch battery sensor data (W or raw JSON if verbose=True)
-    load(verbose)           # Fetch load sensor data (W or raw JSON if verbose=True)
+    poll(api, json)         # Return data from Powerwall API URI (return JSON if True)
+    level()                 # Return battery power level percentage
+    power()                 # Return power data returned as dictionary
+    site(verbose)           # Return site sensor data (W or raw JSON if verbose=True)
+    solar(verbose):         # Return solar sensor data (W or raw JSON if verbose=True)
+    battery(verbose):       # Return battery sensor data (W or raw JSON if verbose=True)
+    load(verbose)           # Return load sensor data (W or raw JSON if verbose=True)
     grid()                  # Alias for site()
     home()                  # Alias for load()
-    vitals(json)            # Fetch Powerwall device vitals
-    strings(json, verbose)  # Fetch solar panel string data
-    din()                   # Display DIN
-    uptime()                # Display uptime - string hms format
-    version()               # Display system version
-    status(param)           # Display status (JSON) or individual param
-    site_name()             # Display site name
-    temps()                 # Display Powerwall Temperatures
+    vitals(json)            # Return Powerwall device vitals
+    strings(json, verbose)  # Return solar panel string data
+    din()                   # Return DIN
+    uptime()                # Return uptime - string hms format
+    version()               # Return system version
+    status(param)           # Return status (JSON) or individual param
+    site_name()             # Return site name
+    temps()                 # Return Powerwall Temperatures
+    alerts()                # Return array of Alerts from devices
 
  Variables
     pwcacheexpire = 5       # Set API cache timeout in seconds

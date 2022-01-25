@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.3.x - Unreleased
+
+* Added `alerts()` function to return an array of device alerts.
+
 ## v0.3.0 - Device Vitals Alerts and Attributes
 
 * PyPI 0.3.0

@@ -16,22 +16,28 @@
     Powerwall(host, password, email, timezone)
 
  Functions 
-    poll(api, jsonformat)           # Fetch data from Powerwall API URI
-    level()                         # Fetch battery power level percentage (float)
-    power()                         # Fetch power data returned as dictionary
-    site(verbose)                   # Fetch site sensor data (W or raw json if verbose=True)
-    solar(verbose):                 # Fetch solar sensor data (W or raw json if verbose=True)
-    battery(verbose):               # Fetch battery sensor data (W or raw json if verbose=True)
-    load(verbose)                   # Fetch load sensor data (W or raw json if verbose=True)
-    vitals(jsonformat)              # Fetch raw Powerwall vitals
-    strings(jsonformat, verbose)    # Fetch solar panel string data
-    din()                           # Display DIN
-    uptime()                        # Display uptime - string hms format
-    version()                       # Display system version
-    status(param)                   # Display status (JSON) or individual param
-    site_name()                     # Display site name
-    temps()                         # Display Powerwall Temperatures
+    poll(api, json)         # Return data from Powerwall API URI (return JSON if True)
+    level()                 # Return battery power level percentage
+    power()                 # Return power data returned as dictionary
+    site(verbose)           # Return site sensor data (W or raw JSON if verbose=True)
+    solar(verbose):         # Return solar sensor data (W or raw JSON if verbose=True)
+    battery(verbose):       # Return battery sensor data (W or raw JSON if verbose=True)
+    load(verbose)           # Return load sensor data (W or raw JSON if verbose=True)
+    grid()                  # Alias for site()
+    home()                  # Alias for load()
+    vitals(json)            # Return Powerwall device vitals
+    strings(json, verbose)  # Return solar panel string data
+    din()                   # Return DIN
+    uptime()                # Return uptime - string hms format
+    version()               # Return system version
+    status(param)           # Return status (JSON) or individual param
+    site_name()             # Return site name
+    temps()                 # Return Powerwall Temperatures
+    alerts()                # Return array of Alerts from devices
 
+ Variables
+    pwcacheexpire = 5       # Set API cache timeout in seconds
+    timeout = 10            # Timeout for HTTPS calls in seconds
 """
 import json, time
 import requests
@@ -41,7 +47,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 3, 0)
+version_tuple = (0, 3, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -480,3 +486,28 @@ class Powerwall(object):
             return json_out
         else:
             return temps
+
+    def alerts(self, jsonformat=False, alertsonly=True):
+        """ 
+        Return Array of Alerts from all Devices 
+        
+        Args: 
+          alertonly  = If True, return only alerts without device name
+          jsonformat = If True, return JSON format otherwise return Python Dictionary
+        """
+        alerts = []
+        devices = self.vitals()
+        for device in devices:
+            if 'alerts' in devices[device]:
+                for i in devices[device]['alerts']:
+                    if(alertsonly):
+                        alerts.append(i)
+                    else:
+                        item = {}
+                        item[device] = i
+                        alerts.append(item)
+        if (jsonformat):
+            json_out = json.dumps(alerts, indent=4, sort_keys=True)
+            return json_out
+        else:
+            return alerts
