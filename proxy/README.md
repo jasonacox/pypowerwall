@@ -52,7 +52,12 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
 1. Build the Docker Container
 
     ```bash
+    # Build for local architecture  
     docker build -t pypowerwall:latest .
+
+    # Build for all architectures - requires Docker experimental 
+    docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t pypowerwall:latest . 
+
     ```
 
 2. Setup the Docker Container to listen on port 8675.
