@@ -123,6 +123,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * SiteMinPowerLimited - Unknown
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * PodCommissionTime - Unknown
+    * BackfeedLimited - Unknown
 
 #### TETHC - Tesla Energy Total Home Controller
 
