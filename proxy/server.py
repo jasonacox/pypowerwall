@@ -75,7 +75,6 @@ class handler(BaseHTTPRequestHandler):
         #return socket.getfqdn(host)
         return host
     def do_GET(self):
-        global proxy
         self.send_response(200)
         message = "ERROR!"
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
