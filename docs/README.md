@@ -124,6 +124,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * PodCommissionTime - Unknown
     * BackfeedLimited - Unknown
+    * RealPowerAvailableLimited - Unknown
 
 #### TETHC - Tesla Energy Total Home Controller
 
@@ -144,6 +145,10 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * ECU Type is 226
     * Part 1081100-XX-Y
     * Component of TETHC
+
+ * Alerts
+    * POD_w109_SW_Self_Test_Request_Not_Serviced - Unknown
+    * POD_w110_SW_EOC - Unknown
 
 #### TEPINV - Tesla Energy Powerwall Inverter
 
