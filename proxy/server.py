@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t3"
+BUILD = "t4"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -31,7 +31,7 @@ ALLOWLIST = [
     '/api/customer/registration', '/api/system_status', '/api/system_status/grid_status',
     '/api/system/update/status', '/api/site_info', '/api/system_status/grid_faults',
     '/api/operation', '/api/site_info/grid_codes', '/api/solars', '/api/solars/brands',
-    '/api/customer', '/api/meters', '/api/installer', 'api/networks', 
+    '/api/customer', '/api/meters', '/api/installer', '/api/networks', 
     '/api/system/networks', '/api/meters/readings'
     ]
 
@@ -112,6 +112,18 @@ class handler(BaseHTTPRequestHandler):
         elif self.path == '/temps':
             # Temps of Powerwalls 
             message = pw.temps(jsonformat=True)
+        elif self.path == '/temps/pw':
+            # Temps of Powerwalls with Simple Keys
+            pwtemp = {}
+            idx = 1
+            temps = pw.temps()
+            for i in temps:
+                key = "PW%d_temp" % idx
+                pwtemp[key] = temps[i]
+                idx = idx + 1
+            message = json.dumps(pwtemp)
+        elif self.path == '/help':
+            message = 'HELP: See https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md'
         elif self.path in ALLOWLIST:
             # Allowed API Call
             message = pw.poll(self.path)
