@@ -84,7 +84,7 @@ Output example:
 
 Firmware version of the Powerwall can be seen with `pw.version()`.
 
-| Firmware Version | Date Seen | Features | pyPowerwall Test |
+| Powerwall Firmware | Date Seen | Features | pyPowerwall |
 | --- | --- | --- | --- |
 | 20.49.0 | Unknown | Unknown | N/A |
 | 21.13.2 | May-2021 | Improved Powerwall behavior during power outage. Push notification when charge level is low during outage. | N/A |
