@@ -80,6 +80,21 @@ Output example:
 }
 ```
 
+## Firmware Version History
+
+Firmware version of the Powerwall can be seen with `pw.version()`.
+
+| Firmware Version | Date Seen | Features | pyPowerwall Test |
+| --- | --- | --- | --- |
+| 20.49.0 | Unknown | Unknown | N/A |
+| 21.13.2 | May-2021 | Improved Powerwall behavior during power outage. Push notification when charge level is low during outage. | N/A |
+| 21.31.2 | Sep-2021 | Unknown | N/A |
+| 21.39.1 7759c368 | Nov-2021 | Unknown | v0.1.0 |
+| 21.44 223a5cd | Unknown | Issue with this firmware is that when the Neurio meter (1.6.1-Tesla) loses connection with gateway (happens frequently) it stops solar generation. | v0.1.0 |
+| 21.44.1 c58c2df3 | 1-Jan-2022 | Neurio converted to RGM only so that when it disconnects it no longer stop solar power generation | v0.2.0 |
+| 22.1 92118b67 | 21-Jan-2022 | Upgrades Neurio Revenue Grade Meter (RGM) to 1.7.1-Tesla addressing Neurio instability and missing RGM data | v0.3.0 |
+| 22.1.1 | 22-Feb-2022 | Unknown | v0.3.0 |
+
 ## Devices and Alerts
 
 Devices and Alerts will show up in the device vitals API (e.g. /api/device/vitals).  Below are a list of the devices and alerts that I have seen.  I'm looking for information on what these mean. Please submit an Issue or PR if you have more alerts or definitions we can add.  The device details below are mostly educated guesses.
@@ -136,7 +151,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Part 3012170-XX-Y (Powerwall +)
 
  * Alerts
-    * THC_w155_Backup_Genealogy_Updated - Unknown
+    * THC_w155_Backup_Genealogy_Updated - Unknown but seen during firmware upgrade.
 
 #### TEPOD - Tesla Energy Powerwall
 
@@ -159,6 +174,8 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Component of TETHC
 
 * Alerts  
+    * PINV_a010_can_gtwMIA - Indicate that gateway/sync is MIA (seen during firmware upgrade reboot)
+    * PINV_a039_can_thcMIA - Seems to indicate that Home Controller is MIA (seen during firmware upgrade reboot)
     * PINV_a067_overvoltageNeutralChassis - Unknown
 
 #### TESYNC - Tesla Energy Synchronizer
