@@ -511,3 +511,21 @@ class Powerwall(object):
             return json_out
         else:
             return alerts
+
+    def get_reserve(self, scale=True):
+        """
+        Get Battery Reserve Percentage  
+        
+        Args:
+            scale    = If True (default) use Tesla's 5% reserve calculation
+            Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
+        """
+        data = self.poll('/api/operation')
+        if data is None:
+            return None
+        data = json.loads(data)
+        percent = float(data['backup_reserve_percent'])
+        if scale:
+            # Get percentage based on Tesla App scale
+            percent = float((percent / 0.95) - (5 / 0.95))
+        return percent
