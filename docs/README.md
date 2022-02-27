@@ -131,7 +131,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 * Details
     * This appears to be the primary control unit for the Tesla Energy Systems. 
     * ECU Type is 207
-    * Part 1232100-XX-Y
+    * Part Numbers: 1232100-XX-Y, 1152100-XX-Y
 
 * Alerts
     * GridCodesWrite - Unknown
@@ -140,6 +140,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PodCommissionTime - Unknown
     * BackfeedLimited - Unknown
     * RealPowerAvailableLimited - Unknown
+    * BatteryFault - Powerwall Failure
 
 #### TETHC - Tesla Energy Total Home Controller
 
@@ -151,6 +152,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Part 3012170-XX-Y (Powerwall +)
 
  * Alerts
+    * THC_w061_CAN_TX_FIFO_Overflow
     * THC_w155_Backup_Genealogy_Updated - Unknown but seen during firmware upgrade.
 
 #### TEPOD - Tesla Energy Powerwall
@@ -162,6 +164,19 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Component of TETHC
 
  * Alerts
+    * POD_f029_HW_CMA_OV
+    * POD_w024_HW_Fault_Asserted
+    * POD_w029_HW_CMA_OV
+    * POD_w031_SW_Brick_OV
+    * POD_w044_SW_Brick_UV_Warning
+    * POD_w045_SW_Brick_OV_Warning
+    * POD_w048_SW_Cell_Voltage_Sens
+    * POD_w058_SW_App_Boot
+    * POD_w063_SW_SOC_Imbalance
+    * POD_w067_SW_Not_Enough_Energy_Precharge
+    * POD_w090_SW_SOC_Imbalance_Limit_Charge
+    * POD_w093_SW_Charge_Request
+    * POD_w105_SW_EOD
     * POD_w109_SW_Self_Test_Request_Not_Serviced - Unknown
     * POD_w110_SW_EOC - Unknown
 
