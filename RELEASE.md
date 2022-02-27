@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## v0.3.x - Unreleased
+## v0.3.1 - Unreleased
 
 * Added `alerts()` function to return an array of device alerts.
+* Added `get_reserve()` function to return battery reserve setting.
 
 ## v0.3.0 - Device Vitals Alerts and Attributes
 
