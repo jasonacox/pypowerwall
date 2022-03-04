@@ -327,8 +327,12 @@ The following APIs are a result of help from other projects as well as my own in
 ## Credits and References
 
 * Tesla Powerwall 2 – Local Gateway API documentation – https://github.com/vloschiavo/powerwall2
-* Python Tesla Powerwall API – https://github.com/jrester/tesla_powerwall
 * TESLA PowerWall 2 Security Shenanigans – https://github.com/hackerschoice/thc-tesla-powerwall2-hack
 * Powerwall Monitoring – https://github.com/mihailescu2m/powerwall_monitor
 * Protocol Buffers (protobuf) Basics - https://developers.google.com/protocol-buffers/docs/pythontutorial
 * Tesla ([tesla.proto](tesla.proto)) Research and Credit to @brianhealey
+
+## Similar Projects
+
+* Python Tesla Powerwall API – https://github.com/jrester/tesla_powerwall
+* GoTesla - go based Tesla API - https://github.com/bmah888/gotesla
