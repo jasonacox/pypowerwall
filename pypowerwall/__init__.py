@@ -68,7 +68,7 @@ def set_debug(toggle=True, color=True):
         log.setLevel(logging.NOTSET)
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles"):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -78,6 +78,8 @@ class Powerwall(object):
             email       = Customer email 
             timezone    = Timezone for location of Powerwall 
                 (see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 
+            pwcacheexpire = Seconds to expire cached entries
+            timeout      = Seconds for the timeout on http requests
 
         """
 
@@ -87,11 +89,11 @@ class Powerwall(object):
         self.password = password
         self.email = email
         self.timezone = timezone
-        self.timeout = 10           # 10s timeout for http calls
-        self.auth = {}              # caches authentication cookies
-        self.pwcachetime = {}       # holds the cached data timestamps for api
-        self.pwcache = {}           # holds the cached data for api
-        self.pwcacheexpire = 5      # seconds to expire cache 
+        self.timeout = timeout                  # 10s timeout for http calls
+        self.auth = {}                          # caches authentication cookies
+        self.pwcachetime = {}                   # holds the cached data timestamps for api
+        self.pwcache = {}                       # holds the cached data for api
+        self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
 
         # Get auth session
         try:
@@ -125,7 +127,7 @@ class Powerwall(object):
         g = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
 
-    def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False):
+    def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False, force=False):
         """
         Query Tesla Energy Gateway Powerwall for API Response
         
@@ -134,19 +136,28 @@ class Powerwall(object):
             jsonformat  = If True, convert JSON response to Python Dictionary, otherwise return text
             raw         = If True, send raw data back (useful for binary responses)
             recursive   = If True, this is a recursive call and do not allow additional recursive calls
+            force       = If True, bypass the cache and make the API call to the gateway
         """
         # Query powerwall and return payload as string
+        
         # First check to see if in cache
         fetch = True
-        if(api == '/api/devices/vitals'):
-            # Force true for vitals call = protobuf binary payload
-            raw = True
         if(api in self.pwcache and api in self.pwcachetime):
             # is it expired?
             if(time.time() - self.pwcachetime[api] < self.pwcacheexpire):
                 payload = self.pwcache[api]
-                fetch = False
+                # We do the override here to ensure that we cache the force entry
+                if force:
+                    fetch = True
+                else:
+                    fetch = False
+
         if(fetch):
+            if(api == '/api/devices/vitals'):
+                # (probably an over-optimization but moved this string compare here so we save a comparison if the data is cached)
+                # Always want the raw output from the vitals call; protobuf binary payload
+                raw = True
+        
             url = "https://%s%s" % (self.host, api)
             try:
                 if(raw):
