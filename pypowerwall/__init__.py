@@ -13,7 +13,7 @@
     * Will cache responses for 5s to limit number of calls to Powerwall Gateway
 
  Classes
-    Powerwall(host, password, email, timezone)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
 
  Functions 
     poll(api, json)         # Return data from Powerwall API URI (return JSON if True)
@@ -154,7 +154,6 @@ class Powerwall(object):
 
         if(fetch):
             if(api == '/api/devices/vitals'):
-                # (probably an over-optimization but moved this string compare here so we save a comparison if the data is cached)
                 # Always want the raw output from the vitals call; protobuf binary payload
                 raw = True
         

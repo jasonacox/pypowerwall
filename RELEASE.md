@@ -4,6 +4,8 @@
 
 * Added `alerts()` function to return an array of device alerts.
 * Added `get_reserve()` function to return battery reserve setting.
+* Expanded class to include settings for cache expiration (`pwcacheexpire`) and connection `timeout`.
+* Added parameter to `poll()` to force call (ignore cache)
 
 ## v0.3.0 - Device Vitals Alerts and Attributes
 
