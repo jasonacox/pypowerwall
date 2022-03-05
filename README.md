@@ -99,10 +99,12 @@ and call function to poll data.  Here is an example:
  set_debug(True, color=True)
 
  Classes
-    Powerwall(host, password, email, timezone)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
 
  Functions 
-    poll(api, json)         # Return data from Powerwall API URI (return JSON if True)
+    poll(api, json, force)  # Return data from Powerwall API URI 
+                            #     - return JSON if True
+                            #     - default use cache, bypass cache and make API to the gateway if force=True
     level()                 # Return battery power level percentage
     power()                 # Return power data returned as dictionary
     site(verbose)           # Return site sensor data (W or raw JSON if verbose=True)
@@ -121,7 +123,11 @@ and call function to poll data.  Here is an example:
     temps()                 # Return Powerwall Temperatures
     alerts()                # Return array of Alerts from devices
 
- Variables
+ Parameters
+    host                    # (required) hostname or IP of the Tesla gateway
+    password                # (required) password for logging into the gateway
+    email                   # (required) email used for logging into the gateway
+    timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
     timeout = 10            # Timeout for HTTPS calls in seconds
 ```
