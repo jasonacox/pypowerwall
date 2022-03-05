@@ -34,6 +34,7 @@
     site_name()             # Return site name
     temps()                 # Return Powerwall Temperatures
     alerts()                # Return array of Alerts from devices
+    grid_status(type)       # Return the status of the power grid (string or JSON or numeric)
 
  Variables
     pwcacheexpire = 5       # Set API cache timeout in seconds
@@ -539,3 +540,42 @@ class Powerwall(object):
             # Get percentage based on Tesla App scale
             percent = float((percent / 0.95) - (5 / 0.95))
         return percent
+
+    def grid_status(self, type="string"):
+        """
+        Get the status of the grid  
+        
+        Args:
+            type == "string" (default) returns: "UP", "DOWN", "SYNCING"
+            type == "JSON" return raw JSON
+            type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
+        """
+        payload = self.poll('/api/system_status/grid_status', jsonformat=True)
+
+        if type == "JSON":
+            return json.dumps(payload, indent=4, sort_keys=True)
+
+        # {"grid_status":"SystemGridConnected"} = grid is up
+        # {"grid_status":"SystemIslandedActive"} = grid is down
+        # {"grid_status":"SystemTransitionToGrid"} = grid is restored but not yet in sync.
+        grid_status = payload['grid_status']
+
+        if ((type is None) or (type == "string")):
+            if grid_status == "SystemGridConnected": 
+                return "UP"
+            if grid_status == "SystemIslandedActive": 
+                return "DOWN"
+            if grid_status == "SystemTransitionToGrid":
+                return "SYNCHING"
+            raise RuntimeError("Invalid return value received from gateway: " + str(payload.grid_status))
+        
+        if type == "numeric":
+            if grid_status == "SystemGridConnected": 
+                return 1
+            if grid_status == "SystemIslandedActive": 
+                return 0
+            if grid_status == "SystemTransitionToGrid":
+                return -1
+            raise RuntimeError("Invalid return value received from gateway: " + str(payload.grid_status))
+        
+        raise ValueError("Invalid value for parameter 'type': " + str(type))

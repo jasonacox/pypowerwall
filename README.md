@@ -102,27 +102,30 @@ and call function to poll data.  Here is an example:
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
 
  Functions 
-    poll(api, json, force)  # Return data from Powerwall API URI 
-                            #     - return JSON if True
-                            #     - default use cache, bypass cache and make API to the gateway if force=True
-    level()                 # Return battery power level percentage
-    power()                 # Return power data returned as dictionary
-    site(verbose)           # Return site sensor data (W or raw JSON if verbose=True)
-    solar(verbose):         # Return solar sensor data (W or raw JSON if verbose=True)
-    battery(verbose):       # Return battery sensor data (W or raw JSON if verbose=True)
-    load(verbose)           # Return load sensor data (W or raw JSON if verbose=True)
-    grid()                  # Alias for site()
-    home()                  # Alias for load()
-    vitals(json)            # Return Powerwall device vitals
-    strings(json, verbose)  # Return solar panel string data
-    din()                   # Return DIN
-    uptime()                # Return uptime - string hms format
-    version()               # Return system version
-    status(param)           # Return status (JSON) or individual param
-    site_name()             # Return site name
-    temps()                 # Return Powerwall Temperatures
-    alerts()                # Return array of Alerts from devices
-
+    poll(api, json, force)    # Return data from Powerwall API URI 
+                              #     - return JSON if True
+                              #     - default use cache, bypass cache and make API to the gateway if force=True
+    level()                   # Return battery power level percentage
+    power()                   # Return power data returned as dictionary
+    site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
+    solar(verbose):           # Return solar sensor data (W or raw JSON if verbose=True)
+    battery(verbose):         # Return battery sensor data (W or raw JSON if verbose=True)
+    load(verbose)             # Return load sensor data (W or raw JSON if verbose=True)
+    grid()                    # Alias for site()
+    home()                    # Alias for load()
+    vitals(json)              # Return Powerwall device vitals
+    strings(json, verbose)    # Return solar panel string data
+    din()                     # Return DIN
+    uptime()                  # Return uptime - string hms format
+    version()                 # Return system version
+    status(param)             # Return status (JSON) or individual param
+    site_name()               # Return site name
+    temps()                   # Return Powerwall Temperatures
+    alerts()                  # Return array of Alerts from devices
+    grid_status(type)         # Return the power grid status
+                              #     - (default) if type == "string" return is a string: "UP", "DOWN", "SYNCING"
+                              #     - if type == "JSON"    return raw JSON
+                              #     - if type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
  Parameters
     host                    # (required) hostname or IP of the Tesla gateway
     password                # (required) password for logging into the gateway
@@ -330,6 +333,14 @@ The following APIs are a result of help from other projects as well as my own in
    * Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/vitals-example.json)
    * Produces device vitals and alerts. For more information see [here](https://github.com/jasonacox/pypowerwall/tree/main/docs#devices-and-alerts).
 
+* pw.grid_status(type="JSON")
+
+   ```json
+   {
+    "grid_services_active": false,
+    "grid_status": "SystemGridConnected"
+   }
+   ```
 ## Credits and References
 
 * Tesla Powerwall 2 – Local Gateway API documentation – https://github.com/vloschiavo/powerwall2
