@@ -550,38 +550,27 @@ class Powerwall(object):
         
         Args:
             type == "string" (default) returns: "UP", "DOWN", "SYNCING"
-            type == "JSON" return raw JSON
+            type == "json" return raw JSON
             type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
         """
+        if type not in ['json', 'string', 'numeric']:
+            raise ValueError("Invalid value for parameter 'type': " + str(type))
+        
         payload = self.poll('/api/system_status/grid_status', jsonformat=True)
 
-        if type == "JSON":
+        if type == "json":
             return json.dumps(payload, indent=4, sort_keys=True)
 
-        # {"grid_status":"SystemGridConnected"} = grid is up
-        # {"grid_status":"SystemIslandedActive"} = grid is down
-        # {"grid_status":"SystemTransitionToGrid"} = grid is restored but not yet in sync.
-        grid_status = payload['grid_status']
-
-        if ((type is None) or (type == "string")):
-            if grid_status == "SystemGridConnected": 
-                return "UP"
-            if grid_status == "SystemIslandedActive": 
-                return "DOWN"
-            if grid_status == "SystemTransitionToGrid":
-                return "SYNCHING"
-            raise RuntimeError("Invalid return value received from gateway: " + str(payload.grid_status))
-        
-        if type == "numeric":
-            if grid_status == "SystemGridConnected": 
-                return 1
-            if grid_status == "SystemIslandedActive": 
-                return 0
-            if grid_status == "SystemTransitionToGrid":
-                return -1
-            raise RuntimeError("Invalid return value received from gateway: " + str(payload.grid_status))
-        
-        raise ValueError("Invalid value for parameter 'type': " + str(type))
+        map = {'SystemGridConnected': {'string': 'UP', 'numeric': 1}, 
+               'SystemIslandedActive': {'string': 'DOWN', 'numeric': 0}, 
+               'SystemTransitionToGrid': {'string': 'SYNCING', 'numeric': -1}}
+        try:
+            grid_status = payload['grid_status']
+            return map[grid_status][type]
+        except:
+            # The payload from powerwall was not valid
+            log.debug("ERROR Invalid return value received from gateway: " + str(payload.grid_status))
+            return None
 
     def system_status(self, jsonformat=False):
         """
@@ -623,7 +612,7 @@ class Powerwall(object):
 
         This function actually makes two API calls. The primary data is harvested from the 
         battery_blocks section in /api/system_status but the temperature data is only 
-        avaialble via /api/devices/vitals
+        available via /api/devices/vitals
 
         Some data points of note are
             battery_blocks - array of batteries
