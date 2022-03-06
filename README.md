@@ -126,6 +126,8 @@ and call function to poll data.  Here is an example:
                               #     - (default) if type == "string" return is a string: "UP", "DOWN", "SYNCING"
                               #     - if type == "JSON"    return raw JSON
                               #     - if type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
+   system_status(json)        # Returns the system status
+   battery_blocks(json)       # Returns battery specific information merged from system_status() and vitals()
  Parameters
     host                    # (required) hostname or IP of the Tesla gateway
     password                # (required) password for logging into the gateway
@@ -339,6 +341,165 @@ The following APIs are a result of help from other projects as well as my own in
    {
     "grid_services_active": false,
     "grid_status": "SystemGridConnected"
+   }
+   ```
+* pw.system_status(jsonformat=True)
+
+   ```json
+   {
+    "all_enable_lines_high": true,
+    "auxiliary_load": 0,
+    "available_blocks": 2,
+    "battery_blocks": [
+        {
+            "OpSeqState": "Active",
+            "PackagePartNumber": "3012170-10-B",
+            "PackageSerialNumber": "TG122xxx", 
+            "Type": "",
+            "backup_ready": true,
+            "charge_power_clamped": false,
+            "disabled_reasons": [],
+            "energy_charged": 21410,
+            "energy_discharged": 950,
+            "f_out": 60.016999999999996,
+            "i_out": 6.800000000000001,
+            "nominal_energy_remaining": 13755,
+            "nominal_full_pack_energy": 13803,
+            "off_grid": false,
+            "p_out": -370,
+            "pinv_grid_state": "Grid_Compliant",
+            "pinv_state": "PINV_GridFollowing",
+            "q_out": -10,
+            "v_out": 243.60000000000002,
+            "version": "b0ec24329c08e4",
+            "vf_mode": false,
+            "wobble_detected": false
+        },
+        {
+            "OpSeqState": "Active",
+            "PackagePartNumber": "3012170-10-B",
+            "PackageSerialNumber": "TG122yyy", 
+            "Type": "",
+            "backup_ready": true,
+            "charge_power_clamped": false,
+            "disabled_reasons": [],
+            "energy_charged": 20460,
+            "energy_discharged": 1640,
+            "f_out": 60.016000000000005,
+            "i_out": 3.6,
+            "nominal_energy_remaining": 13789,
+            "nominal_full_pack_energy": 13816,
+            "off_grid": false,
+            "p_out": -210,
+            "pinv_grid_state": "Grid_Compliant",
+            "pinv_state": "PINV_GridFollowing",
+            "q_out": 20,
+            "v_out": 243.20000000000002,
+            "version": "b0ec24329c08e4",
+            "vf_mode": false,
+            "wobble_detected": false
+        }
+    ],
+    "battery_target_power": -706,
+    "battery_target_reactive_power": 0,
+    "blocks_controlled": 2,
+    "can_reboot": "Yes",
+    "command_source": "Configuration",
+    "expected_energy_remaining": 0,
+    "ffr_power_availability_high": 11658,
+    "ffr_power_availability_low": 194,
+    "grid_faults": [
+        {
+            "alert_is_fault": false,
+            "alert_name": "PINV_a006_vfCheckUnderFrequency",
+            "alert_raw": 432374469357469696,
+            "decoded_alert": "[{\"name\":\"PINV_alertID\",\"value\":\"PINV_a006_vfCheckUnderFrequency\"},{\"name\":\"PINV_alertType\",\"value\":\"Warning\"},{\"name\":\"PINV_a006_frequency\",\"value\":58.97,\"units\":\"Hz\"}]",
+            "ecu_package_part_number": "1081100-22-U",
+            "ecu_package_serial_number": "CN321365D2U06J",
+            "ecu_type": "TEPINV",
+            "git_hash": "b0ec24329c08e4",
+            "site_uid": "1232100-00-E--TG120325001C3D",
+            "timestamp": 1645733844019
+        }
+    ],
+    "grid_services_power": 0,
+    "instantaneous_max_apparent_power": 30690,
+    "instantaneous_max_charge_power": 14000,
+    "instantaneous_max_discharge_power": 20000,
+    "inverter_nominal_usable_power": 11700,
+    "last_toggle_timestamp": "2022-02-22T08:18:22.51778899-07:00",
+    "load_charge_constraint": 0,
+    "max_apparent_power": 10000,
+    "max_charge_power": 10000,
+    "max_discharge_power": 10000,
+    "max_power_energy_remaining": 0,
+    "max_power_energy_to_be_charged": 0,
+    "max_sustained_ramp_rate": 2512500,
+    "nominal_energy_remaining": 27624,
+    "nominal_full_pack_energy": 27668,
+    "primary": true,
+    "score": 10000,
+    "smart_inv_delta_p": 0,
+    "smart_inv_delta_q": 0,
+    "solar_real_power_limit": -1,
+    "system_island_state": "SystemGridConnected"
+   }
+   ```
+
+* pw.battery_blocks(jsonformat=True)
+
+   ```json
+   {  
+      "TG122xxx": {
+         "OpSeqState": "Active",
+         "PackagePartNumber": "3012170-10-B",
+         "THC_State": "THC_STATE_AUTONOMOUSCONTROL",
+         "Type": "",
+         "backup_ready": true,
+         "charge_power_clamped": false,
+         "disabled_reasons": [],
+         "energy_charged": 21020,
+         "energy_discharged": 880,
+         "f_out": 60.016000000000005,
+         "i_out": 2.7,
+         "nominal_energy_remaining": 13812,
+         "nominal_full_pack_energy": 13834,
+         "off_grid": false,
+         "p_out": -160,
+         "pinv_grid_state": "Grid_Compliant",
+         "pinv_state": "PINV_GridFollowing",
+         "q_out": 20,
+         "temperature": 21.799999999999997,
+         "v_out": 243.9,
+         "version": "b0ec24329c08e4",
+         "vf_mode": false,
+         "wobble_detected": false
+      },
+      "TG122yyy": {
+         "OpSeqState": "Active",
+         "PackagePartNumber": "3012170-10-B",
+         "THC_State": "THC_STATE_AUTONOMOUSCONTROL",
+         "Type": "",
+         "backup_ready": true,
+         "charge_power_clamped": false,
+         "disabled_reasons": [],
+         "energy_charged": 21020,
+         "energy_discharged": 880,
+         "f_out": 60.016000000000005,
+         "i_out": 2.7,
+         "nominal_energy_remaining": 13812,
+         "nominal_full_pack_energy": 13834,
+         "off_grid": false,
+         "p_out": -160,
+         "pinv_grid_state": "Grid_Compliant",
+         "pinv_state": "PINV_GridFollowing",
+         "q_out": 20,
+         "temperature": 18.5,
+         "v_out": 243.9,
+         "version": "b0ec24329c08e4",
+         "vf_mode": false,
+         "wobble_detected": false
+      }
    }
    ```
 ## Credits and References

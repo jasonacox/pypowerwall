@@ -35,6 +35,9 @@
     temps()                 # Return Powerwall Temperatures
     alerts()                # Return array of Alerts from devices
     grid_status(type)       # Return the status of the power grid (string or JSON or numeric)
+    system_status(json)     # Returns the data from system_status API call
+    battery_blocks(json)    # Returns the battery data (merged data from system_status() and vitals()) 
+                            #   with the battery as the key
 
  Variables
     pwcacheexpire = 5       # Set API cache timeout in seconds
@@ -579,3 +582,96 @@ class Powerwall(object):
             raise RuntimeError("Invalid return value received from gateway: " + str(payload.grid_status))
         
         raise ValueError("Invalid value for parameter 'type': " + str(type))
+
+    def system_status(self, jsonformat=False):
+        """
+        Get the full system status and basically do a straight passthrough return
+
+        Some data points of note are
+            nominal_full_pack_energy
+            nominal_energy_remaining
+            system_island_state - returns same value as grid_status
+            available_blocks - number of batteries
+            battery_blocks - array of batteries
+                PackageSerialNumber
+                disabled_reasons
+                nominal_energy_remaining
+                nominal_full_pack_energy
+                v_out - voltage out
+                f_out - frequency out
+                energy_charged
+                energy_discharged
+                backup_ready
+            grid_faults - array of faults
+
+        Args:
+            jsonformat = If True, return JSON format otherwise return Python Dictionary
+        """
+        payload = self.poll('/api/system_status', jsonformat=True)
+        if payload is None:
+            return None
+
+        if jsonformat:
+            return json.dumps(payload, indent=4, sort_keys=True)
+        else:
+            return payload
+
+    def battery_blocks(self, jsonformat=False):
+        """
+        Get detailed information about each battery. If you want to get aggregate power information 
+        on all the batteries, use battery() 
+
+        This function actually makes two API calls. The primary data is harvested from the 
+        battery_blocks section in /api/system_status but the temperature data is only 
+        avaialble via /api/devices/vitals
+
+        Some data points of note are
+            battery_blocks - array of batteries
+                disabled_reasons
+                nominal_energy_remaining
+                nominal_full_pack_energy
+                v_out - voltage out
+                f_out - frequency out
+                energy_charged
+                energy_discharged
+                backup_ready
+            grid_faults - array of faults
+
+        Args:
+            jsonformat = If True, return JSON format otherwise return Python Dictionary
+        """
+        system_status = self.system_status()
+        if system_status is None:
+            return None
+
+        devices = self.vitals()
+        if devices is None:
+            return None
+
+        result = {}
+        # copy the info from system_status into result
+        # but change the key to the battery serial number
+        for i in range(system_status['available_blocks']):
+            bat = system_status['battery_blocks'][i]
+            sn = bat['PackageSerialNumber']
+            bat_res = {}
+            for j in bat:
+                if j != 'PackageSerialNumber':
+                    bat_res[j] = bat[j]
+            result[sn] = bat_res
+
+        # now merge in the "interesting" data from vitals
+        # Right now we're just pulling in the temp and state from the TETHC block
+        # There is also info in TPOD and TINV that could be associated with the battery.
+        for device in devices:
+            if device.startswith("TETHC--"):
+                sn = device.split("--")[2]
+                bat_res = {}
+                bat_res['THC_State'] = devices[device]['THC_State']
+                bat_res['temperature'] = devices[device]['THC_AmbientTemp']
+                result[sn].update(bat_res)  
+
+        if jsonformat:
+            return json.dumps(result, indent=4, sort_keys=True)
+        else:
+            return result
