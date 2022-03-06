@@ -335,7 +335,7 @@ The following APIs are a result of help from other projects as well as my own in
    * Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/vitals-example.json)
    * Produces device vitals and alerts. For more information see [here](https://github.com/jasonacox/pypowerwall/tree/main/docs#devices-and-alerts).
 
-* pw.grid_status(type="JSON")
+* pw.grid_status(type="json")
 
    ```json
    {
@@ -509,6 +509,7 @@ The following APIs are a result of help from other projects as well as my own in
 * Powerwall Monitoring – https://github.com/mihailescu2m/powerwall_monitor
 * Protocol Buffers (protobuf) Basics - https://developers.google.com/protocol-buffers/docs/pythontutorial
 * Tesla ([tesla.proto](tesla.proto)) Research and Credit to @brianhealey
+* Status Functions - Thanks to @wcwong for contribution: system_status(), battery_blocks(), grid_status()
 
 ## Similar Projects
 
