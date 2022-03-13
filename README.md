@@ -102,9 +102,7 @@ and call function to poll data.  Here is an example:
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
 
  Functions 
-    poll(api, json, force)    # Return data from Powerwall API URI 
-                              #     - return JSON if True
-                              #     - default use cache, bypass cache and make API to the gateway if force=True
+    poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -113,7 +111,7 @@ and call function to poll data.  Here is an example:
     load(verbose)             # Return load sensor data (W or raw JSON if verbose=True)
     grid()                    # Alias for site()
     home()                    # Alias for load()
-    vitals(json)              # Return Powerwall device vitals
+    vitals(json)              # Return Powerwall device vitals (dict or json if True)
     strings(json, verbose)    # Return solar panel string data
     din()                     # Return DIN
     uptime()                  # Return uptime - string hms format
@@ -122,12 +120,12 @@ and call function to poll data.  Here is an example:
     site_name()               # Return site name
     temps()                   # Return Powerwall Temperatures
     alerts()                  # Return array of Alerts from devices
-    grid_status(type)         # Return the power grid status
-                              #     - (default) if type == "string" return is a string: "UP", "DOWN", "SYNCING"
-                              #     - if type == "JSON"    return raw JSON
-                              #     - if type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
-   system_status(json)        # Returns the system status
-   battery_blocks(json)       # Returns battery specific information merged from system_status() and vitals()
+    system_status(json)       # Returns the system status
+    battery_blocks(json)      # Returns battery specific information merged from system_status() and vitals()
+    grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
+                              #     - "string": "UP", "DOWN", "SYNCING"
+                              #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
+
  Parameters
     host                    # (required) hostname or IP of the Tesla gateway
     password                # (required) password for logging into the gateway

@@ -16,30 +16,35 @@
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
 
  Functions 
-    poll(api, json)         # Return data from Powerwall API URI (return JSON if True)
-    level()                 # Return battery power level percentage
-    power()                 # Return power data returned as dictionary
-    site(verbose)           # Return site sensor data (W or raw JSON if verbose=True)
-    solar(verbose):         # Return solar sensor data (W or raw JSON if verbose=True)
-    battery(verbose):       # Return battery sensor data (W or raw JSON if verbose=True)
-    load(verbose)           # Return load sensor data (W or raw JSON if verbose=True)
-    grid()                  # Alias for site()
-    home()                  # Alias for load()
-    vitals(json)            # Return Powerwall device vitals
-    strings(json, verbose)  # Return solar panel string data
-    din()                   # Return DIN
-    uptime()                # Return uptime - string hms format
-    version()               # Return system version
-    status(param)           # Return status (JSON) or individual param
-    site_name()             # Return site name
-    temps()                 # Return Powerwall Temperatures
-    alerts()                # Return array of Alerts from devices
-    grid_status(type)       # Return the status of the power grid (string or JSON or numeric)
-    system_status(json)     # Returns the data from system_status API call
-    battery_blocks(json)    # Returns the battery data (merged data from system_status() and vitals()) 
-                            #   with the battery as the key
+    poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
+    level()                   # Return battery power level percentage
+    power()                   # Return power data returned as dictionary
+    site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
+    solar(verbose):           # Return solar sensor data (W or raw JSON if verbose=True)
+    battery(verbose):         # Return battery sensor data (W or raw JSON if verbose=True)
+    load(verbose)             # Return load sensor data (W or raw JSON if verbose=True)
+    grid()                    # Alias for site()
+    home()                    # Alias for load()
+    vitals(json)              # Return Powerwall device vitals (dict or json if True)
+    strings(json, verbose)    # Return solar panel string data
+    din()                     # Return DIN
+    uptime()                  # Return uptime - string hms format
+    version()                 # Return system version
+    status(param)             # Return status (JSON) or individual param
+    site_name()               # Return site name
+    temps()                   # Return Powerwall Temperatures
+    alerts()                  # Return array of Alerts from devices
+    system_status(json)       # Returns the system status
+    battery_blocks(json)      # Returns battery specific information merged from system_status() and vitals()
+    grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
+                              #     - "string": "UP", "DOWN", "SYNCING"
+                              #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
 
- Variables
+ Parameters
+    host                    # (required) hostname or IP of the Tesla gateway
+    password                # (required) password for logging into the gateway
+    email                   # (required) email used for logging into the gateway
+    timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
     timeout = 10            # Timeout for HTTPS calls in seconds
 """
@@ -51,7 +56,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 3, 1)
+version_tuple = (0, 4, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 

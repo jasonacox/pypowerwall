@@ -1,16 +1,21 @@
 # RELEASE NOTES
 
-## v0.3.1 - New Functions for Alerts and Status (Unreleased)
+## v0.4.0 - Cache Bypass Option and New Functions
 
+* PyPI 0.4.0
+* Added parameter to `poll()` to force call (ignore cache)
 * Added `alerts()` function to return an array of device alerts.
 * Added `get_reserve()` function to return battery reserve setting.
 * Added `grid_status()` function to return state of grid.
 * Added `system_status()` function to return system status.
 * Added `battery_blocks()` function to return battery specific information.
 * Expanded class to include settings for cache expiration (`pwcacheexpire`) and connection `timeout`.
-* Added parameter to `poll()` to force call (ignore cache)
 
 ```python
+# Force Poll
+pw.poll('/api/system_status/soe',force=True)
+'{"percentage":100}'
+
 # Powerwall Alerts
 pw.alerts()
 ['PodCommissionTime', 'GridCodesWrite', 'GridCodesWrite', 'FWUpdateSucceeded', 'THC_w155_Backup_Genealogy_Updated', 'PINV_a067_overvoltageNeutralChassis', 'THC_w155_Backup_Genealogy_Updated', 'PINV_a067_overvoltageNeutralChassis', 'PVS_a018_MciStringB', 'SYNC_a001_SW_App_Boot']
