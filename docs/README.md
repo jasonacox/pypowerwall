@@ -139,7 +139,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * PodCommissionTime - Unknown
     * BackfeedLimited - Unknown
-    * RealPowerAvailableLimited - Unknown
+    * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
     * BatteryFault - Powerwall Failure
     * ScheduledIslandContactorOpen - Manually Disconnected from Grid
 
