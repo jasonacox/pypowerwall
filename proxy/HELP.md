@@ -2,15 +2,16 @@
 
 Besides providing authentication and payload caching, the Proxy exposes several APIs that aggregating Powerwall data into simple JSON output for convenient processing.  It also provides several read-only pass through Powerwall API calls.
 
-## pyPowerwall Functions
+## pyPowerwall Proxy Functions
 
 * /stats - pyPowerwall Stats
 * /temps - Powerwall Temperatures
-* /csv - Key power data in CSV format (grid, home, solar, battery, batterylevel)
 * /temps/pw - Powerwall Temperatures with Simplified Key (PWx_temp)
+* /csv - Key power data in CSV format (grid, home, solar, battery, batterylevel)
 * /vitals - Powerwall Device Vitals 
 * /strings - Powerwall Inverter String Data
 * /soe - Powerwall Battery Level
+* /freq - Frequency, Current and Voltage from Device Vitals
 
 ## Powerwall Proxy Allowed API Calls
 
