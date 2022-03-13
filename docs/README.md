@@ -141,6 +141,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * BackfeedLimited - Unknown
     * RealPowerAvailableLimited - Unknown
     * BatteryFault - Powerwall Failure
+    * ScheduledIslandContactorOpen - Manually Disconnected from Grid
 
 #### TETHC - Tesla Energy Total Home Controller
 
@@ -203,6 +204,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts
     * SYNC_a001_SW_App_Boot - Unknown
+    * SYNC_a038_DoOpenArguments - Unknown
 
 #### TEMSA - Tesla Backup Switch
 
