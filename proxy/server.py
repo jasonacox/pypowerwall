@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t5"
+BUILD = "t6"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -165,6 +165,28 @@ class handler(BaseHTTPRequestHandler):
                     fcv["METER_Y_CTB_I"] = d['METER_Y_CTB_I']
                     fcv["METER_Y_CTC_I"] = d['METER_Y_CTC_I']
             message = json.dumps(fcv)
+        elif self.path == '/pod':
+            pod = {}
+            idx = 1
+            vitals = pw.vitals()
+            for device in vitals:
+                d = vitals[device]
+                if  device.startswith('TEPOD'):
+                    pod["PW%d_name" % idx] = device
+                    pod["PW%d_POD_ActiveHeating" % idx] = int(d['POD_ActiveHeating'])
+                    pod["PW%d_POD_ChargeComplete" % idx] = int(d['POD_ChargeComplete'])
+                    pod["PW%d_POD_ChargeRequest" % idx] = int(d['POD_ChargeRequest'])
+                    pod["PW%d_POD_DischargeComplete" % idx] = int(d['POD_DischargeComplete'])
+                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(d['POD_PermanentlyFaulted'])
+                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(d['POD_PersistentlyFaulted'])
+                    pod["PW%d_POD_enable_line" % idx] = int(d['POD_enable_line'])
+                    pod["PW%d_POD_available_charge_power" % idx] = d['POD_available_charge_power']
+                    pod["PW%d_POD_available_dischg_power" % idx] = d['POD_available_dischg_power']
+                    pod["PW%d_POD_nom_energy_remaining" % idx] = d['POD_nom_energy_remaining']
+                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = d['POD_nom_energy_to_be_charged']
+                    pod["PW%d_POD_nom_full_pack_energy" % idx] = d['POD_nom_full_pack_energy']
+                    idx = idx + 1
+            message = json.dumps(pod)        
         elif self.path == '/help':
             message = 'HELP: See https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md'
         elif self.path in ALLOWLIST:
