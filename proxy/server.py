@@ -126,7 +126,7 @@ class handler(BaseHTTPRequestHandler):
             # Alerts
             message = pw.alerts(jsonformat=True)
         elif self.path == '/freq':
-            # Frequency, Current and Voltage
+            # Frequency, Current, Voltage and Grid Status
             fcv = {}
             idx = 1
             vitals = pw.vitals()
@@ -164,8 +164,10 @@ class handler(BaseHTTPRequestHandler):
                     fcv["METER_Y_CTA_I"] = d['METER_Y_CTA_I']
                     fcv["METER_Y_CTB_I"] = d['METER_Y_CTB_I']
                     fcv["METER_Y_CTC_I"] = d['METER_Y_CTC_I']
+            fcv["grid_status"] = pw.grid_status(type="numeric")
             message = json.dumps(fcv)
         elif self.path == '/pod':
+            # Battery Data
             pod = {}
             idx = 1
             vitals = pw.vitals()
@@ -186,7 +188,19 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_energy_to_be_charged" % idx] = d['POD_nom_energy_to_be_charged']
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = d['POD_nom_full_pack_energy']
                     idx = idx + 1
+            pod["backup_reserve_percent"] = pw.get_reserve()
             message = json.dumps(pod)        
+        elif self.path == '/version':
+            # Firmware Version
+            v = {}
+            v["version"] = pw.version()
+            val = pw.version().split(" ")[0]
+            while len(val.split('.')) < 3:
+                val = val + ".0"
+            l = [int(x, 10) for x in val.split('.')]
+            l.reverse()
+            v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
+            message = json.dumps(v)
         elif self.path == '/help':
             message = 'HELP: See https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md'
         elif self.path in ALLOWLIST:
