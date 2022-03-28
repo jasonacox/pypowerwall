@@ -60,6 +60,7 @@ if(debugmode == "yes"):
     sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d - DEBUG\n" % (pypowerwall.version, BUILD, PORT))
 else:
     sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d\n" % (pypowerwall.version, BUILD, PORT))
+    sys.stderr.flush()
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
@@ -243,4 +244,5 @@ with ThreadingHTTPServer(('', PORT), handler) as server:
         server.serve_forever()
     except:
         print(' CANCEL \n')
+        sys.stderr.write("pyPowerwall Proxy Stopped\n")
         os._exit(0)
