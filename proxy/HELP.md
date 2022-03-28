@@ -46,6 +46,11 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t7
+
+* Bug Fix: Debug logging continued even when disable.
+* Force exit added for faster termination instead of waiting on connections to drain.
+
 ### Proxy t6
 
 * Added /pod to provide battery state information (e.g. ActiveHeating, ChargeComplete, PermanentlyFaulted) with boolean values as integers (1/0). 
