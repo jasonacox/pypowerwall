@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t6"
+BUILD = "t7"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -58,6 +58,8 @@ proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
     sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d - DEBUG\n" % (pypowerwall.version, BUILD, PORT))
+else:
+    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d\n" % (pypowerwall.version, BUILD, PORT))
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone)
@@ -69,6 +71,14 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     pass
 
 class handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        if debugmode == "yes":
+            sys.stderr.write("%s - - [%s] %s\n" %
+                         (self.address_string(),
+                          self.log_date_time_string(),
+                          format%args))
+        else:
+            pass
     def address_string(self):
         # replace function to avoid lookup delays
         host, port = self.client_address[:2]
@@ -228,8 +238,9 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(bytes(message, "utf8"))
 
-try:
-    with ThreadingHTTPServer(('', PORT), handler) as server:
+with ThreadingHTTPServer(('', PORT), handler) as server:
+    try:
         server.serve_forever()
-except:
-    print(' CANCEL \n')
+    except:
+        print(' CANCEL \n')
+        os._exit(0)
