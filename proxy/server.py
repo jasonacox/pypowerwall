@@ -175,6 +175,24 @@ class handler(BaseHTTPRequestHandler):
                     fcv["METER_Y_CTA_I"] = d['METER_Y_CTA_I']
                     fcv["METER_Y_CTB_I"] = d['METER_Y_CTB_I']
                     fcv["METER_Y_CTC_I"] = d['METER_Y_CTC_I']
+                if device.startswith('TEMSA'):
+                    # This is a Backup Switch
+                    # Sync Freq
+                    fcv["ISLAND_FreqL1_Load"] = d['ISLAND_FreqL1_Load']
+                    fcv["ISLAND_FreqL2_Load"] = d['ISLAND_FreqL2_Load']
+                    fcv["ISLAND_FreqL3_Load"] = d['ISLAND_FreqL3_Load']
+                    fcv["ISLAND_FreqL1_Main"] = d['ISLAND_FreqL1_Main']
+                    fcv["ISLAND_FreqL2_Main"] = d['ISLAND_FreqL2_Main']
+                    fcv["ISLAND_FreqL3_Main"] = d['ISLAND_FreqL3_Main']
+                    # Sync Voltages
+                    fcv["ISLAND_VL1N_Load"] = d['ISLAND_VL1N_Load']
+                    fcv["ISLAND_VL2N_Load"] = d['ISLAND_VL2N_Load']
+                    fcv["ISLAND_VL3N_Load"] = d['ISLAND_VL3N_Load']
+                    fcv["METER_Z_VL1G"] = d["METER_Z_VL1G"]
+                    fcv["METER_Z_VL2G"] = d["METER_Z_VL2G"]
+                    # Sync Current
+                    fcv["METER_Z_CTA_I"] = d['METER_X_CTA_I']
+                    fcv["METER_Z_CTB_I"] = d['METER_X_CTB_I']
             fcv["grid_status"] = pw.grid_status(type="numeric")
             message = json.dumps(fcv)
         elif self.path == '/pod':
