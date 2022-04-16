@@ -46,6 +46,10 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t8
+
+* Backup Switch: Added frequency, current and voltage for Backup Switch device.
+
 ### Proxy t7
 
 * Bug Fix: Debug logging continued even when disable.

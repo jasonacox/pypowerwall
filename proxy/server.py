@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t7"
+BUILD = "t8"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
