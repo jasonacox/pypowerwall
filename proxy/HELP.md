@@ -16,6 +16,7 @@ There are several shortcut API URLs that aggregate or otherwise process Powerwal
 * /freq - Frequency, Current and Voltage from Device Vitals
 * /pod - Battery States and Power Data
 * /version - Powerwall Firmware Version (string and integer representation)
+* /alerts - Summary of Powerwall Alerts from Device Vitals
 
 ## Powerwall Proxy Allowed API Calls
 
