@@ -47,6 +47,10 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t9
+
+* Cleaned up /freq macro to better handle vitals response with missing ISLAND or METER metrics.
+
 ### Proxy t8
 
 * Backup Switch: Added frequency, current and voltage for Backup Switch device.
