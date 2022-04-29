@@ -23,7 +23,7 @@ import time
 import sys
 
 PORT = 8675
-BUILD = "t8"
+BUILD = "t9"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -150,48 +150,11 @@ class handler(BaseHTTPRequestHandler):
                     fcv["PW%d_PINV_VSplit1" % idx] = d['PINV_VSplit1']
                     fcv["PW%d_PINV_VSplit2" % idx] = d['PINV_VSplit2']
                     idx = idx + 1
-                if device.startswith('TESYNC'):
-                    # Sync Freq
-                    fcv["ISLAND_FreqL1_Load"] = d['ISLAND_FreqL1_Load']
-                    fcv["ISLAND_FreqL2_Load"] = d['ISLAND_FreqL2_Load']
-                    fcv["ISLAND_FreqL3_Load"] = d['ISLAND_FreqL3_Load']
-                    fcv["ISLAND_FreqL1_Main"] = d['ISLAND_FreqL1_Main']
-                    fcv["ISLAND_FreqL2_Main"] = d['ISLAND_FreqL2_Main']
-                    fcv["ISLAND_FreqL3_Main"] = d['ISLAND_FreqL3_Main']
-                    # Sync Voltages
-                    fcv["ISLAND_VL1N_Load"] = d['ISLAND_VL1N_Load']
-                    fcv["ISLAND_VL2N_Load"] = d['ISLAND_VL2N_Load']
-                    fcv["ISLAND_VL3N_Load"] = d['ISLAND_VL3N_Load']
-                    fcv["METER_X_VL1N"] = d['METER_X_VL1N']
-                    fcv["METER_X_VL2N"] = d['METER_X_VL2N']
-                    fcv["METER_X_VL3N"] = d['METER_X_VL3N']
-                    fcv["METER_Y_VL1N"] = d['METER_Y_VL1N']
-                    fcv["METER_Y_VL2N"] = d['METER_Y_VL2N']
-                    fcv["METER_Y_VL3N"] = d['METER_Y_VL3N']
-                    # Sync Current
-                    fcv["METER_X_CTA_I"] = d['METER_X_CTA_I']
-                    fcv["METER_X_CTB_I"] = d['METER_X_CTB_I']
-                    fcv["METER_X_CTC_I"] = d['METER_X_CTC_I']
-                    fcv["METER_Y_CTA_I"] = d['METER_Y_CTA_I']
-                    fcv["METER_Y_CTB_I"] = d['METER_Y_CTB_I']
-                    fcv["METER_Y_CTC_I"] = d['METER_Y_CTC_I']
-                if device.startswith('TEMSA'):
-                    # Backup Switch Freq
-                    fcv["ISLAND_FreqL1_Load"] = d['ISLAND_FreqL1_Load']
-                    fcv["ISLAND_FreqL2_Load"] = d['ISLAND_FreqL2_Load']
-                    fcv["ISLAND_FreqL3_Load"] = d['ISLAND_FreqL3_Load']
-                    fcv["ISLAND_FreqL1_Main"] = d['ISLAND_FreqL1_Main']
-                    fcv["ISLAND_FreqL2_Main"] = d['ISLAND_FreqL2_Main']
-                    fcv["ISLAND_FreqL3_Main"] = d['ISLAND_FreqL3_Main']
-                    # Backup Switch Voltages
-                    fcv["ISLAND_VL1N_Load"] = d['ISLAND_VL1N_Load']
-                    fcv["ISLAND_VL2N_Load"] = d['ISLAND_VL2N_Load']
-                    fcv["ISLAND_VL3N_Load"] = d['ISLAND_VL3N_Load']
-                    fcv["METER_Z_VL1G"] = d["METER_Z_VL1G"]
-                    fcv["METER_Z_VL2G"] = d["METER_Z_VL2G"]
-                    # Backup Switch Current
-                    fcv["METER_Z_CTA_I"] = d['METER_Z_CTA_I']
-                    fcv["METER_Z_CTB_I"] = d['METER_Z_CTB_I']
+                if device.startswith('TESYNC') or device.startswith('TEMSA'):
+                    # Island and Meter Metrics from Backup Gateway or Backup Switch
+                    for i in d:
+                        if i.startswith('ISLAND') or i.startswith('METER'):
+                            fcv[i] = d[i]
             fcv["grid_status"] = pw.grid_status(type="numeric")
             message = json.dumps(fcv)
         elif self.path == '/pod':
