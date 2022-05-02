@@ -95,6 +95,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.1 92118b67 | 21-Jan-2022 | Upgrades Neurio Revenue Grade Meter (RGM) to 1.7.1-Tesla addressing Neurio instability and missing RGM data | v0.3.0 | |
 | 22.1.1 | 22-Feb-2022 | Unknown | v0.3.0 | |
 | 22.9.1 | 12-Apr-2022 | Unknown | v0.4.0 | 4.7.1-925 |
+| 22.9.1.1 75c90bda | 2-May-2022 | Unknown | v0.4.0 | 4.8.0-1025 |
 
 ## Devices and Alerts
 
