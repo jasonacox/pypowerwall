@@ -47,6 +47,15 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t11
+
+* Removed memory leak debug function.
+
+### Proxy t10
+
+* Bug Fix - ThreadingHTTPServer daemon_threads related memory leak fix. #13
+* Proxy server memory metrics added to /stats response.
+
 ### Proxy t9
 
 * Cleaned up /freq macro to better handle vitals response with missing ISLAND or METER metrics.

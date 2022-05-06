@@ -24,7 +24,7 @@ import sys
 import resource
 
 PORT = 8675
-BUILD = "t10"
+BUILD = "t11"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -200,11 +200,6 @@ class handler(BaseHTTPRequestHandler):
         elif self.path in ALLOWLIST:
             # Allowed API Call
             message = pw.poll(self.path)
-        elif self.path == '/stop':
-            print(' STOP REQUESTED \n')
-            sys.stderr.write("pyPowerwall Proxy Stop Request\n")
-            sys.stderr.flush()
-            os._exit(0)
         else:
             message = "ERROR!"
 
