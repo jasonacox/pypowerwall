@@ -21,9 +21,10 @@ import os
 import json
 import time
 import sys
+import resource
 
 PORT = 8675
-BUILD = "t9"
+BUILD = "t10"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -69,6 +70,7 @@ pw = pypowerwall.Powerwall(host,password,email,timezone)
 pw.pwcacheexpire = int(cache_expire)
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
     pass
 
 class handler(BaseHTTPRequestHandler):
@@ -112,6 +114,7 @@ class handler(BaseHTTPRequestHandler):
         elif self.path == '/stats':
             # Give Internal Stats
             proxystats['ts'] = int(time.time())
+            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             message = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
@@ -180,7 +183,7 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = d['POD_nom_full_pack_energy']
                     idx = idx + 1
             pod["backup_reserve_percent"] = pw.get_reserve()
-            message = json.dumps(pod)        
+            message = json.dumps(pod) 
         elif self.path == '/version':
             # Firmware Version
             v = {}
@@ -197,6 +200,11 @@ class handler(BaseHTTPRequestHandler):
         elif self.path in ALLOWLIST:
             # Allowed API Call
             message = pw.poll(self.path)
+        elif self.path == '/stop':
+            print(' STOP REQUESTED \n')
+            sys.stderr.write("pyPowerwall Proxy Stop Request\n")
+            sys.stderr.flush()
+            os._exit(0)
         else:
             message = "ERROR!"
 
@@ -224,5 +232,6 @@ with ThreadingHTTPServer(('', PORT), handler) as server:
         server.serve_forever()
     except:
         print(' CANCEL \n')
-        sys.stderr.write("pyPowerwall Proxy Stopped\n")
-        os._exit(0)
+    sys.stderr.write("pyPowerwall Proxy Stopped\n")
+    sys.stderr.flush()
+    os._exit(0)

@@ -137,3 +137,4 @@ localtest.sh
 sandbox/
 .DS_Store
 proxy/testproxy.sh
+proxy/uploadtest.sh
