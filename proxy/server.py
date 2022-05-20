@@ -24,6 +24,9 @@ import sys
 import resource
 import requests
 
+from transform import get_static, inject_js
+web_root = os.path.join(os.path.dirname(__file__), "web")
+
 PORT = 8675
 BUILD = "t11"
 
@@ -212,6 +215,14 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", "AuthCookie={};path=/;SameSite=None;Secure;".format(pw.auth['AuthCookie']))
             self.send_header("Set-Cookie", "UserRecord={};path=/;SameSite=None;Secure;".format(pw.auth['UserRecord']))
 
+            # Serve static assets from web root first, if found.
+            fcontent, ftype = get_static(web_root, self.path)
+            if fcontent:
+                self.send_header('Content-type','{}'.format(ftype))
+                self.end_headers()
+                self.wfile.write(fcontent)
+                return
+
             # Proxy request to Powerwall web server and cache.
             cache_item = web_cache.get(self.path, None)
             if not cache_item:
@@ -230,6 +241,11 @@ class handler(BaseHTTPRequestHandler):
                 web_cache[self.path] = (fcontent, ftype)
             else:
                 fcontent, ftype = cache_item
+
+            # Inject transformations
+            if self.path.split('?')[0] == "/":
+                if os.path.exists(os.path.join(web_root, "customize.js")):
+                    fcontent = bytes(inject_js(fcontent, "customize.js"), 'utf-8')
 
             self.send_header('Content-type','{}'.format(ftype))
             self.end_headers()
