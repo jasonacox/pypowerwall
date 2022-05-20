@@ -22,6 +22,7 @@ import json
 import time
 import sys
 import resource
+import requests
 
 PORT = 8675
 BUILD = "t11"
@@ -33,7 +34,8 @@ ALLOWLIST = [
     '/api/system/update/status', '/api/site_info', '/api/system_status/grid_faults',
     '/api/operation', '/api/site_info/grid_codes', '/api/solars', '/api/solars/brands',
     '/api/customer', '/api/meters', '/api/installer', '/api/networks', 
-    '/api/system/networks', '/api/meters/readings', '/api/synchrometer/ct_voltage_references'
+    '/api/system/networks', '/api/meters/readings', '/api/synchrometer/ct_voltage_references',
+    '/api/troubleshooting/problems'
     ]
 
 # Credentials for your Powerwall - Check for environmental variables 
@@ -69,6 +71,9 @@ pw = pypowerwall.Powerwall(host,password,email,timezone)
 # Set Timeout in Seconds
 pw.pwcacheexpire = int(cache_expire)
 
+# Cached assets from Powerwall web interface passthrough
+web_cache = {}
+
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
     pass
@@ -89,6 +94,7 @@ class handler(BaseHTTPRequestHandler):
         return host
     def do_GET(self):
         self.send_response(200)
+
         message = "ERROR!"
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
@@ -199,9 +205,36 @@ class handler(BaseHTTPRequestHandler):
             message = 'HELP: See https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md'
         elif self.path in ALLOWLIST:
             # Allowed API Call
+            #self.send_header('Content-type','application/json')
             message = pw.poll(self.path)
         else:
-            message = "ERROR!"
+            # Set auth headers required for web application
+            self.send_header("Set-Cookie", "AuthCookie={};path=/;SameSite=None;Secure;".format(pw.auth['AuthCookie']))
+            self.send_header("Set-Cookie", "UserRecord={};path=/;SameSite=None;Secure;".format(pw.auth['UserRecord']))
+
+            # Proxy request to Powerwall web server and cache.
+            cache_item = web_cache.get(self.path, None)
+            if not cache_item:
+                proxy_path = self.path
+                if proxy_path.startswith("/"):
+                    proxy_path = proxy_path[1:]
+                pw_url = "https://{}/{}".format(pw.host, proxy_path)
+                print("INFO: Proxy request: {}".format(pw_url))
+                r = requests.get(
+                    url=pw_url,
+                    cookies=pw.auth,
+                    verify=False,
+                )
+                fcontent = r.content
+                ftype = r.headers['content-type']
+                web_cache[self.path] = (fcontent, ftype)
+            else:
+                fcontent, ftype = cache_item
+
+            self.send_header('Content-type','{}'.format(ftype))
+            self.end_headers()
+            self.wfile.write(fcontent)
+            return
 
         # Count
         if message is None:
