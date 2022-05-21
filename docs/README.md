@@ -135,7 +135,9 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 * Details
     * This appears to be the primary control unit for the Tesla Energy Systems. 
     * ECU Type is 207
-    * Part Numbers: 1232100-XX-Y, 1152100-XX-Y
+    * Part Numbers: 1232100-XX-Y, 1152100-XX-Y, 1118431-xx-y
+    * Tesla Gateway 1 (1118431-xx-y) or Tesla Gateway 2 (1232100-xx-y)
+    * Tesla Backup Switch (1624171-xx-y)
 
 * Alerts
     * GridCodesWrite - Unknown
@@ -215,7 +217,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 * Details
     * Tesla Backup Switch is designed to simplify installation of your Powerwall system. It plugs into your meter socket panel, with the meter plugging directly into the Backup Switch. Within the Backup Switch housing, the contactor controls your system’s connection to the grid. The controller provides energy usage monitoring, providing you with precise, real-time data of your home’s energy consumption.
     * ECU Type is 300
-    * Part 1624171-XX-E
+    * Part 1624171-XX-E - Tesla Backup Switch (1624171-xx-y)
 
 #### PVAC - Photovoltaic AC - Solar Inverter
 
