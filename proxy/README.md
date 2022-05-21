@@ -86,11 +86,9 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
 
 The Proxy will pass authenticated calls through to the Powerwall Web Interface allowing the display of the Power Flow Animation:
 
-[![flow.png](flow.png)](flow.png)
+[![flow.png](https://raw.githubusercontent.com/jasonacox/pypowerwall/main/docs/flow.png)](https://raw.githubusercontent.com/jasonacox/pypowerwall/main/docs/flow.png)
 
-This is available by directly accessing the proxy endpoint, https://localhost:8675 (replace localhost with the address of host running pyPowerwall Proxy).
-
-You can embed this animation within an iFrame. See [web/example.html](web/example.html).
+This is available by directly accessing the proxy endpoint, https://localhost:8675 (replace localhost with the address of host running pyPowerwall Proxy). You can embed this animation within an iFrame. See [web/example.html](web/example.html).
 
 ## HTTPS Support (Experimental)
 
@@ -104,16 +102,12 @@ There are three settings for PW_HTTPS:
 
 ## Troubleshooting Help
 
-Check the logs:
+Check the logs. If you see python errors, make sure you entered your credentials correctly in the `server.py` file.  If you didn't, edit that file and restart docker:
 
 ```bash
 # See the logs
 docker logs pypowerwall
-```
 
-If you see python errors, make sure you entered your credentials correctly in the `server.py` file.  If you didn't, edit that file and restart docker:
-
-```bash
 # Stop the server
 docker stop pypowerwall
 
