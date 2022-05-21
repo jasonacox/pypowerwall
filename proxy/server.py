@@ -28,7 +28,7 @@ from transform import get_static, inject_js
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
 PORT = 8675
-BUILD = "t11"
+BUILD = "t12-beta"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -97,8 +97,9 @@ class handler(BaseHTTPRequestHandler):
         return host
     def do_GET(self):
         self.send_response(200)
-
         message = "ERROR!"
+        contenttype = 'application/json'
+
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
             message = pw.poll('/api/meters/aggregates')
@@ -107,6 +108,7 @@ class handler(BaseHTTPRequestHandler):
             message = pw.poll('/api/system_status/soe')
         elif self.path == '/csv':
             # Grid,Home,Solar,Battery,Level - CSV
+            contenttype = 'text/plain; charset=utf-8'
             batterylevel = pw.level()
             grid = pw.grid()
             solar = pw.solar()
@@ -205,10 +207,10 @@ class handler(BaseHTTPRequestHandler):
             v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
             message = json.dumps(v)
         elif self.path == '/help':
+            contenttype = 'text/plain; charset=utf-8'
             message = 'HELP: See https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md'
         elif self.path in ALLOWLIST:
             # Allowed API Call
-            #self.send_header('Content-type','application/json')
             message = pw.poll(self.path)
         else:
             # Set auth headers required for web application
@@ -266,7 +268,7 @@ class handler(BaseHTTPRequestHandler):
             else:
                 proxystats['uri'][self.path] = 1
         # Send headers
-        self.send_header('Content-type','text/plain; charset=utf-8')
+        self.send_header('Content-type',contenttype)
         self.send_header('Content-Length', str(len(message)))
         self.end_headers()
         self.wfile.write(bytes(message, "utf8"))
