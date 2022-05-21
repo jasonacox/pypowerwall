@@ -23,12 +23,11 @@ import time
 import sys
 import resource
 import requests
-
+import ssl
 from transform import get_static, inject_js
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
-PORT = 8675
-BUILD = "t12-beta.1"
+BUILD = "t12-beta.2"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -43,12 +42,14 @@ ALLOWLIST = [
 
 # Credentials for your Powerwall - Check for environmental variables 
 #    and always use those if available (required for Docker)
+PORT = int(os.getenv("PW_PORT", "8675"))
 password = os.getenv("PW_PASSWORD", "password")
 email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "hostname")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
+https_mode = os.getenv("PW_HTTPS", "no")
 
 # Global Stats
 proxystats = {}
@@ -61,11 +62,20 @@ proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
 proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 
+if(https_mode == "yes"):
+    cookiesuffix = "path=/;SameSite=None;Secure;"
+    httptype = "HTTPS"
+else:
+    cookiesuffix = ""
+    httptype = "HTTP"
+
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
-    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d - DEBUG\n" % (pypowerwall.version, BUILD, PORT))
+    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - %s Port %d - DEBUG\n" % 
+        (pypowerwall.version, BUILD, httptype, PORT))
 else:
-    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - Port %d\n" % (pypowerwall.version, BUILD, PORT))
+    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - %s Port %d\n" % 
+        (pypowerwall.version, BUILD, httptype, PORT))
     sys.stderr.flush()
 
 # Connect to Powerwall
@@ -214,8 +224,8 @@ class handler(BaseHTTPRequestHandler):
             message = pw.poll(self.path)
         else:
             # Set auth headers required for web application
-            self.send_header("Set-Cookie", "AuthCookie={};".format(pw.auth['AuthCookie']))
-            self.send_header("Set-Cookie", "UserRecord={};".format(pw.auth['UserRecord']))
+            self.send_header("Set-Cookie", "AuthCookie={};{}".format(pw.auth['AuthCookie'], cookiesuffix))
+            self.send_header("Set-Cookie", "UserRecord={};{}".format(pw.auth['UserRecord'], cookiesuffix))
 
             # Serve static assets from web root first, if found.
             fcontent, ftype = get_static(web_root, self.path)
@@ -276,6 +286,12 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(bytes(message, "utf8"))
 
 with ThreadingHTTPServer(('', PORT), handler) as server:
+    if(https_mode == "yes"):
+        # Activate HTTPS
+        server.socket = ssl.wrap_socket (server.socket, certfile='localhost.pem', 
+            server_side=True, ssl_version=ssl.PROTOCOL_TLSv1_2, ca_certs=None, 
+            do_handshake_on_connect=True)
+
     try:
         server.serve_forever()
     except:

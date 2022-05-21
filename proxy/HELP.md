@@ -47,6 +47,25 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t12 beta
+
+* Added ability to proxy Powerwall web interface for system animation (by @danisla). #14
+* Added optional HTTPS support for iframe compatibility via `PW_HTTPS` environment variable:
+
+    ```bash
+    # Turn on experimental HTTPS mode
+    export PW_PORT="8676"
+    export PW_PASSWORD="password"
+    export PW_EMAIL="name@example.com"
+    export PW_HOST="10.0.1.73"
+    export PW_TIMEZONE="America/Los_Angeles"
+    export PW_CACHE_EXPIRE="5"
+    export PW_DEBUG="no"
+    export PW_HTTPS="yes"
+
+    python3 server.py
+    ```
+
 ### Proxy t11
 
 * Removed memory leak debug function.

@@ -16,12 +16,14 @@ Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/p
     docker run \
     -d \
     -p 8675:8675 \
+    -e PW_PORT='8675' \
     -e PW_PASSWORD='password' \
     -e PW_EMAIL='email@example.com' \
     -e PW_HOST='localhost' \
     -e PW_TIMEZONE='America/Los_Angeles' \
     -e PW_CACHE_EXPIRE='5' \
     -e PW_DEBUG='no' \
+    -e PW_HTTPS='no' \
     --name pypowerwall \
     --restart unless-stopped \
     jasonacox/pypowerwall
@@ -78,6 +80,8 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
     curl -i http://localhost:8675/aggregates
     ```
 
+    Browse to http://localhost:8675/ to see Powerwall web interface.
+
 ## Troubleshooting Help
 
 Check the logs: 
@@ -96,3 +100,7 @@ docker stop pypowerwall
 # Start the server
 docker start pypowerwall
 ```
+
+## HTTP Support (Experimental)
+
+The Proxy now supports https protocol using the optional environmental variable `PW_HTTPS`. This is useful for placing data in iframes, like the web based animation available via the Powerwall portal (https://localhost:8675/).  Currently the proxy only support http or https, not both at the same time but you can launch two separate instances (or containers) using different ports.
