@@ -97,7 +97,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.1.2 34013a3f | N/A | Unknown | N/A | |
 | 22.9.1 | 12-Apr-2022 | Unknown | v0.4.0 | 4.7.1-925 |
 | 22.9.1.1 75c90bda | 2-May-2022 | Unknown | v0.4.0 | 4.8.0-1025 |
-| 22.9.2 a54352e6 | 2-May-2022 | Unknown | v0.4.0 | N/A |
+| 22.9.2 a54352e6 | 2-May-2022 | Unknown | v0.4.0 Proxy t11 | 4.8.0-1025 |
 
 ## Devices and Alerts
 
