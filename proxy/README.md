@@ -82,9 +82,29 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
 
     Browse to http://localhost:8675/ to see Powerwall web interface.
 
+## Power Flow Animation - Passthrough
+
+The Proxy will pass authenticated calls through to the Powerwall Web Interface allowing the display of the Power Flow Animation:
+
+[![flow.png](flow.png)](flow.png)
+
+This is available by directly accessing the proxy endpoint, https://localhost:8675 (replace localhost with the address of host running pyPowerwall Proxy).
+
+You can embed this animation within an iFrame. See [web/example.html](web/example.html).
+
+## HTTPS Support (Experimental)
+
+The Proxy now supports https protocol using the optional environmental variable `PW_HTTPS`. This is useful for placing data in secured iFrame, including the power flow animation available via the Powerwall portal (https://localhost:8675/).
+
+There are three settings for PW_HTTPS:
+
+* PW_HTTPS='no' - This is default - run in HTTP mode only.
+* PW_HTTPS='http' - Run in HTTP mode but simulate HTTPS when behind https proxy.
+* PW_HTTPS='yes' - Run in HTTPS mode using self-signed certificate.
+
 ## Troubleshooting Help
 
-Check the logs: 
+Check the logs:
 
 ```bash
 # See the logs
@@ -101,6 +121,7 @@ docker stop pypowerwall
 docker start pypowerwall
 ```
 
-## HTTPS Support (Experimental)
+Content does not render in iFrame or prompts you for a login:
 
-The Proxy now supports https protocol using the optional environmental variable `PW_HTTPS`. This is useful for placing data in iframes, like the web based animation available via the Powerwall portal (https://localhost:8675/).  Currently the proxy only support http or https, not both at the same time but you can launch two separate instances (or containers) using different ports.
+* Browser may be set to never accept third party cookies. The web app requires cookies and in an iFrame it will look like a third party, [see here](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB#security)).
+* iFrame doesn't render.  Make sure the browser is not running in incognito mode.  Try other browsers.
