@@ -1,9 +1,13 @@
 'use strict'
 
 // Clear IndexedDB to prevent auth hangup in the proxied Powerwall web app.
-window.indexedDB.databases().then((dbs) => {
-    dbs.forEach(db => { window.indexedDB.deleteDatabase(db.name) });
-});
+try {
+    window.indexedDB.databases().then((dbs) => {
+        dbs.forEach(db => { window.indexedDB.deleteDatabase(db.name) });
+    });
+} catch (error) {
+    document.write("Browser blocking indexedDB - Turn off incognito mode.");
+}
 
 function injectScriptAndUse() {
     return new Promise((resolve, reject) => {
