@@ -28,7 +28,7 @@ from transform import get_static, inject_js
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
 PORT = 8675
-BUILD = "t12-beta"
+BUILD = "t12-beta.1"
 
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
@@ -214,8 +214,8 @@ class handler(BaseHTTPRequestHandler):
             message = pw.poll(self.path)
         else:
             # Set auth headers required for web application
-            self.send_header("Set-Cookie", "AuthCookie={};path=/;SameSite=None;Secure;".format(pw.auth['AuthCookie']))
-            self.send_header("Set-Cookie", "UserRecord={};path=/;SameSite=None;Secure;".format(pw.auth['UserRecord']))
+            self.send_header("Set-Cookie", "AuthCookie={};".format(pw.auth['AuthCookie']))
+            self.send_header("Set-Cookie", "UserRecord={};".format(pw.auth['UserRecord']))
 
             # Serve static assets from web root first, if found.
             fcontent, ftype = get_static(web_root, self.path)
@@ -237,6 +237,8 @@ class handler(BaseHTTPRequestHandler):
                     url=pw_url,
                     cookies=pw.auth,
                     verify=False,
+                    stream=True,
+                    timeout=pw.timeout
                 )
                 fcontent = r.content
                 ftype = r.headers['content-type']
