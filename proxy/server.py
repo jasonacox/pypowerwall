@@ -25,10 +25,8 @@ import resource
 import requests
 import ssl
 from transform import get_static, inject_js
-web_root = os.path.join(os.path.dirname(__file__), "web")
 
-BUILD = "t12-beta.2"
-
+BUILD = "t12-beta.5"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -39,10 +37,10 @@ ALLOWLIST = [
     '/api/system/networks', '/api/meters/readings', '/api/synchrometer/ct_voltage_references',
     '/api/troubleshooting/problems'
     ]
+web_root = os.path.join(os.path.dirname(__file__), "web")
 
-# Credentials for your Powerwall - Check for environmental variables 
+# Configuration for Proxy - Check for environmental variables 
 #    and always use those if available (required for Docker)
-PORT = int(os.getenv("PW_PORT", "8675"))
 password = os.getenv("PW_PASSWORD", "password")
 email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "hostname")
@@ -50,6 +48,7 @@ timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 https_mode = os.getenv("PW_HTTPS", "no")
+port = int(os.getenv("PW_PORT", "8675"))
 
 # Global Stats
 proxystats = {}
@@ -62,20 +61,26 @@ proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
 proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 
-if(https_mode == "yes"):
+if https_mode == "yes":
+    # run https mode with self-signed cert
     cookiesuffix = "path=/;SameSite=None;Secure;"
     httptype = "HTTPS"
+elif https_mode == "http":
+    # run http mode but simulate https for proxy behind https proxy
+    cookiesuffix = "path=/;SameSite=None;Secure;"
+    httptype = "HTTP"
 else:
-    cookiesuffix = ""
+    # run in http mode
+    cookiesuffix = "path=/;"
     httptype = "HTTP"
 
 if(debugmode == "yes"):
     pypowerwall.set_debug(True)
     sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - %s Port %d - DEBUG\n" % 
-        (pypowerwall.version, BUILD, httptype, PORT))
+        (pypowerwall.version, BUILD, httptype, port))
 else:
     sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - %s Port %d\n" % 
-        (pypowerwall.version, BUILD, httptype, PORT))
+        (pypowerwall.version, BUILD, httptype, port))
     sys.stderr.flush()
 
 # Connect to Powerwall
@@ -102,8 +107,7 @@ class handler(BaseHTTPRequestHandler):
             pass
     def address_string(self):
         # replace function to avoid lookup delays
-        host, port = self.client_address[:2]
-        #return socket.getfqdn(host)
+        host, hostport = self.client_address[:2]
         return host
     def do_GET(self):
         self.send_response(200)
@@ -269,26 +273,28 @@ class handler(BaseHTTPRequestHandler):
         # Count
         if message is None:
             proxystats['timeout'] = proxystats['timeout'] + 1
-            message == "TIMEOUT!"
+            message = "TIMEOUT!"
         elif message == "ERROR!":
             proxystats['errors'] = proxystats['errors'] + 1
-            message == "ERROR!"
+            message = "ERROR!"
         else:
             proxystats['gets'] = proxystats['gets'] + 1
             if self.path in proxystats['uri']:
                 proxystats['uri'][self.path] = proxystats['uri'][self.path] + 1
             else:
                 proxystats['uri'][self.path] = 1
-        # Send headers
+                
+        # Send headers and payload
         self.send_header('Content-type',contenttype)
         self.send_header('Content-Length', str(len(message)))
         self.end_headers()
         self.wfile.write(bytes(message, "utf8"))
 
-with ThreadingHTTPServer(('', PORT), handler) as server:
+with ThreadingHTTPServer(('', port), handler) as server:
     if(https_mode == "yes"):
         # Activate HTTPS
-        server.socket = ssl.wrap_socket (server.socket, certfile='localhost.pem', 
+        server.socket = ssl.wrap_socket (server.socket, 
+            certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'), 
             server_side=True, ssl_version=ssl.PROTOCOL_TLSv1_2, ca_certs=None, 
             do_handshake_on_connect=True)
 
