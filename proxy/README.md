@@ -101,6 +101,6 @@ docker stop pypowerwall
 docker start pypowerwall
 ```
 
-## HTTP Support (Experimental)
+## HTTPS Support (Experimental)
 
 The Proxy now supports https protocol using the optional environmental variable `PW_HTTPS`. This is useful for placing data in iframes, like the web based animation available via the Powerwall portal (https://localhost:8675/).  Currently the proxy only support http or https, not both at the same time but you can launch two separate instances (or containers) using different ports.
