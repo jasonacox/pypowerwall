@@ -26,7 +26,7 @@ import requests
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t12"
+BUILD = "t13"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -49,6 +49,7 @@ debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
 https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
+style = os.getenv("PW_STYLE", "clear") + ".js"
 
 # Global Stats
 proxystats = {}
@@ -262,8 +263,8 @@ class handler(BaseHTTPRequestHandler):
 
             # Inject transformations
             if self.path.split('?')[0] == "/":
-                if os.path.exists(os.path.join(web_root, "customize.js")):
-                    fcontent = bytes(inject_js(fcontent, "customize.js"), 'utf-8')
+                if os.path.exists(os.path.join(web_root, style)):
+                    fcontent = bytes(inject_js(fcontent, style), 'utf-8')
 
             self.send_header('Content-type','{}'.format(ftype))
             self.end_headers()

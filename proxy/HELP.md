@@ -48,9 +48,17 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t13
+
+* Added ability to change the style of the power flow animation background color: `clear` (default), `black`, `white`, `grafana` gray, and `dakboard` black.  Set using `PW_STYLE` environment variable:
+
+    ```bash
+    export PW_STYLE="clear"
+    ```
+
 ### Proxy t12
 
-* Added ability to proxy Powerwall web interface for system animation (by @danisla). #14
+* Added ability to proxy Powerwall web interface for power flow animation (by @danisla). #14
 * Added optional HTTPS support for iframe compatibility via `PW_HTTPS` environment variable:
 
     ```bash
