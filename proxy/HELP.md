@@ -48,7 +48,7 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
-### Proxy t12 beta
+### Proxy t12
 
 * Added ability to proxy Powerwall web interface for system animation (by @danisla). #14
 * Added optional HTTPS support for iframe compatibility via `PW_HTTPS` environment variable:
