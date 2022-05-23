@@ -73,6 +73,10 @@ function formatPowerwallForDakboard() {
         "position": "fixed",
     });
 
+    $('.app').css({
+        "overflow-y": "hidden",
+    });
+
     // Set colors
     $('body').css({
         "background-color": "black",
