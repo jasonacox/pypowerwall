@@ -48,6 +48,10 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t14
+
+* Bug fix to remove scrollbars from web view (see https://github.com/jasonacox/pypowerwall/pull/15 and https://github.com/jasonacox/Powerwall-Dashboard/issues/29) thanks to @danisla.
+
 ### Proxy t13
 
 * Added ability to change the style of the power flow animation background color: `clear` (default), `black`, `white`, `grafana` gray, and `dakboard` black.  Set using `PW_STYLE` environment variable:
