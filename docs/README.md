@@ -148,6 +148,8 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
     * BatteryFault - Powerwall Failure
     * ScheduledIslandContactorOpen - Manually Disconnected from Grid
+    * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
+    * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid
 
 #### TETHC - Tesla Energy Total Home Controller
 
