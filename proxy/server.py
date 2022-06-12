@@ -26,7 +26,7 @@ import requests
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t14"
+BUILD = "t15"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -118,9 +118,13 @@ class handler(BaseHTTPRequestHandler):
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
             message = pw.poll('/api/meters/aggregates')
-        elif self.path == '/soe' or self.path == '/api/system_status/soe':
+        elif self.path == '/soe':
             # Battery Level - JSON
             message = pw.poll('/api/system_status/soe')
+        elif self.path == '/api/system_status/soe':
+            # Force 95% Scale
+            level = pw.level(scale=True)
+            message = json.dumps({"percentage":level})
         elif self.path == '/csv':
             # Grid,Home,Solar,Battery,Level - CSV
             contenttype = 'text/plain; charset=utf-8'

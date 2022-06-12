@@ -48,6 +48,10 @@ Pass-through calls to Powerwall APIs.
 
 ## Release Notes
 
+### Proxy t15
+
+* Breaking update to /api/system_status/soe endpoint that now provides the 95% scaled values.  This was important to make sure the Power Flow animation matches the Tesla App.  The /soe shortcut URL will continue to provide actual battery level (unscaled). See Issue https://github.com/jasonacox/Powerwall-Dashboard/issues/37
+
 ### Proxy t14
 
 * Bug fix to remove scrollbars from web view (see https://github.com/jasonacox/pypowerwall/pull/15 and https://github.com/jasonacox/Powerwall-Dashboard/issues/29) thanks to @danisla.
