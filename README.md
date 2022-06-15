@@ -655,6 +655,9 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Part 1538000-xx-y - 7.6kW
     * Component of TETHC
 
+* Alerts
+    * PVAC_a014_PVS_disabled_relay - Happens during solar startup where PVS shows PVS_SelfTesting, PVS_SelfTestMci.
+
 #### PVS - Photovoltaic Strings
 
 * Details
