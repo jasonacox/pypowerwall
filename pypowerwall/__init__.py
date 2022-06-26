@@ -80,6 +80,9 @@ def set_debug(toggle=True, color=True):
 class LoginError(Exception):
     pass
 
+class ConnectionError(Exception):
+    pass
+
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10):
         """
@@ -130,9 +133,9 @@ class Powerwall(object):
             r = requests.post(url,data = pload, verify=False, timeout=self.timeout)
             log.debug('login - %s' % r.text)
         except:
-            err = "Unable to reach Powerwall at https://%s" % self.host
+            err = "Unable to connect to Powerwall at https://%s" % self.host
             log.debug(err)
-            raise LoginError(err)
+            raise ConnectionError(err)
 
         # Save Auth cookies
         try:
