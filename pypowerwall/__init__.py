@@ -56,7 +56,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 4, 0)
+version_tuple = (0, 5, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -75,6 +75,9 @@ def set_debug(toggle=True, color=True):
         log.debug("%s [%s]\n" % (__name__, __version__))
     else:
         log.setLevel(logging.NOTSET)
+
+class LoginError(Exception):
+    pass
 
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10):
@@ -104,13 +107,17 @@ class Powerwall(object):
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
 
-        # Get auth session
+        # Load cached auth session
         try:
             f = open(self.cachefile, "r")
             self.auth = json.load(f)
             log.debug('loaded auth from cache file %s' % self.cachefile)
         except:
-            log.debug('no auth cachefile - creating')
+            log.debug('no auth cache file')
+            pass
+
+        # Create new session
+        if self.auth == {}:
             self._get_session()
 
     def _get_session(self):
@@ -118,17 +125,26 @@ class Powerwall(object):
         url = "https://%s/api/login/Basic" % self.host
         pload = {"username":"customer","password":self.password,
             "email":self.email,"clientInfo":{"timezone":self.timezone}}
-        r = requests.post(url,data = pload, verify=False, timeout=self.timeout)
-        log.debug('login - %s' % r.text)
+        try:
+            r = requests.post(url,data = pload, verify=False, timeout=self.timeout)
+            log.debug('login - %s' % r.text)
+        except:
+            err = "Unable to reach Powerwall at https://%s" % self.host
+            log.debug(err)
+            raise LoginError(err)
 
         # Save Auth cookies
-        self.auth = {'AuthCookie': r.cookies['AuthCookie'], 'UserRecord': r.cookies['UserRecord']}
         try:
-            f = open(self.cachefile, "w") 
-            json.dump(self.auth,f)
-            f.close()
+            self.auth = {'AuthCookie': r.cookies['AuthCookie'], 'UserRecord': r.cookies['UserRecord']}
+            try:
+                f = open(self.cachefile, "w") 
+                json.dump(self.auth,f)
+                f.close()
+            except:
+                log.debug('unable to cache auth session - continuing')
         except:
-            log.debug('unable to cache auth session - continuing')
+            log.debug('login failed')
+            raise LoginError("Invalid Powerwall Login")
 
     def _close_session(self):
         # Log out
@@ -442,6 +458,7 @@ class Powerwall(object):
             site_name = payload['site_name']
         except:
             log.debug('ERROR unable to parse payload for site_name: %r' % payload)
+            site_name = None
         return site_name
 
     def status(self, param=None, jsonformat=False):
