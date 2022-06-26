@@ -39,6 +39,7 @@
     grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
+    is_connected()            # Returns True if able to connect and login to Powerwall
 
  Parameters
     host                    # (required) hostname or IP of the Tesla gateway
@@ -151,6 +152,19 @@ class Powerwall(object):
         url = "https://%s/api/logout" % self.host
         g = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
+
+    def is_connected(self):
+        """
+        Attempt connection with Tesla Energy Gateway
+        
+        Return True if able to successfully connect and login to Powerwall
+        """
+        try:
+            if self.status() is None:
+                return False
+            return True
+        except:
+            False
 
     def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False, force=False):
         """
