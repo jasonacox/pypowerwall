@@ -103,6 +103,7 @@ def scan(color=True, timeout=0.4):
     
     # Scan network
     discovered = {}
+    firmware = {}
     print('')
     print(bold + '    Running Scan...' + dim)
     # Loop through each host
@@ -120,7 +121,9 @@ def scan(color=True, timeout=0.4):
                 g = requests.get(url, verify=False, timeout=5)
                 data = json.loads(g.text)
                 print(dim + ' - ' + subbold + 'Found Powerwall %s' % data['din'])
+                print(subbold + '                                     [Firmware %s]' % data['version'])
                 discovered[addr] = data['din']
+                firmware[addr] = data['version']
             except:
                 print(dim + ' - Not a Powerwall')
  
@@ -131,7 +134,7 @@ def scan(color=True, timeout=0.4):
 
     print(normal + 'Discovered %d Powerwall Gateway' % len(discovered))
     for ip in discovered:
-        print(dim + '     %s [%s]' % (ip,discovered[ip]))
+        print(dim + '     %s [%s] Firmware %s' % (ip,discovered[ip],firmware[ip]))
 
     print(normal + ' ')
 
