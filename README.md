@@ -521,9 +521,11 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.1 92118b67 | 21-Jan-2022 | Upgrades Neurio Revenue Grade Meter (RGM) to 1.7.1-Tesla addressing Neurio instability and missing RGM data | v0.3.0 | |
 | 22.1.1 | 22-Feb-2022 | Unknown | v0.3.0 | |
 | 22.1.2 34013a3f | N/A | Unknown | N/A | |
-| 22.9.1 | 12-Apr-2022 | Unknown | v0.4.0 | 4.7.1-925 |
+| [22.9](https://www.tesla.com/support/energy/powerwall/mobile-app/software-updates) | 1-Apr-2022 | * More options for ‘Advanced Settings’ in the Tesla app to control grid charging and export behavior * Improved Powerwall performance when charge level is below backup reserve and Powerwall is importing from the grid * Capability to configure the charge rate of Powerwall below backup reserve * Improved metering accuracy when loads are not balanced across phases | v0.4.0 | 4.8.0 |
+| 22.9.1 | 12-Apr-2022 | Unknown | v0.4.0 | 4.8.0 |
 | 22.9.1.1 75c90bda | 2-May-2022 | Unknown | v0.4.0 | 4.8.0-1025 |
 | 22.9.2 a54352e6 | 2-May-2022 | Unknown | v0.4.0 Proxy t11 | 4.8.0-1025 |
+| 22.18.3 21c0ad81 | 28-Jun-2022 | Unknown | v0.4.0 Proxy t15 | 4.9.2-1087 |
 
 ### Devices and Alerts
 
@@ -576,6 +578,8 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * ScheduledIslandContactorOpen - Manually Disconnected from Grid
     * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
     * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid
+    * HighCPU - Occurs when too many API calls are made against the gateway especially with bad credentials
+    * SystemConnectedToGrid
 
 #### TETHC - Tesla Energy Total Home Controller
 
@@ -639,6 +643,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 * Alerts
     * SYNC_a001_SW_App_Boot - Unknown
     * SYNC_a038_DoOpenArguments - Unknown
+    * SYNC_a044_IslanderDisconnectWithin2s
 
 #### TEMSA - Tesla Backup Switch
 

@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.5.0 - TBD
+
+* Added additional exception handling to help identify connection and login errors.
+* Added `is_connected()` function to test for a successful connection to the Powerwall.
+
 ## v0.4.0 - Cache Bypass Option and New Functions
 
 * PyPI 0.4.0
