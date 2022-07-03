@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # pyPowerWall Module - Proxy Server Tool
 # -*- coding: utf-8 -*-
 """
