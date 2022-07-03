@@ -1,9 +1,19 @@
 # RELEASE NOTES
 
-## v0.5.0 - TBD
+## v0.5.0 - Exception Handling for Powerwall Connection
 
+* PyPI 0.5.0
 * Added additional exception handling to help identify connection and login errors.
 * Added `is_connected()` function to test for a successful connection to the Powerwall.
+* Added firmware version to command line network scan (`python -m pypowerwall scan`)
+
+[Proxy Server](https://github.com/jasonacox/pypowerwall/tree/main/proxy#pypowerwall-proxy-server) Updates (Build t16):
+
+* Add support for backup switch by @nhasan in https://github.com/jasonacox/pypowerwall/pull/12
+* Add Pass through to Powerwall Web interface and customize for iframe displays by @danisla in https://github.com/jasonacox/pypowerwall/pull/14
+* Remove scrollbars from web view by @danisla in https://github.com/jasonacox/pypowerwall/pull/15
+* Add support for specifying a bind address by @zi0r in https://github.com/jasonacox/pypowerwall/pull/16
+* Add shebang for direct execution by @zi0r in https://github.com/jasonacox/pypowerwall/pull/17
 
 ## v0.4.0 - Cache Bypass Option and New Functions
 
