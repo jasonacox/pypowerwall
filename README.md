@@ -38,6 +38,18 @@ python -m pip install pypowerwall
 python -m pypowerwall scan
 ```
 
+FreeBSD users can install from ports or pkg [FreshPorts](https://www.freshports.org/net-mgmt/py-pypowerwall):
+
+Via pkg:
+```bash
+# pkg install net-mgmt/py-pypowerwall
+```
+
+Via ports:
+```bash
+# cd /usr/ports/net-mgmt/py-pypowerwall/ && make install clean
+```
+
 Note: pyPowerwall installation will attempt to install these required python packages: _requests_ and _protobuf_.
 
 ## Programming with pyPowerwall
