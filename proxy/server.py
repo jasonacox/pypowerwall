@@ -41,6 +41,7 @@ web_root = os.path.join(os.path.dirname(__file__), "web")
 
 # Configuration for Proxy - Check for environmental variables 
 #    and always use those if available (required for Docker)
+bind_address = os.getenv("PW_BIND_ADDRESS", "")
 password = os.getenv("PW_PASSWORD", "password")
 email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "hostname")
@@ -295,7 +296,7 @@ class handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(bytes(message, "utf8"))
 
-with ThreadingHTTPServer(('', port), handler) as server:
+with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):
         # Activate HTTPS
         server.socket = ssl.wrap_socket (server.socket, 
