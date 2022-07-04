@@ -584,7 +584,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * SiteMinPowerLimited - Unknown
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * PodCommissionTime - Unknown
-    * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled.
+    * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * BackfeedLimited - Unknown
     * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
     * BatteryFault - Powerwall Failure
