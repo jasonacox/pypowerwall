@@ -602,7 +602,9 @@ class Powerwall(object):
 
         map = {'SystemGridConnected': {'string': 'UP', 'numeric': 1}, 
                'SystemIslandedActive': {'string': 'DOWN', 'numeric': 0}, 
-               'SystemTransitionToGrid': {'string': 'SYNCING', 'numeric': -1}}
+               'SystemTransitionToGrid': {'string': 'SYNCING', 'numeric': -1},
+               'SystemTransitionToIsland': {'string': 'SYNCING', 'numeric': -1},
+               'SystemIslandedReady': {'string': 'SYNCING', 'numeric': -1}}
         try:
             grid_status = payload['grid_status']
             return map[grid_status][type]
