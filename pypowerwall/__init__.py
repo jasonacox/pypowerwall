@@ -57,7 +57,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 5, 0)
+version_tuple = (0, 5, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
