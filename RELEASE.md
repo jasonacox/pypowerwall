@@ -1,9 +1,10 @@
 # RELEASE NOTES
 
-## v0.5.1 - Unreleased
+## v0.5.1 - Fix grid_status() Off-Grid Map
 
+* PyPI 0.5.1
 * Add FreeBSD-specific installation instructions by @zi0r in https://github.com/jasonacox/pypowerwall/pull/18
-* Add grid_status responses for syncing to off-grid by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/19
+* Add `grid_status()` responses for syncing to off-grid by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/19
 
 ## v0.5.0 - Exception Handling for Powerwall Connection
 
