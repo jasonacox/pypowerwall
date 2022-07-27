@@ -11,9 +11,10 @@
     * Simple access through easy to use functions using customer credentials
     * Will cache authentication to reduce load on Powerwall Gateway
     * Will cache responses for 5s to limit number of calls to Powerwall Gateway
+    * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -48,6 +49,7 @@
     timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
     timeout = 10            # Timeout for HTTPS calls in seconds
+    poolmaxsize = 10        # Pool max size for http connection re-use (persistent connections disabled if zero)
 """
 import json, time
 import requests
@@ -57,7 +59,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 5, 1)
+version_tuple = (0, 6, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -84,7 +86,7 @@ class ConnectionError(Exception):
     pass
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10, poolmaxsize=10):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -96,6 +98,7 @@ class Powerwall(object):
                 (see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 
             pwcacheexpire = Seconds to expire cached entries
             timeout      = Seconds for the timeout on http requests
+            poolmaxsize  = Pool max size for http connection re-use (persistent connections disabled if zero)
 
         """
 
@@ -106,10 +109,20 @@ class Powerwall(object):
         self.email = email
         self.timezone = timezone
         self.timeout = timeout                  # 10s timeout for http calls
+        self.poolmaxsize = poolmaxsize          # pool max size for http connection re-use
         self.auth = {}                          # caches authentication cookies
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
+
+        if self.poolmaxsize > 0:
+            # Create session object for http connection re-use
+            self.session = requests.Session()
+            a = requests.adapters.HTTPAdapter(pool_maxsize=self.poolmaxsize)
+            self.session.mount('https://', a)
+        else:
+            # Disable http persistent connections
+            self.session = requests
 
         # Load cached auth session
         try:
@@ -130,7 +143,7 @@ class Powerwall(object):
         pload = {"username":"customer","password":self.password,
             "email":self.email,"clientInfo":{"timezone":self.timezone}}
         try:
-            r = requests.post(url,data = pload, verify=False, timeout=self.timeout)
+            r = self.session.post(url,data = pload, verify=False, timeout=self.timeout)
             log.debug('login - %s' % r.text)
         except:
             err = "Unable to connect to Powerwall at https://%s" % self.host
@@ -153,7 +166,7 @@ class Powerwall(object):
     def _close_session(self):
         # Log out
         url = "https://%s/api/logout" % self.host
-        g = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+        g = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
 
     def is_connected(self):
@@ -202,9 +215,9 @@ class Powerwall(object):
             url = "https://%s%s" % (self.host, api)
             try:
                 if(raw):
-                    r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
+                    r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
                 else:
-                    r = requests.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+                    r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
             except requests.exceptions.Timeout:
                 log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
                 return None
