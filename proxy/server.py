@@ -27,7 +27,7 @@ import requests
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t16"
+BUILD = "t17"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -48,7 +48,9 @@ email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "hostname")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
-cache_expire = os.getenv("PW_CACHE_EXPIRE", "5")
+cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
+timeout = int(os.getenv("PW_TIMEOUT", "10"))
+pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "10"))
 https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
@@ -87,10 +89,7 @@ else:
     sys.stderr.flush()
 
 # Connect to Powerwall
-pw = pypowerwall.Powerwall(host,password,email,timezone)
-
-# Set Timeout in Seconds
-pw.pwcacheexpire = int(cache_expire)
+pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
 
 # Cached assets from Powerwall web interface passthrough
 web_cache = {}
@@ -254,7 +253,7 @@ class handler(BaseHTTPRequestHandler):
                     proxy_path = proxy_path[1:]
                 pw_url = "https://{}/{}".format(pw.host, proxy_path)
                 print("INFO: Proxy request: {}".format(pw_url))
-                r = requests.get(
+                r = pw.session.get(
                     url=pw_url,
                     cookies=pw.auth,
                     verify=False,
