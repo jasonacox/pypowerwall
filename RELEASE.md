@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.6.0 - Add Persistent HTTP Connections
+
+* PyPI 0.6.0
+* Added HTTP persistent connections for API requests to Powerwall Gateway by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/21
+* Requests to Gateway will now re-use persistent http connections which reduces load and increases response time.
+* Uses default connection `poolmaxsize=10` to align with Session object defaults. Note: pool use applies to multi-threaded use of pyPowerwall only, e.g. as with the pyPowerwall Proxy Server.
+* Added env `PW_POOL_MAXSIZE` to proxy server to allow this to be controlled (persistent connections disabled if set to zero).
+* Added env `PW_TIMEOUT` to proxy server to allow timeout on requests to be adjusted.
+
 ## v0.5.1 - Fix grid_status() Off-Grid Map
 
 * PyPI 0.5.1
