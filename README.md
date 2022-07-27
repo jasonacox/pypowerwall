@@ -580,19 +580,23 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Tesla Backup Switch (1624171-xx-y)
 
 * Alerts
-    * GridCodesWrite - Unknown
-    * SiteMinPowerLimited - Unknown
-    * FWUpdateSucceeded - Firmware Upgrade Succeeded
-    * PodCommissionTime - Unknown
-    * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * BackfeedLimited - Unknown
-    * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
     * BatteryFault - Powerwall Failure
-    * ScheduledIslandContactorOpen - Manually Disconnected from Grid
-    * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
-    * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid
+    * DeviceShutdownRequested
+    * FWUpdateSucceeded - Firmware Upgrade Succeeded
+    * GridCodesWrite - Unknown
     * HighCPU - Occurs when too many API calls are made against the gateway especially with bad credentials
+    * PanelMaxCurrentLimited
+    * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
+    * PodCommissionTime - Unknown
+    * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
+    * ScheduledIslandContactorOpen - Manually Disconnected from Grid
+    * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid
+    * SiteMaxPowerLimited - Unknown
+    * SiteMinPowerLimited - Unknown
+    * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
     * SystemConnectedToGrid
+    * SystemShutdown
 
 #### TETHC - Tesla Energy Total Home Controller
 
@@ -685,6 +689,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts
     * PVS_a018_MciString[A-D] - This indicates a solar string (A, B, C or D) that is not connected.
+    * PVS_a021_RapidShutdown
     * PVS_a026_Mci1PvVoltage
     * PVS_a027_Mci2PvVoltage
     * PVS_a031_Mci3PvVoltage
