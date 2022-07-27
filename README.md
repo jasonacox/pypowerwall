@@ -20,6 +20,7 @@ pyPowerwall will cache the authentication headers and API call responses to help
 * Simple access through easy to use functions using customer credentials
 * Will cache authentication to reduce load on Powerwall Gateway
 * Will cache responses to limit number of calls to Powerwall Gateway (optional/user definable)
+* Will re-use http connections to Powerwall Gateway for reduced load and faster response times
 * Easy access to decoded binary device vitals (/api/devices/vitals in JSON format)
 * Provides solar string data for Powerwall+ systems
 
@@ -111,7 +112,7 @@ and call function to poll data.  Here is an example:
  set_debug(True, color=True)
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -137,7 +138,8 @@ and call function to poll data.  Here is an example:
     grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
-
+    is_connected()            # Returns True if able to connect and login to Powerwall
+    
  Parameters
     host                    # (required) hostname or IP of the Tesla gateway
     password                # (required) password for logging into the gateway
@@ -145,6 +147,7 @@ and call function to poll data.  Here is an example:
     timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
     timeout = 10            # Timeout for HTTPS calls in seconds
+    poolmaxsize = 10        # Pool max size for http connection re-use (persistent connections disabled if zero)
 ```
 
 ## Tools
