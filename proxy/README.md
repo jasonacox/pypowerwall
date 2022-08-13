@@ -19,7 +19,7 @@ Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/p
     -e PW_PORT='8675' \
     -e PW_PASSWORD='password' \
     -e PW_EMAIL='email@example.com' \
-    -e PW_HOST='localhost' \
+    -e PW_HOST='IP_of_Powerwall_Gateway' \
     -e PW_TIMEZONE='America/Los_Angeles' \
     -e PW_CACHE_EXPIRE='5' \
     -e PW_DEBUG='no' \
