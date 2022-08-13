@@ -102,7 +102,7 @@ There are three settings for PW_HTTPS:
 
 ## Troubleshooting Help
 
-Check the logs. If you see python errors, make sure you entered your credentials correctly in the `server.py` file.  If you didn't, edit that file and restart docker:
+If you see python errors, make sure you entered your credentials correctly in `docker run`.
 
 ```bash
 # See the logs
