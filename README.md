@@ -689,6 +689,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * ECU Type is 297
     * This terminates the Photovoltaic DC power strings
     * Component of PVAC
+    * This includes the Tesla PV Rapid Shutdown MCI (“mid-circuit interrupter") devices which ensure that if one photovoltaic cell stops working, the others continue working.
 
 * Alerts
     * PVS_a018_MciString[A-D] - This indicates a solar string (A, B, C or D) that is not connected.
@@ -697,6 +698,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVS_a027_Mci2PvVoltage
     * PVS_a031_Mci3PvVoltage
     * PVS_a032_Mci4PvVoltage
+    * PVS_a039_SelfTestRelayFault
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
