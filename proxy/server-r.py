@@ -127,10 +127,11 @@ class handler(BaseHTTPRequestHandler):
                 kv = c.split("=")
                 if len(kv) >= 2:
                     if kv[0].strip() == 'PW_SECRET' and kv[1].strip() == restrict:
+                        # Found secret cookie
                         allowed = True
                         break
             if not allowed:
-                # Secret not found in cookies - did they send restrict code?
+                # Secret not found in cookies - did they send secret?
                 sesame = "/?s=%s" % restrict
                 contenttype = 'text/html'
                 if self.path.startswith(sesame):
@@ -138,13 +139,11 @@ class handler(BaseHTTPRequestHandler):
                     message = '<html>\n<head><meta http-equiv="refresh" content="1">\n'
                     message += '</head>\n<body><p>Access Granted</p></body>\n</html>'
                 else:
-                    # Send form to enter restrict code
+                    # Send form for user to enter secret
                     message = "<html>\n<head></head>\n<body><form action='/' method='get'>"
                     message += "<label>Secret: <input name='s' type='text'></label>\n"
                     message += "<input type='submit' value='Submit'></form>\n"
                     message += "</body>\n</html>"
-                    print("sent form")
-            
         if allowed:    
             if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
                 # Meters - JSON
