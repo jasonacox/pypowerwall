@@ -541,6 +541,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.9.1.1 75c90bda | 2-May-2022 | Unknown | v0.4.0 | 4.8.0-1025 |
 | 22.9.2 a54352e6 | 2-May-2022 | Unknown | v0.4.0 Proxy t11 | 4.8.0-1025 |
 | 22.18.3 21c0ad81 | 28-Jun-2022 | Two new alerts did show up in device vitals: HighCPU and SystemConnectedToGrid * The HighCPU was particularly interesting. If you updated your customer password on the gateway, it seems to have reverted during the firmware upgrade. Any monitoring tools using the new password were getting errors. The gateway was presenting "API rate limit" errors (even for installer mode). Reverting the password to the older one fixes the issue but revealed the HighCPU alert. | v0.4.0 Proxy t15 | 4.9.2-1087 |
+| 22.18.6 7884188e | 27-Sep-2022 | Unknown - Saw STSTSM HighCPU Alert during Upgrade | v0.4.0 Proxy t15 | 4.13.1-1312 |
 
 ### Devices and Alerts
 
