@@ -665,6 +665,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * SYNC_a001_SW_App_Boot - Unknown
     * SYNC_a038_DoOpenArguments - Unknown
     * SYNC_a044_IslanderDisconnectWithin2s
+    * SYNC_a046_DoCloseArguments
 
 #### TEMSA - Tesla Backup Switch
 
