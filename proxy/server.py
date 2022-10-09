@@ -21,7 +21,7 @@ from socketserver import ThreadingMixIn
 import os
 import json
 import time
-import sys
+import logging
 import resource
 import datetime
 import ssl
@@ -80,14 +80,28 @@ else:
     cookiesuffix = "path=/;"
     httptype = "HTTP"
 
+# Logging
+log = logging.getLogger("proxy")
+logging.basicConfig(format='%(levelname)s:%(message)s',level=logging.INFO)
+log.setLevel(logging.INFO)
+
 if(debugmode == "yes"):
+    log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" % 
+        (pypowerwall.version, BUILD, httptype, port))
     pypowerwall.set_debug(True)
-    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - %s Port %d - DEBUG\n" % 
-        (pypowerwall.version, BUILD, httptype, port))
+    log.setLevel(logging.DEBUG)
 else:
-    sys.stderr.write("pyPowerwall [%s] Proxy Server [%s] Started - %s Port %d\n" % 
+    log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d" % 
         (pypowerwall.version, BUILD, httptype, port))
-    sys.stderr.flush()
+log.info("pyPowerwall Proxy Started")
+
+# Get Value Function - Key to Value or Return Null
+def get_value(a, key):
+    if key in a:
+        return a[key]
+    else:
+        log.error("Missing key in payload [%s]" % key)
+        return None
 
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
@@ -102,9 +116,8 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 class handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         if debugmode == "yes":
-            sys.stderr.write("%s - - [%s] %s\n" %
+            log.debug("%s %s" %
                          (self.address_string(),
-                          self.log_date_time_string(),
                           format%args))
         else:
             pass
@@ -152,6 +165,7 @@ class handler(BaseHTTPRequestHandler):
             message = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
+            log.debug("Clear internal stats")
             proxystats['gets'] = 0
             proxystats['errors'] = 0
             proxystats['uri'] = {}
@@ -183,9 +197,9 @@ class handler(BaseHTTPRequestHandler):
                 if  device.startswith('TEPINV'):
                     # PW freq
                     fcv["PW%d_name" % idx] = device
-                    fcv["PW%d_PINV_Fout" % idx] = d['PINV_Fout']
-                    fcv["PW%d_PINV_VSplit1" % idx] = d['PINV_VSplit1']
-                    fcv["PW%d_PINV_VSplit2" % idx] = d['PINV_VSplit2']
+                    fcv["PW%d_PINV_Fout" % idx] = get_value(d, 'PINV_Fout')
+                    fcv["PW%d_PINV_VSplit1" % idx] = get_value(d, 'PINV_VSplit1')
+                    fcv["PW%d_PINV_VSplit2" % idx] = get_value(d, 'PINV_VSplit2')
                     idx = idx + 1
                 if device.startswith('TESYNC') or device.startswith('TEMSA'):
                     # Island and Meter Metrics from Backup Gateway or Backup Switch
@@ -203,18 +217,18 @@ class handler(BaseHTTPRequestHandler):
                 d = vitals[device]
                 if  device.startswith('TEPOD'):
                     pod["PW%d_name" % idx] = device
-                    pod["PW%d_POD_ActiveHeating" % idx] = int(d['POD_ActiveHeating'])
-                    pod["PW%d_POD_ChargeComplete" % idx] = int(d['POD_ChargeComplete'])
-                    pod["PW%d_POD_ChargeRequest" % idx] = int(d['POD_ChargeRequest'])
-                    pod["PW%d_POD_DischargeComplete" % idx] = int(d['POD_DischargeComplete'])
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(d['POD_PermanentlyFaulted'])
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(d['POD_PersistentlyFaulted'])
-                    pod["PW%d_POD_enable_line" % idx] = int(d['POD_enable_line'])
-                    pod["PW%d_POD_available_charge_power" % idx] = d['POD_available_charge_power']
-                    pod["PW%d_POD_available_dischg_power" % idx] = d['POD_available_dischg_power']
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = d['POD_nom_energy_remaining']
-                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = d['POD_nom_energy_to_be_charged']
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = d['POD_nom_full_pack_energy']
+                    pod["PW%d_POD_ActiveHeating" % idx] = int(get_value(d, 'POD_ActiveHeating'))
+                    pod["PW%d_POD_ChargeComplete" % idx] = int(get_value(d, 'POD_ChargeComplete'))
+                    pod["PW%d_POD_ChargeRequest" % idx] = int(get_value(d, 'POD_ChargeRequest'))
+                    pod["PW%d_POD_DischargeComplete" % idx] = int(get_value(d, 'POD_DischargeComplete'))
+                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(get_value(d, 'POD_PermanentlyFaulted'))
+                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(get_value(d, 'POD_PersistentlyFaulted'))
+                    pod["PW%d_POD_enable_line" % idx] = int(get_value(d,'POD_enable_line'))
+                    pod["PW%d_POD_available_charge_power" % idx] = get_value(d,'POD_available_charge_power')
+                    pod["PW%d_POD_available_dischg_power" % idx] = get_value(d, 'POD_available_dischg_power')
+                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(d, 'POD_nom_energy_remaining')
+                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(d, 'POD_nom_energy_to_be_charged')
+                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(d, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             pod["backup_reserve_percent"] = pw.get_reserve()
             message = json.dumps(pod) 
@@ -272,7 +286,7 @@ class handler(BaseHTTPRequestHandler):
                 if proxy_path.startswith("/"):
                     proxy_path = proxy_path[1:]
                 pw_url = "https://{}/{}".format(pw.host, proxy_path)
-                print("INFO: Proxy request: {}".format(pw_url))
+                log.debug("Proxy request to: {}".format(pw_url))
                 r = pw.session.get(
                     url=pw_url,
                     cookies=pw.auth,
@@ -317,11 +331,12 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(bytes(message, "utf8"))
         except:
-            sys.stderr.write("! ERROR: Socket broken sending response - doGET\n")
+            log.error("Socket broken sending response [doGET]")
 
 with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):
         # Activate HTTPS
+        log.debug("Activating HTTPS")
         server.socket = ssl.wrap_socket (server.socket, 
             certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'), 
             server_side=True, ssl_version=ssl.PROTOCOL_TLSv1_2, ca_certs=None, 
@@ -331,6 +346,6 @@ with ThreadingHTTPServer((bind_address, port), handler) as server:
         server.serve_forever()
     except:
         print(' CANCEL \n')
-    sys.stderr.write("pyPowerwall Proxy Stopped\n")
-    sys.stderr.flush()
+        
+    log.info("pyPowerwall Proxy Stopped")
     os._exit(0)

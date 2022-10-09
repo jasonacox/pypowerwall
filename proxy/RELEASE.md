@@ -2,9 +2,10 @@
 
 ### Proxy t18 (8 Oct 2022)
 
-* Added error handling for socket error when sending response. 
+* Added error handling for socket error when sending response.
 * Added uptime field for stats ('/stats') API.
 * Enhanced help API ('/help') to provide HTML stats page and link to API documentation.
+* Improved logging with timestamps.
 
 ### Proxy t17 (26 July 2022)
 
