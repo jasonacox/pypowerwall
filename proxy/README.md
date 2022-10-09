@@ -120,6 +120,11 @@ Content does not render in iFrame or prompts you for a login:
 * Browser may be set to never accept third party cookies. The web app requires cookies and in an iFrame it will look like a third party, [see here](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB#security)).
 * iFrame doesn't render.  Make sure the browser is not running in incognito mode.  Try other browsers.
 
+## API Help
+
+Documentation for using the API is located in [HELP.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md#release-notes).
+
+
 ## Release Notes
 
-Release notes are included in the [HELP documentation here](https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md#release-notes).
+Release notes are in the [RELEASE.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/RELEASE.md) file.
