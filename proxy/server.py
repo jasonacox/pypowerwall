@@ -230,8 +230,25 @@ class handler(BaseHTTPRequestHandler):
             v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
             message = json.dumps(v)
         elif self.path == '/help':
-            contenttype = 'text/plain; charset=utf-8'
-            message = 'HELP: See https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md'
+            # Display friendly help screen link and stats
+            proxystats['ts'] = int(time.time())
+            delta = proxystats['ts'] - proxystats['start']
+            proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
+            contenttype = 'text/html'
+            message = '<html>\n<head><meta http-equiv="refresh" content="5" />\n'
+            message += '<style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n' 
+            message += '<style>h1 { font-family: Helvetica, Arial, sans-serif; font-size: 20px;}</style>\n' 
+            message += '</head>\n<body>\n<h1>pyPowerwall [%s] Proxy [%s] </h1>\n\n' % (pypowerwall.version, BUILD)
+            message += '<p><a href="https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md">Click here for API help.</a></p>\n\n'
+            message = message + '<table>\n<tr><th align ="left">Stat</th><th align ="left">Value</th></tr>'
+            for i in proxystats:
+                if i != 'uri':
+                    message = message + '<tr><td align ="left">%s</td><td align ="left">%s</td></tr>\n' % (i,proxystats[i])
+            for i in proxystats['uri']:
+                    message = message + '<tr><td align ="left">URI: %s</td><td align ="left">%s</td></tr>\n' % (i,proxystats['uri'][i])
+            message = message + "</table>\n"
+            message = message + '\n<p>Page refresh: %s</p>\n</body>\n</html>' % (
+                str(datetime.datetime.fromtimestamp(time.time())))
         elif self.path in ALLOWLIST:
             # Allowed API Call
             message = pw.poll(self.path)
