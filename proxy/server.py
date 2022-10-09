@@ -23,11 +23,11 @@ import json
 import time
 import sys
 import resource
-import requests
+import datetime
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t17"
+BUILD = "t18"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -65,6 +65,7 @@ proxystats['uri'] = {}
 proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
 proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
+proxystats['uptime'] = ""
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -145,6 +146,8 @@ class handler(BaseHTTPRequestHandler):
         elif self.path == '/stats':
             # Give Internal Stats
             proxystats['ts'] = int(time.time())
+            delta = proxystats['ts'] - proxystats['start']
+            proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             message = json.dumps(proxystats)
         elif self.path == '/stats/clear':
@@ -291,10 +294,13 @@ class handler(BaseHTTPRequestHandler):
                 proxystats['uri'][self.path] = 1
                 
         # Send headers and payload
-        self.send_header('Content-type',contenttype)
-        self.send_header('Content-Length', str(len(message)))
-        self.end_headers()
-        self.wfile.write(bytes(message, "utf8"))
+        try:
+            self.send_header('Content-type',contenttype)
+            self.send_header('Content-Length', str(len(message)))
+            self.end_headers()
+            self.wfile.write(bytes(message, "utf8"))
+        except:
+            sys.stderr.write("! ERROR: Socket broken sending response - doGET\n")
 
 with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):
