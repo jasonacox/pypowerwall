@@ -237,6 +237,7 @@ class handler(BaseHTTPRequestHandler):
             v = {}
             v["version"] = pw.version()
             val = pw.version().split(" ")[0]
+            val = ''.join(i for i in val if i.isdigit() or i in './\\')
             while len(val.split('.')) < 3:
                 val = val + ".0"
             l = [int(x, 10) for x in val.split('.')]

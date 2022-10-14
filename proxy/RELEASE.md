@@ -1,7 +1,8 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t18 (8 Oct 2022)
+### Proxy t18 (8 Oct 2022) - Unreleased
 
+* Fix Bug with `/version` for version numbers with alpha characters. #24
 * Added error handling for socket error when sending response.
 * Added uptime field for stats ('/stats') API.
 * Enhanced help API ('/help') to provide HTML stats page and link to API documentation.
