@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t19 (15 Oct 2022)
+
+* Fix `clear.js` (and others) to hide the compliance link button in the animation caused by the latest Powerwall firmware upgrade (22.26.1-foxtrot)
+
 ### Proxy t18 (8 Oct 2022)
 
 * Fix Bug with `/version` for version numbers with alpha characters. #24

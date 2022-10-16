@@ -52,7 +52,7 @@ function triggerOnMutation(cb) {
 
 function formatPowerwallForBlack() {
     // Hide elements.
-    $('.overview-menu, #logout, .footer, .compact-btn-row, .toast-list, .power-flow-header').hide();
+    $('.overview-menu, #logout, .footer, .compact-btn-row, .toast-list, .power-flow-header, .btn').hide();
 
     // Set alignment
     $('.core-layout__viewport').css({
