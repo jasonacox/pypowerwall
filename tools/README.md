@@ -69,13 +69,10 @@ Once these steps are completed, you should not have to login again.
     ```bash
     # Verbose Response
     python3 set-reserve.py --read
-    ```
-    `READ: Current Battery Reserve Setting: 25% for 2 Powerwalls`
-    ```
+
     # Abbreviated Response
     python3 set-reserve.py --read -n
     ```
-    `25`
 
 * Set Battery Reserve Setting
 
@@ -83,4 +80,7 @@ Once these steps are completed, you should not have to login again.
     # Set reserve percentage
     python3 set-reserve.py --set 25
     ```
-    `SET: Current Battery Reserve Setting: 25% - Response: Updated`
+
+`READ: Current Battery Reserve Setting: 25% for 2 Powerwalls`
+
+`SET: Current Battery Reserve Setting: 25% - Response: Updated`
