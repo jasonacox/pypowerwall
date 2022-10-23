@@ -138,3 +138,5 @@ sandbox/
 .DS_Store
 proxy/testproxy.sh
 proxy/uploadtest.sh
+tools/set-reserve.auth
+tools/set-reserve.conf
