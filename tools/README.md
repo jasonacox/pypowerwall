@@ -29,7 +29,10 @@ Save auth token to: [set-reserve.auth]
 Config saved to 'set-reserve.conf'
 ```
 
-After the config is saved, you will be prompted to login to your Tesla account. This is done by opening the displayed URL in your browser and then logging in:
+After the config is saved, you will be prompted to login to your Tesla account. This is done by opening the displayed URL in your browser and then logging in.
+
+**NOTE**: After you log in, it will take you to a *404 Page Not Found* error page - do not panic, 
+this is what you want.
 
 ```
 ----------------------------------------
