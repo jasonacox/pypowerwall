@@ -27,7 +27,7 @@ import datetime
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t20"
+BUILD = "t21"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -66,7 +66,6 @@ proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
 proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 proxystats['uptime'] = ""
-authcookie = ""
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -107,9 +106,6 @@ def get_value(a, key):
 # Connect to Powerwall
 pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
 
-# Cached assets from Powerwall web interface passthrough
-web_cache = {}
-
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
     pass
@@ -127,14 +123,10 @@ class handler(BaseHTTPRequestHandler):
         host, hostport = self.client_address[:2]
         return host
     def do_GET(self):
-        global authcookie, web_cache, proxystats
+        global proxystats
         self.send_response(200)
         message = "ERROR!"
         contenttype = 'application/json'
-        if authcookie != pw.auth['AuthCookie']:
-            log.debug("Powerwall Auth Required - clearing internal web cache")
-            web_cache = {}
-            authcookie = pw.auth['AuthCookie']
 
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
@@ -273,55 +265,37 @@ class handler(BaseHTTPRequestHandler):
         elif self.path in ALLOWLIST:
             # Allowed API Call
             message = pw.poll(self.path)
-        elif self.path == '/cache':
-            # Display internal web cache
-            log.debug("Size of web_cache: {}".format(len(web_cache)))
-            c = []
-            for i in web_cache:
-                c.append(i)
-            message = json.dumps(c)
-        elif self.path == '/cache/clear':
-            # Clear internal web cache
-            web_cache = {}
-            log.debug("Clear internal web cache")
-            contenttype = 'text/plain; charset=utf-8'
-            message = 'OK'
         else:
-            # Set auth headers required for web application
+            # Everything else - Set auth headers required for web application
+            proxystats['gets'] = proxystats['gets'] + 1
             self.send_header("Set-Cookie", "AuthCookie={};{}".format(pw.auth['AuthCookie'], cookiesuffix))
             self.send_header("Set-Cookie", "UserRecord={};{}".format(pw.auth['UserRecord'], cookiesuffix))
 
             # Serve static assets from web root first, if found.
             fcontent, ftype = get_static(web_root, self.path)
             if fcontent:
+                log.debug("Served from local web root: {}".format(self.path))
                 self.send_header('Content-type','{}'.format(ftype))
                 self.end_headers()
                 self.wfile.write(fcontent)
                 return
 
-            # Proxy request to Powerwall web server and cache.
+            # Proxy request to Powerwall web server.
             self.send_header("Set-Cookie", "Cache-Control: no-cache")
-            cache_item = web_cache.get(self.path, None)
-            if not cache_item:
-                proxy_path = self.path
-                if proxy_path.startswith("/"):
-                    proxy_path = proxy_path[1:]
-                pw_url = "https://{}/{}".format(pw.host, proxy_path)
-                log.debug("Proxy request to: {}".format(pw_url))
-                r = pw.session.get(
-                    url=pw_url,
-                    cookies=pw.auth,
-                    verify=False,
-                    stream=True,
-                    timeout=pw.timeout
-                )
-                fcontent = r.content
-                ftype = r.headers['content-type']
-                web_cache[self.path] = (fcontent, ftype)
-                log.debug("Added {} to web_cache".format(self.path))
-            else:
-                fcontent, ftype = cache_item
-                log.debug("Served {} from web_cache".format(self.path))
+            proxy_path = self.path
+            if proxy_path.startswith("/"):
+                proxy_path = proxy_path[1:]
+            pw_url = "https://{}/{}".format(pw.host, proxy_path)
+            log.debug("Proxy request to: {}".format(pw_url))
+            r = pw.session.get(
+                url=pw_url,
+                cookies=pw.auth,
+                verify=False,
+                stream=True,
+                timeout=pw.timeout
+            )
+            fcontent = r.content
+            ftype = r.headers['content-type']
 
             # Inject transformations
             if self.path.split('?')[0] == "/":
