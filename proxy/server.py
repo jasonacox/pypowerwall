@@ -27,7 +27,7 @@ import datetime
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t21"
+BUILD = "t22"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -325,6 +325,7 @@ class handler(BaseHTTPRequestHandler):
         try:
             self.send_header('Content-type',contenttype)
             self.send_header('Content-Length', str(len(message)))
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(bytes(message, "utf8"))
         except:
