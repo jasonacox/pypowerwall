@@ -3,6 +3,7 @@
     <head>
         <title>pyPowerwall Proxy iFrame Example</title>
     </head>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
     <body style="text-align: center; background-color:#161719;">
         <h1 style="color:white;font-family:verdana;">Tesla Powerwall Power Flows</h1>
         <h2 style="color:gray;font-family:verdana;">iFrame Example</h2>
@@ -10,6 +11,19 @@
         <iframe id="frame" src="/" width="500" height="300" frameBorder="0">
             IFRAME not supported by browser.
         </iframe>
+        <p class="version" style="color:gray;font-family:verdana;">Firmware</p>
     </body>
+    <script>
+        // Get Firmware Version
+        function showversion() {
+            var pwver = window.location.protocol + "//" + window.location.hostname + ":8675/version";
+            $.getJSON(pwver, function(data) {
+                var text = `Firmware: ${data.version}`;
+                $(".version").html(text);
+            });
+            setTimeout(showversion, 10000);
+        }
+        showversion();
+    </script>
 </html>
 
