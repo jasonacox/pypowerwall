@@ -544,6 +544,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.18.6 7884188e | 27-Sep-2022 | STSTSM HighCPU Alert appeared after upgrade. The firmwareVersion now shows "2022-08-01-g8b6399632f". Alerts during upgrade: "PINV_a010_can_gtwMIA", "PINV_a039_can_thcMIA". | v0.4.0 Proxy t15 | 4.13.1-1312 |
 | 22.26.1-foxtrot 4d562eaf | 13-Oct-2022 | This release seems to have introduced a Powerwall charging slowdown mode. After 95% full, the charging will slow dramatically with excess solar production getting pushed to the grid even if the battery is less than 100% (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/109)).  This upgrade also upgrades the Neurio Revenue Grade Meter (RGM) to 1.7.2-Tesla with STSTSM firmware showing 2022-09-28-g7cb0d69c2b | v0.6.0 Proxy t19 | 4.13.1-1334 |
 | 22.26.2 8cd8cac4 | 26-Oct-2022 | STSTSM firmware showing 2022-10-24-g64e8c689f9 - This version seems to have fixed a slow charging issue with the Powerwall. With version 22.26.1, it started trickle charging at around 85-90% and would never get above 95%. With this new version it charges up to 98% and then starts trickle charging to the final 100%.| v0.6.0 Proxy t19 | 4.14.1-1395 |
+| 22.26.4 fc00d5dd | 22-Nov-2022 | STSTSM firmware showing 2022-10-26-g9b8e445626 - No noticeable changes so far. | v0.6.0 Proxy t22 | 4.14.4-1455 |
 
 ### Devices and Alerts
 
