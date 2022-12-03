@@ -628,14 +628,19 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
  * Alerts
     * POD_f029_HW_CMA_OV
+    * POD_f053_SW_CMA_Cell_MIA
+    * POD_w017_SW_Batt_Volt_Sens_Irrational
     * POD_w024_HW_Fault_Asserted
     * POD_w029_HW_CMA_OV
     * POD_w031_SW_Brick_OV
+    * POD_w041_SW_CMA_Comm_Integrity
     * POD_w044_SW_Brick_UV_Warning
     * POD_w045_SW_Brick_OV_Warning
     * POD_w048_SW_Cell_Voltage_Sens
+    * POD_w049_SW_CMA_Voltage_Mismatch
     * POD_w058_SW_App_Boot
     * POD_w063_SW_SOC_Imbalance
+    * POD_w064_SW_Brick_Low_Capacity
     * POD_w067_SW_Not_Enough_Energy_Precharge
     * POD_w090_SW_SOC_Imbalance_Limit_Charge
     * POD_w093_SW_Charge_Request
