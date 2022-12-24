@@ -84,10 +84,10 @@ Once these steps are completed, you should not have to login again.
     python3 set-reserve.py --set 25
     ```
 
-`READ: Current Battery Reserve Setting: 25% for 2 Powerwalls`
+  `READ: Current Battery Reserve Setting: 25% for 2 Powerwalls`
 
-`SET: Current Battery Reserve Setting: 25% - Response: Updated`
+  `SET: Current Battery Reserve Setting: 25% - Response: Updated`
 
 * Cron Job Examples
 
-See the [cron.sh](cron.sh) example script on how you can use set-reserve.py to optimize your Powerwall usage.
+  See the [cron.sh](cron.sh) example script on how you can use set-reserve.py to optimize your Powerwall usage.
