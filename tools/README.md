@@ -82,11 +82,16 @@ Once these steps are completed, you should not have to login again.
     ```bash
     # Set reserve percentage
     python3 set-reserve.py --set 25
+
+    # Set reserve based on current battery level - useful 
+    # to pause charging and discharging 
+    python3 set-reserve.py --current
     ```
 
   `READ: Current Battery Reserve Setting: 25% for 2 Powerwalls`
 
   `SET: Current Battery Reserve Setting: 25% - Response: Updated`
+
 
 * Cron Job Examples
 

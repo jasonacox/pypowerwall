@@ -27,6 +27,10 @@
             (sets reserve percentage 0 to 100)
                 python3 set-reserve.py --set 20"
 
+        - Set reserver level to current battery level (to pause charge/discharge):
+            (sets reserve based on current battery level)
+                python3 set-reserve.py --current
+
         - For more usage options, run without arguments or --help:
             python3 set-reserve.py --help
 """
@@ -59,14 +63,15 @@ group.add_argument('--site', type=int, help='site id (required for Tesla account
 group = parser.add_argument_group('commands')
 group.add_argument('--read', action="store_true", help='read current Powerwall battery reserve level')
 group.add_argument('--set', help='battery reserve level (e.g. "--set 20")')
+group.add_argument('--current', action="store_true", help='sets reserve to current battery level')
 args = parser.parse_args()
 
 # Check for invalid argument combinations
 if len(sys.argv) == 1:
     parser.print_help(sys.stderr)
     sys.exit()
-if not args.login and not (args.read or args.set):
-    parser.error("missing arguments: --login/read/set")
+if not args.login and not (args.read or args.set or args.current):
+    parser.error("missing arguments: --login/read/set/current")
 
 if args.config:
     # Use alternate config file if specified
@@ -315,8 +320,22 @@ if args.read:
     else:
         print(f"{level}")
 elif args.set:
-    # Read and return current Powerwall battery level reserve setting
-    level = int(args.set)
+    # Set Powerwall battery level reserve setting
+    if args.set == "current":
+        # if requested get and set reserve using current battery level
+        data = get_level()
+        level = int(data["percentage_charged"])
+    else:
+        level = int(args.set)
+    data = set_level(level)
+    if args.debug or not args.number:
+        print(f"SET: Current Battery Reserve Setting: {level}% - Response: {data}")
+    else:
+        print(data=="Updated")
+elif args.current:
+    # Set reserve using current battery level
+    data = get_level()
+    level = int(data["percentage_charged"])
     data = set_level(level)
     if args.debug or not args.number:
         print(f"SET: Current Battery Reserve Setting: {level}% - Response: {data}")
