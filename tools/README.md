@@ -67,7 +67,7 @@ Once these steps are completed, you should not have to login again.
 
 ### Usage
 
-* Display Battery Reserve Setting
+* Display Current Battery Reserve Setting
 
     ```bash
     # Verbose Response
@@ -96,3 +96,44 @@ Once these steps are completed, you should not have to login again.
 * Cron Job Examples
 
   See the [cron.sh](cron.sh) example script on how you can use set-reserve.py to optimize your Powerwall usage.
+
+## Set Mode
+
+This command line tool allows you to read and set the Powerwall operational mode (self-powered or time-based control).
+
+### Setup
+
+```bash
+# Install python modules
+pip install python-dateutil teslapy
+
+# Login to Tesla account to set up token
+python3 set-mode.py --login
+```
+
+This will create the config file, save an auth token so you will not need to login again, and then display the energy site details associated with your Tesla account. It will run in an interactive mode.  See the instructions for the "Set Reserve" tool above.
+
+### Usage
+
+* Display Current Operational Mode
+
+    ```bash
+    # Verbose Response
+    python3 set-mode.py --read
+
+    # Abbreviated Response
+    python3 set-mode.py --read -n
+    ```
+
+  `READ: Current Operational Mode: self_consumption with 2 Powerwalls`
+
+* Set Operational Mode
+
+    ```bash
+    # Set to Self Powered mode
+    python3 set-reserve.py --set self
+
+    # Set to Time-Based Control mode
+    python3 set-reserve.py --set time
+    ```
+
