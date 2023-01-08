@@ -1,5 +1,18 @@
 ## pyPowerwall Proxy Release Notes
 
+
+### Proxy t23 (8 Jan 2023)
+
+* Updated to Python 3.10
+
+### Proxy t22 (23 Nov 2022)
+
+* Added Powerwall Firmware version display to Power Flow Animation
+
+### Proxy t20 t21 (23 Nov 2022)
+
+* Added cache logic to better handle Powerwall firmware upgrades.
+
 ### Proxy t19 (15 Oct 2022)
 
 * Fix `clear.js` (and others) to hide the compliance link button in the animation caused by the latest Powerwall firmware upgrade (22.26.1-foxtrot)
