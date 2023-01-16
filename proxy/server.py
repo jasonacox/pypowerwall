@@ -27,7 +27,7 @@ import datetime
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t23"
+BUILD = "t24"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -185,6 +185,14 @@ class handler(BaseHTTPRequestHandler):
         elif self.path == '/alerts':
             # Alerts
             message = pw.alerts(jsonformat=True)
+        elif self.path == '/alerts/pw':
+             # Alerts in dictionary/object format
+              pwalerts = {}
+              idx = 1
+              alerts = pw.alerts()
+              for alert in alerts:
+                   pwalerts[alert] = 1
+              message = json.dumps(pwalerts)
         elif self.path == '/freq':
             # Frequency, Current, Voltage and Grid Status
             fcv = {}

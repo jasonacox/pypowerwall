@@ -588,22 +588,34 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts
     * BackfeedLimited - Unknown
+    * BatteryBreakerOpen
+    * BatteryComms - Communication issue with Battery
     * BatteryFault - Powerwall Failure
     * DeviceShutdownRequested
+    * ExcessiveVoltageDrop
+    * FWUpdateFailed - Firmware Upgrade Failed
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * GridCodesWrite - Unknown
+    * GridFaultContactorTrip
     * HighCPU - Occurs when too many API calls are made against the gateway especially with bad credentials
+    * IslandingControllerMIA
     * PanelMaxCurrentLimited
     * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * PodCommissionTime - Unknown
+    * PVInverterComms - Communication issue with Solar Inverter
     * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
     * ScheduledIslandContactorOpen - Manually Disconnected from Grid
     * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid
     * SiteMaxPowerLimited - Unknown
+    * SiteMeterComms - Communication issue with Site Meter
     * SiteMinPowerLimited - Unknown
     * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
+    * SolarMeterComms - Communication issue with Solar Meter
+    * SolarRGMMeterComms - Communication issue with Solar Revenue Grade Meter
     * SystemConnectedToGrid
     * SystemShutdown
+    * UnscheduledIslandContactorOpen
+    * WaitForUserNoInvertersReady - Occurs during grid outage when battery shuts down more than once due to load or error. Requires user intervention to restart.
 
 #### TETHC - Tesla Energy Total Home Controller
 
@@ -658,7 +670,9 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts  
     * PINV_a010_can_gtwMIA - Indicate that gateway/sync is MIA (seen during firmware upgrade reboot)
+    * PINV_a016_basicAcCheckUnderVoltage
     * PINV_a039_can_thcMIA - Seems to indicate that Home Controller is MIA (seen during firmware upgrade reboot)
+    * PINV_a041_sensedGridDisturbance
     * PINV_a067_overvoltageNeutralChassis - Unknown
 
 #### TESYNC - Tesla Energy Synchronizer
@@ -671,6 +685,10 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts
     * SYNC_a001_SW_App_Boot - Unknown
+    * SYNC_a005_vfCheckUnderVoltage
+    * SYNC_a020_LoadsDropped
+    * SYNC_a030_Sitemaster_MIA
+    * SYNC_a036_LoadsDroppedLong
     * SYNC_a038_DoOpenArguments - Unknown
     * SYNC_a044_IslanderDisconnectWithin2s
     * SYNC_a046_DoCloseArguments
@@ -702,13 +720,14 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * This includes the Tesla PV Rapid Shutdown MCI (“mid-circuit interrupter") devices which ensure that if one photovoltaic cell stops working, the others continue working.
 
 * Alerts
-    * PVS_a018_MciString[A-D] - This indicates a solar string (A, B, C or D) that is not connected.
+    * PVS_a0[17-20]_MciString[A-D] - This indicates a solar string (A, B, C or D) that is not connected.
     * PVS_a021_RapidShutdown
     * PVS_a026_Mci1PvVoltage
     * PVS_a027_Mci2PvVoltage
     * PVS_a031_Mci3PvVoltage
     * PVS_a032_Mci4PvVoltage
     * PVS_a039_SelfTestRelayFault
+    * PVS_a050_RelayCoilIrrationalWarning
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 

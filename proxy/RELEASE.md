@@ -1,5 +1,8 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t24 (16 Jan 2023)
+
+* Added new alerts endpoint ('/alerts/pw') for retrieving the data in dictionary/object format (helps with telegraf usage).
 
 ### Proxy t23 (8 Jan 2023)
 
