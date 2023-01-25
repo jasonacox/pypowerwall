@@ -591,28 +591,32 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * BatteryBreakerOpen
     * BatteryComms - Communication issue with Battery
     * BatteryFault - Powerwall Failure
+    * BatteryUnexpectedPower - Unknown
+    * CANUsageAlert - Unknown
     * DeviceShutdownRequested
     * ExcessiveVoltageDrop
     * FWUpdateFailed - Firmware Upgrade Failed
     * FWUpdateSucceeded - Firmware Upgrade Succeeded
     * GridCodesWrite - Unknown
+    * GridCodesWriteError - Unknown
     * GridFaultContactorTrip
     * HighCPU - Occurs when too many API calls are made against the gateway especially with bad credentials
     * IslandingControllerMIA
     * PanelMaxCurrentLimited
     * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * PodCommissionTime - Unknown
-    * PVInverterComms - Communication issue with Solar Inverter
+    * PVInverterComms - Communication issue with Solar Inverter (abnormal)
     * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
-    * ScheduledIslandContactorOpen - Manually Disconnected from Grid
-    * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid
+    * RealPowerConfigLimited - Unknown
+    * ScheduledIslandContactorOpen - Manually Disconnected from Grid (nominal)
+    * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid (nominal)
     * SiteMaxPowerLimited - Unknown
-    * SiteMeterComms - Communication issue with Site Meter
+    * SiteMeterComms - Communication issue with Site Meter (abnormal)
     * SiteMinPowerLimited - Unknown
     * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
-    * SolarMeterComms - Communication issue with Solar Meter
-    * SolarRGMMeterComms - Communication issue with Solar Revenue Grade Meter
-    * SystemConnectedToGrid
+    * SolarMeterComms - Communication issue with Solar Meter (abnormal)
+    * SolarRGMMeterComms - Communication issue with Solar Revenue Grade Meter (abnormal)
+    * SystemConnectedToGrid - Connected successfully to Grid (nominal)
     * SystemShutdown
     * UnscheduledIslandContactorOpen
     * WaitForUserNoInvertersReady - Occurs during grid outage when battery shuts down more than once due to load or error. Requires user intervention to restart.
@@ -627,7 +631,8 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Part 3012170-XX-Y (Powerwall +)
 
  * Alerts
-    * THC_w061_CAN_TX_FIFO_Overflow
+    * THC_w042_POD_MIA - Unknown (abnormal)
+    * THC_w061_CAN_TX_FIFO_Overflow - Unknown (abnormal)
     * THC_w155_Backup_Genealogy_Updated - Unknown but seen during firmware upgrade.
 
 #### TEPOD - Tesla Energy Powerwall
@@ -670,10 +675,11 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 * Alerts  
     * PINV_a010_can_gtwMIA - Indicate that gateway/sync is MIA (seen during firmware upgrade reboot)
+    * PINV_a011_can_podMIA - Unknown (abnormal)
     * PINV_a016_basicAcCheckUnderVoltage
     * PINV_a039_can_thcMIA - Seems to indicate that Home Controller is MIA (seen during firmware upgrade reboot)
     * PINV_a041_sensedGridDisturbance
-    * PINV_a067_overvoltageNeutralChassis - Unknown
+    * PINV_a067_overvoltageNeutralChassis - Unknown (nominal)
 
 #### TESYNC - Tesla Energy Synchronizer
 
@@ -689,9 +695,9 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * SYNC_a020_LoadsDropped
     * SYNC_a030_Sitemaster_MIA
     * SYNC_a036_LoadsDroppedLong
-    * SYNC_a038_DoOpenArguments - Unknown
+    * SYNC_a038_DoOpenArguments - Request to disconnect from grid (nominal)
     * SYNC_a044_IslanderDisconnectWithin2s
-    * SYNC_a046_DoCloseArguments
+    * SYNC_a046_DoCloseArguments - Request to join the grid (nominal)
 
 #### TEMSA - Tesla Backup Switch
 
@@ -709,7 +715,9 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Component of TETHC
 
 * Alerts
-    * PVAC_a014_PVS_disabled_relay - Happens during solar startup where PVS shows PVS_SelfTesting, PVS_SelfTestMci.
+    * PVAC_a014_PVS_disabled_relay - Happens during solar startup where PVS shows PVS_SelfTesting, PVS_SelfTestMci (nominal)
+    * PVAC_a024_PVACrx_Command_mia - Unknown (abnormal)
+    * PVAC_a025_PVS_Status_mia - Unknown (abnormal)
 
 #### PVS - Photovoltaic Strings
 
