@@ -749,6 +749,17 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * This is used to describe attributes of the inverter, meters and others
     * Component of STSTSM
 
+## Glossary
+
+This is an unofficial list of terms that are seen in Powerwall responses and messsage. 
+
+* Site = Utility Grid
+* Load = Home (think of it as the "load" that the battery or grid powers)
+* instant_power = Current power (instant) - also called "true power" in wattage (W)
+* instant_reactive_power = The dissipated power resulting from inductive and capacitive loads measured in volt-amperes reactive (VAR)
+* instant_apparent_power = The combination of reactive and true power measure in volt-amperes (VA)
+* energy_imported = kWh pulled from grid over a duration of time (since Powerwall commissioning it seems)
+* energy_exported = kWh pushed to grid
 
 ## Credits and References
 
