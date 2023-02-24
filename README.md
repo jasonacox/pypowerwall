@@ -587,11 +587,11 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Tesla Backup Switch (1624171-xx-y)
 
 * Alerts
-    * BackfeedLimited - Unknown
-    * BatteryBreakerOpen
+    * BackfeedLimited - The system is configured for inadvertent export and therefore will not further discharge to respect this limit
+    * BatteryBreakerOpen - Battery disabled via breaker
     * BatteryComms - Communication issue with Battery
     * BatteryFault - Powerwall Failure
-    * BatteryUnexpectedPower - Unknown
+    * BatteryUnexpectedPower - Commanded real power does not match measured power from battery meter.
     * CANUsageAlert - Unknown
     * DeviceShutdownRequested
     * ExcessiveVoltageDrop
@@ -606,14 +606,14 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * PodCommissionTime - Unknown
     * PVInverterComms - Communication issue with Solar Inverter (abnormal)
-    * RealPowerAvailableLimited - Unknown but seems to happen when Powerwall reaches 100% full
-    * RealPowerConfigLimited - Unknown
+    * RealPowerAvailableLimited - The command is greater than the Available Battery Real Charge or Discharge Power (seen when Powerwall 100% full)
+    * RealPowerConfigLimited - The system is unable to meet the commanded power because a limit that was configured during commissioning
     * ScheduledIslandContactorOpen - Manually Disconnected from Grid (nominal)
     * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid (nominal)
     * SiteMaxPowerLimited - Unknown
     * SiteMeterComms - Communication issue with Site Meter (abnormal)
-    * SiteMinPowerLimited - Unknown
-    * SolarChargeOnlyLimited - Occurs when battery is below reserve limit and solar exclusively used to charge battery back up to limit
+    * SiteMinPowerLimited - Cannot meet command because the Site Minimum Power Limit has been set
+    * SolarChargeOnlyLimited - The system has been configured to only charge from solar. Solar is not available, therefore the charge request cannot be met.
     * SolarMeterComms - Communication issue with Solar Meter (abnormal)
     * SolarRGMMeterComms - Communication issue with Solar Revenue Grade Meter (abnormal)
     * SystemConnectedToGrid - Connected successfully to Grid (nominal)
