@@ -59,7 +59,7 @@ import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 
-version_tuple = (0, 6, 0)
+version_tuple = (0, 6, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -613,14 +613,16 @@ class Powerwall(object):
         if type == "json":
             return json.dumps(payload, indent=4, sort_keys=True)
 
-        map = {'SystemGridConnected': {'string': 'UP', 'numeric': 1}, 
+        gridmap = {'SystemGridConnected': {'string': 'UP', 'numeric': 1}, 
                'SystemIslandedActive': {'string': 'DOWN', 'numeric': 0}, 
                'SystemTransitionToGrid': {'string': 'SYNCING', 'numeric': -1},
                'SystemTransitionToIsland': {'string': 'SYNCING', 'numeric': -1},
-               'SystemIslandedReady': {'string': 'SYNCING', 'numeric': -1}}
+               'SystemIslandedReady': {'string': 'SYNCING', 'numeric': -1},
+               'SystemMicroGridFaulted': {'string': 'DOWN', 'numeric': 0},
+               'SystemWaitForUser': {'string': 'DOWN', 'numeric': 0}}
         try:
             grid_status = payload['grid_status']
-            return map[grid_status][type]
+            return gridmap[grid_status][type]
         except:
             # The payload from powerwall was not valid
             log.debug("ERROR Invalid return value received from gateway: " + str(payload.grid_status))
