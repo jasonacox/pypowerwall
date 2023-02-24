@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.6.1 - Add Grid Conditions
+
+* PyPI 0.6.1
+* Added new `SystemMicroGridFaulted` and `SystemWaitForUser` grid conditions to `grid_status()` function. Both are mapped to "DOWN" conditions. Discovery by @mcbrise in https://github.com/jasonacox/Powerwall-Dashboard/issues/158#issuecomment-1441648085.
+
 ## v0.6.0 - Add Persistent HTTP Connections
 
 * PyPI 0.6.0
