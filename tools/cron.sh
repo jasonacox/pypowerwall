@@ -20,7 +20,7 @@ PASSWORD='yourPassword'   # Powerwall password
 FOLDER='/home/tesla'      # Location of Tesla auth file
 
 # Reserve Settigs
-MAX=90                    # Reserve level for charge mode
+MAX=80                    # Reserve level for charge mode
 MIN=20                    # Minimum reserve level for discharge
 
 LOGFILE=cron.log
@@ -55,25 +55,21 @@ echo "$MONTH/$DATE/$YEAR ${HOUR}:${MINUTE}: The battery level is ${LEVEL}, Grid=
 change() {
     echo "Change to ${1}"
     /usr/bin/python3 set-reserve.py --set $1
-    echo "${1}" > $SETFILE
     echo "$MONTH/$DATE/$YEAR ${HOUR}:${MINUTE}: Updated to ${1} - The battery level is ${LEVEL}, Grid=${GRID}, House=${HOUSE}, Solar=${SOLAR}, PW=${PW}, Reserve was=${CUR}" >> $LOGFILE
 }
 
 # Logic blocks for operations
 
-# Summer
-#   TODO: Add seasonal adjustments for Summer vs Winter production
-
-# Winter
-
-# From 9am to 3pm - Peak solar production time - charge battery
-if (( $H >= 9 )) && (( $H < 15 )); then
-    # At 10am
-    if (( $(echo "$LEVEL < $MAX" |bc -l) )); then
-        # If not charged
-        if (( $(echo "$CUR < $MAX" |bc -l) )); then
-            # change reserve if not already set
-            change $MAX
+# WINTER - Nov, Dec and Jan - Adjust Reserve to save energy for peak
+if (( "${MONTH}" == "11" )) || ((  "${MONTH}" == "12")) || (( "${MONTH}" == "01" )); then
+    # From 9am to 3pm - Peak solar production time - charge battery
+    if (( $H >= 9 )) && (( $H < 15 )); then
+        if (( $(echo "$LEVEL < $MAX" |bc -l) )); then
+            # If not charged
+            if (( $(echo "$CUR < $MAX" |bc -l) )); then
+                # change reserve if not already set
+                change $MAX
+            fi
         fi
     fi
 fi
