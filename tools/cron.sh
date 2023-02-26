@@ -74,6 +74,21 @@ if (( "${MONTH}" == "11" )) || ((  "${MONTH}" == "12")) || (( "${MONTH}" == "01"
     fi
 fi
 
+# SPRING - Feb, Mar, Apr - Check for Clouds
+if (( "${MONTH}" == "02" )) || ((  "${MONTH}" == "03")) || (( "${MONTH}" == "04" )); then
+    # From 9am to 3pm - Peak solar production time - charge battery
+    if (( $H >= 11 )) && (( $H < 16 )) && (( $CLOUDS > 90 )); then
+        # 11am to 4pm
+        if (( $(echo "$LEVEL < $MAX" |bc -l) )); then
+            # If not charged
+            if (( $(echo "$CUR < $MAX" |bc -l) )); then
+                # change reserve if not already set
+                change $MAX
+            fi
+        fi
+    fi
+fi
+
 # Afternoon after 3pm - Peak grid usage - switch to battery
 if (( $H >= 15 )); then
     if (( $(echo "$CUR > $MIN" |bc -l) )); then
