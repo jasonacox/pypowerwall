@@ -4,6 +4,8 @@
 
 * PyPI 0.6.1
 * Added new `SystemMicroGridFaulted` and `SystemWaitForUser` grid conditions to `grid_status()` function. Both are mapped to "DOWN" conditions. Discovery by @mcbrise in https://github.com/jasonacox/Powerwall-Dashboard/issues/158#issuecomment-1441648085.
+* Revised error handling of SITE_DATA request due to issues noted in #12 when multiple sites are linked to the Tesla account by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/25
+* Proxy t24: Added new `/alerts/pw` endpoint with dictionary/object response format by @DerickJohnson in https://github.com/jasonacox/pypowerwall/pull/26
 
 ## v0.6.0 - Add Persistent HTTP Connections
 
