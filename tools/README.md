@@ -96,6 +96,7 @@ Once these steps are completed, you should not have to login again.
 * Cron Job Examples
 
   See the [cron.sh](cron.sh) example script on how you can use set-reserve.py to optimize your Powerwall usage.
+  
 
 ## Set Mode
 
@@ -137,3 +138,6 @@ This will create the config file, save an auth token so you will not need to log
     python3 set-reserve.py --set time
     ```
 
+### Credit
+
+These tools (set-reserve and set-mode) are based on the the amazing [tesla_history.py](https://github.com/jasonacox/Powerwall-Dashboard/tree/main/tools/tesla-history) tool by Michael Birse (@mcbirse) that imports Tesla cloud history into the [Powerwall-Dashboard](https://github.com/jasonacox/Powerwall-Dashboard).
