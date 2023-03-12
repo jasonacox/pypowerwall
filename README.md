@@ -719,6 +719,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVAC_a014_PVS_disabled_relay - Happens during solar startup where PVS shows PVS_SelfTesting, PVS_SelfTestMci (nominal)
     * PVAC_a024_PVACrx_Command_mia - Unknown (abnormal)
     * PVAC_a025_PVS_Status_mia - Unknown (abnormal)
+    * PVAC_a041_excess_PV_clamp_triggered
 
 #### PVS - Photovoltaic Strings
 
@@ -736,7 +737,11 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVS_a031_Mci3PvVoltage
     * PVS_a032_Mci4PvVoltage
     * PVS_a039_SelfTestRelayFault
+    * PVS_a048_DcSensorIrrationalFault
     * PVS_a050_RelayCoilIrrationalWarning
+    * PVS_a058_MciOpenOnFault
+    * PVS_a059_MciOpen
+    * PVS_a060_MciClose
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
