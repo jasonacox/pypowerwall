@@ -719,6 +719,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVAC_a014_PVS_disabled_relay - Happens during solar startup where PVS shows PVS_SelfTesting, PVS_SelfTestMci (nominal)
     * PVAC_a024_PVACrx_Command_mia - Unknown (abnormal)
     * PVAC_a025_PVS_Status_mia - Unknown (abnormal)
+    * PVAC_a035_VFCheck_RoCoF - Unknown
     * PVAC_a041_excess_PV_clamp_triggered
 
 #### PVS - Photovoltaic Strings
