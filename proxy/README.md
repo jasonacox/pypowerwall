@@ -91,6 +91,16 @@ The Proxy will pass authenticated calls through to the Powerwall Web Interface a
 
 This is available by directly accessing the proxy endpoint, https://localhost:8675 (replace localhost with the address of host running pyPowerwall Proxy). You can embed this animation within an iFrame. See [web/example.html](web/example.html).
 
+## Browser Cache Control
+
+By default resources sent for the power flow animation passthrough are not cached by the browser.  This includes fairly large CSS, JavaScript and Image PNG files which are downloaded every time the browser reloads the animation.  Performance can be improved by directing the web browser to cache these resources locally - only reloading if the data in the cache is old, a period known as `max-age`.
+
+You can control this with an optional environment variable `PW_BROWSER_CACHE` which takes a value in seconds. For example,
+
+* PW_BROWSER_CACHE=86400 - set `max-age` to 24 hours.
+
+If `PW_BROWSER_CACHE` is not set, or set to zero, then no caching takes place.  If you need to force a reload of the browser cache before `max-age` then most browsers will do this if you hold down the `shift` key while reloading the page.
+
 ## HTTPS Support (Experimental)
 
 The Proxy now supports https protocol using the optional environmental variable `PW_HTTPS`. This is useful for placing data in secured iFrame, including the power flow animation available via the Powerwall portal (https://localhost:8675/).
