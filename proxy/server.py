@@ -27,7 +27,7 @@ import datetime
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t24"
+BUILD = "t25"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 

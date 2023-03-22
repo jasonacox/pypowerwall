@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t25 (21 Mar 2023)
+
+* Fix Cache-Control no-cache header and added option to set max-age, fixes #31 by @dkerr64 in https://github.com/jasonacox/pypowerwall/pull/32
+
 ### Proxy t24 (16 Jan 2023)
 
 * Added new alerts endpoint ('/alerts/pw') for retrieving the data in dictionary/object format (helps with telegraf usage).
