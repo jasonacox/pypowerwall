@@ -49,6 +49,7 @@ host = os.getenv("PW_HOST", "hostname")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
+browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
 timeout = int(os.getenv("PW_TIMEOUT", "10"))
 pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "10"))
 https_mode = os.getenv("PW_HTTPS", "no")
@@ -289,7 +290,6 @@ class handler(BaseHTTPRequestHandler):
                 return
 
             # Proxy request to Powerwall web server.
-            self.send_header("Set-Cookie", "Cache-Control: no-cache")
             proxy_path = self.path
             if proxy_path.startswith("/"):
                 proxy_path = proxy_path[1:]
@@ -304,6 +304,11 @@ class handler(BaseHTTPRequestHandler):
             )
             fcontent = r.content
             ftype = r.headers['content-type']
+            # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
+            if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
+                self.send_header("Cache-Control", "max-age={}".format(browser_cache))
+            else:
+                self.send_header("Cache-Control", "no-cache, no-store")
 
             # Inject transformations
             if self.path.split('?')[0] == "/":
