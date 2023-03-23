@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## v0.6.2 - Proxy Cache-Control
+
+* PyPI 0.6.2
+* Update docs for alerts by @DerickJohnson in https://github.com/jasonacox/pypowerwall/pull/29 and  https://github.com/jasonacox/pypowerwall/pull/30
+* Fix Cache-Control no-cache header and allow for setting max-age, fixes #31 by @dkerr64 in https://github.com/jasonacox/pypowerwall/pull/32
+
 ## v0.6.1 - Add Grid Conditions
 
 * PyPI 0.6.1
