@@ -738,6 +738,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVS_a027_Mci2PvVoltage
     * PVS_a031_Mci3PvVoltage
     * PVS_a032_Mci4PvVoltage
+    * PVS_a036_PvArcLockout
     * PVS_a039_SelfTestRelayFault
     * PVS_a048_DcSensorIrrationalFault
     * PVS_a050_RelayCoilIrrationalWarning
