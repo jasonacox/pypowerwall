@@ -14,9 +14,10 @@
 
 """
 
-username = 'elon@tesla.com' # Fill in Tesla login email address/account
+username = 'yourname@example.com' # Fill in Tesla login email address/account
 lat, lon  = ##.###, -###.###        # Fill in Location where charging will occur (shown at startup)
 pypowerwall_IP = '10.x.x.x:8675'	# Fill in IP address and port for pypowerwall docker container
+stop_charge_hour = 16 #hour of the day to stop charging (i.e. peak electricity rates to not discharge powerwall or when solar production expected to be around min charging rate causing charging to start and stop frequently
     
 RedTxt, BluTxt, NormTxt = '\033[31m', '\033[34m', '\033[m'
 RedBG, GrnBG, NormBG = '\033[101m', '\033[102m', '\033[0m'
@@ -122,7 +123,7 @@ def update_powerwall(): #get site data on solar/grid from local Powerwall gatewa
 def UpdateSense() :  # Update Powerwall and charger voltage
     global power_diff, volts
     try :
-        power_diff = update_powerwall()['site']['instant_power']
+        power_diff = int(update_powerwall()['site']['instant_power'])*-1
         volts = int(vehicles[0].get_vehicle_data()['charge_state']['charger_voltage'])
     except :
         printmsg(RedTxt + "Powerwall data timeout or cannot get charger voltage" + NormTxt)
@@ -166,11 +167,11 @@ async def TesSolarCharge() :
                 print("Sorry. Currently this car is in for service")
                 exit()
         
-            if datetime.datetime.now().time().hour < 8 or datetime.datetime.now().time().hour >= 16 :
+            if datetime.datetime.now().time().hour < 8 or datetime.datetime.now().time().hour >= stop_charge_hour :
                 printmsg(BluTxt + "Nighttime" + NormTxt +", Sleeping until next hour...")
-                if 16 <= datetime.datetime.now().time().hour <= 17 :
+                if stop_charge_hour <= datetime.datetime.now().time().hour <= (stop_charge_hour+1) :
                     StopCharging(vehicles[0])
-                    printmsg(BluTxt + "4-9pm" + NormTxt +", Stop charging...") #4-9pm peak rate when PowerWall is powering house, so don't charge car and drain powerwall
+                    printmsg(BluTxt + datetime.datetime.now().strftime("%H:%M") + NormTxt +", Defined stop charging hour reached; peak or reduced solar production...") #4-9pm peak rate when PowerWall is powering house, so don't charge car and drain powerwall
                 await asyncio.sleep(60 * (60 - datetime.datetime.now().time().minute))
                 continue
 
@@ -267,6 +268,6 @@ async def TesSolarCharge() :
             await asyncio.sleep(120)                       # Could use variable to change frequency of updates, but 2 minutes seems reasonable without hitting Tesla API frequently enough to cause lockout
 #run the main program
 try:
-    await TesSolarCharge()
+    asyncio.run(TesSolarCharge())
 except KeyboardInterrupt:
     print("\n\n Interrupt received, stopping TesSolarCharge\n")
