@@ -182,7 +182,7 @@ After you have logged in successfully, the browser will show a 'Page Not Found' 
 
 ### Usage
 
-* Display Current Operational Mode
+* Run the TesSolarCharge.py script
 
     ```bash
     # Run TesSolarCharge.py to start charging your car and adjusting rate based on solar
