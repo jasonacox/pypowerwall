@@ -11,8 +11,8 @@
  - removed due to Tesla removal of Vent option from API
  
  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND ON INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 """
+
 
 username = 'yourname@example.com' # Fill in Tesla login email address/account
 lat, lon  = ##.###, -###.###        # Fill in Location where charging will occur (shown at startup)
@@ -22,7 +22,7 @@ stop_charge_hour = 16 #hour of the day to stop charging (i.e. peak electricity r
 RedTxt, BluTxt, NormTxt = '\033[31m', '\033[34m', '\033[m'
 RedBG, GrnBG, NormBG = '\033[101m', '\033[102m', '\033[0m'
 
-import datetime, asyncio
+import datetime, asyncio, requests
 import logging, sys#, json
 # pip3 install teslapy
 import teslapy
@@ -125,13 +125,12 @@ def UpdateSense() :  # Update Powerwall and charger voltage
     try :
         power_diff = int(update_powerwall()['site']['instant_power'])*-1
         volts = int(vehicles[0].get_vehicle_data()['charge_state']['charger_voltage'])
-    except :
+    except Exception as e:
+        print(e)
         printmsg(RedTxt + "Powerwall data timeout or cannot get charger voltage" + NormTxt)
         power_diff = 0
+        volts = 240 #don't change anything in case next call recovers
         return(True)
-    else :
-        #volts = int(car.get_vehicle_data()['charge_state']['charger_voltage'])
-        power_diff = int(update_powerwall()['site']['instant_power'])*-1
         
 def Vent(car, command) :
     try :  car.command('WINDOW_CONTROL', command = command, lat=lat, lon=lon)
@@ -150,6 +149,7 @@ async def TesSolarCharge() :
             print('Use browser to login. Page Not Found will be shown at success.')
             print('Open this URL: ' + tesla.authorization_url())
             tesla.fetch_token(authorization_response=input('Enter URL after authentication: '))
+        global vehicles			   
         vehicles = tesla.vehicle_list()
 
         print("Starting connection to", vehicles[0].get_vehicle_summary()['display_name'], end='')
@@ -169,7 +169,7 @@ async def TesSolarCharge() :
         
             if datetime.datetime.now().time().hour < 8 or datetime.datetime.now().time().hour >= stop_charge_hour :
                 printmsg(BluTxt + "Nighttime" + NormTxt +", Sleeping until next hour...")
-                if stop_charge_hour <= datetime.datetime.now().time().hour <= (stop_charge_hour+1) :
+                if stop_charge_hour <= datetime.datetime.now().time().hour < (stop_charge_hour+1) :
                     StopCharging(vehicles[0])
                     printmsg(BluTxt + datetime.datetime.now().strftime("%H:%M") + NormTxt +", Defined stop charging hour reached; peak or reduced solar production...") #4-9pm peak rate when PowerWall is powering house, so don't charge car and drain powerwall
                 await asyncio.sleep(60 * (60 - datetime.datetime.now().time().minute))
@@ -267,7 +267,8 @@ async def TesSolarCharge() :
             printmsg(" Wait two minutes...")               # Message after every complete loop
             await asyncio.sleep(120)                       # Could use variable to change frequency of updates, but 2 minutes seems reasonable without hitting Tesla API frequently enough to cause lockout
 #run the main program
-try:
-    asyncio.run(TesSolarCharge())
-except KeyboardInterrupt:
-    print("\n\n Interrupt received, stopping TesSolarCharge\n")
+if __name__ == "__main__":
+	try:
+		asyncio.run(TesSolarCharge())
+	except KeyboardInterrupt:
+		print("\n\n Interrupt received, stopping TesSolarCharge\n")
