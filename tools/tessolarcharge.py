@@ -129,7 +129,7 @@ def UpdateSense() :  # Update Powerwall and charger voltage
         print(e)
         printmsg(RedTxt + "Powerwall data timeout or cannot get charger voltage" + NormTxt)
         power_diff = 0
-		volts = 240 #don't change anything in case next call recovers
+        volts = 240 #don't change anything in case next call recovers
         return(True)
         
 def Vent(car, command) :
@@ -149,7 +149,7 @@ async def TesSolarCharge() :
             print('Use browser to login. Page Not Found will be shown at success.')
             print('Open this URL: ' + tesla.authorization_url())
             tesla.fetch_token(authorization_response=input('Enter URL after authentication: '))
-		global vehicles			   
+        global vehicles			   
         vehicles = tesla.vehicle_list()
 
         print("Starting connection to", vehicles[0].get_vehicle_summary()['display_name'], end='')
