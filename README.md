@@ -605,6 +605,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * GridFaultContactorTrip
     * HighCPU - Occurs when too many API calls are made against the gateway especially with bad credentials
     * IslandingControllerMIA
+    * OpticasterExe - See [Opticaster](https://www.tesla.com/en_eu/support/energy/tesla-software/opticaster)
     * PanelMaxCurrentLimited
     * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * PodCommissionTime - Unknown
