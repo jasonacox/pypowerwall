@@ -171,8 +171,8 @@ async def TesSolarCharge() :
                 printmsg(BluTxt + "Nighttime" + NormTxt +", Sleeping until next hour...")
                 if stop_charge_hour <= datetime.datetime.now().time().hour < (stop_charge_hour+1) :
                     if vehicles[0].available() and not fullORunplugged : #don't stop charging if vehicle not charging
-					    StopCharging(vehicles[0])
-                    printmsg(BluTxt + datetime.datetime.now().strftime("%H:%M") + NormTxt +", Defined stop charging hour reached; peak or reduced solar production...") #4-9pm peak rate when PowerWall is powering house, so don't charge car and drain powerwall
+                        StopCharging(vehicles[0])
+                printmsg(BluTxt + datetime.datetime.now().strftime("%H:%M") + NormTxt +", Defined stop charging hour reached; peak or reduced solar production...") #4-9pm peak rate when PowerWall is powering house, so don't charge car and drain powerwall
                 await asyncio.sleep(60 * (60 - datetime.datetime.now().time().minute))
                 continue
 
