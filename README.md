@@ -548,6 +548,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.36.6 cf1839cb | 11-Mar-2023 | STSTSM firmware showing 2023-03-04-gd9f19c06f2 - Improved detection of open circuit breakers on Powerwall systems ([see Tesla release notes](https://www.tesla.com/support/energy/powerwall/mobile-app/software-updates)). Change was reverted and rolled back to 22.26.4 | v0.6.0 Proxy t24 | 4.18.0-1607 |
 | 22.36.7 08d06dad | 21-Mar-2023 | STSTSM firmware showing 2023-03-04-gd9f19c06f2 - No noticeable changes so far. | v0.6.1 Proxy t24 | 4.18.0-1607 |
 | 22.36.9 c55384d2 | 11-Apr-2023 | STSTSM firmware showing 2023-03-29-g66549e6ca7 | v0.6.2 Proxy t25 | 4.19.5-1665|
+| 23.4.2-1 fe55682a | 3-May-2023 | STSTSM firmware showing `localhost` | v0.6.2 Proxy t25 | 4.20.69-1691|
 
 ### Devices and Alerts
 
