@@ -137,7 +137,60 @@ This will create the config file, save an auth token so you will not need to log
     # Set to Time-Based Control mode
     python3 set-reserve.py --set time
     ```
+## TesSolarCharge
 
+This python script allows you to change your Tesla car charging speed (amps) in realtime with solar production and home energy consumption (to minimize drawing and feeding power back to the grid), using PyPowerwall to get the energy data from the PowerWall local gateway, and TeslaPy to set charging speed via Tesla's Cloud API.
+
+### Setup
+
+Modify the TesSolarCharge.py file and enter in your Tesla-associated email address (login), your latitude and longitude (as numeric with three decimal places), the IP address of the computer running PyPowerwall on your local network, and the hour of the day when you want charging to stop:
+```
+username = 'yourname@example.com' # Fill in Tesla login email address/account
+lat, lon  = ##.###, -###.###        # Fill in Location where charging will occur (shown at startup)
+pypowerwall_IP = '10.x.x.x:8675'	# Fill in IP address and port for pypowerwall docker container
+stop_charge_hour = 16 #hour of the day to stop charging (i.e. peak electricity rates to not discharge powerwall or when solar production expected to be around min charging rate causing charging to start and stop frequently
+```
+
+Install Python modules and try to authorize TeslaPy
+```bash
+# Install python modules
+pip install teslapy
+
+# Login to Tesla account to set up token
+python3 TesSolarCharge.py
+```
+
+The first time you run the script if TeslaPy is not authorized, it should provide a Tesla website URL, where you can login with your Tesla account credentials.
+
+**NOTE**: After you log in, it will take you to a *404 Page Not Found* error page - do not panic, 
+this is what you want.
+
+```
+----------------------------------------
+Tesla account: your@email.address
+----------------------------------------
+Open the below address in your browser to login.
+
+<copy URL to browser> e.g.: https://auth.tesla.com/oauth2/v3/authorize?response_type=code...etc.
+
+After login, paste the URL of the 'Page Not Found' webpage below.
+
+Enter URL after login: <paste URL from browser> e.g.: https://auth.tesla.com/void/callback?code=...etc.
+```
+
+After you have logged in successfully, the browser will show a 'Page Not Found' webpage. Copy the URL of this page and paste it at the prompt.
+
+### Usage
+
+* Run the TesSolarCharge.py script
+
+    ```bash
+    # Run TesSolarCharge.py to start charging your car and adjusting rate based on solar
+    python3 TesSolarCharge.py
+    ```
+	
 ### Credit
 
 These tools (set-reserve and set-mode) are based on the the amazing [tesla_history.py](https://github.com/jasonacox/Powerwall-Dashboard/tree/main/tools/tesla-history) tool by Michael Birse (@mcbirse) that imports Tesla cloud history into the [Powerwall-Dashboard](https://github.com/jasonacox/Powerwall-Dashboard).
+
+TesSolarCharge is based on TesSense w/ SenseLink  by Randy Spencer (https://github.com/israndy/TesSense), modified by Nate Carroll to work with PyPowerwall and add a few features. 
