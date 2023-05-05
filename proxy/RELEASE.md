@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t26 (4 May 2023)
+
+* Update default `PW_POOL_MAXSIZE` from 10 to 15 to help address "Connection pool is full" errors reported by @jgleigh in https://github.com/jasonacox/Powerwall-Dashboard/discussions/261 - May the 4th be with you!
+
 ### Proxy t25 (21 Mar 2023)
 
 * Fix Cache-Control no-cache header and added option to set max-age, fixes #31 by @dkerr64 in https://github.com/jasonacox/pypowerwall/pull/32
