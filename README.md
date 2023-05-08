@@ -679,12 +679,18 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Component of TETHC
 
 * Alerts  
+    * PINV_a001_vfCheckPIIErrorHigh
+    * PINV_a006_vfCheckUnderFrequency
     * PINV_a010_can_gtwMIA - Indicate that gateway/sync is MIA (seen during firmware upgrade reboot)
     * PINV_a011_can_podMIA - Unknown (abnormal)
     * PINV_a016_basicAcCheckUnderVoltage
+    * PINV_a022_SwitchingBridgeIrrational
+    * PINV_a023_LossOfCurrentControl
     * PINV_a039_can_thcMIA - Seems to indicate that Home Controller is MIA (seen during firmware upgrade reboot)
     * PINV_a041_sensedGridDisturbance
+    * PINV_a047_BusCatcherActivated
     * PINV_a067_overvoltageNeutralChassis - Unknown (nominal)
+    * PINV_a086_motorStarting
 
 #### TESYNC - Tesla Energy Synchronizer
 
