@@ -735,6 +735,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * This includes the Tesla PV Rapid Shutdown MCI (“mid-circuit interrupter") devices which ensure that if one photovoltaic cell stops working, the others continue working.
 
 * Alerts
+    * PVS_a010_PvIsolationTotal
     * PVS_a0[17-20]_MciString[A-D] - This indicates a solar string (A, B, C or D) that is not connected.
     * PVS_a021_RapidShutdown
     * PVS_a026_Mci1PvVoltage
@@ -743,6 +744,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVS_a032_Mci4PvVoltage
     * PVS_a036_PvArcLockout
     * PVS_a039_SelfTestRelayFault
+    * PVS_a044_FaultStatePvStringSafety
     * PVS_a048_DcSensorIrrationalFault
     * PVS_a050_RelayCoilIrrationalWarning
     * PVS_a058_MciOpenOnFault
