@@ -695,7 +695,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 #### TESYNC - Tesla Energy Synchronizer
 
 * Details
-    * Telsa Backup Gateway includes a synchronizer constantly monitoring grid voltage and frequency to relay grid parameters to Tesla Powerwall during Backup to Grid-tied transition.
+    * Tesla Backup Gateway includes a synchronizer constantly monitoring grid voltage and frequency to relay grid parameters to Tesla Powerwall during Backup to Grid-tied transition.
     * ECU Type is 259
     * Part 1493315-XX-Y
     * Component of TETHC
@@ -771,7 +771,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 ## Glossary
 
-This is an unofficial list of terms that are seen in Powerwall responses and messsage. 
+This is an unofficial list of terms that are seen in Powerwall responses and message. 
 
 * Site = Utility Grid
 * Load = Home (think of it as the "load" that the battery or grid powers)
