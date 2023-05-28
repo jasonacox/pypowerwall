@@ -244,7 +244,8 @@ def get_powerwall():
     if args.debug: 
         print(f"Retrieving Powerwall data...")
 
-    data = battery.get_battery_data()
+    # data = battery.get_battery_data()
+    data = battery.api('SITE_CONFIG')['response']
     if args.debug: 
         print(data)
     return data
@@ -296,7 +297,7 @@ if args.read:
     # Read and return current Powerwall operational mode
     # self_consumption or autonomous
     data = get_powerwall()
-    mode = data["operation"]
+    mode = data['default_real_mode']
     pw_count = data["battery_count"]
     if args.debug or not args.nonverbose: 
         print(f"READ: Current Operational Mode: {mode} with {pw_count} Powerwalls")
