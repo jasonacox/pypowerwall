@@ -794,3 +794,18 @@ This is an unofficial list of terms that are seen in Powerwall responses and mes
 
 * Python Tesla Powerwall API – https://github.com/jrester/tesla_powerwall
 * GoTesla - go based Tesla API - https://github.com/bmah888/gotesla
+
+## Citation
+
+If you wish to cite this project, please use:
+
+```bibtex
+@software{pyPowerwall,
+  author = {Cox, Jason A.},
+  title = {pyPowerwall: Python API for Tesla Powerwall and Solar Energy Data.},
+  year = {2023},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/jasonacox/pypowerwall}},
+}
+```
