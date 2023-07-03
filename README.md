@@ -660,7 +660,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * POD_w045_SW_Brick_OV_Warning
     * POD_w048_SW_Cell_Voltage_Sens
     * POD_w049_SW_CMA_Voltage_Mismatch
-    * POD_w058_SW_App_Boot
+    * POD_w058_SW_App_Boot - Possibly indicating autostart of a generator.
     * POD_w063_SW_SOC_Imbalance
     * POD_w064_SW_Brick_Low_Capacity
     * POD_w067_SW_Not_Enough_Energy_Precharge
