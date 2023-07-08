@@ -754,8 +754,8 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVS_a048_DcSensorIrrationalFault
     * PVS_a050_RelayCoilIrrationalWarning
     * PVS_a058_MciOpenOnFault
-    * PVS_a059_MciOpen
-    * PVS_a060_MciClose
+    * PVS_a059_MciOpen - "Mid-Circuit Interrupter" is open, this happens when there is not enough solar power to turn on the string, or the emergency shut down button is pressed.  These are safety devices on the strings to turn them on and off.
+    * PVS_a060_MciClose - "Mid-Circuit Interrupter" is closed, this is normal operation. An AC signal is sent from the inverter up the DC string triggering the MCI relay to close, allowing for DC solar production to start.
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
