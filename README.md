@@ -591,7 +591,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * Tesla Backup Switch (1624171-xx-y)
 
 * Alerts
-    * BackfeedLimited - The system is configured for inadvertent export and therefore will not further discharge to respect this limit
+    * BackfeedLimited - The system is configured for inadvertent export and therefore will not further discharge to respect this limit. It appears this controls backfeed before PTO, under the "Permission to Operate" option under the settings menu. Prior to PTO the backfeed rate is limited, as the system needs to produce over the load, but by the minimum possible. The system seems to regulate this by switching MCI's open/closed, to minimize the overage that must be backfed, as the power has to go somewhere, and at this point the batteries are 100%. This seems to toggle that setting per inverter.
     * BatteryBreakerOpen - Battery disabled via breaker
     * BatteryComms - Communication issue with Battery
     * BatteryFault - Powerwall Failure
@@ -611,7 +611,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PodCommissionTimeError - Unknown but happened when some of the Powerwalls failed during a firmware upgrade and was disabled (see [discussion](https://github.com/jasonacox/Powerwall-Dashboard/discussions/47))
     * PodCommissionTime - Unknown
     * PVInverterComms - Communication issue with Solar Inverter (abnormal)
-    * RealPowerAvailableLimited - The command is greater than the Available Battery Real Charge or Discharge Power (seen when Powerwall 100% full)
+    * RealPowerAvailableLimited - The command is greater than the Available Battery Real Charge or Discharge Power (seen when Powerwall 100% full). Seems related to BackfeedLimited.
     * RealPowerConfigLimited - The system is unable to meet the commanded power because a limit that was configured during commissioning
     * ScheduledIslandContactorOpen - Manually Disconnected from Grid (nominal)
     * SelfConsumptionReservedLimit - Battery reached reserve limit during self-consumption mode and switches to grid (nominal)
@@ -654,21 +654,21 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * POD_w017_SW_Batt_Volt_Sens_Irrational
     * POD_w024_HW_Fault_Asserted
     * POD_w029_HW_CMA_OV
-    * POD_w031_SW_Brick_OV
+    * POD_w031_SW_Brick_OV - It seems that the Brick warnings are related to preventing the condition where the powerwall doesn't have the minimum amount of power it needs to turn back on. When this happens, a third party charger is needed to get the powerwall back to it's minimum operating battery requirement to turn back on, or it's "bricked". Solar cannot return it to this state, because it needs power to make power.
     * POD_w041_SW_CMA_Comm_Integrity
-    * POD_w044_SW_Brick_UV_Warning
-    * POD_w045_SW_Brick_OV_Warning
+    * POD_w044_SW_Brick_UV_Warning - see POD_w031_SW_Brick_OV
+    * POD_w045_SW_Brick_OV_Warning - see POD_w031_SW_Brick_OV
     * POD_w048_SW_Cell_Voltage_Sens
     * POD_w049_SW_CMA_Voltage_Mismatch
     * POD_w058_SW_App_Boot - Possibly indicating autostart of a generator.
     * POD_w063_SW_SOC_Imbalance
-    * POD_w064_SW_Brick_Low_Capacity
+    * POD_w064_SW_Brick_Low_Capacity - see POD_w031_SW_Brick_OV
     * POD_w067_SW_Not_Enough_Energy_Precharge
     * POD_w090_SW_SOC_Imbalance_Limit_Charge
     * POD_w093_SW_Charge_Request
-    * POD_w105_SW_EOD
+    * POD_w105_SW_EOD 
     * POD_w109_SW_Self_Test_Request_Not_Serviced - Unknown
-    * POD_w110_SW_EOC - Unknown
+    * POD_w110_SW_EOC - "End of Charge" This triggers when full backfeed starts and battery at 100%.
 
 #### TEPINV - Tesla Energy Powerwall Inverter
 
@@ -754,8 +754,8 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVS_a048_DcSensorIrrationalFault
     * PVS_a050_RelayCoilIrrationalWarning
     * PVS_a058_MciOpenOnFault
-    * PVS_a059_MciOpen
-    * PVS_a060_MciClose
+    * PVS_a059_MciOpen - "Mid-Circuit Interrupter" is open, this happens when there is not enough solar power to turn on the string, or the emergency shut down button is pressed.  These are safety devices on the strings to turn them on and off.
+    * PVS_a060_MciClose - "Mid-Circuit Interrupter" is closed, this is normal operation. An AC signal is sent from the inverter up the DC string triggering the MCI relay to close, allowing for DC solar production to start.
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
