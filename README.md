@@ -688,6 +688,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PINV_a023_LossOfCurrentControl
     * PINV_a039_can_thcMIA - Seems to indicate that Home Controller is MIA (seen during firmware upgrade reboot)
     * PINV_a041_sensedGridDisturbance
+    * PINV_a043_gridResistanceTooHigh - Unknown (see https://github.com/jasonacox/Powerwall-Dashboard/discussions/323)
     * PINV_a047_BusCatcherActivated
     * PINV_a067_overvoltageNeutralChassis - Unknown (nominal)
     * PINV_a086_motorStarting
