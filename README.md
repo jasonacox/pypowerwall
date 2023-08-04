@@ -550,6 +550,8 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 22.36.9 c55384d2 | 11-Apr-2023 | STSTSM firmware showing 2023-03-29-g66549e6ca7 | v0.6.2 Proxy t25 | 4.19.5-1665|
 | 23.4.2-1 fe55682a | 3-May-2023 | STSTSM firmware showing `localbuild` | v0.6.2 Proxy t25 | 4.20.69-1691|
 | 23.12.10 30f95d0b | 1-Jul-2023 | STSTSM firmware showing 2023-07-11-geb56bf57ab | v0.6.2 Proxy t26 | 4.23.6-1844 |
+| 23.12.11 452c76cb | 4-Aug-2023 | STSTSM firmware showing 2023-07-20-ga38210a892 | v0.6.2 Proxy t26 | 4.23.6-1844 |
+
 
 ### Devices and Alerts
 
@@ -638,6 +640,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
  * Alerts
     * THC_w042_POD_MIA - Unknown (abnormal)
+    * THC_w051_Thermal_Power_Req_Not_Met - Unknown but seen during firmware upgrade.
     * THC_w061_CAN_TX_FIFO_Overflow - Unknown (abnormal)
     * THC_w155_Backup_Genealogy_Updated - Unknown but seen during firmware upgrade.
 
