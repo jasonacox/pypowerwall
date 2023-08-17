@@ -735,9 +735,11 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVAC_a019_ambient_overtemperature - Temp warning (abnormal)
     * PVAC_a024_PVACrx_Command_mia - Unknown (abnormal)
     * PVAC_a025_PVS_Status_mia - Unknown (abnormal)
+    * PVAC_a028_inv_K2_relay_welded
     * PVAC_a030_fan_faulted - Inverter fan failure (abnormal)
     * PVAC_a035_VFCheck_RoCoF - Unknown
     * PVAC_a041_excess_PV_clamp_triggered
+    * PVAC_a043_fan_speed_mismatch_detected
 
 #### PVS - Photovoltaic Strings
 
