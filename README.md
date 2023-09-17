@@ -551,6 +551,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 23.4.2-1 fe55682a | 3-May-2023 | STSTSM firmware showing `localbuild` | v0.6.2 Proxy t25 | 4.20.69-1691|
 | 23.12.10 30f95d0b | 1-Jul-2023 | STSTSM firmware showing 2023-07-11-geb56bf57ab | v0.6.2 Proxy t26 | 4.23.6-1844 |
 | 23.12.11 452c76cb | 4-Aug-2023 | STSTSM firmware showing 2023-07-20-ga38210a892 | v0.6.2 Proxy t26 | 4.23.6-1844 |
+| 23.28.1 fa0c1ad0 | 11-Sep-2023 | STSTSM firmware showing 2023-08-22-g807640ca4a | v0.6.2 Proxy t26 | 4.24.5-1931 |
 
 
 ### Devices and Alerts
