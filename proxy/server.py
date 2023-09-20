@@ -24,6 +24,8 @@ import time
 import logging
 import resource
 import datetime
+import signal
+import sys
 import ssl
 from transform import get_static, inject_js
 
@@ -343,6 +345,11 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(bytes(message, "utf8"))
         except:
             log.error("Socket broken sending response [doGET]")
+
+def sigTermHandle(signum, frame):
+    sys.exit()
+
+signal.signal(signal.SIGTERM, sigTermHandle)
 
 with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):
