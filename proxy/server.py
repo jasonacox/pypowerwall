@@ -25,7 +25,6 @@ import logging
 import resource
 import datetime
 import signal
-import sys
 import ssl
 from transform import get_static, inject_js
 
@@ -347,7 +346,7 @@ class handler(BaseHTTPRequestHandler):
             log.error("Socket broken sending response [doGET]")
 
 def sigTermHandle(signum, frame):
-    sys.exit()
+    raise SystemExit
 
 signal.signal(signal.SIGTERM, sigTermHandle)
 
