@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.6.2a - Proxy Graceful Exit
+
+* Add proxy gracefully exit with SIGTERM by @rcasta74 in https://github.com/jasonacox/pypowerwall/pull/49
+
 ## v0.6.2 - Proxy Cache-Control
 
 * PyPI 0.6.2
