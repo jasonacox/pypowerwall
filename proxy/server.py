@@ -24,10 +24,11 @@ import time
 import logging
 import resource
 import datetime
+import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t26"
+BUILD = "t27"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -343,6 +344,11 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(bytes(message, "utf8"))
         except:
             log.error("Socket broken sending response [doGET]")
+
+def sigTermHandle(signum, frame):
+    raise SystemExit
+
+signal.signal(signal.SIGTERM, sigTermHandle)
 
 with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):
