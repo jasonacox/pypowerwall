@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t27 (23 Sep 2023)
+
+* Add Add Graceful Exit with SIGTERM to fix condition where container does not stop gracefully as raised in https://github.com/jasonacox/pypowerwall/pull/49 by @rcasta74 .
+
 ### Proxy t26 (4 May 2023)
 
 * Update default `PW_POOL_MAXSIZE` from 10 to 15 to help address "Connection pool is full" errors reported by @jgleigh in https://github.com/jasonacox/Powerwall-Dashboard/discussions/261 - May the 4th be with you!
