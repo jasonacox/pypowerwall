@@ -2,6 +2,12 @@
 
 ## v0.6.2a - Proxy Graceful Exit
 
+* Add alert PVS_a036_PvArcLockout by @JordanBelford in https://github.com/jasonacox/pypowerwall/pull/33
+* Create `tessolarcharge.py` by @venturanc in https://github.com/jasonacox/pypowerwall/pull/36 &  https://github.com/jasonacox/pypowerwall/pull/37 & https://github.com/jasonacox/pypowerwall/pull/38
+* Fix typos and spelling errors by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/40
+* Add alert definitions per #42 by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/43
+* Added two PVAC Alerts by @niabassey in https://github.com/jasonacox/pypowerwall/pull/46
+* Added Firmware 23.28.1 to README.md by @niabassey in https://github.com/jasonacox/pypowerwall/pull/48
 * Add proxy gracefully exit with SIGTERM by @rcasta74 in https://github.com/jasonacox/pypowerwall/pull/49
 
 ## v0.6.2 - Proxy Cache-Control
