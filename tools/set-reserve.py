@@ -11,7 +11,8 @@
 
  Usage:
     * Install the required python modules:
-        pip install python-dateutil teslapy
+        pip install python-dateutil 
+        pip install -e git+https://github.com/tdorssers/TeslaPy.git#egg=teslapy
 
     * To use this script:
 
@@ -260,7 +261,7 @@ def get_level():
     if args.debug: 
         print(f"Retrieving Powerwall battery level reserve setting...")
 
-    data = battery.get_battery_data()
+    data = battery.get_site_info()
     if args.debug: 
         print(data)
     return data
@@ -310,7 +311,7 @@ sitetimezone = site['timezone']
 if args.read:
     # Read and return current Powerwall battery level reserve setting
     data = get_level()
-    level = data["backup"]["backup_reserve_percent"]
+    level = data["backup_reserve_percent"]
     pw_count = data["battery_count"]
     if args.debug or not args.number: 
         print(f"READ: Current Battery Reserve Setting: {level}% for {pw_count} Powerwalls")
