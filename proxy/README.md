@@ -159,10 +159,10 @@ Proxy Settings
 * PW_HTTPS - Set https mode - see HTTPS section above ("no")
 * PW_STYLE - Background color style for iframe [animation](http://localhost:8675/example.html) ("clear") - options:
     * clear (uses 'transparent')
-    * black or dakboard (uses '#000')
-    * white (uses '#ffffff')
-    * grafana (uses '#161719')
-    * grafana-dark (uses '#111217')
+    * black or dakboard (uses [!#000](https://via.placeholder.com/15/000/000000.png?text=+) '#000' )
+    * white (uses [!#ffffff](https://via.placeholder.com/15/ffffff/000000.png?text=+) '#ffffff')
+    * grafana (uses [!#161719](https://via.placeholder.com/15/161719/000000.png?text=+) '#161719')
+    * grafana-dark (uses [!#111217](https://via.placeholder.com/15/111217/000000.png?text=+) '#111217' )
 
 ## Release Notes
 
