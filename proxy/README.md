@@ -158,7 +158,7 @@ Proxy Settings
 * PW_POOL_MAXSIZE - Concurrent connections to Powerwall ("15")
 * PW_HTTPS - Set https mode - see HTTPS section above ("no")
 * PW_STYLE - Background color style for iframe [animation](http://localhost:8675/example.html) ("clear") - options:
-    * clear (uses 'transparent')
+    * clear (uses `transparent`)
     * black or dakboard (uses `#000` ![#000](https://via.placeholder.com/12/000/000000.png?text=+))
     * white (uses `#ffffff` ![#ffffff](https://via.placeholder.com/12/ffffff/000000.png?text=+))
     * grafana (uses `#161719` ![#161719](https://via.placeholder.com/12/161719/000000.png?text=+))
