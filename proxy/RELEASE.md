@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t28 (14 Oct 2023)
+
+* Add a `grafana-dark` style for `PW_STYLE` settings to accommodate placing as iframe in newer Grafana versions (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
+
 ### Proxy t27 (23 Sep 2023)
 
 * Add Add Graceful Exit with SIGTERM to fix condition where container does not stop gracefully as raised in https://github.com/jasonacox/pypowerwall/pull/49 by @rcasta74 .

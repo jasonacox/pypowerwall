@@ -10,7 +10,7 @@ Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/p
 
 ## Quick Start
 
-1. Run the Docker Container to listen on port 8675. Update the `-e` values for your Powerwall.
+1. Run the Docker Container to listen on port 8675. Update the `-e` values for your Powerwall (see [Environmental Settings](https://github.com/jasonacox/pypowerwall/tree/main/proxy#environmental-settings) for options):
 
     ```bash
     docker run \
@@ -25,6 +25,7 @@ Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/p
     -e PW_CACHE_EXPIRE='5' \
     -e PW_DEBUG='no' \
     -e PW_HTTPS='no' \
+    -e PW_STYLE='clear' \
     --name pypowerwall \
     --restart unless-stopped \
     jasonacox/pypowerwall
@@ -135,6 +136,33 @@ Content does not render in iFrame or prompts you for a login:
 
 Documentation for using the API is located in [HELP.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md#release-notes).
 
+## Environmental Settings
+
+The pyPowerwall Proxy will react to the following environmental variables with (defaults):
+
+Powerwall Settings
+
+* PW_PASSWORD - Powerwall customer password ("password")
+* PW_EMAIL - Powerwall customer email ("email@example.com")
+* PW_HOST - Powerwall hostname or IP address ("hostname")
+* PW_TIMEZONE - Local timezone ("America/Los_Angeles")
+
+Proxy Settings
+
+* PW_BIND_ADDRESS - IP address ("") - Required
+* PW_PORT - TCP port ("8675")
+* PW_DEBUG - Turn on debug logging ("no")
+* PW_CACHE_EXPIRE - Time to cache responses from Powerwall in sec ("5")
+* PW_BROWSER_CACHE - Sets Cache-Control for browser in sec ("0" = no-cache)
+* PW_TIMEOUT - Timeout waiting for Powerwall to respond in sec ("10")
+* PW_POOL_MAXSIZE - Concurrent connections to Powerwall ("15")
+* PW_HTTPS - Set https mode - see HTTPS section above ("no")
+* PW_STYLE - Background color style for iframe [animation](http://localhost:8675/example.html) ("clear") - options:
+    * clear (uses `transparent`)
+    * black or dakboard (uses `#000` ![#000](https://via.placeholder.com/12/000/000000.png?text=+))
+    * white (uses `#ffffff` ![#ffffff](https://via.placeholder.com/12/ffffff/000000.png?text=+))
+    * grafana (uses `#161719` ![#161719](https://via.placeholder.com/12/161719/000000.png?text=+))
+    * grafana-dark (uses `#111217` ![#111217](https://via.placeholder.com/12/111217/000000.png?text=+))
 
 ## Release Notes
 
