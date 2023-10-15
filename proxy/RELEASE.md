@@ -2,7 +2,7 @@
 
 ### Proxy t28 (14 Oct 2023)
 
-* Add a `grafana-dark` style for `PW_STYLE` settings as required for newer Grafana version (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
+* Add a `grafana-dark` style for `PW_STYLE` settings to accommodate placing as iframe in newer Grafana versions (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
 
 ### Proxy t27 (23 Sep 2023)
 

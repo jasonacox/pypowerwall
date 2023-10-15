@@ -2,7 +2,7 @@
 
 ## v0.6.2b - Proxy Grafana Support
 
-* Proxy t28: Add a `grafana-dark` style for `PW_STYLE` settings as required for newer Grafana version (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
+* Proxy t28: Add a `grafana-dark` style for `PW_STYLE` settings to accommodate placing as iframe in newer Grafana versions (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
 
 ## v0.6.2a - Proxy Graceful Exit
 
