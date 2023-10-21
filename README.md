@@ -690,10 +690,10 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PINV_a010_can_gtwMIA - Indicate that gateway/sync is MIA (seen during firmware upgrade reboot)
     * PINV_a011_can_podMIA - Unknown (abnormal)
     * PINV_a016_basicAcCheckUnderVoltage
-    * PINV_a022_SwitchingBridgeIrrational
+    * PINV_a022_SwitchingBridgeIrrational - Reported during grid outage and on the transition back to grid.
     * PINV_a023_LossOfCurrentControl
     * PINV_a039_can_thcMIA - Seems to indicate that Home Controller is MIA (seen during firmware upgrade reboot)
-    * PINV_a041_sensedGridDisturbance
+    * PINV_a041_sensedGridDisturbance - Reported during "lights flickering" events and after "grid outage"
     * PINV_a043_gridResistanceTooHigh - Unknown (see https://github.com/jasonacox/Powerwall-Dashboard/discussions/323)
     * PINV_a047_BusCatcherActivated
     * PINV_a067_overvoltageNeutralChassis - Unknown (nominal)
