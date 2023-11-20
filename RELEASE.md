@@ -1,5 +1,31 @@
 # RELEASE NOTES
 
+## v0.6.3 - Powerwall 3 Scan
+
+* Added scan detection for new Powerwall 3 systems. API discovery is still underway so pypowerwall currently does not support Powerwall 3s. See https://github.com/jasonacox/Powerwall-Dashboard/issues/387
+
+```
+$ python3 -m pypowerwall scan
+
+pyPowerwall Network Scanner [0.6.3]
+Scan local network for Tesla Powerwall Gateways
+
+    Your network appears to be: 10.0.1.0/24
+
+    Enter Network or press enter to use 10.0.1.0/24: 
+
+    Running Scan...
+      Host: 10.0.1.2 ... OPEN - Not a Powerwall
+      Host: 10.0.1.5 ... OPEN - Found Powerwall 3 [Currently Unsupported]
+      Host: 10.0.1.8 ... OPEN - Not a Powerwall
+      Host: 10.0.1.9 ... OPEN - Found Powerwall 3 [Currently Unsupported]
+      Done                           
+
+Discovered 2 Powerwall Gateway
+     10.0.1.5 [Powerwall-3] Firmware Currently Unsupported - See https://tinyurl.com/pw3support
+     10.0.1.9 [Powerwall-3] Firmware Currently Unsupported - See https://tinyurl.com/pw3support
+```
+
 ## v0.6.2b - Proxy Grafana Support
 
 * Proxy t28: Add a `grafana-dark` style for `PW_STYLE` settings to accommodate placing as iframe in newer Grafana versions (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
