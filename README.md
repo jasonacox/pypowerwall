@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-Python module to interface with Tesla Energy Gateways for Powerwall and solar power data.
+Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting Powerwall, Powerwall 2 and Powerwall+ systems.
 
 ## Description
 

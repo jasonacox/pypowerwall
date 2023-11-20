@@ -107,30 +107,50 @@ def scan(color=True, timeout=0.4):
     print('')
     print(bold + '    Running Scan...' + dim)
     # Loop through each host
-    for addr in ipaddress.IPv4Network(network):
-        print(dim + '\r      Host: ' + subbold + '%s ...' % addr + normal, end='')
-        a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        a_socket.settimeout(timeout)
-        location = (str(addr), 443)
-        result_of_check = a_socket.connect_ex(location)
-        if result_of_check == 0:
-            print(" OPEN", end='')
-            # Check to see if it is a Powerwall
-            url = 'https://%s/api/status' % addr
-            try:
-                g = requests.get(url, verify=False, timeout=5)
-                data = json.loads(g.text)
-                print(dim + ' - ' + subbold + 'Found Powerwall %s' % data['din'])
-                print(subbold + '                                     [Firmware %s]' % data['version'])
-                discovered[addr] = data['din']
-                firmware[addr] = data['version']
-            except:
-                print(dim + ' - Not a Powerwall')
- 
-        a_socket.close()
+    try:
+        for addr in ipaddress.IPv4Network(network):
+            print(dim + '\r      Host: ' + subbold + '%s ...' % addr + normal, end='')
+            a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            a_socket.settimeout(timeout)
+            location = (str(addr), 443)
+            result_of_check = a_socket.connect_ex(location)
+            if result_of_check == 0:
+                print(" OPEN", end='')
+                # Check to see if it is a Powerwall
+                url = 'https://%s/api/status' % addr
+                try:
+                    g = requests.get(url, verify=False, timeout=5)
+                    # Check if 404 response
+                    if(g.status_code == 404):
+                        # Check if it is a Powerwall 3
+                        url = 'https://%s/tedapi/din' % addr
+                        g = requests.get(url, verify=False, timeout=5)
+                        # Expected response from PW3 {"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}
+                        if "User does not have adequate access rights" in g.text:
+                            # Found PW3
+                            print(dim + ' - ' + subbold + 'Found Powerwall 3 [Currently Unsupported]')
+                            discovered[addr] = 'Powerwall-3'
+                            firmware[addr] = 'Currently Unsupported - See https://tinyurl.com/pw3support'
+                        else:
+                            # Not a Powerwall
+                            print(dim + ' - Not a Powerwall')
+                    else:
+                        data = json.loads(g.text)
+                        print(dim + ' - ' + subbold + 'Found Powerwall %s' % data['din'])
+                        print(subbold + '                                     [Firmware %s]' % data['version'])
+                        discovered[addr] = data['din']
+                        firmware[addr] = data['version']
+                except:
+                    print(dim + ' - Not a Powerwall')
     
-    print(dim + '\r      Done                           ')
-    print('')
+            a_socket.close()
+        
+        print(dim + '\r      Done                           ')
+        print('')
+
+    except KeyboardInterrupt:
+        print(dim + '\r      ** Interrupted by user **                        ')
+        print('')
 
     print(normal + 'Discovered %d Powerwall Gateway' % len(discovered))
     for ip in discovered:
