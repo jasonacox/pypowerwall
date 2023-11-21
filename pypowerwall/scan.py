@@ -21,10 +21,6 @@ import ipaddress
 import requests
 import json
 
-
-# for addr in ipaddress.IPv4Network('192.0.2.0/24'):
-# ipaddress.IPv4Interface(ip+'/24').network
-
 # Backward compatability for python2
 try:
     input = raw_input
@@ -45,6 +41,7 @@ def scan(color=True, timeout=0.4):
 
     Parameter:
         color = True or False, print output in color [Default: True]
+        timeout = Seconds to wait per host [Default: 0.4]
 
     Description
             This tool will scan your local network looking for a Telsa Energy Gateway
