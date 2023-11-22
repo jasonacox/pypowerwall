@@ -1,0 +1,180 @@
+// Tesla tedapi API Protocol Buffer definition (tedapi.proto) 
+//
+// Create tedapi_pb2.py for use in projects using the protoc compiler:
+//     protoc --python_out=. tedapi.proto
+// 
+// Author: Jason A. Cox - Date: 21 Nov 2023 - Version: 1.0
+//
+// For more information see https://github.com/jasonacox/pypowerwall
+
+syntax = "proto3";
+
+package tedapi;
+
+
+// ***** Parent *****
+
+message ParentMessage {
+  Message message = 1;
+  Tail tail = 2;
+}
+
+message Message {
+  int32 head = 1;
+  StringNumber response = 2;
+  StringNumber request = 3;
+  optional ConfigType config = 15;
+  optional QueryType payload = 16;
+}
+
+message StringNumber { // 2
+  optional string din = 1;
+  optional int32 value = 3;
+}
+
+message Tail {
+  int32 value = 1;
+}
+
+// ***** Query = 16 *****
+
+message QueryType {  // 16
+  optional PayloadQuerySend send = 1;
+  optional PayloadString recv = 2;
+}
+
+message PayloadQuerySend {  // 1
+  optional int32 num = 1;
+  optional PayloadString payload = 2;
+  optional bytes code = 3;
+  optional StringValue b = 4;
+}
+
+// ***** Config = 15 *****
+
+message ConfigType { // 15
+  optional PayloadConfigSend send = 1;
+  optional PayloadConfigRecv recv = 2;
+}
+
+message PayloadConfigSend { // 1
+  PayloadString file = 1;
+}
+
+message PayloadConfigRecv { // 2
+  ConfigString file = 1;
+  bytes code = 2;
+}
+
+message ConfigString {
+  string name = 1;
+  string text = 100;
+}
+
+// ***** General *****
+
+message PayloadString {
+  int32 value = 1;
+  string text = 2;
+}
+
+message StringValue {
+  string value = 1;
+}
+
+message NumberValue {
+  int32 value = 3;
+}
+
+// ***** BASED ON RAW DECODED PAYLOADS *****
+//
+// REQUEST - config
+// 1 {
+//   1: 1
+//   2 {
+//     3: 1
+//   }
+//   3 {
+//     1: "1232100-00-E--TG123456789012"
+//   }
+//   15 {
+//     1 {
+//       1: 1
+//       2: "config.json"
+//     }
+//   }
+// }
+// 2 {
+//   1: 1
+// }
+//
+// RESPONSE - config
+// 1 {
+//   1: 1
+//   2 {
+//     1: "1232100-00-E--TG123456789012"
+//   }
+//   3 {
+//     3: 1
+//   }
+//   15 {
+//     2 {
+//       1 {
+//         1: "config.json"
+//         100: "{}"
+//       }
+//       2: "\255\177t+5\35..."
+//     }
+//   }
+// }
+// 2 {
+//   1: 1
+// }
+//
+//
+// REQUEST - query
+// 1 {
+//   1: 1
+//   2 {
+//     3: 1
+//   }
+//   3 {
+//     1: "1232100-00-E--TG123456789012"
+//   }
+//   16 {
+//     1 {
+//       1: 2
+//       2 {
+//         1: 1
+//         2: " query DeviceControllerQuery {..."
+//       }
+//       3: "0\201\210\002B\0026\335T\310\02..."
+//       4 {
+//         1: "{}"
+//       }
+//     }
+//   }
+// }
+// 2 {
+//   1: 1
+// }
+//
+// RESPONSE - query
+// 1 {
+//   1: 1
+//   2 {
+//     1: "1232100-00-E--TG123456789012"
+//   }
+//   3 {
+//     3: 1
+//   }
+//   16 {
+//     2 {
+//       1: 1
+//       2: "{...}"
+//     }
+//   }
+// }
+// 2 {
+//   1: 1
+// }
