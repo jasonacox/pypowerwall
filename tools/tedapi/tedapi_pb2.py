@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0ctedapi.proto\x12\x06tedapi\"U\n\rParentMessage\x12(\n\x07message\x18\x01 \x01(\x0b\x32\x17.tedapi.MessageEnvelope\x12\x1a\n\x04tail\x18\x02 \x01(\x0b\x32\x0c.tedapi.Tail\"\xe0\x01\n\x0fMessageEnvelope\x12\x17\n\x0f\x64\x65liveryChannel\x18\x01 \x01(\x05\x12#\n\x06sender\x18\x02 \x01(\x0b\x32\x13.tedapi.Participant\x12&\n\trecipient\x18\x03 \x01(\x0b\x32\x13.tedapi.Participant\x12\'\n\x06\x63onfig\x18\x0f \x01(\x0b\x32\x12.tedapi.ConfigTypeH\x00\x88\x01\x01\x12\'\n\x07payload\x18\x10 \x01(\x0b\x32\x11.tedapi.QueryTypeH\x01\x88\x01\x01\x42\t\n\x07_configB\n\n\x08_payload\"g\n\x0bParticipant\x12\r\n\x03\x64in\x18\x01 \x01(\tH\x00\x12\x16\n\x0cteslaService\x18\x02 \x01(\x05H\x00\x12\x0f\n\x05local\x18\x03 \x01(\x05H\x00\x12\x1a\n\x10\x61uthorizedClient\x18\x04 \x01(\x05H\x00\x42\x04\n\x02id\"\x15\n\x04Tail\x12\r\n\x05value\x18\x01 \x01(\x05\"t\n\tQueryType\x12+\n\x04send\x18\x01 \x01(\x0b\x32\x18.tedapi.PayloadQuerySendH\x00\x88\x01\x01\x12(\n\x04recv\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"\xac\x01\n\x10PayloadQuerySend\x12\x10\n\x03num\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12+\n\x07payload\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x12\x11\n\x04\x63ode\x18\x03 \x01(\x0cH\x02\x88\x01\x01\x12#\n\x01\x62\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValueH\x03\x88\x01\x01\x42\x06\n\x04_numB\n\n\x08_payloadB\x07\n\x05_codeB\x04\n\x02_b\"z\n\nConfigType\x12,\n\x04send\x18\x01 \x01(\x0b\x32\x19.tedapi.PayloadConfigSendH\x00\x88\x01\x01\x12,\n\x04recv\x18\x02 \x01(\x0b\x32\x19.tedapi.PayloadConfigRecvH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"8\n\x11PayloadConfigSend\x12#\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x15.tedapi.PayloadString\"E\n\x11PayloadConfigRecv\x12\"\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x14.tedapi.ConfigString\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"*\n\x0c\x43onfigString\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x64 \x01(\t\",\n\rPayloadString\x12\r\n\x05value\x18\x01 \x01(\x05\x12\x0c\n\x04text\x18\x02 \x01(\t\"\x1c\n\x0bStringValue\x12\r\n\x05value\x18\x01 \x01(\tb\x06proto3'
+  serialized_pb=b'\n\x0ctedapi.proto\x12\x06tedapi\"U\n\rParentMessage\x12(\n\x07message\x18\x01 \x01(\x0b\x32\x17.tedapi.MessageEnvelope\x12\x1a\n\x04tail\x18\x02 \x01(\x0b\x32\x0c.tedapi.Tail\"\xe0\x01\n\x0fMessageEnvelope\x12\x17\n\x0f\x64\x65liveryChannel\x18\x01 \x01(\x05\x12#\n\x06sender\x18\x02 \x01(\x0b\x32\x13.tedapi.Participant\x12&\n\trecipient\x18\x03 \x01(\x0b\x32\x13.tedapi.Participant\x12\'\n\x06\x63onfig\x18\x0f \x01(\x0b\x32\x12.tedapi.ConfigTypeH\x00\x88\x01\x01\x12\'\n\x07payload\x18\x10 \x01(\x0b\x32\x11.tedapi.QueryTypeH\x01\x88\x01\x01\x42\t\n\x07_configB\n\n\x08_payload\"g\n\x0bParticipant\x12\r\n\x03\x64in\x18\x01 \x01(\tH\x00\x12\x16\n\x0cteslaService\x18\x02 \x01(\x05H\x00\x12\x0f\n\x05local\x18\x03 \x01(\x05H\x00\x12\x1a\n\x10\x61uthorizedClient\x18\x04 \x01(\x05H\x00\x42\x04\n\x02id\"\x15\n\x04Tail\x12\r\n\x05value\x18\x01 \x01(\x05\"t\n\tQueryType\x12+\n\x04send\x18\x01 \x01(\x0b\x32\x18.tedapi.PayloadQuerySendH\x00\x88\x01\x01\x12(\n\x04recv\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"\xac\x01\n\x10PayloadQuerySend\x12\x10\n\x03num\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12+\n\x07payload\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x12\x11\n\x04\x63ode\x18\x03 \x01(\x0cH\x02\x88\x01\x01\x12#\n\x01\x62\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValueH\x03\x88\x01\x01\x42\x06\n\x04_numB\n\n\x08_payloadB\x07\n\x05_codeB\x04\n\x02_b\"l\n\nConfigType\x12)\n\x04send\x18\x01 \x01(\x0b\x32\x19.tedapi.PayloadConfigSendH\x00\x12)\n\x04recv\x18\x02 \x01(\x0b\x32\x19.tedapi.PayloadConfigRecvH\x00\x42\x08\n\x06\x63onfig\".\n\x11PayloadConfigSend\x12\x0b\n\x03num\x18\x01 \x01(\x05\x12\x0c\n\x04\x66ile\x18\x02 \x01(\t\"E\n\x11PayloadConfigRecv\x12\"\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x14.tedapi.ConfigString\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"*\n\x0c\x43onfigString\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x64 \x01(\t\",\n\rPayloadString\x12\r\n\x05value\x18\x01 \x01(\x05\x12\x0c\n\x04text\x18\x02 \x01(\t\"\x1c\n\x0bStringValue\x12\r\n\x05value\x18\x01 \x01(\tb\x06proto3'
 )
 
 
@@ -380,18 +380,13 @@ _CONFIGTYPE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
     _descriptor.OneofDescriptor(
-      name='_send', full_name='tedapi.ConfigType._send',
+      name='config', full_name='tedapi.ConfigType.config',
       index=0, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
-    _descriptor.OneofDescriptor(
-      name='_recv', full_name='tedapi.ConfigType._recv',
-      index=1, containing_type=None,
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
   serialized_start=759,
-  serialized_end=881,
+  serialized_end=867,
 )
 
 
@@ -404,9 +399,16 @@ _PAYLOADCONFIGSEND = _descriptor.Descriptor(
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='file', full_name='tedapi.PayloadConfigSend.file', index=0,
-      number=1, type=11, cpp_type=10, label=1,
-      has_default_value=False, default_value=None,
+      name='num', full_name='tedapi.PayloadConfigSend.num', index=0,
+      number=1, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='file', full_name='tedapi.PayloadConfigSend.file', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
@@ -422,8 +424,8 @@ _PAYLOADCONFIGSEND = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=883,
-  serialized_end=939,
+  serialized_start=869,
+  serialized_end=915,
 )
 
 
@@ -461,8 +463,8 @@ _PAYLOADCONFIGRECV = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=941,
-  serialized_end=1010,
+  serialized_start=917,
+  serialized_end=986,
 )
 
 
@@ -500,8 +502,8 @@ _CONFIGSTRING = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1012,
-  serialized_end=1054,
+  serialized_start=988,
+  serialized_end=1030,
 )
 
 
@@ -539,8 +541,8 @@ _PAYLOADSTRING = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1056,
-  serialized_end=1100,
+  serialized_start=1032,
+  serialized_end=1076,
 )
 
 
@@ -571,8 +573,8 @@ _STRINGVALUE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1102,
-  serialized_end=1130,
+  serialized_start=1078,
+  serialized_end=1106,
 )
 
 _PARENTMESSAGE.fields_by_name['message'].message_type = _MESSAGEENVELOPE
@@ -623,13 +625,12 @@ _PAYLOADQUERYSEND.oneofs_by_name['_b'].fields.append(
 _PAYLOADQUERYSEND.fields_by_name['b'].containing_oneof = _PAYLOADQUERYSEND.oneofs_by_name['_b']
 _CONFIGTYPE.fields_by_name['send'].message_type = _PAYLOADCONFIGSEND
 _CONFIGTYPE.fields_by_name['recv'].message_type = _PAYLOADCONFIGRECV
-_CONFIGTYPE.oneofs_by_name['_send'].fields.append(
+_CONFIGTYPE.oneofs_by_name['config'].fields.append(
   _CONFIGTYPE.fields_by_name['send'])
-_CONFIGTYPE.fields_by_name['send'].containing_oneof = _CONFIGTYPE.oneofs_by_name['_send']
-_CONFIGTYPE.oneofs_by_name['_recv'].fields.append(
+_CONFIGTYPE.fields_by_name['send'].containing_oneof = _CONFIGTYPE.oneofs_by_name['config']
+_CONFIGTYPE.oneofs_by_name['config'].fields.append(
   _CONFIGTYPE.fields_by_name['recv'])
-_CONFIGTYPE.fields_by_name['recv'].containing_oneof = _CONFIGTYPE.oneofs_by_name['_recv']
-_PAYLOADCONFIGSEND.fields_by_name['file'].message_type = _PAYLOADSTRING
+_CONFIGTYPE.fields_by_name['recv'].containing_oneof = _CONFIGTYPE.oneofs_by_name['config']
 _PAYLOADCONFIGRECV.fields_by_name['file'].message_type = _CONFIGSTRING
 DESCRIPTOR.message_types_by_name['ParentMessage'] = _PARENTMESSAGE
 DESCRIPTOR.message_types_by_name['MessageEnvelope'] = _MESSAGEENVELOPE

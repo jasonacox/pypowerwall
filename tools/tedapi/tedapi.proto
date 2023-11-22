@@ -29,10 +29,10 @@ message MessageEnvelope {
 
 message Participant {
   oneof id {
-      string din = 1;
-      int32 teslaService = 2;
-      int32 local = 3;
-      int32 authorizedClient = 4;
+    string din = 1;
+    int32 teslaService = 2;
+    int32 local = 3;
+    int32 authorizedClient = 4;
   }
 }
 
@@ -57,12 +57,15 @@ message PayloadQuerySend {  // 1
 // ***** Config = 15 *****
 
 message ConfigType { // 15
-  optional PayloadConfigSend send = 1;
-  optional PayloadConfigRecv recv = 2;
+  oneof config {
+    PayloadConfigSend send = 1;
+    PayloadConfigRecv recv = 2;
+  }
 }
 
 message PayloadConfigSend { // 1
-  PayloadString file = 1;
+  int32 num = 1;
+  string file = 2;
 }
 
 message PayloadConfigRecv { // 2

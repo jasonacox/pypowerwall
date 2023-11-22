@@ -71,6 +71,8 @@ message {
   }
   config {
     send {
+      num: 1
+      file: "config.json"
     }
   }
 }
