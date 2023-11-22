@@ -2,13 +2,23 @@
 
 This tool is to help decode `/tedapi` API payloads (requests and responses) using a Protobuf schema definition file [tedapi.proto](tedapi.proto).
 
-## Tool
+## Tools
+
+The [test.py](test.py) script will query the user for the Powerwall Gateway password and proceed to fetch the DIN, the configuration of the Powerwall and then the Powerwall status (TODO).
 
 ```bash
-# Build python bindings for protobuf schema - tedapi_pb2.py
-protoc --python_out=. tedapi.proto
+# Download 
+git clone https://github.com/jasonacox/pypowerwall.git
+cd pypowerwall/tools/tedapi
 
-# Decode payload
+# Test Script
+python test.py
+```
+
+The [decode.py](decode.py) scrip will use the tedapi protobuf schema to decode a specified payload. This is useful for troubleshooting and downloading payloads with curl.
+
+```bash
+# Decode payload file
 python decode.py <filename>
 ```
 
@@ -16,6 +26,12 @@ python decode.py <filename>
 
 * This requires using the gateway WiFi access point (for PW2/+ systems this is TEG-xxx and for PW3 it is TeslaPW_xxx) and the https://192.168.91.1 endpoint. It seems that this is required for the /tedapi endpoints (LAN or other access results in "User does not have adequate access rights" 403 Error)
 * The /tedapi API calls are using binary Protocol Buffers ([protobuf](https://protobuf.dev/)) payloads.
+
+The protobuf python bindings were created using this:
+```bash
+# Build python bindings for protobuf schema - tedapi_pb2.py
+protoc --python_out=. tedapi.proto
+```
 
 ## APIs
 
