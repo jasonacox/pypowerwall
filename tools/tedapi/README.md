@@ -58,24 +58,45 @@ curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:G
 python3 decode.py response.bin
 ```
 
+The request payload set the recipient din:
+
+```
+message {
+  deliveryChannel: 1
+  sender {
+    local: 1
+  }
+  recipient {
+    din: "1232100-00-E--TG123456789012"
+  }
+  config {
+    send {
+    }
+  }
+}
+tail {
+  value: 1
+}
+```
+
 An example response shows the system config data in the JSON `text` (removed to protect the innocent) and a `code` payload (TBD).
 
 ```
 message {
-  head: 1
-  response {
+  deliveryChannel: 1
+  sender {
     din: "1232100-00-E--TG123456789012"
   }
-  request {
-    value: 1
+  recipient {
+    local: 1
   }
   config {
     recv {
       file {
         name: "config.json"
-        text: "{...JSON Payload Removed...}"
+        text: "{\"vin\":\"1232100-00-E--TG123456789012\",\"meters\": ...Truncated... }"
       }
-      code: "...Binary Data Removed..."
+      code: "\255\177t+5\3530...Truncated..."
     }
   }
 }
@@ -86,15 +107,23 @@ tail {
 
 #### QUERY Example
 
+```bash
+# Request Status Data from Powerwall
+curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @query.bin https://192.168.91.1/tedapi/v1 > response.bin
+
+# Decode Config Data
+python3 decode.py response.bin
+```
+
 To get the status of the Powerwall, send a binary query.bin payload. The structure of the query payload has a `text` query string that seems to be an exhaustive list of labels.  The `code` field is a binary payload.
 
 ```
 message {
-  head: 1
-  response {
-    value: 1
+  deliveryChannel: 1
+  sender {
+    local: 1
   }
-  request {
+  recipient {
     din: "1232100-00-E--TG123456789012"
   }
   payload {
@@ -114,27 +143,18 @@ message {
 tail {
   value: 1
 }
-
-```
-
-```bash
-# Request Status Data from Powerwall
-curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @query.bin https://192.168.91.1/tedapi/v1 > response.bin
-
-# Decode Config Data
-python3 decode.py response.bin
 ```
 
 An example response shows the system status data in the JSON `text` field (truncated).
 
 ```
 message {
-  head: 1
-  response {
-    din: "1232100-00-E--TG121048001E4G"
+  deliveryChannel: 1
+  sender {
+    din: "1232100-00-E--TG123456789012"
   }
-  request {
-    value: 1
+  recipient {
+    local: 1
   }
   payload {
     recv {
@@ -147,7 +167,6 @@ tail {
   value: 1
 }
 ```
-
 
 ## Credit
 

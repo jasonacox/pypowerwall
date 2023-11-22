@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0ctedapi.proto\x12\x06tedapi\"M\n\rParentMessage\x12 \n\x07message\x18\x01 \x01(\x0b\x32\x0f.tedapi.Message\x12\x1a\n\x04tail\x18\x02 \x01(\x0b\x32\x0c.tedapi.Tail\"\xcf\x01\n\x07Message\x12\x0c\n\x04head\x18\x01 \x01(\x05\x12&\n\x08response\x18\x02 \x01(\x0b\x32\x14.tedapi.StringNumber\x12%\n\x07request\x18\x03 \x01(\x0b\x32\x14.tedapi.StringNumber\x12\'\n\x06\x63onfig\x18\x0f \x01(\x0b\x32\x12.tedapi.ConfigTypeH\x00\x88\x01\x01\x12\'\n\x07payload\x18\x10 \x01(\x0b\x32\x11.tedapi.QueryTypeH\x01\x88\x01\x01\x42\t\n\x07_configB\n\n\x08_payload\"F\n\x0cStringNumber\x12\x10\n\x03\x64in\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x12\n\x05value\x18\x03 \x01(\x05H\x01\x88\x01\x01\x42\x06\n\x04_dinB\x08\n\x06_value\"\x15\n\x04Tail\x12\r\n\x05value\x18\x01 \x01(\x05\"t\n\tQueryType\x12+\n\x04send\x18\x01 \x01(\x0b\x32\x18.tedapi.PayloadQuerySendH\x00\x88\x01\x01\x12(\n\x04recv\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"\xac\x01\n\x10PayloadQuerySend\x12\x10\n\x03num\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12+\n\x07payload\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x12\x11\n\x04\x63ode\x18\x03 \x01(\x0cH\x02\x88\x01\x01\x12#\n\x01\x62\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValueH\x03\x88\x01\x01\x42\x06\n\x04_numB\n\n\x08_payloadB\x07\n\x05_codeB\x04\n\x02_b\"z\n\nConfigType\x12,\n\x04send\x18\x01 \x01(\x0b\x32\x19.tedapi.PayloadConfigSendH\x00\x88\x01\x01\x12,\n\x04recv\x18\x02 \x01(\x0b\x32\x19.tedapi.PayloadConfigRecvH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"8\n\x11PayloadConfigSend\x12#\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x15.tedapi.PayloadString\"E\n\x11PayloadConfigRecv\x12\"\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x14.tedapi.ConfigString\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"*\n\x0c\x43onfigString\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x64 \x01(\t\",\n\rPayloadString\x12\r\n\x05value\x18\x01 \x01(\x05\x12\x0c\n\x04text\x18\x02 \x01(\t\"\x1c\n\x0bStringValue\x12\r\n\x05value\x18\x01 \x01(\t\"\x1c\n\x0bNumberValue\x12\r\n\x05value\x18\x03 \x01(\x05\x62\x06proto3'
+  serialized_pb=b'\n\x0ctedapi.proto\x12\x06tedapi\"U\n\rParentMessage\x12(\n\x07message\x18\x01 \x01(\x0b\x32\x17.tedapi.MessageEnvelope\x12\x1a\n\x04tail\x18\x02 \x01(\x0b\x32\x0c.tedapi.Tail\"\xe0\x01\n\x0fMessageEnvelope\x12\x17\n\x0f\x64\x65liveryChannel\x18\x01 \x01(\x05\x12#\n\x06sender\x18\x02 \x01(\x0b\x32\x13.tedapi.Participant\x12&\n\trecipient\x18\x03 \x01(\x0b\x32\x13.tedapi.Participant\x12\'\n\x06\x63onfig\x18\x0f \x01(\x0b\x32\x12.tedapi.ConfigTypeH\x00\x88\x01\x01\x12\'\n\x07payload\x18\x10 \x01(\x0b\x32\x11.tedapi.QueryTypeH\x01\x88\x01\x01\x42\t\n\x07_configB\n\n\x08_payload\"g\n\x0bParticipant\x12\r\n\x03\x64in\x18\x01 \x01(\tH\x00\x12\x16\n\x0cteslaService\x18\x02 \x01(\x05H\x00\x12\x0f\n\x05local\x18\x03 \x01(\x05H\x00\x12\x1a\n\x10\x61uthorizedClient\x18\x04 \x01(\x05H\x00\x42\x04\n\x02id\"\x15\n\x04Tail\x12\r\n\x05value\x18\x01 \x01(\x05\"t\n\tQueryType\x12+\n\x04send\x18\x01 \x01(\x0b\x32\x18.tedapi.PayloadQuerySendH\x00\x88\x01\x01\x12(\n\x04recv\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"\xac\x01\n\x10PayloadQuerySend\x12\x10\n\x03num\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12+\n\x07payload\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x12\x11\n\x04\x63ode\x18\x03 \x01(\x0cH\x02\x88\x01\x01\x12#\n\x01\x62\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValueH\x03\x88\x01\x01\x42\x06\n\x04_numB\n\n\x08_payloadB\x07\n\x05_codeB\x04\n\x02_b\"z\n\nConfigType\x12,\n\x04send\x18\x01 \x01(\x0b\x32\x19.tedapi.PayloadConfigSendH\x00\x88\x01\x01\x12,\n\x04recv\x18\x02 \x01(\x0b\x32\x19.tedapi.PayloadConfigRecvH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"8\n\x11PayloadConfigSend\x12#\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x15.tedapi.PayloadString\"E\n\x11PayloadConfigRecv\x12\"\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x14.tedapi.ConfigString\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"*\n\x0c\x43onfigString\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x64 \x01(\t\",\n\rPayloadString\x12\r\n\x05value\x18\x01 \x01(\x05\x12\x0c\n\x04text\x18\x02 \x01(\t\"\x1c\n\x0bStringValue\x12\r\n\x05value\x18\x01 \x01(\tb\x06proto3'
 )
 
 
@@ -60,48 +60,48 @@ _PARENTMESSAGE = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=24,
-  serialized_end=101,
+  serialized_end=109,
 )
 
 
-_MESSAGE = _descriptor.Descriptor(
-  name='Message',
-  full_name='tedapi.Message',
+_MESSAGEENVELOPE = _descriptor.Descriptor(
+  name='MessageEnvelope',
+  full_name='tedapi.MessageEnvelope',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='head', full_name='tedapi.Message.head', index=0,
+      name='deliveryChannel', full_name='tedapi.MessageEnvelope.deliveryChannel', index=0,
       number=1, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='response', full_name='tedapi.Message.response', index=1,
+      name='sender', full_name='tedapi.MessageEnvelope.sender', index=1,
       number=2, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='request', full_name='tedapi.Message.request', index=2,
+      name='recipient', full_name='tedapi.MessageEnvelope.recipient', index=2,
       number=3, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='config', full_name='tedapi.Message.config', index=3,
+      name='config', full_name='tedapi.MessageEnvelope.config', index=3,
       number=15, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='payload', full_name='tedapi.Message.payload', index=4,
+      name='payload', full_name='tedapi.MessageEnvelope.payload', index=4,
       number=16, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
@@ -119,39 +119,53 @@ _MESSAGE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
     _descriptor.OneofDescriptor(
-      name='_config', full_name='tedapi.Message._config',
+      name='_config', full_name='tedapi.MessageEnvelope._config',
       index=0, containing_type=None,
       create_key=_descriptor._internal_create_key,
     fields=[]),
     _descriptor.OneofDescriptor(
-      name='_payload', full_name='tedapi.Message._payload',
+      name='_payload', full_name='tedapi.MessageEnvelope._payload',
       index=1, containing_type=None,
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=104,
-  serialized_end=311,
+  serialized_start=112,
+  serialized_end=336,
 )
 
 
-_STRINGNUMBER = _descriptor.Descriptor(
-  name='StringNumber',
-  full_name='tedapi.StringNumber',
+_PARTICIPANT = _descriptor.Descriptor(
+  name='Participant',
+  full_name='tedapi.Participant',
   filename=None,
   file=DESCRIPTOR,
   containing_type=None,
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='din', full_name='tedapi.StringNumber.din', index=0,
+      name='din', full_name='tedapi.Participant.din', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='value', full_name='tedapi.StringNumber.value', index=1,
+      name='teslaService', full_name='tedapi.Participant.teslaService', index=1,
+      number=2, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='local', full_name='tedapi.Participant.local', index=2,
       number=3, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='authorizedClient', full_name='tedapi.Participant.authorizedClient', index=3,
+      number=4, type=5, cpp_type=1, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -168,18 +182,13 @@ _STRINGNUMBER = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
     _descriptor.OneofDescriptor(
-      name='_din', full_name='tedapi.StringNumber._din',
+      name='id', full_name='tedapi.Participant.id',
       index=0, containing_type=None,
       create_key=_descriptor._internal_create_key,
     fields=[]),
-    _descriptor.OneofDescriptor(
-      name='_value', full_name='tedapi.StringNumber._value',
-      index=1, containing_type=None,
-      create_key=_descriptor._internal_create_key,
-    fields=[]),
   ],
-  serialized_start=313,
-  serialized_end=383,
+  serialized_start=338,
+  serialized_end=441,
 )
 
 
@@ -210,8 +219,8 @@ _TAIL = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=385,
-  serialized_end=406,
+  serialized_start=443,
+  serialized_end=464,
 )
 
 
@@ -259,8 +268,8 @@ _QUERYTYPE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=408,
-  serialized_end=524,
+  serialized_start=466,
+  serialized_end=582,
 )
 
 
@@ -332,8 +341,8 @@ _PAYLOADQUERYSEND = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=527,
-  serialized_end=699,
+  serialized_start=585,
+  serialized_end=757,
 )
 
 
@@ -381,8 +390,8 @@ _CONFIGTYPE = _descriptor.Descriptor(
       create_key=_descriptor._internal_create_key,
     fields=[]),
   ],
-  serialized_start=701,
-  serialized_end=823,
+  serialized_start=759,
+  serialized_end=881,
 )
 
 
@@ -413,8 +422,8 @@ _PAYLOADCONFIGSEND = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=825,
-  serialized_end=881,
+  serialized_start=883,
+  serialized_end=939,
 )
 
 
@@ -452,8 +461,8 @@ _PAYLOADCONFIGRECV = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=883,
-  serialized_end=952,
+  serialized_start=941,
+  serialized_end=1010,
 )
 
 
@@ -491,8 +500,8 @@ _CONFIGSTRING = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=954,
-  serialized_end=996,
+  serialized_start=1012,
+  serialized_end=1054,
 )
 
 
@@ -530,8 +539,8 @@ _PAYLOADSTRING = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=998,
-  serialized_end=1042,
+  serialized_start=1056,
+  serialized_end=1100,
 )
 
 
@@ -562,60 +571,34 @@ _STRINGVALUE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=1044,
-  serialized_end=1072,
+  serialized_start=1102,
+  serialized_end=1130,
 )
 
-
-_NUMBERVALUE = _descriptor.Descriptor(
-  name='NumberValue',
-  full_name='tedapi.NumberValue',
-  filename=None,
-  file=DESCRIPTOR,
-  containing_type=None,
-  create_key=_descriptor._internal_create_key,
-  fields=[
-    _descriptor.FieldDescriptor(
-      name='value', full_name='tedapi.NumberValue.value', index=0,
-      number=3, type=5, cpp_type=1, label=1,
-      has_default_value=False, default_value=0,
-      message_type=None, enum_type=None, containing_type=None,
-      is_extension=False, extension_scope=None,
-      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
-  ],
-  extensions=[
-  ],
-  nested_types=[],
-  enum_types=[
-  ],
-  serialized_options=None,
-  is_extendable=False,
-  syntax='proto3',
-  extension_ranges=[],
-  oneofs=[
-  ],
-  serialized_start=1074,
-  serialized_end=1102,
-)
-
-_PARENTMESSAGE.fields_by_name['message'].message_type = _MESSAGE
+_PARENTMESSAGE.fields_by_name['message'].message_type = _MESSAGEENVELOPE
 _PARENTMESSAGE.fields_by_name['tail'].message_type = _TAIL
-_MESSAGE.fields_by_name['response'].message_type = _STRINGNUMBER
-_MESSAGE.fields_by_name['request'].message_type = _STRINGNUMBER
-_MESSAGE.fields_by_name['config'].message_type = _CONFIGTYPE
-_MESSAGE.fields_by_name['payload'].message_type = _QUERYTYPE
-_MESSAGE.oneofs_by_name['_config'].fields.append(
-  _MESSAGE.fields_by_name['config'])
-_MESSAGE.fields_by_name['config'].containing_oneof = _MESSAGE.oneofs_by_name['_config']
-_MESSAGE.oneofs_by_name['_payload'].fields.append(
-  _MESSAGE.fields_by_name['payload'])
-_MESSAGE.fields_by_name['payload'].containing_oneof = _MESSAGE.oneofs_by_name['_payload']
-_STRINGNUMBER.oneofs_by_name['_din'].fields.append(
-  _STRINGNUMBER.fields_by_name['din'])
-_STRINGNUMBER.fields_by_name['din'].containing_oneof = _STRINGNUMBER.oneofs_by_name['_din']
-_STRINGNUMBER.oneofs_by_name['_value'].fields.append(
-  _STRINGNUMBER.fields_by_name['value'])
-_STRINGNUMBER.fields_by_name['value'].containing_oneof = _STRINGNUMBER.oneofs_by_name['_value']
+_MESSAGEENVELOPE.fields_by_name['sender'].message_type = _PARTICIPANT
+_MESSAGEENVELOPE.fields_by_name['recipient'].message_type = _PARTICIPANT
+_MESSAGEENVELOPE.fields_by_name['config'].message_type = _CONFIGTYPE
+_MESSAGEENVELOPE.fields_by_name['payload'].message_type = _QUERYTYPE
+_MESSAGEENVELOPE.oneofs_by_name['_config'].fields.append(
+  _MESSAGEENVELOPE.fields_by_name['config'])
+_MESSAGEENVELOPE.fields_by_name['config'].containing_oneof = _MESSAGEENVELOPE.oneofs_by_name['_config']
+_MESSAGEENVELOPE.oneofs_by_name['_payload'].fields.append(
+  _MESSAGEENVELOPE.fields_by_name['payload'])
+_MESSAGEENVELOPE.fields_by_name['payload'].containing_oneof = _MESSAGEENVELOPE.oneofs_by_name['_payload']
+_PARTICIPANT.oneofs_by_name['id'].fields.append(
+  _PARTICIPANT.fields_by_name['din'])
+_PARTICIPANT.fields_by_name['din'].containing_oneof = _PARTICIPANT.oneofs_by_name['id']
+_PARTICIPANT.oneofs_by_name['id'].fields.append(
+  _PARTICIPANT.fields_by_name['teslaService'])
+_PARTICIPANT.fields_by_name['teslaService'].containing_oneof = _PARTICIPANT.oneofs_by_name['id']
+_PARTICIPANT.oneofs_by_name['id'].fields.append(
+  _PARTICIPANT.fields_by_name['local'])
+_PARTICIPANT.fields_by_name['local'].containing_oneof = _PARTICIPANT.oneofs_by_name['id']
+_PARTICIPANT.oneofs_by_name['id'].fields.append(
+  _PARTICIPANT.fields_by_name['authorizedClient'])
+_PARTICIPANT.fields_by_name['authorizedClient'].containing_oneof = _PARTICIPANT.oneofs_by_name['id']
 _QUERYTYPE.fields_by_name['send'].message_type = _PAYLOADQUERYSEND
 _QUERYTYPE.fields_by_name['recv'].message_type = _PAYLOADSTRING
 _QUERYTYPE.oneofs_by_name['_send'].fields.append(
@@ -649,8 +632,8 @@ _CONFIGTYPE.fields_by_name['recv'].containing_oneof = _CONFIGTYPE.oneofs_by_name
 _PAYLOADCONFIGSEND.fields_by_name['file'].message_type = _PAYLOADSTRING
 _PAYLOADCONFIGRECV.fields_by_name['file'].message_type = _CONFIGSTRING
 DESCRIPTOR.message_types_by_name['ParentMessage'] = _PARENTMESSAGE
-DESCRIPTOR.message_types_by_name['Message'] = _MESSAGE
-DESCRIPTOR.message_types_by_name['StringNumber'] = _STRINGNUMBER
+DESCRIPTOR.message_types_by_name['MessageEnvelope'] = _MESSAGEENVELOPE
+DESCRIPTOR.message_types_by_name['Participant'] = _PARTICIPANT
 DESCRIPTOR.message_types_by_name['Tail'] = _TAIL
 DESCRIPTOR.message_types_by_name['QueryType'] = _QUERYTYPE
 DESCRIPTOR.message_types_by_name['PayloadQuerySend'] = _PAYLOADQUERYSEND
@@ -660,7 +643,6 @@ DESCRIPTOR.message_types_by_name['PayloadConfigRecv'] = _PAYLOADCONFIGRECV
 DESCRIPTOR.message_types_by_name['ConfigString'] = _CONFIGSTRING
 DESCRIPTOR.message_types_by_name['PayloadString'] = _PAYLOADSTRING
 DESCRIPTOR.message_types_by_name['StringValue'] = _STRINGVALUE
-DESCRIPTOR.message_types_by_name['NumberValue'] = _NUMBERVALUE
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 ParentMessage = _reflection.GeneratedProtocolMessageType('ParentMessage', (_message.Message,), {
@@ -670,19 +652,19 @@ ParentMessage = _reflection.GeneratedProtocolMessageType('ParentMessage', (_mess
   })
 _sym_db.RegisterMessage(ParentMessage)
 
-Message = _reflection.GeneratedProtocolMessageType('Message', (_message.Message,), {
-  'DESCRIPTOR' : _MESSAGE,
+MessageEnvelope = _reflection.GeneratedProtocolMessageType('MessageEnvelope', (_message.Message,), {
+  'DESCRIPTOR' : _MESSAGEENVELOPE,
   '__module__' : 'tedapi_pb2'
-  # @@protoc_insertion_point(class_scope:tedapi.Message)
+  # @@protoc_insertion_point(class_scope:tedapi.MessageEnvelope)
   })
-_sym_db.RegisterMessage(Message)
+_sym_db.RegisterMessage(MessageEnvelope)
 
-StringNumber = _reflection.GeneratedProtocolMessageType('StringNumber', (_message.Message,), {
-  'DESCRIPTOR' : _STRINGNUMBER,
+Participant = _reflection.GeneratedProtocolMessageType('Participant', (_message.Message,), {
+  'DESCRIPTOR' : _PARTICIPANT,
   '__module__' : 'tedapi_pb2'
-  # @@protoc_insertion_point(class_scope:tedapi.StringNumber)
+  # @@protoc_insertion_point(class_scope:tedapi.Participant)
   })
-_sym_db.RegisterMessage(StringNumber)
+_sym_db.RegisterMessage(Participant)
 
 Tail = _reflection.GeneratedProtocolMessageType('Tail', (_message.Message,), {
   'DESCRIPTOR' : _TAIL,
@@ -746,13 +728,6 @@ StringValue = _reflection.GeneratedProtocolMessageType('StringValue', (_message.
   # @@protoc_insertion_point(class_scope:tedapi.StringValue)
   })
 _sym_db.RegisterMessage(StringValue)
-
-NumberValue = _reflection.GeneratedProtocolMessageType('NumberValue', (_message.Message,), {
-  'DESCRIPTOR' : _NUMBERVALUE,
-  '__module__' : 'tedapi_pb2'
-  # @@protoc_insertion_point(class_scope:tedapi.NumberValue)
-  })
-_sym_db.RegisterMessage(NumberValue)
 
 
 # @@protoc_insertion_point(module_scope)

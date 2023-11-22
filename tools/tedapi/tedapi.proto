@@ -3,7 +3,7 @@
 // Create tedapi_pb2.py for use in projects using the protoc compiler:
 //     protoc --python_out=. tedapi.proto
 // 
-// Author: Jason A. Cox - Date: 21 Nov 2023 - Version: 1.0
+// Author: Jason A. Cox - Date: 22 Nov 2023 - Version: 1.1
 //
 // For more information see https://github.com/jasonacox/pypowerwall
 
@@ -15,21 +15,25 @@ package tedapi;
 // ***** Parent *****
 
 message ParentMessage {
-  Message message = 1;
+  MessageEnvelope message = 1;
   Tail tail = 2;
 }
 
-message Message {
-  int32 head = 1;
-  StringNumber response = 2;
-  StringNumber request = 3;
+message MessageEnvelope {
+  int32 deliveryChannel = 1;
+  Participant sender = 2;
+  Participant recipient = 3;
   optional ConfigType config = 15;
   optional QueryType payload = 16;
 }
 
-message StringNumber { // 2
-  optional string din = 1;
-  optional int32 value = 3;
+message Participant {
+  oneof id {
+      string din = 1;
+      int32 teslaService = 2;
+      int32 local = 3;
+      int32 authorizedClient = 4;
+  }
 }
 
 message Tail {
@@ -80,10 +84,6 @@ message PayloadString {
 
 message StringValue {
   string value = 1;
-}
-
-message NumberValue {
-  int32 value = 3;
 }
 
 // ***** BASED ON RAW DECODED PAYLOADS *****
