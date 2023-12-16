@@ -16,7 +16,8 @@ import pypowerwall
 import sys
 from . import scan
 
-timeout = 0.0
+# Global Variables
+timeout = 1.0
 state = 0
 color = True
 
@@ -35,10 +36,7 @@ for i in sys.argv:
 
 # State 0 = Run Scan
 if(state == 0):
-    if(timeout > 0):
-        scan.scan(color, timeout)
-    else:
-        scan.scan(color)
+    scan.scan(color, timeout)
 
 # State 1 = Future
 if(state == 1):
@@ -51,7 +49,7 @@ if(state == 2):
     print("    python -m pypowerwall [command] [<timeout>] [-nocolor] [-h]")
     print("")
     print("      command = scan        Scan local network for Powerwall gateway.")
-    print("      timeout               Seconds to wait per host [Default=0.2]")
+    print("      timeout               Seconds to wait per host [Default=%0.1f]" % (timeout))
     print("      -nocolor              Disable color text output.")
     print("      -h                    Show usage.")
     print("")

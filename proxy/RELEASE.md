@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t29 (16 Dec 2023)
+
+* Default page rendered by proxy (http://pypowerwall/) will render Powerflow Animation
+* Animation assets (html, css, js, images, fonts, svg) will render from local filesystem instead of pulling from Powerwall TEG portal.
+* Start prep for possible API removals from Powerwall TEG portal (see NOAPI settings)
+
 ### Proxy t28 (14 Oct 2023)
 
 * Add a `grafana-dark` style for `PW_STYLE` settings to accommodate placing as iframe in newer Grafana versions (e.g. v9.4.14). See https://github.com/jasonacox/Powerwall-Dashboard/discussions/371.
