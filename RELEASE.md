@@ -1,5 +1,15 @@
 # RELEASE NOTES
 
+## v0.6.4 - Power Flow Animation
+
+Proxy t29 Updates
+* Default page rendered by proxy (http://pypowerwall/) will render Powerflow Animation
+* Animation assets (html, css, js, images, fonts, svg) will render from local filesystem instead of pulling from Powerwall TEG portal.
+* Start prep for possible API removals from Powerwall TEG portal (see NOAPI settings)
+
+Powerwall Network Scanner
+* Adjust scan timeout default to 1,000ms (1s) to help with more consistent scans.
+
 ## v0.6.3 - Powerwall 3 Scan
 
 * Added scan detection for new Powerwall 3 systems. API discovery is still underway so pypowerwall currently does not support Powerwall 3s. See https://github.com/jasonacox/Powerwall-Dashboard/issues/387
