@@ -28,7 +28,8 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t28"
+BUILD = "t29"
+NOAPI = False # Set to True to serve bogus data for API calls to Powerwall
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -106,7 +107,14 @@ def get_value(a, key):
         return None
 
 # Connect to Powerwall
+# TODO: Add support for multiple Powerwalls
+# TODO: Add support for solar-only systems
 pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
+if not pw or NOAPI or not host or host.lower() == "none":
+    NOAPI = True
+    log.info("pyPowerwall Proxy Server - NOAPI Mode")
+else:
+    log.info("pyPowerwall Proxy Server - Connected to %s" % host)
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -140,6 +148,9 @@ class handler(BaseHTTPRequestHandler):
             # Force 95% Scale
             level = pw.level(scale=True)
             message = json.dumps({"percentage":level})
+        elif self.path == '/api/system_status/grid_status':
+            # Grid Status - JSON
+            message = pw.poll('/api/system_status/grid_status')
         elif self.path == '/csv':
             # Grid,Home,Solar,Battery,Level - CSV
             contenttype = 'text/plain; charset=utf-8'
@@ -273,8 +284,23 @@ class handler(BaseHTTPRequestHandler):
             message = message + '\n<p>Page refresh: %s</p>\n</body>\n</html>' % (
                 str(datetime.datetime.fromtimestamp(time.time())))
         elif self.path in ALLOWLIST:
-            # Allowed API Call
-            message = pw.poll(self.path)
+            # Allowed API Calls - Proxy to Powerwall
+            if NOAPI:
+                # If we are in NOAPI mode serve up bogus data
+                filename = "/bogus/" + self.path[1:].replace('/', '.') + ".json"
+                fcontent, ftype = get_static(web_root, filename)
+                if not fcontent:
+                    fcontent = bytes("{}", 'utf-8')
+                    log.debug("No offline content found for: {}".format(filename))
+                else:
+                    log.debug("Served from local filesystem: {}".format(filename))
+                self.send_header('Content-type','{}'.format(ftype))
+                self.end_headers()
+                self.wfile.write(fcontent)
+                return
+            else:
+                # Proxy request to Powerwall
+                message = pw.poll(self.path)
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1
@@ -282,6 +308,8 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", "UserRecord={};{}".format(pw.auth['UserRecord'], cookiesuffix))
 
             # Serve static assets from web root first, if found.
+            if self.path == "/" or self.path == "":
+                self.path = "/index.html"
             fcontent, ftype = get_static(web_root, self.path)
             if fcontent:
                 log.debug("Served from local web root: {}".format(self.path))
