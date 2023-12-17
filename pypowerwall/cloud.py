@@ -22,7 +22,6 @@ try:
     from teslapy import Tesla, Retry, JsonDict, Battery, SolarPanel
 except:
     sys.exit("ERROR: Missing python teslapy module. Run 'pip install teslapy'.")
-import pypowerwall
 import logging
 import json
 
@@ -38,22 +37,39 @@ ALLOWLIST = [
     '/api/troubleshooting/problems', '/api/auth/toggle/supported'
     ]
 
-version_tuple = pypowerwall.version_tuple
+version_tuple = (0, 0, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
-__author__ = pypowerwall.__author__
+__author__ = 'jasonacox'
 
 log = logging.getLogger(__name__)
 log.debug('%s version %s', __name__, __version__)
 log.debug('Python %s on %s', sys.version, sys.platform)
 
+def set_debug(toggle=True, color=True):
+    """Enable verbose logging"""
+    if(toggle):
+        if(color):
+            logging.basicConfig(format='\x1b[31;1m%(levelname)s:%(message)s\x1b[0m',level=logging.DEBUG)
+        else:
+            logging.basicConfig(format='%(levelname)s:%(message)s',level=logging.DEBUG)
+        log.setLevel(logging.DEBUG)
+        log.debug("%s [%s]\n" % (__name__, __version__))
+    else:
+        log.setLevel(logging.NOTSET)
+
+
 def lookup(data, keylist):
     """
-    Search data for list of keys and return the first matching key's value if found, otherwise return None
+    Lookup a value in a nested dictionary or return None if not found.
+        data - nested dictionary
+        keylist - list of keys to traverse
     """
     for key in keylist:
         if key in data:
-            return data[key]
-    return None
+            data = data[key]
+        else:
+            return None
+    return data
 
 class TeslaCloud:
     def __init__(self, email, pwcacheexpire=5, timeout=10):
@@ -85,10 +101,409 @@ class TeslaCloud:
             # Enable retries
             self.tesla.close()
             self.tesla = Tesla(email, retry=self.retry, cache_file=AUTHFILE)
+        
+        # Get site info
+        # TODO: Select the right site
+        self.site = self.getsites()[0]
 
+        log.debug(f"TeslaCloud Initialized for {self.email}")
+
+    def get_battery(self):
+        """
+        Get site power data from Tesla Cloud
+            "response": {
+                "resource_type": "battery",
+                "site_name": "Tesla Energy Gateway",
+                "gateway_id": "1232100-00-E--TGxxxxxxxxxxxx",
+                "energy_left": 21276.894736842103,
+                "total_pack_energy": 25939,
+                "percentage_charged": 82.02665768472995,
+                "battery_type": "ac_powerwall",
+                "backup_capable": true,
+                "battery_power": -220,
+                "go_off_grid_test_banner_enabled": null,
+                "storm_mode_enabled": false,
+                "powerwall_onboarding_settings_set": true,
+                "powerwall_tesla_electric_interested_in": null,
+                "vpp_tour_enabled": null,
+                "sync_grid_alert_enabled": true,
+                "breaker_alert_enabled": true
+            }
+        """
+        if self.tesla is None:
+            return None
+        response = self.site.api("SITE_SUMMARY")
+        return response
+    
+    def get_site_power(self):
+        """
+        Get site power data from Tesla Cloud
+        
+            "response": {
+                "solar_power": 1290,
+                "energy_left": 21276.894736842103,
+                "total_pack_energy": 25939,
+                "percentage_charged": 82.02665768472995,
+                "backup_capable": true,
+                "battery_power": -220,
+                "load_power": 1070,
+                "grid_status": "Active",
+                "grid_services_active": false,
+                "grid_power": 0,
+                "grid_services_power": 0,
+                "generator_power": 0,
+                "island_status": "on_grid",
+                "storm_mode_active": false,
+                "timestamp": "2023-12-17T14:23:31-08:00",
+                "wall_connectors": []
+            }
+        
+                "response": {
+                    "solar_power": 850,
+                    "energy_left": 21251.631578947367,
+                    "total_pack_energy": 25939,
+                    "percentage_charged": 81.92926319035956,
+                    "backup_capable": true,
+                    "battery_power": 140,
+                    "load_power": 990,
+                    "grid_status": "Active",
+                    "grid_services_active": false,
+                    "grid_power": 0,
+                    "grid_services_power": 0,
+                    "generator_power": 0,
+                    "island_status": "on_grid",
+                    "storm_mode_active": false,
+                    "timestamp": "2023-12-17T15:05:14-08:00",
+                    "wall_connectors": []
+                }
+
+                "response": {
+                    "solar_power": 820,
+                    "energy_left": 21240.052631578947,
+                    "total_pack_energy": 25939,
+                    "percentage_charged": 81.88462404710647,
+                    "backup_capable": true,
+                    "battery_power": 130,
+                    "load_power": 950,
+                    "grid_status": "Inactive",
+                    "grid_services_active": false,
+                    "grid_power": 0,
+                    "grid_services_power": -145.8037872314453,
+                    "generator_power": 0,
+                    "island_status": "off_grid_intentional",
+                    "storm_mode_active": false,
+                    "timestamp": "2023-12-17T15:06:13-08:00",
+                    "wall_connectors": []
+                }
+            }
+        """
+        if self.tesla is None:
+            return None
+        response = self.site.api("SITE_DATA")
+        return response
+    
+    def get_site_config(self):
+        """
+        Get site configuration data from Tesla Cloud
+        
+        "response": {
+            "id": "1232100-00-E--TGxxxxxxxxxxxx",
+            "site_name": "Tesla Energy Gateway",
+            "backup_reserve_percent": 80,
+            "default_real_mode": "self_consumption",
+            "installation_date": "xxxx-xx-xx",
+            "user_settings": {
+                "go_off_grid_test_banner_enabled": false,
+                "storm_mode_enabled": false,
+                "powerwall_onboarding_settings_set": true,
+                "powerwall_tesla_electric_interested_in": false,
+                "vpp_tour_enabled": true,
+                "sync_grid_alert_enabled": true,
+                "breaker_alert_enabled": false
+            },
+            "components": {
+                "solar": true,
+                "solar_type": "pv_panel",
+                "battery": true,
+                "grid": true,
+                "backup": true,
+                "gateway": "teg",
+                "load_meter": true,
+                "tou_capable": true,
+                "storm_mode_capable": true,
+                "flex_energy_request_capable": false,
+                "car_charging_data_supported": false,
+                "off_grid_vehicle_charging_reserve_supported": true,
+                "vehicle_charging_performance_view_enabled": false,
+                "vehicle_charging_solar_offset_view_enabled": false,
+                "battery_solar_offset_view_enabled": true,
+                "solar_value_enabled": true,
+                "energy_value_header": "Energy Value",
+                "energy_value_subheader": "Estimated Value",
+                "energy_service_self_scheduling_enabled": true,
+                "show_grid_import_battery_source_cards": true,
+                "set_islanding_mode_enabled": true,
+                "wifi_commissioning_enabled": true,
+                "backup_time_remaining_enabled": true,
+                "rate_plan_manager_supported": true,
+                "battery_type": "solar_powerwall",
+                "configurable": true,
+                "grid_services_enabled": false,
+                "inverters": [
+                    {
+                        "device_id": "xxxxxxxxxxxxxxxxxx",
+                        "din": "xxxxxxxxx",
+                        "is_active": true,
+                        "site_id": "xxxxxxxxxxxxxxxxxx",
+                    }
+                ],
+                "edit_setting_permission_to_export": true,
+                "edit_setting_grid_charging": true,
+                "edit_setting_energy_exports": true
+            },
+            "version": "23.28.2 27626f98",
+            "battery_count": 2,
+            "tariff_content": {
+                "code": "SCE-TOU-D-PRIME",
+                "name": "Domestic - Time of Use - PRIME (NEM 2.0)",
+                "utility": "Southern California Edison Co",
+                "currency": "USD",
+                "demand_charges": {
+                    "ALL": {
+                        "ALL": 0
+                    },
+                    "Summer": {},
+                    "Winter": {}
+                },
+                "energy_charges": {
+                    "ALL": {
+                        "ALL": 0
+                    },
+                    "Summer": {
+                        "OFF_PEAK": 0.25353,
+                        "ON_PEAK": 0.65558,
+                        "PARTIAL_PEAK": 0.3801
+                    },
+                    "Winter": {
+                        "OFF_PEAK": 0.2316,
+                        "ON_PEAK": 0.59381,
+                        "PARTIAL_PEAK": 0.2316
+                    }
+                },
+                "seasons": {
+                    "Summer": {
+                        "fromDay": 1,
+                        "toDay": 30,
+                        "fromMonth": 6,
+                        "toMonth": 9,
+                        "tou_periods": {
+                            "OFF_PEAK": [
+                                {
+                                    "fromDayOfWeek": 0,
+                                    "toDayOfWeek": 6,
+                                    "fromHour": 21,
+                                    "fromMinute": 0,
+                                    "toHour": 16,
+                                    "toMinute": 0
+                                }
+                            ],
+                            "ON_PEAK": [
+                                {
+                                    "fromDayOfWeek": 0,
+                                    "toDayOfWeek": 4,
+                                    "fromHour": 16,
+                                    "fromMinute": 0,
+                                    "toHour": 21,
+                                    "toMinute": 0
+                                }
+                            ],
+                            "PARTIAL_PEAK": [
+                                {
+                                    "fromDayOfWeek": 5,
+                                    "toDayOfWeek": 6,
+                                    "fromHour": 16,
+                                    "fromMinute": 0,
+                                    "toHour": 21,
+                                    "toMinute": 0
+                                }
+                            ]
+                        }
+                    },
+                    "Winter": {
+                        "fromDay": 1,
+                        "toDay": 31,
+                        "fromMonth": 10,
+                        "toMonth": 5,
+                        "tou_periods": {
+                            "OFF_PEAK": [
+                                {
+                                    "fromDayOfWeek": 0,
+                                    "toDayOfWeek": 6,
+                                    "fromHour": 8,
+                                    "fromMinute": 0,
+                                    "toHour": 16,
+                                    "toMinute": 0
+                                }
+                            ],
+                            "ON_PEAK": [
+                                {
+                                    "fromDayOfWeek": 0,
+                                    "toDayOfWeek": 6,
+                                    "fromHour": 16,
+                                    "fromMinute": 0,
+                                    "toHour": 21,
+                                    "toMinute": 0
+                                }
+                            ],
+                            "PARTIAL_PEAK": [
+                                {
+                                    "fromDayOfWeek": 0,
+                                    "toDayOfWeek": 6,
+                                    "fromHour": 21,
+                                    "fromMinute": 0,
+                                    "toHour": 8,
+                                    "toMinute": 0
+                                }
+                            ]
+                        }
+                    }
+                },
+                "sell_tariff": {
+                    "demand_charges": {
+                        "ALL": {
+                            "ALL": 0
+                        },
+                        "Summer": {},
+                        "Winter": {}
+                    },
+                    "energy_charges": {
+                        "ALL": {
+                            "ALL": 0
+                        },
+                        "Summer": {
+                            "OFF_PEAK": 0.25353,
+                            "ON_PEAK": 0.65558,
+                            "PARTIAL_PEAK": 0.3801
+                        },
+                        "Winter": {
+                            "OFF_PEAK": 0.2316,
+                            "ON_PEAK": 0.59381,
+                            "PARTIAL_PEAK": 0.2316
+                        }
+                    },
+                    "seasons": {
+                        "Summer": {
+                            "fromDay": 1,
+                            "toDay": 30,
+                            "fromMonth": 6,
+                            "toMonth": 9,
+                            "tou_periods": {
+                                "OFF_PEAK": [
+                                    {
+                                        "fromDayOfWeek": 0,
+                                        "toDayOfWeek": 6,
+                                        "fromHour": 21,
+                                        "fromMinute": 0,
+                                        "toHour": 16,
+                                        "toMinute": 0
+                                    }
+                                ],
+                                "ON_PEAK": [
+                                    {
+                                        "fromDayOfWeek": 0,
+                                        "toDayOfWeek": 4,
+                                        "fromHour": 16,
+                                        "fromMinute": 0,
+                                        "toHour": 21,
+                                        "toMinute": 0
+                                    }
+                                ],
+                                "PARTIAL_PEAK": [
+                                    {
+                                        "fromDayOfWeek": 5,
+                                        "toDayOfWeek": 6,
+                                        "fromHour": 16,
+                                        "fromMinute": 0,
+                                        "toHour": 21,
+                                        "toMinute": 0
+                                    }
+                                ]
+                            }
+                        },
+                        "Winter": {
+                            "fromDay": 1,
+                            "toDay": 31,
+                            "fromMonth": 10,
+                            "toMonth": 5,
+                            "tou_periods": {
+                                "OFF_PEAK": [
+                                    {
+                                        "fromDayOfWeek": 0,
+                                        "toDayOfWeek": 6,
+                                        "fromHour": 8,
+                                        "fromMinute": 0,
+                                        "toHour": 16,
+                                        "toMinute": 0
+                                    }
+                                ],
+                                "ON_PEAK": [
+                                    {
+                                        "fromDayOfWeek": 0,
+                                        "toDayOfWeek": 6,
+                                        "fromHour": 16,
+                                        "fromMinute": 0,
+                                        "toHour": 21,
+                                        "toMinute": 0
+                                    }
+                                ],
+                                "PARTIAL_PEAK": [
+                                    {
+                                        "fromDayOfWeek": 0,
+                                        "toDayOfWeek": 6,
+                                        "fromHour": 21,
+                                        "fromMinute": 0,
+                                        "toHour": 8,
+                                        "toMinute": 0
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            "tariff_id": "SCE-TOU-PRIME",
+            "nameplate_power": 10800,
+            "nameplate_energy": 27000,
+            "installation_time_zone": "America/Los_Angeles",
+            "off_grid_vehicle_charging_reserve_percent": 65,
+            "max_site_meter_power_ac": 1000000000,
+            "min_site_meter_power_ac": -1000000000,
+            "geolocation": {
+                "latitude": XX.XXXXXXX,
+                "longitude": XX.XXXXXXX,
+                "source": "Site Address Preference"
+            },
+            "address": {
+                "address_line1": "xxxxxx",
+                "city": "xxxxxx",
+                "state": "xx",
+                "zip": "xxxxx",
+                "country": "xx"
+            },
+            "vpp_backup_reserve_percent": 80
+        }
+    }
+        
+        """
+        if self.tesla is None:
+            return None
+        response = self.site.api("SITE_CONFIG")
+        return response
+
+    
     def poll(self, api):
         """
-        Poll the Tesla Cloud API to get data for the API request
+        Map Powerwall API to Tesla Cloud Data
 
         TODO: Make this work - placeholders only
         """
@@ -104,52 +519,80 @@ class TeslaCloud:
 
             ## Variable
             if api == '/api/status':
+                # Pull from Tesla Cloud
+                config = self.get_site_config()
+                # Map to Powerwall API
                 data = {
-                    "din": "1232100-00-E--TG1234567890G1",
-                    "start_time": "2023-10-13 04:01:45 +0800",
-                    "up_time_seconds": "1541h38m20.998412744s",
+                    "din": lookup(config, ("response", "id")),                          # 1232100-00-E--TGxxxxxxxxxxxx
+                    "start_time": lookup(config, ("response", "installation_date")),    # "2023-10-13 04:01:45 +0800"
+                    "up_time_seconds": None,                                            # "1541h38m20.998412744s"
                     "is_new": False,
-                    "version": "23.28.2 27626f98", # firmware version
-                    "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd33",
+                    "version": lookup(config, ("response", "version")),                 # 23.28.2 27626f98
+                    "git_hash": None,
                     "commission_count": 0,
-                    "device_type": "teg",
+                    "device_type": lookup(config, ("response", "components", "gateway")),   # teg 
                     "teg_type": "unknown",
                     "sync_type": "v2.1",
                     "cellular_disabled": False,
                     "can_reboot": True
                 }
             elif api == '/api/system_status/grid_status':
+                power = self.get_site_power()
+                if lookup(power, ("response", "island_status")) == "on_grid": 
+                    grid_status = "SystemGridConnected"
+                else: # off_grid or off_grid_unintentional
+                    grid_status = "SystemIslandedActive"
+                if lookup(power, ("response", "grid_status")) == "Active":
+                    grid_services_active = True
+                else:
+                    grid_services_active = False
                 data = {
-                    "grid_status":"SystemGridConnected", # SystemIslandedActive or SystemTransitionToGrid
-                    "grid_services_active":False
+                    "grid_status": grid_status, # SystemIslandedActive or SystemTransitionToGrid
+                    "grid_services_active": grid_services_active
                 }
 
             elif api == '/api/site_info/site_name':
+                config = self.get_site_config()
+                nameplate_power = int(lookup(config, ("response", "nameplate_power")) or 0) / 1000
+                nameplate_energy = int(lookup(config, ("response", "nameplate_energy")) or 0) / 1000
+                max_site_meter_power_ac = lookup(config, ("response", "max_site_meter_power_ac"))
+                min_site_meter_power_ac = lookup(config, ("response", "min_site_meter_power_ac"))
+                utility = lookup(config, ("response", "tariff_content", "utility"))
+                sitename = lookup(config, ("response", "site_name"))
+                tz = lookup(config, ("response", "installation_time_zone"))
+
                 data = {
-                    "max_system_energy_kWh": 27,
-                    "max_system_power_kW": 10.8,
-                    "site_name": "Tesla Energy Gateway",
-                    "timezone": "America/Los_Angeles",
-                    "max_site_meter_power_kW": 1000000000,
-                    "min_site_meter_power_kW": -1000000000,
-                    "nominal_system_energy_kWh": 27,
-                    "nominal_system_power_kW": 10.8,
-                    "panel_max_current": 100,
+                    "max_system_energy_kWh": nameplate_energy,
+                    "max_system_power_kW": nameplate_power,
+                    "site_name": sitename,
+                    "timezone": tz,
+                    "max_site_meter_power_kW": max_site_meter_power_ac,
+                    "min_site_meter_power_kW": min_site_meter_power_ac,
+                    "nominal_system_energy_kWh": nameplate_energy,
+                    "nominal_system_power_kW": nameplate_power,
+                    "panel_max_current": None,
                     "grid_code": {
-                        "grid_code": "60Hz_240V_s_UL1741SA:2019_California",
-                        "grid_voltage_setting": 240,
-                        "grid_freq_setting": 60,
-                        "grid_phase_setting": "Split",
-                        "country": "United States",
-                        "state": "California",
-                        "utility": "Southern California Edison"
+                        "grid_code": None,
+                        "grid_voltage_setting": None,
+                        "grid_freq_setting": None,
+                        "grid_phase_setting": None,
+                        "country": None,
+                        "state": None,
+                        "utility": utility
                     }
                 }
             elif api == '/api/devices/vitals':
                 # Protobuf payload - not implemented - use /vitals instead
                 data = None 
-            elif api == '/api/system_status/soe':
-                data = {"percentage": 20.52609259375742}
+            elif api == '/vitals':
+                # TODO: Assemble vitals data payload
+                data = None
+            elif api in ['/api/system_status/soe','/soe']:
+                # TODO check to see if SOE is true value or 5% reserved
+                power = self.get_site_power()
+                data = {
+                    "percentage": lookup(power, ("response", "percentage_charged")) or 0,
+                }
             elif api == '/api/meters/aggregates':
                 data = {
                     "site": {
@@ -389,7 +832,10 @@ class TeslaCloud:
 
             elif api == '/api/synchrometer/ct_voltage_references':
                 data = json.loads('{"ct1":"Phase1","ct2":"Phase2","ct3":"Phase1"}')
-                
+
+            else:
+                data = f"ERROR - unknown API: {api}"
+
         return data
     
     def getsites(self):
@@ -458,4 +904,29 @@ class TeslaCloud:
             tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
 
 
-# TODO: Test code
+# Test code
+set_debug(False)
+cloud = TeslaCloud("jason@jasonacox.com")
+
+#print("\nSite Data")
+#sites = cloud.getsites()
+#print(sites)
+
+#print("\Battery")
+#r = cloud.get_battery()
+#print(r)
+
+#print("\Site Power")
+#r = cloud.get_site_power()
+#print(r)
+
+#print("\Site Config")
+#r = cloud.get_site_config()
+#print(r)
+
+# Test Poll
+items = ['/api/status', '/api/system_status/grid_status', '/api/site_info/site_name', '/api/devices/vitals','/api/system_status/soe'] # ,'/api/meters/aggregates','/api/operation','/api/system_status','/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar','/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration','/api/system/update/status','/api/site_info','/api/system_status/grid_faults','/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer','/api/meters','/api/installer','/api/networks','/api/system/networks','/api/meters/readings','/api/synchrometer/ct_voltage_references']
+for i in items:
+    print(f"poll({i}):")
+    print(cloud.poll(i))
+    print("\n")
