@@ -275,7 +275,6 @@ class TeslaCloud:
         """
         Map Powerwall API to Tesla Cloud Data
 
-        TODO: Make this work - placeholders only
         """
         if self.tesla is None:
             return None
@@ -598,8 +597,6 @@ class TeslaCloud:
     def getsites(self):
         """
         Get list of Tesla Energy sites
-
-        TODO: Make this work
         """
         if self.tesla is None:
             return None
@@ -613,8 +610,6 @@ class TeslaCloud:
     def setup(self):
         """
         Set up the Tesla Cloud connection
-
-        TODO: Make this work
         """
         print("\nTesla Account Setup")
         print("-" * 19)
@@ -671,7 +666,7 @@ if not cloud.connect():
     if not cloud.connect():
         print("Failed to connect to Tesla Cloud")
         exit(1)
-        
+
 print("Connected to Tesla Cloud")   
 
 #print("\nSite Data")
