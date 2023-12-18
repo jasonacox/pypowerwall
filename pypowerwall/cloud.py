@@ -18,6 +18,7 @@
 
 """
 import sys
+import os
 import time
 import logging
 import json
@@ -622,6 +623,9 @@ class TeslaCloud:
                 TUSER = response
                 break
 
+        # Update the Tesla User
+        self.email = TUSER
+        
         # Create retry instance for use after successful login
         retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
 
@@ -655,39 +659,59 @@ class TeslaCloud:
             tesla.close()
             tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
 
+if __name__ == "__main__":
 
-# Test code
-set_debug(False)
-cloud = TeslaCloud("jason@jasonacox.com")
+    # Test code
+    set_debug(False)
+    # Check for .pypowerwall.auth file
+    if os.path.isfile(AUTHFILE):
+        # Read the json file
+        with open(AUTHFILE) as json_file:
+            try:
+                data = json.load(json_file)
+                TUSER = list(data.keys())[0]
+                print(f"Using Tesla User: {TUSER}")
+            except Exception as err:
+                TUSER = None
 
-if not cloud.connect():
-    print("Failed to connect to Tesla Cloud")
-    cloud.setup()
+    while not TUSER:
+        response = input("Tesla User Email address: ").strip()
+        if "@" not in response:
+            print("Invalid email address\n")
+        else:
+            TUSER = response
+            break
+
+    cloud = TeslaCloud(TUSER)
+
     if not cloud.connect():
         print("Failed to connect to Tesla Cloud")
-        exit(1)
+        cloud.setup()
+        if not cloud.connect():
+            print("Failed to connect to Tesla Cloud")
+            exit(1)
 
-print("Connected to Tesla Cloud")   
+    print("Connected to Tesla Cloud")   
 
-#print("\nSite Data")
-#sites = cloud.getsites()
-#print(sites)
+    #print("\nSite Data")
+    #sites = cloud.getsites()
+    #print(sites)
 
-#print("\Battery")
-#r = cloud.get_battery()
-#print(r)
+    #print("\Battery")
+    #r = cloud.get_battery()
+    #print(r)
 
-#print("\Site Power")
-#r = cloud.get_site_power()
-#print(r)
+    #print("\Site Power")
+    #r = cloud.get_site_power()
+    #print(r)
 
-#print("\Site Config")
-#r = cloud.get_site_config()
-#print(r)
+    #print("\Site Config")
+    #r = cloud.get_site_config()
+    #print(r)
 
-# Test Poll
-items = ['/api/status','/api/system_status/grid_status','/api/site_info/site_name','/api/devices/vitals','/api/system_status/soe','/api/meters/aggregates','/api/operation','/api/system_status'] #, '/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar','/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration','/api/system/update/status','/api/site_info','/api/system_status/grid_faults','/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer','/api/meters','/api/installer','/api/networks','/api/system/networks','/api/meters/readings','/api/synchrometer/ct_voltage_references']
-for i in items:
-    print(f"poll({i}):")
-    print(cloud.poll(i))
-    print("\n")
+    # Test Poll
+    items = ['/api/status','/api/system_status/grid_status','/api/site_info/site_name','/api/devices/vitals','/api/system_status/soe','/api/meters/aggregates','/api/operation','/api/system_status'] #, '/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar','/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration','/api/system/update/status','/api/site_info','/api/system_status/grid_faults','/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer','/api/meters','/api/installer','/api/networks','/api/system/networks','/api/meters/readings','/api/synchrometer/ct_voltage_references']
+    for i in items:
+        print(f"poll({i}):")
+        print(cloud.poll(i))
+        print("\n")

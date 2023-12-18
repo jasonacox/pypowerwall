@@ -58,8 +58,9 @@ urllib3.disable_warnings() # Disable SSL warnings
 import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
+from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 6, 4)
+version_tuple = (0, 7, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -86,7 +87,7 @@ class ConnectionError(Exception):
     pass
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10, poolmaxsize=10):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10, poolmaxsize=10, cloudmode=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -99,6 +100,7 @@ class Powerwall(object):
             pwcacheexpire = Seconds to expire cached entries
             timeout      = Seconds for the timeout on http requests
             poolmaxsize  = Pool max size for http connection re-use (persistent connections disabled if zero)
+            cloudmode    = If True, use Tesla cloud for connection (default is False)
 
         """
 
@@ -114,6 +116,18 @@ class Powerwall(object):
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
+        self.cloudmode = cloudmode              # cloud mode (default) or local mode
+        self.Tesla = False                      # cloud object for cloud connection
+
+        # Check for cloud mode
+        if self.cloudmode or self.host == "":
+            log.debug('Tesla cloud mode enabled')
+            self.Tesla = cloud.TeslaCloud(self.email, pwcacheexpire, timeout)
+            # Check to see if we can connect to the cloud
+            if not self.Tesla.connect():
+                err = "Unable to connect to Tesla Cloud - run pypowerwall setup"
+                log.debug(err)
+                raise ConnectionError(err)
 
         if self.poolmaxsize > 0:
             # Create session object for http connection re-use
