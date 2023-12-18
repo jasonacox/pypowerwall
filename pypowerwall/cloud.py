@@ -91,7 +91,7 @@ class TeslaCloud:
             try:
                 self.tesla.fetch_token(authorization_response=self.tesla.authorization_url(state=state, code_verifier=code_verifier))
             except Exception as err:
-                log.error(f"ERROR: Login failure - {repr(err)}")
+                log.error("ERROR: Login failure - ",err)
                 return False
         else:
             # Enable retries
@@ -625,7 +625,7 @@ class TeslaCloud:
 
         # Update the Tesla User
         self.email = TUSER
-        
+
         # Create retry instance for use after successful login
         retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
 
