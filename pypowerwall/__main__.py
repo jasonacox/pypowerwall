@@ -78,11 +78,6 @@ if(state == 1):
         print("Connected to Tesla Cloud...")   
         sites = c.getsites()
         print("Found %d Powerwall Sites:" % (len(sites)))
-        """
-        "energy_site_id": 255476044283,
-        "resource_type": "battery",
-        "site_name": "Cox Energy Gateway",
-        """
         for s in sites:
             print("  %s (%s) - Type: %s" % (s["site_name"], 
                     s["energy_site_id"], s["resource_type"]))
