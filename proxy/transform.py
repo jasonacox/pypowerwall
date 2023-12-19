@@ -27,7 +27,23 @@ def get_static(web_root, fpath):
             ftype = "image/png"
         elif freq.lower().endswith(".html"):
             ftype = "text/html"
-        else:
+        elif freq.lower().endswith(".otf"):
+            ftype = "font/opentype"
+        elif freq.lower().endswith(".woff"):
+            ftype = "font/woff"
+        elif freq.lower().endswith(".woff2"):
+            ftype = "font/woff2"
+        elif freq.lower().endswith(".ttf"):
+            ftype = "font/ttf"
+        elif freq.lower().endswith(".svg"):
+            ftype = "image/svg+xml"
+        elif freq.lower().endswith(".eot"):
+            ftype = "application/vnd.ms-fontobject"
+        elif freq.lower().endswith(".json"):
+            ftype = "application/json"
+        elif freq.lower().endswith(".xml"):
+            ftype = "application/xml"
+        else:   
             ftype = "text/plain"
 
         with open(freq, 'rb') as f:
