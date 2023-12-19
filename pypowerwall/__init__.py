@@ -117,10 +117,11 @@ class Powerwall(object):
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
         self.cloudmode = cloudmode              # cloud mode (default) or local mode
-        self.Tesla = False                      # cloud object for cloud connection
+        self.Tesla = None                      # cloud object for cloud connection
 
         # Check for cloud mode
         if self.cloudmode or self.host == "":
+            self.cloudmode = True
             log.debug('Tesla cloud mode enabled')
             self.Tesla = cloud.TeslaCloud(self.email, pwcacheexpire, timeout)
             # Check to see if we can connect to the cloud
@@ -128,28 +129,28 @@ class Powerwall(object):
                 err = "Unable to connect to Tesla Cloud - run pypowerwall setup"
                 log.debug(err)
                 raise ConnectionError(err)
-
-        if self.poolmaxsize > 0:
-            # Create session object for http connection re-use
-            self.session = requests.Session()
-            a = requests.adapters.HTTPAdapter(pool_maxsize=self.poolmaxsize)
-            self.session.mount('https://', a)
+            self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}
         else:
-            # Disable http persistent connections
-            self.session = requests
-
-        # Load cached auth session
-        try:
-            f = open(self.cachefile, "r")
-            self.auth = json.load(f)
-            log.debug('loaded auth from cache file %s' % self.cachefile)
-        except:
-            log.debug('no auth cache file')
-            pass
-
-        # Create new session
-        if self.auth == {}:
-            self._get_session()
+            log.debug('Tesla local mode enabled')
+            if self.poolmaxsize > 0:
+                # Create session object for http connection re-use
+                self.session = requests.Session()
+                a = requests.adapters.HTTPAdapter(pool_maxsize=self.poolmaxsize)
+                self.session.mount('https://', a)
+            else:
+                # Disable http persistent connections
+                self.session = requests
+            # Load cached auth session
+            try:
+                f = open(self.cachefile, "r")
+                self.auth = json.load(f)
+                log.debug('loaded auth from cache file %s' % self.cachefile)
+            except:
+                log.debug('no auth cache file')
+                pass
+            # Create new session
+            if self.auth == {}:
+                self._get_session()
 
     def _get_session(self):
         # Login and create a new session
@@ -179,6 +180,9 @@ class Powerwall(object):
 
     def _close_session(self):
         # Log out
+        if self.cloudmode:
+            self.Tesla.logout()
+            return
         url = "https://%s/api/logout" % self.host
         g = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
@@ -207,10 +211,16 @@ class Powerwall(object):
             recursive   = If True, this is a recursive call and do not allow additional recursive calls
             force       = If True, bypass the cache and make the API call to the gateway
         """
-        # Query powerwall and return payload as string
-        
-        # First check to see if in cache
+        # Check to see if we are in cloud mode
+        if self.cloudmode:
+            if jsonformat:
+                return self.Tesla.poll(api)
+            else:
+                return json.dumps(self.Tesla.poll(api))
+
+        # Query powerwall and return payload
         fetch = True
+        # Check cache
         if(api in self.pwcache and api in self.pwcachetime):
             # is it expired?
             if(time.time() - self.pwcachetime[api] < self.pwcacheexpire):
@@ -318,6 +328,12 @@ class Powerwall(object):
         Args:
            jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
+        if self.cloudmode:
+            if not jsonformat:
+                return self.Tesla.poll('/api/devices/vitals')
+            else:
+                return json.dumps(self.Tesla.poll('/api/devices/vitals'))
+        
         # Pull vitals payload - binary protobuf 
         stream = self.poll('/api/devices/vitals')
         if(not stream):

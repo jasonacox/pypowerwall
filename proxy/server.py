@@ -28,8 +28,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t29"
-NOAPI = False # Set to True to serve bogus data for API calls to Powerwall
+BUILD = "t30"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -110,9 +109,8 @@ def get_value(a, key):
 # TODO: Add support for multiple Powerwalls
 # TODO: Add support for solar-only systems
 pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
-if not pw or NOAPI or not host or host.lower() == "none":
-    NOAPI = True
-    log.info("pyPowerwall Proxy Server - NOAPI Mode")
+if not pw or not host or host.lower() == "none":
+    log.info("pyPowerwall Proxy Server - Cloud Mode")
 else:
     log.info("pyPowerwall Proxy Server - Connected to %s" % host)
 
@@ -285,22 +283,7 @@ class handler(BaseHTTPRequestHandler):
                 str(datetime.datetime.fromtimestamp(time.time())))
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
-            if NOAPI:
-                # If we are in NOAPI mode serve up bogus data
-                filename = "/bogus/" + self.path[1:].replace('/', '.') + ".json"
-                fcontent, ftype = get_static(web_root, filename)
-                if not fcontent:
-                    fcontent = bytes("{}", 'utf-8')
-                    log.debug("No offline content found for: {}".format(filename))
-                else:
-                    log.debug("Served from local filesystem: {}".format(filename))
-                self.send_header('Content-type','{}'.format(ftype))
-                self.end_headers()
-                self.wfile.write(fcontent)
-                return
-            else:
-                # Proxy request to Powerwall
-                message = pw.poll(self.path)
+            message = pw.poll(self.path)
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1
@@ -312,32 +295,33 @@ class handler(BaseHTTPRequestHandler):
                 self.path = "/index.html"
             fcontent, ftype = get_static(web_root, self.path)
             if fcontent:
-                log.debug("Served from local web root: {}".format(self.path))
-                self.send_header('Content-type','{}'.format(ftype))
-                self.end_headers()
-                self.wfile.write(fcontent)
-                return
-
-            # Proxy request to Powerwall web server.
-            proxy_path = self.path
-            if proxy_path.startswith("/"):
-                proxy_path = proxy_path[1:]
-            pw_url = "https://{}/{}".format(pw.host, proxy_path)
-            log.debug("Proxy request to: {}".format(pw_url))
-            r = pw.session.get(
-                url=pw_url,
-                cookies=pw.auth,
-                verify=False,
-                stream=True,
-                timeout=pw.timeout
-            )
-            fcontent = r.content
-            ftype = r.headers['content-type']
+                log.debug("Served from local web root: {} type {}".format(self.path,ftype))
+            elif pw.cloudmode:
+                log.debug("Cloud Mode - No Proxy for: {}".format(self.path))
+                fcontent = bytes("Not Found", 'utf-8')
+                ftype = "text/plain"
+            else:
+                # Proxy request to Powerwall web server.
+                proxy_path = self.path
+                if proxy_path.startswith("/"):
+                    proxy_path = proxy_path[1:]
+                pw_url = "https://{}/{}".format(pw.host, proxy_path)
+                log.debug("Proxy request to: {}".format(pw_url))
+                r = pw.session.get(
+                    url=pw_url,
+                    cookies=pw.auth,
+                    verify=False,
+                    stream=True,
+                    timeout=pw.timeout
+                )
+                fcontent = r.content
+                ftype = r.headers['content-type']
+                
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
                 self.send_header("Cache-Control", "max-age={}".format(browser_cache))
             else:
-                self.send_header("Cache-Control", "no-cache, no-store")
+                self.send_header("Cache-Control", "no-cache, no-store")         
 
             # Inject transformations
             if self.path.split('?')[0] == "/":
