@@ -313,13 +313,9 @@ class TeslaCloud:
                 grid_status = "SystemGridConnected"
             else: # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
-            if lookup(power, ("response", "grid_status")) == "Active":
-                grid_services_active = True
-            else:
-                grid_services_active = False
             data = {
                 "grid_status": grid_status, # SystemIslandedActive or SystemTransitionToGrid
-                "grid_services_active": grid_services_active
+                "grid_services_active": lookup(power, ("response", "grid_services_active")) # true when participating in VPP event
             }
 
         elif api == '/api/site_info/site_name':
@@ -481,7 +477,7 @@ class TeslaCloud:
             solar_power = lookup(power, ("response", "solar_power"))
             battery_power = lookup(power, ("response", "battery_power"))
             load_power = lookup(power, ("response", "load_power"))
-            grid_power = lookup(power, ("response", "grid_power"))
+            grid_services_power = lookup(power, ("response", "grid_services_power"))
             grid_status = lookup(power, ("response", "grid_status"))
             grid_services_active = lookup(power, ("response", "grid_services_active"))
             battery_count = lookup(config, ("response", "battery_count"))
@@ -510,7 +506,7 @@ class TeslaCloud:
                 "instantaneous_max_apparent_power": 0,
                 "hardware_capability_charge_power": 0,
                 "hardware_capability_discharge_power": 0,
-                "grid_services_power": grid_power,
+                "grid_services_power": grid_services_power,
                 "system_island_state": grid_status,
                 "available_blocks": battery_count,
                 "available_charger_blocks": 0,
