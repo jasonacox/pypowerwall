@@ -301,6 +301,7 @@ class handler(BaseHTTPRequestHandler):
                 fcontent = fcontent.replace("{VERSION}", status["version"])
                 fcontent = fcontent.replace("{HASH}", status["git_hash"])
                 fcontent = fcontent.replace("{EMAIL}", email)
+                fcontent = fcontent.replace("{STYLE}", style)
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
