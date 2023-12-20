@@ -299,7 +299,7 @@ class TeslaCloud:
                 "up_time_seconds": None,                                            # "1541h38m20.998412744s"
                 "is_new": False,
                 "version": lookup(config, ("response", "version")),                 # 23.28.2 27626f98
-                "git_hash": None,
+                "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd34",
                 "commission_count": 0,
                 "device_type": lookup(config, ("response", "components", "gateway")),   # teg 
                 "teg_type": "unknown",

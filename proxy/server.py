@@ -293,11 +293,23 @@ class handler(BaseHTTPRequestHandler):
             # Serve static assets from web root first, if found.
             if self.path == "/" or self.path == "":
                 self.path = "/index.html"
-            fcontent, ftype = get_static(web_root, self.path)
+                fcontent, ftype = get_static(web_root, self.path)
+                # Replace {VARS} with current data
+                status = pw.status()
+                # convert fcontent to string
+                fcontent = fcontent.decode("utf-8")
+                fcontent = fcontent.replace("{VERSION}", status["version"])
+                fcontent = fcontent.replace("{HASH}", status["git_hash"])
+                fcontent = fcontent.replace("{EMAIL}", email)
+                # convert fcontent back to bytes
+                fcontent = bytes(fcontent, 'utf-8')
+            else:
+                fcontent, ftype = get_static(web_root, self.path)
             if fcontent:
                 log.debug("Served from local web root: {} type {}".format(self.path,ftype))
+            # If not found, serve from Powerwall web server
             elif pw.cloudmode:
-                log.debug("Cloud Mode - No Proxy for: {}".format(self.path))
+                log.debug("Cloud Mode - File not found: {}".format(self.path))
                 fcontent = bytes("Not Found", 'utf-8')
                 ftype = "text/plain"
             else:
