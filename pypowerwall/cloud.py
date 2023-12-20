@@ -373,7 +373,13 @@ class TeslaCloud:
             grid_power = lookup(power, ("response", "grid_power"))
             config = self.get_site_config()
             battery_count = lookup(config, ("response", "battery_count"))
-            solar_inverters = len(lookup(config, ("response", "components", "inverters")) or 0)
+            inverters = lookup(config, ("response", "components", "inverters"))
+            if inverters is not None:
+                solar_inverters = len(inverters)
+            elif lookup(config, ("response", "components", "solar")):
+                solar_inverters = 1
+            else:
+                solar_inverters = 0
 
             data = {
                 "site": {
