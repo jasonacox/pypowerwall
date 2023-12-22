@@ -1,9 +1,13 @@
 # RELEASE NOTES
 
+## v0.7.0 - Tesla Cloud Mode
+
+* Simulate Powerwall via Tesla Cloud API calls. In `cloudmode` API calls to pypowerwall APIs will result in calls made to the Tesla API to populate the data.  
+
 ## v0.6.4 - Power Flow Animation
 
 Proxy t29 Updates
-* Default page rendered by proxy (http://pypowerwall/) will render Powerflow Animation
+* Default page rendered by proxy (http://pypowerwall:8675/) will render Powerflow Animation
 * Animation assets (html, css, js, images, fonts, svg) will render from local filesystem instead of pulling from Powerwall TEG portal.
 * Start prep for possible API removals from Powerwall TEG portal (see NOAPI settings)
 

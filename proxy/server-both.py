@@ -3,7 +3,7 @@
 # -*- coding: utf-8 -*-
 """
 **********************************************************************
-TEST SERVER - USES BOTH LOCAL AND CLOUD MODE
+TEST SERVER - USES BOTH LOCAL AND CLOUD MODE SIMULTANEOUSLY
 **********************************************************************
 
  Python module to interface with Tesla Solar Powerwall Gateway
@@ -32,7 +32,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "b1"
+BUILD = "b2"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -92,12 +92,12 @@ logging.basicConfig(format='%(levelname)s:%(message)s',level=logging.INFO)
 log.setLevel(logging.INFO)
 
 if(debugmode == "yes"):
-    log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" % 
+    log.info("pyPowerwall [%s] TEST Proxy Server [%s] - %s Port %d - DEBUG" % 
         (pypowerwall.version, BUILD, httptype, port))
     pypowerwall.set_debug(True)
     log.setLevel(logging.DEBUG)
 else:
-    log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d" % 
+    log.info("pyPowerwall [%s] TEST Proxy Server [%s] - %s Port %d" % 
         (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
 
@@ -116,7 +116,9 @@ pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,poo
 cw = pypowerwall.Powerwall("","",email,timezone,cache_expire,timeout,pool_maxsize,cloudmode=True)
 if pw:
     log.info("pyPowerwall Proxy Server - Connected to %s" % host)
-
+if cw:
+    log.info("pyPowerwall Proxy Server - Connected to cloud")
+    
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
     pass
@@ -320,6 +322,7 @@ class handler(BaseHTTPRequestHandler):
                 fcontent = fcontent.replace("{VERSION}", status["version"])
                 fcontent = fcontent.replace("{HASH}", status["git_hash"])
                 fcontent = fcontent.replace("{EMAIL}", email)
+                fcontent = fcontent.replace("{STYLE}", style)
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:

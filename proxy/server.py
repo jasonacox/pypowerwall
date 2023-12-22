@@ -28,7 +28,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t32"
+BUILD = "t33"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -107,9 +107,11 @@ def get_value(a, key):
 
 # Connect to Powerwall
 # TODO: Add support for multiple Powerwalls
-# TODO: Add support for solar-only systems
 pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
-if not pw or not host or host.lower() == "none":
+if not pw:
+    log.error("Fatal Error: Unable to initialize pyPowerwall")
+    os._exit(1)
+if pw.cloudmode:
     log.info("pyPowerwall Proxy Server - Cloud Mode")
 else:
     log.info("pyPowerwall Proxy Server - Connected to %s" % host)

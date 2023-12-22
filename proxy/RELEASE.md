@@ -1,5 +1,13 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t33 (21 Dec 2023)
+
+* Add `cloudmode` support for pypowerwall v0.7.0. 
+
+### Proxy t32 (20 Dec 2023)
+
+* Fix "flashing animation" problem by matching `hash` variable in index.html to firmware version `git_hash`.
+
 ### Proxy t29 (16 Dec 2023)
 
 * Default page rendered by proxy (http://pypowerwall/) will render Powerflow Animation

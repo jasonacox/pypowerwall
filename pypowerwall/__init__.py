@@ -14,7 +14,17 @@
     * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, cloudmode)
+
+ Parameters
+    host                      # (required) hostname or IP of the Tesla gateway
+    password                  # (required) password for logging into the gateway
+    email                     # (required) email used for logging into the gateway
+    timezone                  # (required) desired timezone
+    pwcacheexpire = 5         # Set API cache timeout in seconds
+    timeout = 10              # Timeout for HTTPS calls in seconds
+    poolmaxsize = 10          # Pool max size for http connection re-use (persistent connections disabled if zero)
+    cloudmode = False         # If True, use Tesla cloud for data (default is False)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -42,14 +52,6 @@
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
     is_connected()            # Returns True if able to connect and login to Powerwall
 
- Parameters
-    host                    # (required) hostname or IP of the Tesla gateway
-    password                # (required) password for logging into the gateway
-    email                   # (required) email used for logging into the gateway
-    timezone                # (required) desired timezone
-    pwcacheexpire = 5       # Set API cache timeout in seconds
-    timeout = 10            # Timeout for HTTPS calls in seconds
-    poolmaxsize = 10        # Pool max size for http connection re-use (persistent connections disabled if zero)
 """
 import json, time
 import requests
@@ -100,7 +102,7 @@ class Powerwall(object):
             pwcacheexpire = Seconds to expire cached entries
             timeout      = Seconds for the timeout on http requests
             poolmaxsize  = Pool max size for http connection re-use (persistent connections disabled if zero)
-            cloudmode    = If True, use Tesla cloud for connection (default is False)
+            cloudmode    = If True, use Tesla cloud for data (default is False)
 
         """
 
@@ -116,8 +118,8 @@ class Powerwall(object):
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
-        self.cloudmode = cloudmode              # cloud mode (default) or local mode
-        self.Tesla = None                      # cloud object for cloud connection
+        self.cloudmode = cloudmode              # cloud mode or local mode (default)
+        self.Tesla = None                       # cloud object for cloud connection
 
         # Check for cloud mode
         if self.cloudmode or self.host == "":
@@ -329,10 +331,10 @@ class Powerwall(object):
            jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
         if self.cloudmode:
-            if not jsonformat:
-                return self.Tesla.poll('/api/devices/vitals')
+            if jsonformat:
+                return json.dumps(self.Tesla.poll('/vitals'))
             else:
-                return json.dumps(self.Tesla.poll('/api/devices/vitals'))
+                return self.Tesla.poll('/vitals')
         
         # Pull vitals payload - binary protobuf 
         stream = self.poll('/api/devices/vitals')
