@@ -116,7 +116,7 @@ class TeslaCloud:
 
     def get_battery(self):
         """
-        Get site power data from Tesla Cloud\
+        Get site battery data from Tesla Cloud
         
             "response": {
                 "resource_type": "battery",
@@ -380,7 +380,7 @@ class TeslaCloud:
             # percentage_charged is scaled to keep 5% buffer at bottom
             soe = (percentage_charged + (5 / 0.95)) * 0.95
             data = {
-                "percentage": soe,
+                "percentage": soe
             }
             
         elif api == '/api/meters/aggregates':
@@ -399,7 +399,6 @@ class TeslaCloud:
                 solar_inverters = 1
             else:
                 solar_inverters = 0
-
             data = {
                 "site": {
                     "last_communication_time": timestamp,
@@ -484,13 +483,12 @@ class TeslaCloud:
         elif api == '/api/operation':
             config = self.get_site_config()
             default_real_mode = lookup(config, ("response", "default_real_mode"))
-            backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent"))
-            if backup_reserve_percent is not None:
-                backup_reserve_percent = (backup_reserve_percent + (5 / 0.95)) * 0.95
-
+            backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent")) or 0
+            # backup_reserve_percent is scaled to keep 5% buffer at bottom
+            backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
             data = {
                 "real_mode": default_real_mode,
-                "backup_reserve_percent": backup_reserve_percent
+                "backup_reserve_percent": backup
             }
         elif api == '/api/system_status':
             power = self.get_site_power()
