@@ -374,11 +374,13 @@ class TeslaCloud:
             # TODO: Assemble vitals data payload
             data = None
 
-        elif api in ['/api/system_status/soe','/soe']:
-            # TODO check to see if SOE is true value or 5% reserved
-            power = self.get_site_power()
+        elif api in ['/api/system_status/soe']:
+            battery = self.get_battery()
+            percentage_charged = lookup(battery, ("response", "percentage_charged")) or 0
+            # percentage_charged is scaled to keep 5% buffer at bottom
+            soe = (percentage_charged + (5 / 0.95)) * 0.95
             data = {
-                "percentage": lookup(power, ("response", "percentage_charged")) or 0,
+                "percentage": soe,
             }
             
         elif api == '/api/meters/aggregates':
@@ -488,9 +490,7 @@ class TeslaCloud:
 
             data = {
                 "real_mode": default_real_mode,
-                "backup_reserve_percent": backup_reserve_percent,
-                "freq_shift_load_shed_soe": 0,
-                "freq_shift_load_shed_delta_f": 0
+                "backup_reserve_percent": backup_reserve_percent
             }
         elif api == '/api/system_status':
             power = self.get_site_power()
