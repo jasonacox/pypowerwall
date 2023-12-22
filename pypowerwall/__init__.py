@@ -436,9 +436,7 @@ class Powerwall(object):
         result = {}
         devicemap = ['','1','2','3','4','5','6','7','8']
         deviceidx = 0
-        v = self.vitals(jsonformat=False)
-        if(not v):
-            return None
+        v = self.vitals(jsonformat=False) or {}
         for device in v:
             if device.split('--')[0] == 'PVAC':
                 # Check for PVS data
@@ -572,7 +570,7 @@ class Powerwall(object):
     def temps(self, jsonformat=False):
         """ Temperatures of Powerwalls  """
         temps = {}
-        devices = self.vitals()
+        devices = self.vitals() or {}
         for device in devices:
             if device.startswith('TETHC'):
                 try:
@@ -594,7 +592,7 @@ class Powerwall(object):
           jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
         alerts = []
-        devices = self.vitals()
+        devices = self.vitals() or {}
         for device in devices:
             if 'alerts' in devices[device]:
                 for i in devices[device]['alerts']:
