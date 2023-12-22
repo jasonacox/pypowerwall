@@ -16,6 +16,12 @@
     pwcacheexpire = 5       # Set API cache timeout in seconds
     timeout = 10            # Timeout for HTTPS calls in seconds
 
+ Functions
+    connect()               # Connect to Tesla Cloud
+    get_battery()           # Get battery data from Tesla Cloud
+    get_site_power()        # Get site power data from Tesla Cloud
+    get_site_config()       # Get site configuration data from Tesla Cloud
+    poll(api)               # Map Powerwall API to Tesla Cloud Data
 """
 import sys
 import os
@@ -77,6 +83,9 @@ class TeslaCloud:
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
     
     def connect(self):
+        """
+        Connect to Tesla Cloud via teslapy
+        """
         # Create retry instance for use after successful login
         self.retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
 
@@ -290,9 +299,8 @@ class TeslaCloud:
         log.debug(f" -- cloud: Request for {api}") 
         ## Variable
         if api == '/api/status':
-            # Pull from Tesla Cloud
+            # TOOO: Fix start_time and up_time_seconds
             config = self.get_site_config()
-            # Map to Powerwall API
             data = {
                 "din": lookup(config, ("response", "id")),                          # 1232100-00-E--TGxxxxxxxxxxxx
                 "start_time": lookup(config, ("response", "installation_date")),    # "2023-10-13 04:01:45 +0800"
@@ -319,6 +327,15 @@ class TeslaCloud:
             }
 
         elif api == '/api/site_info/site_name':
+            config = self.get_site_config()
+            sitename = lookup(config, ("response", "site_name"))
+            tz = lookup(config, ("response", "installation_time_zone"))
+            data = {
+                "site_name": sitename,
+                "timezone": tz
+            }
+
+        elif api == '/api/site_info':
             config = self.get_site_config()
             nameplate_power = int(lookup(config, ("response", "nameplate_power")) or 0) / 1000
             nameplate_energy = int(lookup(config, ("response", "nameplate_energy")) or 0) / 1000
@@ -348,18 +365,22 @@ class TeslaCloud:
                     "utility": utility
                 }
             }
+
         elif api == '/api/devices/vitals':
             # Protobuf payload - not implemented - use /vitals instead
-            data = {} 
+            data = None
+
         elif api == '/vitals':
             # TODO: Assemble vitals data payload
-            data = {}
+            data = None
+
         elif api in ['/api/system_status/soe','/soe']:
             # TODO check to see if SOE is true value or 5% reserved
             power = self.get_site_power()
             data = {
                 "percentage": lookup(power, ("response", "percentage_charged")) or 0,
             }
+            
         elif api == '/api/meters/aggregates':
             power = self.get_site_power()
             timestamp = lookup(power, ("response", "timestamp"))
@@ -560,9 +581,6 @@ class TeslaCloud:
         elif api == '/api/system/update/status':
             data = json.loads('{"state":"/update_succeeded","info":{"status":["nonactionable"]},"current_time":1702756114429,"last_status_time":1702753309227,"version":"23.28.2 27626f98","offline_updating":false,"offline_update_error":"","estimated_bytes_per_second":null}')
 
-        elif api == '/api/site_info':
-            data = json.loads('{"max_system_energy_kWh":27,"max_system_power_kW":10.8,"site_name":"Tesla Energy Gateway","timezone":"America/Los_Angeles","max_site_meter_power_kW":1000000000,"min_site_meter_power_kW":-1000000000,"nominal_system_energy_kWh":27,"nominal_system_power_kW":10.8,"panel_max_current":100,"grid_code":{"grid_code":"60Hz_240V_s_UL1741SA:2019_California","grid_voltage_setting":240,"grid_freq_setting":60,"grid_phase_setting":"Split","country":"United States","state":"California","utility":"Southern California Edison"}}')
-
         elif api == '/api/system_status/grid_faults':
             data = json.loads('[]')
 
@@ -721,7 +739,15 @@ if __name__ == "__main__":
     #print(r)
 
     # Test Poll
-    items = ['/api/status','/api/system_status/grid_status','/api/site_info/site_name','/api/devices/vitals','/api/system_status/soe','/api/meters/aggregates','/api/operation','/api/system_status'] #, '/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar','/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration','/api/system/update/status','/api/site_info','/api/system_status/grid_faults','/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer','/api/meters','/api/installer','/api/networks','/api/system/networks','/api/meters/readings','/api/synchrometer/ct_voltage_references']
+    # '/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar',
+    # '/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration',
+    # '/api/system/update/status','/api/site_info','/api/system_status/grid_faults',
+    # '/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer',
+    # '/api/meters','/api/installer','/api/networks','/api/system/networks',
+    # '/api/meters/readings','/api/synchrometer/ct_voltage_references']
+    items = ['/api/status','/api/system_status/grid_status','/api/site_info/site_name',
+             '/api/devices/vitals','/api/system_status/soe','/api/meters/aggregates',
+             '/api/operation','/api/system_status'] 
     for i in items:
         print(f"poll({i}):")
         print(cloud.poll(i))
