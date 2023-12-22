@@ -462,6 +462,8 @@ class TeslaCloud:
             config = self.get_site_config()
             default_real_mode = lookup(config, ("response", "default_real_mode"))
             backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent"))
+            if backup_reserve_percent is not None:
+                backup_reserve_percent = (backup_reserve_percent + (5 / 0.95)) * 0.95
 
             data = {
                 "real_mode": default_real_mode,
