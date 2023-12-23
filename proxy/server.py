@@ -250,6 +250,10 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(d, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             pod["backup_reserve_percent"] = pw.get_reserve()
+            d = pw.system_status()
+            pod["nominal_full_pack_energy"] = get_value(d,'nominal_full_pack_energy')
+            pod["nominal_energy_remaining"] = get_value(d,'nominal_energy_remaining')            
+            pod["time_remaining_hours"] = pw.get_time_remaining()
             message = json.dumps(pod) 
         elif self.path == '/version':
             # Firmware Version

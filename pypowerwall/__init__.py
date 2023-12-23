@@ -750,3 +750,26 @@ class Powerwall(object):
             return json.dumps(result, indent=4, sort_keys=True)
         else:
             return result
+    
+    def get_time_remaining(self):
+        """
+        Get the backup time remaining on the battery
+
+        Returns:
+            The time remaining in hours
+        """
+        if self.cloudmode:                
+            d = self.Tesla.get_time_remaining()
+            # {'response': {'time_remaining_hours': 7.909122698326978}}
+            if d is None:
+                return None
+            if 'response' in d and 'time_remaining_hours' in d['response']:
+                return d['response']['time_remaining_hours']    
+            
+        # Compute based on battery level and load
+        d = self.system_status()
+        if 'nominal_energy_remaining' in d:
+            return d['nominal_energy_remaining']/self.load()
+        # Default            
+        return None
+    
