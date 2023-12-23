@@ -388,7 +388,7 @@ class TeslaCloud:
 
         elif api == '/vitals':
             # TODO: Assemble vitals data payload
-            data = None
+            data = {}
 
         elif api in ['/api/system_status/soe']:
             battery = self.get_battery()
