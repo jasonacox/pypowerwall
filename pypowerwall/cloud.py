@@ -2,22 +2,24 @@
 # -*- coding: utf-8 -*-
 """
  Python library to pull live Powerwall or Solar history data from Tesla Owner API 
- (Tesla cloud).
+ (Tesla Cloud).
 
- Author: Jason A. Cox based on tesla-history.py by Michael Birse
+ Authors: Jason A. Cox and Michael Birse
  For more information see https://github.com/jasonacox/pypowerwall
 
  Classes
-    TeslaCloud(email, timezone, pwcacheexpire, timeout)
+    TeslaCloud(email, timezone, pwcacheexpire, timeout, siteid)
 
  Parameters
     email                   # (required) email used for logging into the gateway
     timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
     timeout = 10            # Timeout for HTTPS calls in seconds
+    siteid = None           # (optional) energy_site_id to use
 
  Functions
     connect()               # Connect to Tesla Cloud
+    change_site(siteid)     # Select another site - energy_site_id
     get_battery()           # Get battery data from Tesla Cloud
     get_site_power()        # Get site power data from Tesla Cloud
     get_site_config()       # Get site configuration data from Tesla Cloud
@@ -34,6 +36,7 @@ except:
     sys.exit("ERROR: Missing python teslapy module. Run 'pip install teslapy'.")
 
 AUTHFILE = ".pypowerwall.auth" # Stores auth session information
+SITEFILE = ".pypowerwall.site" # Stores site index
 
 # pypowerwall cloud module version
 version_tuple = (0, 0, 1)
@@ -71,8 +74,9 @@ def lookup(data, keylist):
     return data
 
 class TeslaCloud:
-    def __init__(self, email, pwcacheexpire=5, timeout=10):
+    def __init__(self, email, pwcacheexpire=5, timeout=10, siteid=None):
         self.authfile = AUTHFILE
+        self.sitefile = SITEFILE
         self.email = email
         self.timeout = timeout
         self.site = None
@@ -81,6 +85,23 @@ class TeslaCloud:
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
+        self.siteindex = 0                      # site index to use
+        self.siteid = siteid                    # site id to use
+
+        if self.siteid is None:
+            # Check for site file
+            if os.path.exists(self.sitefile):
+                with open(self.sitefile) as file:
+                    try:
+                        self.siteid = int(file.read())
+                    except:
+                        self.siteid = 0
+            else:
+                self.siteindex = 0
+
+        # Check for auth file
+        if not os.path.exists(self.authfile):
+            log.debug("WARNING: Missing auth file %s - run setup" % self.authfile)
     
     def connect(self):
         """
@@ -90,13 +111,15 @@ class TeslaCloud:
         self.retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
 
         # Create Tesla instance
+        if not os.path.exists(self.authfile):
+            log.error("ERROR: Missing auth file %s - run setup" % self.authfile)
+            return False
         self.tesla = Tesla(self.email, cache_file=self.authfile)
-
+        # Check to see if we have a cached token
         if not self.tesla.authorized:
             # Login to Tesla account and cache token
             state = self.tesla.new_state()
             code_verifier = self.tesla.new_code_verifier()
-
             try:
                 self.tesla.fetch_token(authorization_response=self.tesla.authorization_url(state=state, code_verifier=code_verifier))
             except Exception as err:
@@ -106,14 +129,68 @@ class TeslaCloud:
             # Enable retries
             self.tesla.close()
             self.tesla = Tesla(self.email, retry=self.retry, cache_file=self.authfile)
-        
         # Get site info
-        # TODO: Select the right site
-        self.site = self.getsites()[0]
-
-        log.debug(f"TeslaCloud connected for {self.email}")
+        sites = self.getsites()
+        if len(sites) == 0:
+            log.error("ERROR: No sites found for %s" % self.email)
+            return False
+        # Find siteindex - Lookup energy_site_id in sites
+        if self.siteid is None:
+            self.siteid = sites[0]['energy_site_id'] # default to first site
+            self.siteindex = 0
+        else:
+            found = False
+            for idx, site in enumerate(sites):
+                if site['energy_site_id'] == self.siteid:
+                    self.siteindex = idx
+                    found = True
+                    break
+            if not found:
+                log.error("ERROR: Site %d not found for %s" % (self.siteid, self.email))
+                return False
+        # Set site
+        self.site = sites[self.siteindex]
+        log.debug(f"Connected to Tesla Cloud - Site {self.siteindex} ({sites[self.siteindex]['site_name']}) for {self.email}")
         return True
 
+    def getsites(self):
+        """
+        Get list of Tesla Energy sites
+        """
+        if self.tesla is None:
+            return None
+        try:
+            sitelist = self.tesla.battery_list() + self.tesla.solar_list()
+        except Exception as err:
+            log.error(f"ERROR: Failed to retrieve sitelist - {repr(err)}")
+            return None
+        return sitelist
+    
+    def change_site(self, siteid):
+        """
+        Change the site to the one that matches the siteid
+        """
+        # Check that siteid is a valid number
+        try:
+            siteid = int(siteid)
+        except:
+            log.error("ERROR: Invalid siteid")
+            return False
+        # Check for valid site index
+        sites = self.getsites()
+        if len(sites) == 0:
+            log.error("ERROR: No sites found for %s" % self.email)
+            return False
+        # Set siteindex - Find siteid in sites
+        for idx, site in enumerate(sites):
+            if site['energy_site_id'] == siteid:
+                self.siteindex = idx
+                self.site = sites[self.siteindex]
+                log.debug(f"Changed site to {self.siteindex} ({sites[self.siteindex]['site_name']}) for {self.email}")
+                return True
+        log.error("ERROR: Site %d not found for %s" % (siteid, self.email))
+        return False
+    
     def get_battery(self):
         """
         Get site battery data from Tesla Cloud
@@ -638,69 +715,130 @@ class TeslaCloud:
         self.pwcachetime[api] = time.time()
         return data
     
-    def getsites(self):
-        """
-        Get list of Tesla Energy sites
-        """
-        if self.tesla is None:
-            return None
-        try:
-            sitelist = self.tesla.battery_list() + self.tesla.solar_list()
-        except Exception as err:
-            log.error(f"ERROR: Failed to retrieve sitelist - {repr(err)}")
-            return None
-        return sitelist
-    
     def setup(self):
         """
         Set up the Tesla Cloud connection
         """
-        print("\nTesla Account Setup")
-        print("-" * 19)
+        print("Tesla Account Setup")
+        print("-" * 60)
+        tuser = ""
+        # Check for .pypowerwall.auth file
+        if os.path.isfile(AUTHFILE):
+            print("  Found existing Tesla Cloud setup file ({})".format(AUTHFILE))
+            with open(AUTHFILE) as json_file:
+                try:
+                    data = json.load(json_file)
+                    tuser = list(data.keys())[0]
+                    print(f"  Using Tesla User: {tuser}")
+                    # Ask user if they want to overwrite the existing file
+                    response = input("\n  Overwrite existing file? [y/N]: ").strip()
+                    if response.lower() == "y":
+                        tuser = ""
+                        os.remove(AUTHFILE)
+                    else:
+                        self.email = tuser
+                except Exception as err:
+                    tuser = ""
 
-        while True:
-            response = input("Email address: ").strip()
-            if "@" not in response:
-                print("Invalid email address\n")
-            else:
-                TUSER = response
-                break
+        if tuser == "":
+            # Create new AUTHFILE
+            while True:
+                response = input("\n  Email address: ").strip()
+                if "@" not in response:
+                    print("  - Error: Invalid email address\n")
+                else:
+                    tuser = response
+                    break
 
-        # Update the Tesla User
-        self.email = TUSER
+            # Update the Tesla User
+            self.email = tuser
 
-        # Create retry instance for use after successful login
-        retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
+            # Create retry instance for use after successful login
+            retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
 
-        # Create Tesla instance
-        tesla = Tesla(self.email, cache_file=AUTHFILE)
-
-        if not tesla.authorized:
-            # Login to Tesla account and cache token
-            state = tesla.new_state()
-            code_verifier = tesla.new_code_verifier()
-
-            try:
-                print("Open the below address in your browser to login.\n")
-                print(tesla.authorization_url(state=state, code_verifier=code_verifier))
-            except Exception as err:
-                log.error(f"ERROR: Connection failure - {repr(err)}")
-
-            print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
-
-            tesla.close()
-            tesla = Tesla(self.email, retry=retry, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
+            # Create Tesla instance
+            tesla = Tesla(self.email, cache_file=AUTHFILE)
 
             if not tesla.authorized:
+                # Login to Tesla account and cache token
+                state = tesla.new_state()
+                code_verifier = tesla.new_code_verifier()
+
                 try:
-                    tesla.fetch_token(authorization_response=input("Enter URL after login: "))
-                    print("-" * 40)
+                    print("Open the below address in your browser to login.\n")
+                    print(tesla.authorization_url(state=state, code_verifier=code_verifier))
                 except Exception as err:
-                    sys_exit(f"ERROR: Login failure - {repr(err)}")
-        else:
-            # Enable retries
-            tesla.close()
-            tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
+                    log.error(f"ERROR: Connection failure - {repr(err)}")
+
+                print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
+
+                tesla.close()
+                tesla = Tesla(self.email, retry=retry, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
+
+                if not tesla.authorized:
+                    try:
+                        tesla.fetch_token(authorization_response=input("Enter URL after login: "))
+                        print("-" * 60)
+                    except Exception as err:
+                        log.error(f"ERROR: Connection failure - {repr(err)}")
+                        return False
+            else:
+                # Enable retries
+                tesla.close()
+                tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
+
+        # Connect to Tesla Cloud
+        if not self.connect():
+            print("\nERROR: Failed to connect to Tesla Cloud")
+            return False
+        
+        sites = self.getsites()
+        print(f"\n{len(sites)} Sites Found (* = default)")
+        print("-"*60)
+
+        # Check for existing site file
+        if os.path.isfile(SITEFILE):
+            with open(SITEFILE) as json_file:
+                try:
+                    data = json.load(json_file)
+                    self.siteid = data
+                except Exception as err:
+                    self.siteid = ""
+
+        idx = 1
+        self.siteindex = 0
+        siteids = []
+        for s in sites:
+            if s["energy_site_id"] == self.siteid:
+                sitelabel = "*"
+                self.siteindex = idx - 1
+            else:
+                sitelabel = " "
+            siteids.append(s["energy_site_id"])
+            print(" %s%d - %s (%s) - Type: %s" % (sitelabel, idx, s["site_name"], 
+                    s["energy_site_id"], s["resource_type"]))
+            idx += 1
+        # Ask user to select a site
+        while True:
+            response = input(f"\n  Select a site [{self.siteindex+1}]: ").strip()
+            if response.isdigit():
+                idx = int(response)
+                if idx >= 1 and idx < (len(sites)+1):
+                    self.siteindex = idx -1
+                    break
+                else:
+                    print(f"  - Invalid: {response} is not a valid site number")
+            else:
+                break
+        # Lookup the site id
+        self.siteid = siteids[self.siteindex]
+        self.site = sites[self.siteindex]
+        print("\nSelected site %d - %s (%s)" % (self.siteindex+1, sites[self.siteindex]["site_name"], self.siteid))
+        # Write the site index to the sitefile
+        with open(SITEFILE, "w") as f:
+            f.write(str(self.siteid))
+        
+        return True
 
 if __name__ == "__main__":
 
@@ -712,20 +850,20 @@ if __name__ == "__main__":
         with open(AUTHFILE) as json_file:
             try:
                 data = json.load(json_file)
-                TUSER = list(data.keys())[0]
-                print(f"Using Tesla User: {TUSER}")
+                tuser = list(data.keys())[0]
+                print(f"Using Tesla User: {tuser}")
             except Exception as err:
-                TUSER = None
+                tuser = None
 
-    while not TUSER:
+    while not tuser:
         response = input("Tesla User Email address: ").strip()
         if "@" not in response:
             print("Invalid email address\n")
         else:
-            TUSER = response
+            tuser = response
             break
 
-    cloud = TeslaCloud(TUSER)
+    cloud = TeslaCloud(tuser)
 
     if not cloud.connect():
         print("Failed to connect to Tesla Cloud")

@@ -46,44 +46,13 @@ if(state == 0):
 
 # State 1 = Cloud Mode Setup
 if(state == 1):
-    print("pyPowerwall [%s]\n" % (pypowerwall.version))
-    print("Cloud Mode Setup\n")
-
-    # Check for existing auth file
-    if os.path.isfile(AUTHFILE):
-        with open(AUTHFILE) as json_file:
-            try:
-                data = json.load(json_file)
-                tuser = list(data.keys())[0]
-            except Exception as err:
-                tuser = None
-        # Ask to overwrite
-        print(f"Found {AUTHFILE} configuration file for {tuser}")
-        answer = input("Overwrite and run setup? (y/n) ")
-        if answer.lower() == "y":
-            os.remove(AUTHFILE)
-        else:
-            print("Exiting")
-            exit(0)
-
+    print("pyPowerwall [%s] - Cloud Mode Setup\n" % (pypowerwall.version))
     # Run Setup
     c = cloud.TeslaCloud(None)
-    c.setup()
-    tuser = c.email
-
-    # Test Connection
-    print("Testing connection to Tesla Cloud...")
-    c = cloud.TeslaCloud(tuser) 
-    if c.connect():
-        print("Connected to Tesla Cloud...")   
-        sites = c.getsites()
-        print("Found %d Powerwall Sites:" % (len(sites)))
-        for s in sites:
-            print("  %s (%s) - Type: %s" % (s["site_name"], 
-                    s["energy_site_id"], s["resource_type"]))
-        print(f"\nSetup Complete. Auth file {AUTHFILE} ready to use.")
+    if c.setup():
+        print("Setup Complete. Auth file %s ready to use." % (AUTHFILE))
     else:
-        print("ERROR: Failed to connect to Tesla Cloud")
+        print("ERROR: Failed to setup Tesla Cloud Mode")
         exit(1)
 
 # State 2 = Show Usage

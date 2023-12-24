@@ -12,7 +12,21 @@
     /api/system_status/soe - You can containerize it and run it as
     an endpoint for tools like telegraf to pull metrics.
 
-    This proxy also supports pyPowerwall data for /vitals and /strings 
+ Local Powerwall Mode
+    The default mode for this proxy is to connect to a local Powerwall
+    to pull data. This works with the Tesla Energy Gateway (TEG) for
+    Powerwall 1, 2 and +.  It will also support pulling /vitals and /strings 
+    data if available.
+    Set: PW_HOST to Powerwall Address and PW_PASSWORD to use this mode.
+
+ Cloud Mode
+    An optional mode is to connect to the Tesla Cloud to pull data. This
+    requires that you have a Tesla Account and have registered your
+    Tesla Solar System or Powerwall with the Tesla App. It requires that 
+    you run the setup 'python -m pypowerwall setup' process to create the 
+    required API keys and tokens.  This mode doesn't support /vitals or 
+    /strings data.
+    Set: PW_EMAIL and leave PW_HOST blank to use this mode.
 
 """
 import pypowerwall
@@ -46,7 +60,7 @@ web_root = os.path.join(os.path.dirname(__file__), "web")
 bind_address = os.getenv("PW_BIND_ADDRESS", "")
 password = os.getenv("PW_PASSWORD", "password")
 email = os.getenv("PW_EMAIL", "email@example.com")
-host = os.getenv("PW_HOST", "hostname")
+host = os.getenv("PW_HOST", "")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
@@ -56,6 +70,7 @@ pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
 https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
+siteid = os.getenv("PW_SITEID", None)
 
 # Global Stats
 proxystats = {}
@@ -113,6 +128,9 @@ if not pw:
     os._exit(1)
 if pw.cloudmode:
     log.info("pyPowerwall Proxy Server - Cloud Mode")
+    if siteid:
+        log.info("Switch to Site ID to %s" % siteid)
+        pw.Tesla.change_site(siteid)
 else:
     log.info("pyPowerwall Proxy Server - Connected to %s" % host)
 
