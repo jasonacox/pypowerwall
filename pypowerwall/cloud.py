@@ -464,8 +464,42 @@ class TeslaCloud:
             data = None
 
         elif api == '/vitals':
-            # TODO: Assemble vitals data payload
-            data = {}
+            # Simulated Vitals
+            config = self.get_site_config()
+            din = lookup(config, ("response", "id"))
+            parts = din.split("--")
+            if len(parts) == 2:
+                partNumber = parts[0]
+                serialNumber = parts[1]
+            else:
+                partNumber = None
+                serialNumber = None
+            version = lookup(config, ("response", "version"))
+            # Get grid status
+            power = self.get_site_power()
+            island_status = lookup(power, ("response", "island_status"))
+            if island_status == "on_grid":
+                alert = "SystemConnectedToGrid"
+            elif island_status == "off_grid_intentional":
+                alert = "ScheduledIslandContactorOpen"
+            else:
+                alert = "UnscheduledIslandContactorOpen"
+            data = {
+                f'STSTSM--{partNumber}--{serialNumber}': {
+                    'partNumber': partNumber,
+                    'serialNumber': serialNumber,
+                    'manufacturer': 'Simulated',
+                    'firmwareVersion': version,
+                    'lastCommunicationTime': int(time.time()),
+                    'teslaEnergyEcuAttributes': {
+                        'ecuType': 207
+                    },
+                    'STSTSM-Location': 'Simulated',
+                    'alerts': [
+                        alert
+                    ]
+                }
+            }
 
         elif api in ['/api/system_status/soe']:
             battery = self.get_battery()
