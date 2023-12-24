@@ -14,8 +14,6 @@
 # Modules
 import pypowerwall
 import sys
-import os
-import json
 from . import scan
 from . import cloud
 
