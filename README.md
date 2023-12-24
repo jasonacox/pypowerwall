@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting Powerwall, Powerwall 2 and Powerwall+ systems.
+Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting local access to Powerwall, Powerwall 2 and Powerwall+ systems and Tesla Owner cloud API for all systems including Solar Only and Powerwall 3 systems.
 
 ## Description
 
@@ -33,10 +33,13 @@ You can clone this repo or install the package with pip.  Once installed, pyPowe
 
 ```bash
 # Install pyPowerwall
-python -m pip install pypowerwall
+python3 -m pip install pypowerwall
 
 # Scan Network for Powerwalls
-python -m pypowerwall scan
+python3 -m pypowerwall scan
+
+# (optional) Setup to use Tesla Owner cloud API
+python3 -m pypowerwall setup
 ```
 
 FreeBSD users can install from ports or pkg [FreshPorts](https://www.freshports.org/net-mgmt/py-pypowerwall):
@@ -51,7 +54,7 @@ Via ports:
 # cd /usr/ports/net-mgmt/py-pypowerwall/ && make install clean
 ```
 
-Note: pyPowerwall installation will attempt to install these required python packages: _requests_ and _protobuf_.
+Note: pyPowerwall installation will attempt to install these required python packages: _requests_, _protobuf_ and _teslapy_.
 
 ## Programming with pyPowerwall
 
@@ -64,10 +67,16 @@ and call function to poll data.  Here is an example:
     # Optional: Turn on Debug Mode
     # pypowerwall.set_debug(True)
 
-    # Credentials for your Powerwall - Customer Login Data
+    # Local Mode - Credentials for your Powerwall - Customer Login
     password='password'
     email='email@example.com'
     host = "10.0.1.123"               # Address of your Powerwall Gateway
+    timezone = "America/Los_Angeles"  # Your local timezone
+
+    # (Optional) Cloud Mode - Requires Setup
+    password = ""
+    email='email@example.com'
+    host = ""
     timezone = "America/Los_Angeles"  # Your local timezone
  
     # Connect to Powerwall
