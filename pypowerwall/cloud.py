@@ -381,16 +381,10 @@ class TeslaCloud:
         """
         if self.tesla is None:
             return None
-        # Check to see if we have cached data
-        if api in self.pwcache:
-            if self.pwcachetime[api] > time.time() - self.pwcacheexpire:
-                return self.pwcache[api]
+        # API Map - Determine what data we need based on Powerwall APIs
+        log.debug(f" -- cloud: Request for {api}")
 
-        # Determine what data we need based on Powerwall APIs
-        # TODO: Consider making this a map?
-
-        log.debug(f" -- cloud: Request for {api}") 
-        ## Variable
+        ## Dynamic Values
         if api == '/api/status':
             # TOOO: Fix start_time and up_time_seconds
             config = self.get_site_config()
@@ -745,8 +739,6 @@ class TeslaCloud:
         else:
             data = {"ERROR": f"Unknown API: {api}"}
 
-        self.pwcache[api] = data
-        self.pwcachetime[api] = time.time()
         return data
     
     def setup(self):
