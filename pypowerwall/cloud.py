@@ -37,6 +37,7 @@ except:
 
 AUTHFILE = ".pypowerwall.auth" # Stores auth session information
 SITEFILE = ".pypowerwall.site" # Stores site index
+COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 
 # pypowerwall cloud module version
 version_tuple = (0, 0, 1)
@@ -58,7 +59,6 @@ def set_debug(toggle=True, color=True):
         log.debug("%s [%s]\n" % (__name__, __version__))
     else:
         log.setLevel(logging.NOTSET)
-
 
 def lookup(data, keylist):
     """
@@ -87,6 +87,7 @@ class TeslaCloud:
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
         self.siteindex = 0                      # site index to use
         self.siteid = siteid                    # site id to use
+        self.counter = 0                        # counter for SITE_DATA API
 
         if self.siteid is None:
             # Check for site file
@@ -191,6 +192,8 @@ class TeslaCloud:
         log.error("ERROR: Site %d not found for %s" % (siteid, self.email))
         return False
     
+    # Functions to get data from Tesla Cloud
+
     def get_battery(self):
         """
         Get site battery data from Tesla Cloud
@@ -220,7 +223,8 @@ class TeslaCloud:
         if 'get_battery' in self.pwcache:
             if self.pwcachetime['get_battery'] > time.time() - self.pwcacheexpire:
                 return self.pwcache['get_battery']
-        response = self.site.api("SITE_SUMMARY")
+        # GET api/1/energy_sites/{site_id}/site_status
+        response = self.site.api("SITE_SUMMARY",language="en")
         self.pwcache['get_battery'] = response
         self.pwcachetime['get_battery'] = time.time()
         return response
@@ -254,7 +258,9 @@ class TeslaCloud:
         if 'get_site_power' in self.pwcache:
             if self.pwcachetime['get_site_power'] > time.time() - self.pwcacheexpire:
                 return self.pwcache['get_site_power']
-        response = self.site.api("SITE_DATA")
+        # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en
+        response = self.site.api("SITE_DATA",counter=self.counter,language="en")
+        self.counter = (self.counter + 1) % COUNTER_MAX
         self.pwcache['get_site_power'] = response
         self.pwcachetime['get_site_power'] = time.time()
         return response
@@ -352,7 +358,8 @@ class TeslaCloud:
         if 'get_site_config' in self.pwcache:
             if self.pwcachetime['get_site_config'] > time.time() - self.pwcacheexpire:
                 return self.pwcache['get_site_config']
-        response = self.site.api("SITE_CONFIG")
+        # GET api/1/energy_sites/{site_id}/site_info
+        response = self.site.api("SITE_CONFIG",language="en")
         self.pwcache['get_site_config'] = response
         self.pwcachetime['get_site_config'] = time.time()
         return response
@@ -369,11 +376,14 @@ class TeslaCloud:
         if 'get_time_remaining' in self.pwcache:
             if self.pwcachetime['get_time_remaining'] > time.time() - self.pwcacheexpire:
                 return self.pwcache['get_time_remaining']
+        # GET api/1/energy_sites/{site_id}/backup_time_remaining
         response = self.site.api("ENERGY_SITE_BACKUP_TIME_REMAINING")
         self.pwcache['get_time_remaining'] = response
         self.pwcachetime['get_time_remaining'] = time.time()
         return response
     
+    # Function to map Powerwall API to Tesla Cloud Data
+
     def poll(self, api):
         """
         Map Powerwall API to Tesla Cloud Data
