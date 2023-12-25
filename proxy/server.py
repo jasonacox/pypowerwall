@@ -128,9 +128,11 @@ if not pw:
     os._exit(1)
 if pw.cloudmode:
     log.info("pyPowerwall Proxy Server - Cloud Mode")
-    if siteid:
-        log.info("Switch to Site ID to %s" % siteid)
-        pw.Tesla.change_site(siteid)
+    if siteid is not None and siteid != str(pw.Tesla.siteid):
+        log.info("Switch to Site %s" % siteid)
+        if not pw.Tesla.change_site(siteid):
+            log.error("Fatal Error: Unable to initialize pyPowerwall")
+            os._exit(1)
 else:
     log.info("pyPowerwall Proxy Server - Connected to %s" % host)
 

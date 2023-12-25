@@ -36,7 +36,7 @@ except:
     sys.exit("ERROR: Missing python teslapy module. Run 'pip install teslapy'.")
 
 AUTHFILE = ".pypowerwall.auth" # Stores auth session information
-SITEFILE = ".pypowerwall.site" # Stores site index
+SITEFILE = ".pypowerwall.site" # Stores site id
 COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 
 # pypowerwall cloud module version
@@ -151,7 +151,7 @@ class TeslaCloud:
                 return False
         # Set site
         self.site = sites[self.siteindex]
-        log.debug(f"Connected to Tesla Cloud - Site {self.siteindex} ({sites[self.siteindex]['site_name']}) for {self.email}")
+        log.debug(f"Connected to Tesla Cloud - Site {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
         return True
 
     def getsites(self):
@@ -185,9 +185,10 @@ class TeslaCloud:
         # Set siteindex - Find siteid in sites
         for idx, site in enumerate(sites):
             if site['energy_site_id'] == siteid:
+                self.siteid = siteid
                 self.siteindex = idx
                 self.site = sites[self.siteindex]
-                log.debug(f"Changed site to {self.siteindex} ({sites[self.siteindex]['site_name']}) for {self.email}")
+                log.debug(f"Changed site to {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
                 return True
         log.error("ERROR: Site %d not found for %s" % (siteid, self.email))
         return False
@@ -611,6 +612,7 @@ class TeslaCloud:
                     "instant_total_current": 0
                 }
             }
+
         elif api == '/api/operation':
             config = self.get_site_config()
             default_real_mode = lookup(config, ("response", "default_real_mode"))
@@ -621,6 +623,7 @@ class TeslaCloud:
                 "real_mode": default_real_mode,
                 "backup_reserve_percent": backup
             }
+
         elif api == '/api/system_status':
             power = self.get_site_power()
             config = self.get_site_config()
@@ -824,6 +827,7 @@ class TeslaCloud:
                 tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
 
         # Connect to Tesla Cloud
+        self.siteid = None
         if not self.connect():
             print("\nERROR: Failed to connect to Tesla Cloud")
             return False
@@ -834,12 +838,11 @@ class TeslaCloud:
 
         # Check for existing site file
         if os.path.isfile(SITEFILE):
-            with open(SITEFILE) as json_file:
+            with open(SITEFILE) as file:
                 try:
-                    data = json.load(json_file)
-                    self.siteid = data
-                except Exception as err:
-                    self.siteid = ""
+                    self.siteid = int(file.read())
+                except:
+                    self.siteid = 0
 
         idx = 1
         self.siteindex = 0
@@ -870,7 +873,7 @@ class TeslaCloud:
         self.siteid = siteids[self.siteindex]
         self.site = sites[self.siteindex]
         print("\nSelected site %d - %s (%s)" % (self.siteindex+1, sites[self.siteindex]["site_name"], self.siteid))
-        # Write the site index to the sitefile
+        # Write the site id to the sitefile
         with open(SITEFILE, "w") as f:
             f.write(str(self.siteid))
         
