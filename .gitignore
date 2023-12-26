@@ -146,3 +146,5 @@ tools/tedapi/request.bin
 tools/tedapi/app*
 .pypowerwall.auth
 .pypowerwall.site
+proxy/pypowerwall
+proxy/teslapy
