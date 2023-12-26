@@ -124,8 +124,9 @@ def get_value(a, key):
 # TODO: Add support for multiple Powerwalls
 pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
 if not pw:
-    log.error("Fatal Error: Unable to initialize pyPowerwall")
-    os._exit(1)
+    log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+    while True:
+        time.sleep(5) # Infinite loop to keep container running
 if pw.cloudmode:
     log.info("pyPowerwall Proxy Server - Cloud Mode")
     if siteid is not None and siteid != str(pw.Tesla.siteid):
