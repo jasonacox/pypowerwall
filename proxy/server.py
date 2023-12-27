@@ -136,13 +136,15 @@ except Exception as e:
         time.sleep(5) # Infinite loop to keep container running
 if pw.cloudmode:
     log.info("pyPowerwall Proxy Server - Cloud Mode")
+    log.info("Connected to Site ID %s (%s)" % (pw.Tesla.siteid, pw.site_name()))
     if siteid is not None and siteid != str(pw.Tesla.siteid):
-        log.info("Switch to Site %s" % siteid)
+        log.info("Switch to Site ID %s" % siteid)
         if not pw.Tesla.change_site(siteid):
             log.error("Fatal Error: Unable to initialize pyPowerwall")
             os._exit(1)
 else:
-    log.info("pyPowerwall Proxy Server - Connected to %s" % host)
+    log.info("pyPowerwall Proxy Server - Local Mode")
+    log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name))
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
