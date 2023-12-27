@@ -144,7 +144,7 @@ if pw.cloudmode:
             os._exit(1)
 else:
     log.info("pyPowerwall Proxy Server - Local Mode")
-    log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name))
+    log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name()))
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
