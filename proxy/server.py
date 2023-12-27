@@ -83,6 +83,11 @@ proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
 proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 proxystats['uptime'] = ""
+proxystats['mem'] = 0
+proxystats['site_name'] = ""
+proxystats['cloudmode'] = False
+proxystats['siteid'] = 0
+proxystats['counter'] = 0
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -122,8 +127,10 @@ def get_value(a, key):
 
 # Connect to Powerwall
 # TODO: Add support for multiple Powerwalls
-pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
-if not pw:
+try:
+    pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
+except Exception as e:
+    log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
     while True:
         time.sleep(5) # Infinite loop to keep container running
@@ -194,6 +201,11 @@ class handler(BaseHTTPRequestHandler):
             delta = proxystats['ts'] - proxystats['start']
             proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            proxystats['site_name'] = pw.site_name()
+            proxystats['cloudmode'] = pw.cloudmode
+            if pw.cloudmode and pw.Tesla is not None:
+                proxystats['siteid'] = pw.Tesla.siteid
+                proxystats['counter'] = pw.Tesla.counter
             message = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
@@ -293,6 +305,12 @@ class handler(BaseHTTPRequestHandler):
             proxystats['ts'] = int(time.time())
             delta = proxystats['ts'] - proxystats['start']
             proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
+            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            proxystats['site_name'] = pw.site_name()
+            proxystats['cloudmode'] = pw.cloudmode
+            if pw.cloudmode and pw.Tesla is not None:
+                proxystats['siteid'] = pw.Tesla.siteid
+                proxystats['counter'] = pw.Tesla.counter
             contenttype = 'text/html'
             message = '<html>\n<head><meta http-equiv="refresh" content="5" />\n'
             message += '<style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n' 
