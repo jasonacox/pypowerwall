@@ -22,7 +22,7 @@
     email                     # (required) email used for logging into the gateway
     timezone                  # (required) desired timezone
     pwcacheexpire = 5         # Set API cache timeout in seconds
-    timeout = 10              # Timeout for HTTPS calls in seconds
+    timeout = 5               # Timeout for HTTPS calls in seconds
     poolmaxsize = 10          # Pool max size for http connection re-use (persistent connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
 
@@ -62,7 +62,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 0)
+version_tuple = (0, 7, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -89,7 +89,7 @@ class ConnectionError(Exception):
     pass
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10, poolmaxsize=10, cloudmode=False):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, cloudmode=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -112,7 +112,7 @@ class Powerwall(object):
         self.password = password
         self.email = email
         self.timezone = timezone
-        self.timeout = timeout                  # 10s timeout for http calls
+        self.timeout = timeout                  # 5s timeout for http calls
         self.poolmaxsize = poolmaxsize          # pool max size for http connection re-use
         self.auth = {}                          # caches authentication cookies
         self.pwcachetime = {}                   # holds the cached data timestamps for api
@@ -225,7 +225,7 @@ class Powerwall(object):
         # Check cache
         if(api in self.pwcache and api in self.pwcachetime):
             # is it expired?
-            if(time.time() - self.pwcachetime[api] < self.pwcacheexpire):
+            if(time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire):
                 payload = self.pwcache[api]
                 # We do the override here to ensure that we cache the force entry
                 if force:
@@ -266,7 +266,7 @@ class Powerwall(object):
             else:
                 payload = r.text
             self.pwcache[api] = payload
-            self.pwcachetime[api] = time.time()
+            self.pwcachetime[api] = time.perf_counter()
         if(jsonformat):
             try:
                 data = json.loads(payload)
@@ -286,14 +286,13 @@ class Powerwall(object):
             Note: Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
         """
         # Return power level percentage for battery
-        level = 0
         payload = self.poll('/api/system_status/soe', jsonformat=True)
-        if(payload is not None and 'percentage' in payload):
+        if payload is not None and 'percentage' in payload:
             level = payload['percentage']
-        if scale:
-            return ((level / 0.95) - (5 / 0.95))
-        else:
+            if scale:
+                level = (level / 0.95) - (5 / 0.95)
             return level
+        return None
     
     def power(self):
         """
@@ -543,6 +542,8 @@ class Powerwall(object):
             cellular_disabled = payload['cellular_disabled']
         """
         payload = self.poll('/api/status', jsonformat=True)
+        if payload is None:
+            return None
         if param is None:
             if jsonformat:
                 return json.dumps(payload, indent=4, sort_keys=True)
@@ -616,15 +617,14 @@ class Powerwall(object):
             scale    = If True (default) use Tesla's 5% reserve calculation
             Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
         """
-        data = self.poll('/api/operation')
-        if data is None:
-            return None
-        data = json.loads(data)
-        percent = float(data['backup_reserve_percent'])
-        if scale:
-            # Get percentage based on Tesla App scale
-            percent = float((percent / 0.95) - (5 / 0.95))
-        return percent
+        data = self.poll('/api/operation', jsonformat=True)
+        if data is not None and 'backup_reserve_percent' in data:
+            percent = float(data['backup_reserve_percent'])
+            if scale:
+                # Get percentage based on Tesla App scale
+                percent = float((percent / 0.95) - (5 / 0.95))
+            return percent
+        return None
 
     def grid_status(self, type="string"):
         """
@@ -655,7 +655,7 @@ class Powerwall(object):
             return gridmap[grid_status][type]
         except:
             # The payload from powerwall was not valid
-            log.debug("ERROR Invalid return value received from gateway: " + str(payload.grid_status))
+            log.debug('ERROR unable to parse payload for grid_status: %r' % payload)
             return None
 
     def system_status(self, jsonformat=False):
@@ -767,9 +767,11 @@ class Powerwall(object):
                 return d['response']['time_remaining_hours']    
             
         # Compute based on battery level and load
-        d = self.system_status()
-        if 'nominal_energy_remaining' in d:
-            return d['nominal_energy_remaining']/self.load()
+        d = self.system_status() or {}
+        if 'nominal_energy_remaining' in d and d['nominal_energy_remaining'] is not None:
+            load = self.load() or 0
+            if load > 0:
+                return d['nominal_energy_remaining']/load
         # Default            
         return None
     

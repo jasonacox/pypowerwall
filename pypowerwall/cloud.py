@@ -14,15 +14,17 @@
     email                   # (required) email used for logging into the gateway
     timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
-    timeout = 10            # Timeout for HTTPS calls in seconds
+    timeout = 5             # Timeout for HTTPS calls in seconds
     siteid = None           # (optional) energy_site_id to use
 
  Functions
+    setup()                 # Set up the Tesla Cloud connection
     connect()               # Connect to Tesla Cloud
     change_site(siteid)     # Select another site - energy_site_id
     get_battery()           # Get battery data from Tesla Cloud
     get_site_power()        # Get site power data from Tesla Cloud
     get_site_config()       # Get site configuration data from Tesla Cloud
+    get_time_remaining()    # Get backup time remaining from Tesla Cloud
     poll(api)               # Map Powerwall API to Tesla Cloud Data
 """
 import sys
@@ -31,7 +33,7 @@ import time
 import logging
 import json
 try:
-    from teslapy import Tesla, Retry, JsonDict, Battery, SolarPanel
+    from teslapy import Tesla, JsonDict, Battery, SolarPanel
 except:
     sys.exit("ERROR: Missing python teslapy module. Run 'pip install teslapy'.")
 
@@ -41,7 +43,7 @@ COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59           # Site config cache TTL in seconds
 
 # pypowerwall cloud module version
-version_tuple = (0, 0, 1)
+version_tuple = (0, 0, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -75,14 +77,14 @@ def lookup(data, keylist):
     return data
 
 class TeslaCloud:
-    def __init__(self, email, pwcacheexpire=5, timeout=10, siteid=None):
+    def __init__(self, email, pwcacheexpire=5, timeout=5, siteid=None):
         self.authfile = AUTHFILE
         self.sitefile = SITEFILE
         self.email = email
         self.timeout = timeout
         self.site = None
         self.tesla = None   
-        self.retry = None
+        self.apilock = {}                       # holds lock flag for pending cloud api requests
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
@@ -109,14 +111,11 @@ class TeslaCloud:
         """
         Connect to Tesla Cloud via teslapy
         """
-        # Create retry instance for use after successful login
-        self.retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
-
         # Create Tesla instance
         if not os.path.exists(self.authfile):
             log.error("ERROR: Missing auth file %s - run setup" % self.authfile)
             return False
-        self.tesla = Tesla(self.email, cache_file=self.authfile)
+        self.tesla = Tesla(self.email, cache_file=self.authfile, timeout=self.timeout)
         # Check to see if we have a cached token
         if not self.tesla.authorized:
             # Login to Tesla account and cache token
@@ -127,10 +126,6 @@ class TeslaCloud:
             except Exception as err:
                 log.error("ERROR: Login failure - ",err)
                 return False
-        else:
-            # Enable retries
-            self.tesla.close()
-            self.tesla = Tesla(self.email, retry=self.retry, cache_file=self.authfile)
         # Get site info
         sites = self.getsites()
         if len(sites) == 0:
@@ -221,16 +216,33 @@ class TeslaCloud:
         """
         if self.tesla is None:
             return None
+        # GET api/1/energy_sites/{site_id}/site_status
+        name = "SITE_SUMMARY"
+        # Check for lock and wait if api request already sent
+        if name in self.apilock:
+            locktime = time.perf_counter()
+            while self.apilock[name]:
+                time.sleep(0.2)
+                if time.perf_counter() >= locktime + self.timeout:
+                    return None
         # Check to see if we have cached data
         if 'get_battery' in self.pwcache:
-            ttl = self.pwcacheexpire + 1 if self.pwcacheexpire > 0 else 0
-            if self.pwcachetime['get_battery'] > time.time() - ttl:
+            if self.pwcachetime['get_battery'] > time.perf_counter() - self.pwcacheexpire:
                 return self.pwcache['get_battery']
-        # GET api/1/energy_sites/{site_id}/site_status
-        response = self.site.api("SITE_SUMMARY",language="en")
-        self.pwcache['get_battery'] = response
-        self.pwcachetime['get_battery'] = time.time()
-        return response
+        try:
+            # Set lock
+            self.apilock[name] = True
+            response = self.site.api(name,language="en")
+        except Exception as err:
+            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
+            response = None
+        else:
+            self.pwcache['get_battery'] = response
+            self.pwcachetime['get_battery'] = time.perf_counter()
+        finally:
+            # Release lock
+            self.apilock[name] = False
+            return response
     
     def get_site_power(self):
         """
@@ -257,16 +269,34 @@ class TeslaCloud:
         """
         if self.tesla is None:
             return None
+        # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en
+        name = "SITE_DATA"
+        # Check for lock and wait if api request already sent
+        if name in self.apilock:
+            locktime = time.perf_counter()
+            while self.apilock[name]:
+                time.sleep(0.2)
+                if time.perf_counter() >= locktime + self.timeout:
+                    return None
         # Check to see if we have cached data
         if 'get_site_power' in self.pwcache:
-            if self.pwcachetime['get_site_power'] > time.time() - self.pwcacheexpire:
+            if self.pwcachetime['get_site_power'] > time.perf_counter() - self.pwcacheexpire:
                 return self.pwcache['get_site_power']
-        # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en
-        response = self.site.api("SITE_DATA",counter=self.counter,language="en")
-        self.counter = (self.counter + 1) % COUNTER_MAX
-        self.pwcache['get_site_power'] = response
-        self.pwcachetime['get_site_power'] = time.time()
-        return response
+        try:
+            # Set lock
+            self.apilock[name] = True
+            response = self.site.api(name,counter=self.counter,language="en")
+        except Exception as err:
+            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
+            response = None
+        else:
+            self.pwcache['get_site_power'] = response
+            self.pwcachetime['get_site_power'] = time.perf_counter()
+        finally:
+            self.counter = (self.counter + 1) % COUNTER_MAX
+            # Release lock
+            self.apilock[name] = False
+            return response
     
     def get_site_config(self):
         """
@@ -357,16 +387,34 @@ class TeslaCloud:
         """
         if self.tesla is None:
             return None
+        # GET api/1/energy_sites/{site_id}/site_info
+        name = "SITE_CONFIG"
+        # Check for lock and wait if api request already sent
+        if name in self.apilock:
+            locktime = time.perf_counter()
+            while self.apilock[name]:
+                time.sleep(0.2)
+                if time.perf_counter() >= locktime + self.timeout:
+                    return None
         # Check to see if we have cached data
         if 'get_site_config' in self.pwcache:
             ttl = SITE_CONFIG_TTL if self.pwcacheexpire > 0 else 0
-            if self.pwcachetime['get_site_config'] > time.time() - ttl:
+            if self.pwcachetime['get_site_config'] > time.perf_counter() - ttl:
                 return self.pwcache['get_site_config']
-        # GET api/1/energy_sites/{site_id}/site_info
-        response = self.site.api("SITE_CONFIG",language="en")
-        self.pwcache['get_site_config'] = response
-        self.pwcachetime['get_site_config'] = time.time()
-        return response
+        try:
+            # Set lock
+            self.apilock[name] = True
+            response = self.site.api(name,language="en")
+        except Exception as err:
+            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
+            response = None
+        else:
+            self.pwcache['get_site_config'] = response
+            self.pwcachetime['get_site_config'] = time.perf_counter()
+        finally:
+            # Release lock
+            self.apilock[name] = False
+            return response
 
     def get_time_remaining(self):
         """
@@ -376,16 +424,33 @@ class TeslaCloud:
         """
         if self.tesla is None:
             return None
+        # GET api/1/energy_sites/{site_id}/backup_time_remaining
+        name = "ENERGY_SITE_BACKUP_TIME_REMAINING"
+        # Check for lock and wait if api request already sent
+        if name in self.apilock:
+            locktime = time.perf_counter()
+            while self.apilock[name]:
+                time.sleep(0.2)
+                if time.perf_counter() >= locktime + self.timeout:
+                    return None
         # Check to see if we have cached data
         if 'get_time_remaining' in self.pwcache:
-            ttl = self.pwcacheexpire + 3 if self.pwcacheexpire > 0 else 0
-            if self.pwcachetime['get_time_remaining'] > time.time() - ttl:
+            if self.pwcachetime['get_time_remaining'] > time.perf_counter() - self.pwcacheexpire:
                 return self.pwcache['get_time_remaining']
-        # GET api/1/energy_sites/{site_id}/backup_time_remaining
-        response = self.site.api("ENERGY_SITE_BACKUP_TIME_REMAINING")
-        self.pwcache['get_time_remaining'] = response
-        self.pwcachetime['get_time_remaining'] = time.time()
-        return response
+        try:
+            # Set lock
+            self.apilock[name] = True
+            response = self.site.api(name)
+        except Exception as err:
+            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
+            response = None
+        else:
+            self.pwcache['get_time_remaining'] = response
+            self.pwcachetime['get_time_remaining'] = time.perf_counter()
+        finally:
+            # Release lock
+            self.apilock[name] = False
+            return response
     
     # Function to map Powerwall API to Tesla Cloud Data
 
@@ -403,70 +468,82 @@ class TeslaCloud:
         if api == '/api/status':
             # TOOO: Fix start_time and up_time_seconds
             config = self.get_site_config()
-            data = {
-                "din": lookup(config, ("response", "id")),                          # 1232100-00-E--TGxxxxxxxxxxxx
-                "start_time": lookup(config, ("response", "installation_date")),    # "2023-10-13 04:01:45 +0800"
-                "up_time_seconds": None,                                            # "1541h38m20.998412744s"
-                "is_new": False,
-                "version": lookup(config, ("response", "version")),                 # 23.28.2 27626f98
-                "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd34",
-                "commission_count": 0,
-                "device_type": lookup(config, ("response", "components", "gateway")),   # teg 
-                "teg_type": "unknown",
-                "sync_type": "v2.1",
-                "cellular_disabled": False,
-                "can_reboot": True
-            }
+            if config is None:
+                data = None
+            else:
+                data = {
+                    "din": lookup(config, ("response", "id")),                          # 1232100-00-E--TGxxxxxxxxxxxx
+                    "start_time": lookup(config, ("response", "installation_date")),    # "2023-10-13 04:01:45 +0800"
+                    "up_time_seconds": None,                                            # "1541h38m20.998412744s"
+                    "is_new": False,
+                    "version": lookup(config, ("response", "version")),                 # 23.28.2 27626f98
+                    "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd34",
+                    "commission_count": 0,
+                    "device_type": lookup(config, ("response", "components", "gateway")),   # teg 
+                    "teg_type": "unknown",
+                    "sync_type": "v2.1",
+                    "cellular_disabled": False,
+                    "can_reboot": True
+                }
+
         elif api == '/api/system_status/grid_status':
             power = self.get_site_power()
-            if lookup(power, ("response", "island_status")) == "on_grid": 
-                grid_status = "SystemGridConnected"
-            else: # off_grid or off_grid_unintentional
-                grid_status = "SystemIslandedActive"
-            data = {
-                "grid_status": grid_status, # SystemIslandedActive or SystemTransitionToGrid
-                "grid_services_active": lookup(power, ("response", "grid_services_active")) # true when participating in VPP event
-            }
+            if power is None:
+                data = None
+            else:
+                if lookup(power, ("response", "island_status")) == "on_grid": 
+                    grid_status = "SystemGridConnected"
+                else: # off_grid or off_grid_unintentional
+                    grid_status = "SystemIslandedActive"
+                data = {
+                    "grid_status": grid_status, # SystemIslandedActive or SystemTransitionToGrid
+                    "grid_services_active": lookup(power, ("response", "grid_services_active")) # true when participating in VPP event
+                }
 
         elif api == '/api/site_info/site_name':
             config = self.get_site_config()
-            sitename = lookup(config, ("response", "site_name"))
-            tz = lookup(config, ("response", "installation_time_zone"))
-            data = {
-                "site_name": sitename,
-                "timezone": tz
-            }
+            if config is None:
+                data = None
+            else:
+                sitename = lookup(config, ("response", "site_name"))
+                tz = lookup(config, ("response", "installation_time_zone"))
+                data = {
+                    "site_name": sitename,
+                    "timezone": tz
+                }
 
         elif api == '/api/site_info':
             config = self.get_site_config()
-            nameplate_power = int(lookup(config, ("response", "nameplate_power")) or 0) / 1000
-            nameplate_energy = int(lookup(config, ("response", "nameplate_energy")) or 0) / 1000
-            max_site_meter_power_ac = lookup(config, ("response", "max_site_meter_power_ac"))
-            min_site_meter_power_ac = lookup(config, ("response", "min_site_meter_power_ac"))
-            utility = lookup(config, ("response", "tariff_content", "utility"))
-            sitename = lookup(config, ("response", "site_name"))
-            tz = lookup(config, ("response", "installation_time_zone"))
-
-            data = {
-                "max_system_energy_kWh": nameplate_energy,
-                "max_system_power_kW": nameplate_power,
-                "site_name": sitename,
-                "timezone": tz,
-                "max_site_meter_power_kW": max_site_meter_power_ac,
-                "min_site_meter_power_kW": min_site_meter_power_ac,
-                "nominal_system_energy_kWh": nameplate_energy,
-                "nominal_system_power_kW": nameplate_power,
-                "panel_max_current": None,
-                "grid_code": {
-                    "grid_code": None,
-                    "grid_voltage_setting": None,
-                    "grid_freq_setting": None,
-                    "grid_phase_setting": None,
-                    "country": None,
-                    "state": None,
-                    "utility": utility
+            if config is None:
+                data = None
+            else:
+                nameplate_power = int(lookup(config, ("response", "nameplate_power")) or 0) / 1000
+                nameplate_energy = int(lookup(config, ("response", "nameplate_energy")) or 0) / 1000
+                max_site_meter_power_ac = lookup(config, ("response", "max_site_meter_power_ac"))
+                min_site_meter_power_ac = lookup(config, ("response", "min_site_meter_power_ac"))
+                utility = lookup(config, ("response", "tariff_content", "utility"))
+                sitename = lookup(config, ("response", "site_name"))
+                tz = lookup(config, ("response", "installation_time_zone"))
+                data = {
+                    "max_system_energy_kWh": nameplate_energy,
+                    "max_system_power_kW": nameplate_power,
+                    "site_name": sitename,
+                    "timezone": tz,
+                    "max_site_meter_power_kW": max_site_meter_power_ac,
+                    "min_site_meter_power_kW": min_site_meter_power_ac,
+                    "nominal_system_energy_kWh": nameplate_energy,
+                    "nominal_system_power_kW": nameplate_power,
+                    "panel_max_current": None,
+                    "grid_code": {
+                        "grid_code": None,
+                        "grid_voltage_setting": None,
+                        "grid_freq_setting": None,
+                        "grid_phase_setting": None,
+                        "country": None,
+                        "state": None,
+                        "utility": utility
+                    }
                 }
-            }
 
         elif api == '/api/devices/vitals':
             # Protobuf payload - not implemented - use /vitals instead
@@ -475,219 +552,233 @@ class TeslaCloud:
         elif api == '/vitals':
             # Simulated Vitals
             config = self.get_site_config()
-            din = lookup(config, ("response", "id"))
-            parts = din.split("--")
-            if len(parts) == 2:
-                partNumber = parts[0]
-                serialNumber = parts[1]
-            else:
-                partNumber = None
-                serialNumber = None
-            version = lookup(config, ("response", "version"))
-            # Get grid status
             power = self.get_site_power()
-            island_status = lookup(power, ("response", "island_status"))
-            if island_status == "on_grid":
-                alert = "SystemConnectedToGrid"
-            elif island_status == "off_grid_intentional":
-                alert = "ScheduledIslandContactorOpen"
+            if config is None or power is None:
+                data = None
             else:
-                alert = "UnscheduledIslandContactorOpen"
-            data = {
-                f'STSTSM--{partNumber}--{serialNumber}': {
-                    'partNumber': partNumber,
-                    'serialNumber': serialNumber,
-                    'manufacturer': 'Simulated',
-                    'firmwareVersion': version,
-                    'lastCommunicationTime': int(time.time()),
-                    'teslaEnergyEcuAttributes': {
-                        'ecuType': 207
-                    },
-                    'STSTSM-Location': 'Simulated',
-                    'alerts': [
-                        alert
-                    ]
+                din = lookup(config, ("response", "id"))
+                parts = din.split("--")
+                if len(parts) == 2:
+                    partNumber = parts[0]
+                    serialNumber = parts[1]
+                else:
+                    partNumber = None
+                    serialNumber = None
+                version = lookup(config, ("response", "version"))
+                # Get grid status
+                island_status = lookup(power, ("response", "island_status"))
+                if island_status == "on_grid":
+                    alert = "SystemConnectedToGrid"
+                elif island_status == "off_grid_intentional":
+                    alert = "ScheduledIslandContactorOpen"
+                else:
+                    alert = "UnscheduledIslandContactorOpen"
+                data = {
+                    f'STSTSM--{partNumber}--{serialNumber}': {
+                        'partNumber': partNumber,
+                        'serialNumber': serialNumber,
+                        'manufacturer': 'Simulated',
+                        'firmwareVersion': version,
+                        'lastCommunicationTime': int(time.time()),
+                        'teslaEnergyEcuAttributes': {
+                            'ecuType': 207
+                        },
+                        'STSTSM-Location': 'Simulated',
+                        'alerts': [
+                            alert
+                        ]
+                    }
                 }
-            }
 
         elif api in ['/api/system_status/soe']:
             battery = self.get_battery()
-            percentage_charged = lookup(battery, ("response", "percentage_charged")) or 0
-            # percentage_charged is scaled to keep 5% buffer at bottom
-            soe = (percentage_charged + (5 / 0.95)) * 0.95
-            data = {
-                "percentage": soe
-            }
+            if battery is None:
+                data = None
+            else:
+                percentage_charged = lookup(battery, ("response", "percentage_charged")) or 0
+                # percentage_charged is scaled to keep 5% buffer at bottom
+                soe = (percentage_charged + (5 / 0.95)) * 0.95
+                data = {
+                    "percentage": soe
+                }
             
         elif api == '/api/meters/aggregates':
-            power = self.get_site_power()
-            timestamp = lookup(power, ("response", "timestamp"))
-            solar_power = lookup(power, ("response", "solar_power"))
-            battery_power = lookup(power, ("response", "battery_power"))
-            load_power = lookup(power, ("response", "load_power"))
-            grid_power = lookup(power, ("response", "grid_power"))
             config = self.get_site_config()
-            battery_count = lookup(config, ("response", "battery_count"))
-            inverters = lookup(config, ("response", "components", "inverters"))
-            if inverters is not None:
-                solar_inverters = len(inverters)
-            elif lookup(config, ("response", "components", "solar")):
-                solar_inverters = 1
+            power = self.get_site_power()
+            if config is None or power is None:
+                data = None
             else:
-                solar_inverters = 0
-            data = {
-                "site": {
-                    "last_communication_time": timestamp,
-                    "instant_power": grid_power,
-                    "instant_reactive_power": 0,
-                    "instant_apparent_power": 0,
-                    "frequency": 0,
-                    "energy_exported": 0,
-                    "energy_imported": 0,
-                    "instant_average_voltage": 0,
-                    "instant_average_current": 0,
-                    "i_a_current": 0,
-                    "i_b_current": 0,
-                    "i_c_current": 0,
-                    "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                    "timeout": 1500000000,
-                    "num_meters_aggregated": 1,
-                    "instant_total_current": None
-                },
-                "battery": {
-                    "last_communication_time": timestamp,
-                    "instant_power": battery_power,
-                    "instant_reactive_power": 0,
-                    "instant_apparent_power": 0,
-                    "frequency": 0,
-                    "energy_exported": 0,
-                    "energy_imported": 0,
-                    "instant_average_voltage": 0,
-                    "instant_average_current": 0,
-                    "i_a_current": 0,
-                    "i_b_current": 0,
-                    "i_c_current": 0,
-                    "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                    "timeout": 1500000000,
-                    "num_meters_aggregated": battery_count,
-                    "instant_total_current": 0
-                },
-                "load": {
-                    "last_communication_time": timestamp,
-                    "instant_power": load_power,
-                    "instant_reactive_power": 0,
-                    "instant_apparent_power": 0,
-                    "frequency": 0,
-                    "energy_exported": 0,
-                    "energy_imported": 0,
-                    "instant_average_voltage": 0,
-                    "instant_average_current": 0,
-                    "i_a_current": 0,
-                    "i_b_current": 0,
-                    "i_c_current": 0,
-                    "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                    "timeout": 1500000000,
-                    "instant_total_current": 0
-                },
-                "solar": {
-                    "last_communication_time": timestamp,
-                    "instant_power": solar_power,
-                    "instant_reactive_power": 0,
-                    "instant_apparent_power": 0,
-                    "frequency": 0,
-                    "energy_exported": 0,
-                    "energy_imported": 0,
-                    "instant_average_voltage": 0,
-                    "instant_average_current": 0,
-                    "i_a_current": 0,
-                    "i_b_current": 0,
-                    "i_c_current": 0,
-                    "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                    "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                    "timeout": 1000000000,
-                    "num_meters_aggregated": solar_inverters,
-                    "instant_total_current": 0
+                timestamp = lookup(power, ("response", "timestamp"))
+                solar_power = lookup(power, ("response", "solar_power"))
+                battery_power = lookup(power, ("response", "battery_power"))
+                load_power = lookup(power, ("response", "load_power"))
+                grid_power = lookup(power, ("response", "grid_power"))
+                battery_count = lookup(config, ("response", "battery_count"))
+                inverters = lookup(config, ("response", "components", "inverters"))
+                if inverters is not None:
+                    solar_inverters = len(inverters)
+                elif lookup(config, ("response", "components", "solar")):
+                    solar_inverters = 1
+                else:
+                    solar_inverters = 0
+                data = {
+                    "site": {
+                        "last_communication_time": timestamp,
+                        "instant_power": grid_power,
+                        "instant_reactive_power": 0,
+                        "instant_apparent_power": 0,
+                        "frequency": 0,
+                        "energy_exported": 0,
+                        "energy_imported": 0,
+                        "instant_average_voltage": 0,
+                        "instant_average_current": 0,
+                        "i_a_current": 0,
+                        "i_b_current": 0,
+                        "i_c_current": 0,
+                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
+                        "timeout": 1500000000,
+                        "num_meters_aggregated": 1,
+                        "instant_total_current": None
+                    },
+                    "battery": {
+                        "last_communication_time": timestamp,
+                        "instant_power": battery_power,
+                        "instant_reactive_power": 0,
+                        "instant_apparent_power": 0,
+                        "frequency": 0,
+                        "energy_exported": 0,
+                        "energy_imported": 0,
+                        "instant_average_voltage": 0,
+                        "instant_average_current": 0,
+                        "i_a_current": 0,
+                        "i_b_current": 0,
+                        "i_c_current": 0,
+                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
+                        "timeout": 1500000000,
+                        "num_meters_aggregated": battery_count,
+                        "instant_total_current": 0
+                    },
+                    "load": {
+                        "last_communication_time": timestamp,
+                        "instant_power": load_power,
+                        "instant_reactive_power": 0,
+                        "instant_apparent_power": 0,
+                        "frequency": 0,
+                        "energy_exported": 0,
+                        "energy_imported": 0,
+                        "instant_average_voltage": 0,
+                        "instant_average_current": 0,
+                        "i_a_current": 0,
+                        "i_b_current": 0,
+                        "i_c_current": 0,
+                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
+                        "timeout": 1500000000,
+                        "instant_total_current": 0
+                    },
+                    "solar": {
+                        "last_communication_time": timestamp,
+                        "instant_power": solar_power,
+                        "instant_reactive_power": 0,
+                        "instant_apparent_power": 0,
+                        "frequency": 0,
+                        "energy_exported": 0,
+                        "energy_imported": 0,
+                        "instant_average_voltage": 0,
+                        "instant_average_current": 0,
+                        "i_a_current": 0,
+                        "i_b_current": 0,
+                        "i_c_current": 0,
+                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
+                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
+                        "timeout": 1000000000,
+                        "num_meters_aggregated": solar_inverters,
+                        "instant_total_current": 0
+                    }
                 }
-            }
 
         elif api == '/api/operation':
             config = self.get_site_config()
-            default_real_mode = lookup(config, ("response", "default_real_mode"))
-            backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent")) or 0
-            # backup_reserve_percent is scaled to keep 5% buffer at bottom
-            backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
-            data = {
-                "real_mode": default_real_mode,
-                "backup_reserve_percent": backup
-            }
+            if config is None:
+                data = None
+            else:
+                default_real_mode = lookup(config, ("response", "default_real_mode"))
+                backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent")) or 0
+                # backup_reserve_percent is scaled to keep 5% buffer at bottom
+                backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
+                data = {
+                    "real_mode": default_real_mode,
+                    "backup_reserve_percent": backup
+                }
 
         elif api == '/api/system_status':
             power = self.get_site_power()
             config = self.get_site_config()
             battery = self.get_battery()
-            timestamp = lookup(power, ("response", "timestamp"))
-            solar_power = lookup(power, ("response", "solar_power"))
-            battery_power = lookup(power, ("response", "battery_power"))
-            load_power = lookup(power, ("response", "load_power"))
-            grid_services_power = lookup(power, ("response", "grid_services_power"))
-            grid_status = lookup(power, ("response", "grid_status"))
-            grid_services_active = lookup(power, ("response", "grid_services_active"))
-            battery_count = lookup(config, ("response", "battery_count"))
-            total_pack_energy = lookup(battery, ("response", "total_pack_energy"))
-            energy_left = lookup(battery, ("response", "energy_left"))
-            nameplate_power = lookup(config, ("response", "nameplate_power"))
-            nameplate_energy = lookup(config, ("response", "nameplate_energy"))
-            if lookup(power, ("response", "island_status")) == "on_grid": 
-                grid_status = "SystemGridConnected"
-            else: # off_grid or off_grid_unintentional
-                grid_status = "SystemIslandedActive"
-            
-            data = { # TODO: Fill in 0 values
-                "command_source": "Configuration",
-                "battery_target_power": 0,
-                "battery_target_reactive_power": 0,
-                "nominal_full_pack_energy": total_pack_energy,
-                "nominal_energy_remaining": energy_left,
-                "max_power_energy_remaining": 0, # TODO: Calculate
-                "max_power_energy_to_be_charged": 0, # TODO: Calculate
-                "max_charge_power": nameplate_power,
-                "max_discharge_power": nameplate_power,
-                "max_apparent_power": nameplate_power,
-                "instantaneous_max_discharge_power": 0,
-                "instantaneous_max_charge_power": 0,
-                "instantaneous_max_apparent_power": 0,
-                "hardware_capability_charge_power": 0,
-                "hardware_capability_discharge_power": 0,
-                "grid_services_power": grid_services_power,
-                "system_island_state": grid_status,
-                "available_blocks": battery_count,
-                "available_charger_blocks": 0,
-                "battery_blocks": [], # TODO: Populate with battery blocks
-                "ffr_power_availability_high": 0,
-                "ffr_power_availability_low": 0,
-                "load_charge_constraint": 0,
-                "max_sustained_ramp_rate": 0,
-                "grid_faults": [], # TODO: Populate with grid faults
-                "can_reboot": "Yes",
-                "smart_inv_delta_p": 0,
-                "smart_inv_delta_q": 0,
-                "last_toggle_timestamp": "2023-10-13T04:08:05.957195-07:00",
-                "solar_real_power_limit": solar_power,
-                "score": 10000,
-                "blocks_controlled": battery_count,
-                "primary": True,
-                "auxiliary_load": 0,
-                "all_enable_lines_high": True,
-                "inverter_nominal_usable_power": 0,
-                "expected_energy_remaining": 0
-            }
+            if power is None or config is None or battery is None:
+                data = None
+            else:
+                timestamp = lookup(power, ("response", "timestamp"))
+                solar_power = lookup(power, ("response", "solar_power"))
+                battery_power = lookup(power, ("response", "battery_power"))
+                load_power = lookup(power, ("response", "load_power"))
+                grid_services_power = lookup(power, ("response", "grid_services_power"))
+                grid_status = lookup(power, ("response", "grid_status"))
+                grid_services_active = lookup(power, ("response", "grid_services_active"))
+                battery_count = lookup(config, ("response", "battery_count"))
+                total_pack_energy = lookup(battery, ("response", "total_pack_energy"))
+                energy_left = lookup(battery, ("response", "energy_left"))
+                nameplate_power = lookup(config, ("response", "nameplate_power"))
+                nameplate_energy = lookup(config, ("response", "nameplate_energy"))
+                if lookup(power, ("response", "island_status")) == "on_grid": 
+                    grid_status = "SystemGridConnected"
+                else: # off_grid or off_grid_unintentional
+                    grid_status = "SystemIslandedActive"
+                data = { # TODO: Fill in 0 values
+                    "command_source": "Configuration",
+                    "battery_target_power": 0,
+                    "battery_target_reactive_power": 0,
+                    "nominal_full_pack_energy": total_pack_energy,
+                    "nominal_energy_remaining": energy_left,
+                    "max_power_energy_remaining": 0, # TODO: Calculate
+                    "max_power_energy_to_be_charged": 0, # TODO: Calculate
+                    "max_charge_power": nameplate_power,
+                    "max_discharge_power": nameplate_power,
+                    "max_apparent_power": nameplate_power,
+                    "instantaneous_max_discharge_power": 0,
+                    "instantaneous_max_charge_power": 0,
+                    "instantaneous_max_apparent_power": 0,
+                    "hardware_capability_charge_power": 0,
+                    "hardware_capability_discharge_power": 0,
+                    "grid_services_power": grid_services_power,
+                    "system_island_state": grid_status,
+                    "available_blocks": battery_count,
+                    "available_charger_blocks": 0,
+                    "battery_blocks": [], # TODO: Populate with battery blocks
+                    "ffr_power_availability_high": 0,
+                    "ffr_power_availability_low": 0,
+                    "load_charge_constraint": 0,
+                    "max_sustained_ramp_rate": 0,
+                    "grid_faults": [], # TODO: Populate with grid faults
+                    "can_reboot": "Yes",
+                    "smart_inv_delta_p": 0,
+                    "smart_inv_delta_q": 0,
+                    "last_toggle_timestamp": "2023-10-13T04:08:05.957195-07:00",
+                    "solar_real_power_limit": solar_power,
+                    "score": 10000,
+                    "blocks_controlled": battery_count,
+                    "primary": True,
+                    "auxiliary_load": 0,
+                    "all_enable_lines_high": True,
+                    "inverter_nominal_usable_power": 0,
+                    "expected_energy_remaining": 0
+                }
         
         ## Possible Actions
         elif api == '/api/logout':
@@ -700,7 +791,7 @@ class TeslaCloud:
             data = json.loads('[{"id":0,"location":"site","type":"synchrometerX","cts":[true,true,false,false],"inverted":[false,false,false,false],"connection":{"short_id":"1232100-00-E--TG123456789E4G","device_serial":"JBL12345Y1F012synchrometerX","https_conf":{}},"Cached_readings":{"last_communication_time":"2023-12-16T11:48:34.135766872-08:00","instant_power":2495,"instant_reactive_power":-212,"instant_apparent_power":2503.9906149983867,"frequency":0,"energy_exported":4507438.170261594,"energy_imported":6995047.554439916,"instant_average_voltage":210.8945063295865,"instant_average_current":20.984,"i_a_current":13.3045,"i_b_current":7.6795,"i_c_current":0,"last_phase_voltage_communication_time":"2023-12-16T11:48:34.035339849-08:00","v_l1n":121.72,"v_l2n":121.78,"last_phase_power_communication_time":"2023-12-16T11:48:34.135766872-08:00","real_power_a":1584,"real_power_b":911,"reactive_power_a":-129,"reactive_power_b":-83,"last_phase_energy_communication_time":"0001-01-01T00:00:00Z","serial_number":"JBL12345Y1F012","version":"fa0c1ad02efda3","timeout":1500000000,"instant_total_current":20.984}}]')
         
         elif api == '/api/meters/solar':
-            data = json.loads(None)
+            data = None
 
         elif api == '/api/auth/toggle/supported':
             data = json.loads('{"toggle_auth_supported":true}')
@@ -796,9 +887,6 @@ class TeslaCloud:
             # Update the Tesla User
             self.email = tuser
 
-            # Create retry instance for use after successful login
-            retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
-
             # Create Tesla instance
             tesla = Tesla(self.email, cache_file=AUTHFILE)
 
@@ -816,7 +904,7 @@ class TeslaCloud:
                 print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
 
                 tesla.close()
-                tesla = Tesla(self.email, retry=retry, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
+                tesla = Tesla(self.email, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
 
                 if not tesla.authorized:
                     try:
@@ -825,10 +913,6 @@ class TeslaCloud:
                     except Exception as err:
                         log.error(f"ERROR: Connection failure - {repr(err)}")
                         return False
-            else:
-                # Enable retries
-                tesla.close()
-                tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
 
         # Connect to Tesla Cloud
         self.siteid = None

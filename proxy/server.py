@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t33"
+BUILD = "t34"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -65,7 +65,7 @@ timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
 browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
-timeout = int(os.getenv("PW_TIMEOUT", "10"))
+timeout = int(os.getenv("PW_TIMEOUT", "5"))
 pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
 https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
@@ -140,8 +140,9 @@ if pw.cloudmode:
     if siteid is not None and siteid != str(pw.Tesla.siteid):
         log.info("Switch to Site ID %s" % siteid)
         if not pw.Tesla.change_site(siteid):
-            log.error("Fatal Error: Unable to initialize pyPowerwall")
-            os._exit(1)
+            log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+            while True:
+                time.sleep(5) # Infinite loop to keep container running
 else:
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name()))
@@ -234,18 +235,21 @@ class handler(BaseHTTPRequestHandler):
             # Alerts
             message = pw.alerts(jsonformat=True)
         elif self.path == '/alerts/pw':
-             # Alerts in dictionary/object format
-              pwalerts = {}
-              idx = 1
-              alerts = pw.alerts()
-              for alert in alerts:
-                   pwalerts[alert] = 1
-              message = json.dumps(pwalerts)
+            # Alerts in dictionary/object format
+            pwalerts = {}
+            idx = 1
+            alerts = pw.alerts()
+            if alerts is None:
+                message = None
+            else:
+                for alert in alerts:
+                    pwalerts[alert] = 1
+                message = json.dumps(pwalerts)
         elif self.path == '/freq':
             # Frequency, Current, Voltage and Grid Status
             fcv = {}
             idx = 1
-            vitals = pw.vitals()
+            vitals = pw.vitals() or {}
             for device in vitals:
                 d = vitals[device]
                 if  device.startswith('TEPINV'):
@@ -266,7 +270,7 @@ class handler(BaseHTTPRequestHandler):
             # Battery Data
             pod = {}
             idx = 1
-            vitals = pw.vitals()
+            vitals = pw.vitals() or {}
             for device in vitals:
                 d = vitals[device]
                 if  device.startswith('TEPOD'):
@@ -285,23 +289,27 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(d, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             pod["backup_reserve_percent"] = pw.get_reserve()
-            d = pw.system_status()
+            d = pw.system_status() or {}
             pod["nominal_full_pack_energy"] = get_value(d,'nominal_full_pack_energy')
             pod["nominal_energy_remaining"] = get_value(d,'nominal_energy_remaining')            
             pod["time_remaining_hours"] = pw.get_time_remaining()
             message = json.dumps(pod) 
         elif self.path == '/version':
             # Firmware Version
-            v = {}
-            v["version"] = pw.version()
-            val = pw.version().split(" ")[0]
-            val = ''.join(i for i in val if i.isdigit() or i in './\\')
-            while len(val.split('.')) < 3:
-                val = val + ".0"
-            l = [int(x, 10) for x in val.split('.')]
-            l.reverse()
-            v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
-            message = json.dumps(v)
+            version = pw.version()
+            if version is None:
+                message = None
+            else:
+                v = {}
+                v["version"] = version
+                val = v["version"].split(" ")[0]
+                val = ''.join(i for i in val if i.isdigit() or i in './\\')
+                while len(val.split('.')) < 3:
+                    val = val + ".0"
+                l = [int(x, 10) for x in val.split('.')]
+                l.reverse()
+                v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
+                message = json.dumps(v)
         elif self.path == '/help':
             # Display friendly help screen link and stats
             proxystats['ts'] = int(time.time())
