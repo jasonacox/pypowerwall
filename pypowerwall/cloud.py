@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
- Python library to pull live Powerwall or Solar history data from Tesla Owner API 
- (Tesla Cloud).
+ Python library to pull live Powerwall or Solar energy site data from 
+ Tesla Owner API (Tesla Cloud).
 
  Authors: Jason A. Cox and Michael Birse
  For more information see https://github.com/jasonacox/pypowerwall
@@ -26,6 +26,11 @@
     get_site_config()       # Get site configuration data from Tesla Cloud
     get_time_remaining()    # Get backup time remaining from Tesla Cloud
     poll(api)               # Map Powerwall API to Tesla Cloud Data
+
+ Requirements
+    This module requires the python teslapy module.  Install with:
+    pip install teslapy
+
 """
 import sys
 import os
@@ -113,7 +118,7 @@ class TeslaCloud:
         """
         # Create Tesla instance
         if not os.path.exists(self.authfile):
-            log.error("ERROR: Missing auth file %s - run setup" % self.authfile)
+            log.error("Missing auth file %s - run setup" % self.authfile)
             return False
         self.tesla = Tesla(self.email, cache_file=self.authfile, timeout=self.timeout)
         # Check to see if we have a cached token
@@ -124,12 +129,12 @@ class TeslaCloud:
             try:
                 self.tesla.fetch_token(authorization_response=self.tesla.authorization_url(state=state, code_verifier=code_verifier))
             except Exception as err:
-                log.error("ERROR: Login failure - ",err)
+                log.error("Login failure - %s" % repr(err))
                 return False
         # Get site info
         sites = self.getsites()
         if sites is None or len(sites) == 0:
-            log.error("ERROR: No sites found for %s" % self.email)
+            log.error("No sites found for %s" % self.email)
             return False
         # Find siteindex - Lookup energy_site_id in sites
         if self.siteid is None:
@@ -143,7 +148,7 @@ class TeslaCloud:
                     found = True
                     break
             if not found:
-                log.error("ERROR: Site %d not found for %s" % (self.siteid, self.email))
+                log.error("Site %d not found for %s" % (self.siteid, self.email))
                 return False
         # Set site
         self.site = sites[self.siteindex]
@@ -159,7 +164,7 @@ class TeslaCloud:
         try:
             sitelist = self.tesla.battery_list() + self.tesla.solar_list()
         except Exception as err:
-            log.error(f"ERROR: Failed to retrieve sitelist - {repr(err)}")
+            log.error(f"Failed to retrieve sitelist - {repr(err)}")
             return None
         return sitelist
     
@@ -170,13 +175,13 @@ class TeslaCloud:
         # Check that siteid is a valid number
         try:
             siteid = int(siteid)
-        except:
-            log.error("ERROR: Invalid siteid")
+        except Exception as err:
+            log.error("Invalid siteid - %s" % repr(err))
             return False
         # Check for valid site index
         sites = self.getsites()
         if sites is None or len(sites) == 0:
-            log.error("ERROR: No sites found for %s" % self.email)
+            log.error("No sites found for %s" % self.email)
             return False
         # Set siteindex - Find siteid in sites
         for idx, site in enumerate(sites):
@@ -186,19 +191,26 @@ class TeslaCloud:
                 self.site = sites[self.siteindex]
                 log.debug(f"Changed site to {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
                 return True
-        log.error("ERROR: Site %d not found for %s" % (siteid, self.email))
+        log.error("Site %d not found for %s" % (siteid, self.email))
         return False
     
     # Functions to get data from Tesla Cloud
 
     def _site_api(self, name, ttl, **kwargs):
         """
-        Get site data from Tesla Cloud
+        Private function to get site data from Tesla Cloud using
+        TeslaPy API.  This function uses a lock to prevent threads
+        from sending multiple requests to Tesla Cloud at the same time.
+        It also caches the data for ttl seconds.
+
+        Arguments:
             name - TeslaPy API name
             ttl - Cache expiration time in seconds
-            args - Additional API arguments to send
+            kwargs - Variable arguments to pass to API call
 
         Returns (response, cached)
+            response - TeslaPy API response
+            cached - True if cached data was returned
         """
         if self.tesla is None:
             log.debug(f" -- cloud: No connection to Tesla Cloud")
@@ -221,7 +233,7 @@ class TeslaCloud:
             self.apilock[name] = True
             response = self.site.api(name, **kwargs)
         except Exception as err:
-            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
+            log.error(f"Failed to retrieve {name} - {repr(err)}")
             response = None
         else:
             log.debug(f" -- cloud: Retrieved {name} data")
@@ -840,7 +852,7 @@ class TeslaCloud:
                     print("Open the below address in your browser to login.\n")
                     print(tesla.authorization_url(state=state, code_verifier=code_verifier))
                 except Exception as err:
-                    log.error(f"ERROR: Connection failure - {repr(err)}")
+                    log.error(f"Connection failure - {repr(err)}")
 
                 print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
 
@@ -852,7 +864,7 @@ class TeslaCloud:
                         tesla.fetch_token(authorization_response=input("Enter URL after login: "))
                         print("-" * 60)
                     except Exception as err:
-                        log.error(f"ERROR: Connection failure - {repr(err)}")
+                        log.error(f"Connection failure - {repr(err)}")
                         return False
 
         # Connect to Tesla Cloud

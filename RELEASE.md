@@ -1,8 +1,29 @@
 # RELEASE NOTES
 
-## v0.7.0 - Tesla Cloud Mode
+## v0.7.1 - Tesla Cloud Mode
 
-* Simulate Powerwall via Tesla Cloud API calls. In `cloudmode` API calls to pypowerwall APIs will result in calls made to the Tesla API to populate the data.  
+* Simulate Powerwall Energy Gateway via Tesla Cloud API calls. In `cloudmode` API calls to pypowerwall APIs will result in calls made to the Tesla API to fetch the data.
+
+Cloud Mode Setup - Use pypowerwall to fetch your Tesla Owners API Token
+
+```bash
+python3 -m pypowerwall setup
+
+# Token and site information stored in .pypowerwall.auth and .pypowerwall.site
+```
+
+Cloud Mode Code Example
+
+```python
+import pypowerwall
+pw = pypowerwall.Powerwall(email="email@example.com",cloudmode=True)
+pw.power()
+# Output: {'site': 2977, 'solar': 1820, 'battery': -3860, 'load': 937}
+pw.poll('/api/system_status/soe')
+# Output: '{"percentage": 26.403205103271222}'
+```
+
+* Added new API function to compute estimated backup time remaining on the battery: `get_time_remaining()`
 
 ## v0.6.4 - Power Flow Animation
 

@@ -7,23 +7,25 @@
  For more information see https://github.com/jasonacox/pypowerwall
 
  Features
-    * Works with Tesla Energy Gateways - Powerwall+ 
+    * Works with Tesla Energy Gateways - Powerwall+
     * Simple access through easy to use functions using customer credentials
     * Will cache authentication to reduce load on Powerwall Gateway
     * Will cache responses for 5s to limit number of calls to Powerwall Gateway
     * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
+    * Can use Tesla Cloud API instead of local Powerwall Gateway (if enabled)
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, cloudmode)
 
  Parameters
-    host                      # (required) hostname or IP of the Tesla gateway
-    password                  # (required) password for logging into the gateway
-    email                     # (required) email used for logging into the gateway
-    timezone                  # (required) desired timezone
+    host                      # Hostname or IP of the Tesla gateway
+    password                  # Customer password for gateway
+    email                     # (required) Customer email for gateway / cloud
+    timezone                  # Desired timezone
     pwcacheexpire = 5         # Set API cache timeout in seconds
     timeout = 5               # Timeout for HTTPS calls in seconds
-    poolmaxsize = 10          # Pool max size for http connection re-use (persistent connections disabled if zero)
+    poolmaxsize = 10          # Pool max size for http connection re-use (persistent
+                                connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
 
  Functions 
@@ -51,7 +53,12 @@
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
     is_connected()            # Returns True if able to connect and login to Powerwall
+    get_reserve(scale)        # Get Battery Reserve Percentage
+    get_time_remaining()      # Get the backup time remaining on the battery
 
+ Requirements
+    This module requires the following modules: requests, protobuf, teslapy
+    pip install requests protobuf teslapy
 """
 import json, time
 import requests
