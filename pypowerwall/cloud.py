@@ -297,7 +297,7 @@ class TeslaCloud:
         """
         # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en 
         (response, cached) =  self._site_api("SITE_DATA", 
-                                             self.pwcacheexpire, counter=self.counter, language="en")
+                                             self.pwcacheexpire, counter=self.counter+1, language="en")
         if not cached:
             self.counter = (self.counter + 1) % COUNTER_MAX
         return response
