@@ -225,7 +225,7 @@ class Powerwall(object):
         # Check cache
         if(api in self.pwcache and api in self.pwcachetime):
             # is it expired?
-            if(time.time() - self.pwcachetime[api] < self.pwcacheexpire):
+            if(time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire):
                 payload = self.pwcache[api]
                 # We do the override here to ensure that we cache the force entry
                 if force:
@@ -266,7 +266,7 @@ class Powerwall(object):
             else:
                 payload = r.text
             self.pwcache[api] = payload
-            self.pwcachetime[api] = time.time()
+            self.pwcachetime[api] = time.perf_counter()
         if(jsonformat):
             try:
                 data = json.loads(payload)
