@@ -7,14 +7,26 @@
  For more information see https://github.com/jasonacox/pypowerwall
 
  Features
-    * Works with Tesla Energy Gateways - Powerwall+ 
+    * Works with Tesla Energy Gateways - Powerwall+
     * Simple access through easy to use functions using customer credentials
     * Will cache authentication to reduce load on Powerwall Gateway
     * Will cache responses for 5s to limit number of calls to Powerwall Gateway
     * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
+    * Can use Tesla Cloud API instead of local Powerwall Gateway (if enabled)
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, cloudmode)
+
+ Parameters
+    host                      # Hostname or IP of the Tesla gateway
+    password                  # Customer password for gateway
+    email                     # (required) Customer email for gateway / cloud
+    timezone                  # Desired timezone
+    pwcacheexpire = 5         # Set API cache timeout in seconds
+    timeout = 5               # Timeout for HTTPS calls in seconds
+    poolmaxsize = 10          # Pool max size for http connection re-use (persistent
+                                connections disabled if zero)
+    cloudmode = False         # If True, use Tesla cloud for data (default is False)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -41,15 +53,12 @@
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
     is_connected()            # Returns True if able to connect and login to Powerwall
+    get_reserve(scale)        # Get Battery Reserve Percentage
+    get_time_remaining()      # Get the backup time remaining on the battery
 
- Parameters
-    host                    # (required) hostname or IP of the Tesla gateway
-    password                # (required) password for logging into the gateway
-    email                   # (required) email used for logging into the gateway
-    timezone                # (required) desired timezone
-    pwcacheexpire = 5       # Set API cache timeout in seconds
-    timeout = 10            # Timeout for HTTPS calls in seconds
-    poolmaxsize = 10        # Pool max size for http connection re-use (persistent connections disabled if zero)
+ Requirements
+    This module requires the following modules: requests, protobuf, teslapy
+    pip install requests protobuf teslapy
 """
 import json, time
 import requests
@@ -58,8 +67,9 @@ urllib3.disable_warnings() # Disable SSL warnings
 import logging
 import sys
 from . import tesla_pb2           # Protobuf definition for vitals
+from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 6, 4)
+version_tuple = (0, 7, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -86,7 +96,7 @@ class ConnectionError(Exception):
     pass
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10, poolmaxsize=10):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, cloudmode=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -99,6 +109,7 @@ class Powerwall(object):
             pwcacheexpire = Seconds to expire cached entries
             timeout      = Seconds for the timeout on http requests
             poolmaxsize  = Pool max size for http connection re-use (persistent connections disabled if zero)
+            cloudmode    = If True, use Tesla cloud for data (default is False)
 
         """
 
@@ -108,34 +119,47 @@ class Powerwall(object):
         self.password = password
         self.email = email
         self.timezone = timezone
-        self.timeout = timeout                  # 10s timeout for http calls
+        self.timeout = timeout                  # 5s timeout for http calls
         self.poolmaxsize = poolmaxsize          # pool max size for http connection re-use
         self.auth = {}                          # caches authentication cookies
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
+        self.cloudmode = cloudmode              # cloud mode or local mode (default)
+        self.Tesla = None                       # cloud object for cloud connection
 
-        if self.poolmaxsize > 0:
-            # Create session object for http connection re-use
-            self.session = requests.Session()
-            a = requests.adapters.HTTPAdapter(pool_maxsize=self.poolmaxsize)
-            self.session.mount('https://', a)
+        # Check for cloud mode
+        if self.cloudmode or self.host == "":
+            self.cloudmode = True
+            log.debug('Tesla cloud mode enabled')
+            self.Tesla = cloud.TeslaCloud(self.email, pwcacheexpire, timeout)
+            # Check to see if we can connect to the cloud
+            if not self.Tesla.connect():
+                err = "Unable to connect to Tesla Cloud - run pypowerwall setup"
+                log.debug(err)
+                raise ConnectionError(err)
+            self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}
         else:
-            # Disable http persistent connections
-            self.session = requests
-
-        # Load cached auth session
-        try:
-            f = open(self.cachefile, "r")
-            self.auth = json.load(f)
-            log.debug('loaded auth from cache file %s' % self.cachefile)
-        except:
-            log.debug('no auth cache file')
-            pass
-
-        # Create new session
-        if self.auth == {}:
-            self._get_session()
+            log.debug('Tesla local mode enabled')
+            if self.poolmaxsize > 0:
+                # Create session object for http connection re-use
+                self.session = requests.Session()
+                a = requests.adapters.HTTPAdapter(pool_maxsize=self.poolmaxsize)
+                self.session.mount('https://', a)
+            else:
+                # Disable http persistent connections
+                self.session = requests
+            # Load cached auth session
+            try:
+                f = open(self.cachefile, "r")
+                self.auth = json.load(f)
+                log.debug('loaded auth from cache file %s' % self.cachefile)
+            except:
+                log.debug('no auth cache file')
+                pass
+            # Create new session
+            if self.auth == {}:
+                self._get_session()
 
     def _get_session(self):
         # Login and create a new session
@@ -165,6 +189,9 @@ class Powerwall(object):
 
     def _close_session(self):
         # Log out
+        if self.cloudmode:
+            self.Tesla.logout()
+            return
         url = "https://%s/api/logout" % self.host
         g = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
         self.auth = {}
@@ -193,13 +220,19 @@ class Powerwall(object):
             recursive   = If True, this is a recursive call and do not allow additional recursive calls
             force       = If True, bypass the cache and make the API call to the gateway
         """
-        # Query powerwall and return payload as string
-        
-        # First check to see if in cache
+        # Check to see if we are in cloud mode
+        if self.cloudmode:
+            if jsonformat:
+                return self.Tesla.poll(api)
+            else:
+                return json.dumps(self.Tesla.poll(api))
+
+        # Query powerwall and return payload
         fetch = True
+        # Check cache
         if(api in self.pwcache and api in self.pwcachetime):
             # is it expired?
-            if(time.time() - self.pwcachetime[api] < self.pwcacheexpire):
+            if(time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire):
                 payload = self.pwcache[api]
                 # We do the override here to ensure that we cache the force entry
                 if force:
@@ -240,7 +273,7 @@ class Powerwall(object):
             else:
                 payload = r.text
             self.pwcache[api] = payload
-            self.pwcachetime[api] = time.time()
+            self.pwcachetime[api] = time.perf_counter()
         if(jsonformat):
             try:
                 data = json.loads(payload)
@@ -260,14 +293,13 @@ class Powerwall(object):
             Note: Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
         """
         # Return power level percentage for battery
-        level = 0
         payload = self.poll('/api/system_status/soe', jsonformat=True)
-        if(payload is not None and 'percentage' in payload):
+        if payload is not None and 'percentage' in payload:
             level = payload['percentage']
-        if scale:
-            return ((level / 0.95) - (5 / 0.95))
-        else:
+            if scale:
+                level = (level / 0.95) - (5 / 0.95)
             return level
+        return None
     
     def power(self):
         """
@@ -304,6 +336,12 @@ class Powerwall(object):
         Args:
            jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
+        if self.cloudmode:
+            if jsonformat:
+                return json.dumps(self.Tesla.poll('/vitals'))
+            else:
+                return self.Tesla.poll('/vitals')
+        
         # Pull vitals payload - binary protobuf 
         stream = self.poll('/api/devices/vitals')
         if(not stream):
@@ -404,9 +442,7 @@ class Powerwall(object):
         result = {}
         devicemap = ['','1','2','3','4','5','6','7','8']
         deviceidx = 0
-        v = self.vitals(jsonformat=False)
-        if(not v):
-            return None
+        v = self.vitals(jsonformat=False) or {}
         for device in v:
             if device.split('--')[0] == 'PVAC':
                 # Check for PVS data
@@ -513,6 +549,8 @@ class Powerwall(object):
             cellular_disabled = payload['cellular_disabled']
         """
         payload = self.poll('/api/status', jsonformat=True)
+        if payload is None:
+            return None
         if param is None:
             if jsonformat:
                 return json.dumps(payload, indent=4, sort_keys=True)
@@ -540,7 +578,7 @@ class Powerwall(object):
     def temps(self, jsonformat=False):
         """ Temperatures of Powerwalls  """
         temps = {}
-        devices = self.vitals()
+        devices = self.vitals() or {}
         for device in devices:
             if device.startswith('TETHC'):
                 try:
@@ -562,7 +600,7 @@ class Powerwall(object):
           jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
         alerts = []
-        devices = self.vitals()
+        devices = self.vitals() or {}
         for device in devices:
             if 'alerts' in devices[device]:
                 for i in devices[device]['alerts']:
@@ -586,15 +624,14 @@ class Powerwall(object):
             scale    = If True (default) use Tesla's 5% reserve calculation
             Tesla App reserves 5% of battery = ( (batterylevel / 0.95) - (5 / 0.95) )
         """
-        data = self.poll('/api/operation')
-        if data is None:
-            return None
-        data = json.loads(data)
-        percent = float(data['backup_reserve_percent'])
-        if scale:
-            # Get percentage based on Tesla App scale
-            percent = float((percent / 0.95) - (5 / 0.95))
-        return percent
+        data = self.poll('/api/operation', jsonformat=True)
+        if data is not None and 'backup_reserve_percent' in data:
+            percent = float(data['backup_reserve_percent'])
+            if scale:
+                # Get percentage based on Tesla App scale
+                percent = float((percent / 0.95) - (5 / 0.95))
+            return percent
+        return None
 
     def grid_status(self, type="string"):
         """
@@ -625,7 +662,7 @@ class Powerwall(object):
             return gridmap[grid_status][type]
         except:
             # The payload from powerwall was not valid
-            log.debug("ERROR Invalid return value received from gateway: " + str(payload.grid_status))
+            log.debug('ERROR unable to parse payload for grid_status: %r' % payload)
             return None
 
     def system_status(self, jsonformat=False):
@@ -720,3 +757,28 @@ class Powerwall(object):
             return json.dumps(result, indent=4, sort_keys=True)
         else:
             return result
+    
+    def get_time_remaining(self):
+        """
+        Get the backup time remaining on the battery
+
+        Returns:
+            The time remaining in hours
+        """
+        if self.cloudmode:                
+            d = self.Tesla.get_time_remaining()
+            # {'response': {'time_remaining_hours': 7.909122698326978}}
+            if d is None:
+                return None
+            if 'response' in d and 'time_remaining_hours' in d['response']:
+                return d['response']['time_remaining_hours']    
+            
+        # Compute based on battery level and load
+        d = self.system_status() or {}
+        if 'nominal_energy_remaining' in d and d['nominal_energy_remaining'] is not None:
+            load = self.load() or 0
+            if load > 0:
+                return d['nominal_energy_remaining']/load
+        # Default            
+        return None
+    

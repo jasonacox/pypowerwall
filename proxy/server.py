@@ -12,7 +12,21 @@
     /api/system_status/soe - You can containerize it and run it as
     an endpoint for tools like telegraf to pull metrics.
 
-    This proxy also supports pyPowerwall data for /vitals and /strings 
+ Local Powerwall Mode
+    The default mode for this proxy is to connect to a local Powerwall
+    to pull data. This works with the Tesla Energy Gateway (TEG) for
+    Powerwall 1, 2 and +.  It will also support pulling /vitals and /strings 
+    data if available.
+    Set: PW_HOST to Powerwall Address and PW_PASSWORD to use this mode.
+
+ Cloud Mode
+    An optional mode is to connect to the Tesla Cloud to pull data. This
+    requires that you have a Tesla Account and have registered your
+    Tesla Solar System or Powerwall with the Tesla App. It requires that 
+    you run the setup 'python -m pypowerwall setup' process to create the 
+    required API keys and tokens.  This mode doesn't support /vitals or 
+    /strings data.
+    Set: PW_EMAIL and leave PW_HOST blank to use this mode.
 
 """
 import pypowerwall
@@ -28,8 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t29"
-NOAPI = False # Set to True to serve bogus data for API calls to Powerwall
+BUILD = "t35"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -47,16 +60,17 @@ web_root = os.path.join(os.path.dirname(__file__), "web")
 bind_address = os.getenv("PW_BIND_ADDRESS", "")
 password = os.getenv("PW_PASSWORD", "password")
 email = os.getenv("PW_EMAIL", "email@example.com")
-host = os.getenv("PW_HOST", "hostname")
+host = os.getenv("PW_HOST", "")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
 browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
-timeout = int(os.getenv("PW_TIMEOUT", "10"))
+timeout = int(os.getenv("PW_TIMEOUT", "5"))
 pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
 https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
+siteid = os.getenv("PW_SITEID", None)
 
 # Global Stats
 proxystats = {}
@@ -69,6 +83,11 @@ proxystats['ts'] = int(time.time())         # Timestamp for Now
 proxystats['start'] = int(time.time())      # Timestamp for Start 
 proxystats['clear'] = int(time.time())      # Timestamp of lLast Stats Clear
 proxystats['uptime'] = ""
+proxystats['mem'] = 0
+proxystats['site_name'] = ""
+proxystats['cloudmode'] = False
+proxystats['siteid'] = 0
+proxystats['counter'] = 0
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -108,13 +127,25 @@ def get_value(a, key):
 
 # Connect to Powerwall
 # TODO: Add support for multiple Powerwalls
-# TODO: Add support for solar-only systems
-pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
-if not pw or NOAPI or not host or host.lower() == "none":
-    NOAPI = True
-    log.info("pyPowerwall Proxy Server - NOAPI Mode")
+try:
+    pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
+except Exception as e:
+    log.error(e)
+    log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+    while True:
+        time.sleep(5) # Infinite loop to keep container running
+if pw.cloudmode:
+    log.info("pyPowerwall Proxy Server - Cloud Mode")
+    log.info("Connected to Site ID %s (%s)" % (pw.Tesla.siteid, pw.site_name()))
+    if siteid is not None and siteid != str(pw.Tesla.siteid):
+        log.info("Switch to Site ID %s" % siteid)
+        if not pw.Tesla.change_site(siteid):
+            log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+            while True:
+                time.sleep(5) # Infinite loop to keep container running
 else:
-    log.info("pyPowerwall Proxy Server - Connected to %s" % host)
+    log.info("pyPowerwall Proxy Server - Local Mode")
+    log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name()))
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -173,6 +204,11 @@ class handler(BaseHTTPRequestHandler):
             delta = proxystats['ts'] - proxystats['start']
             proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            proxystats['site_name'] = pw.site_name()
+            proxystats['cloudmode'] = pw.cloudmode
+            if pw.cloudmode and pw.Tesla is not None:
+                proxystats['siteid'] = pw.Tesla.siteid
+                proxystats['counter'] = pw.Tesla.counter
             message = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
@@ -199,18 +235,21 @@ class handler(BaseHTTPRequestHandler):
             # Alerts
             message = pw.alerts(jsonformat=True)
         elif self.path == '/alerts/pw':
-             # Alerts in dictionary/object format
-              pwalerts = {}
-              idx = 1
-              alerts = pw.alerts()
-              for alert in alerts:
-                   pwalerts[alert] = 1
-              message = json.dumps(pwalerts)
+            # Alerts in dictionary/object format
+            pwalerts = {}
+            idx = 1
+            alerts = pw.alerts()
+            if alerts is None:
+                message = None
+            else:
+                for alert in alerts:
+                    pwalerts[alert] = 1
+                message = json.dumps(pwalerts)
         elif self.path == '/freq':
             # Frequency, Current, Voltage and Grid Status
             fcv = {}
             idx = 1
-            vitals = pw.vitals()
+            vitals = pw.vitals() or {}
             for device in vitals:
                 d = vitals[device]
                 if  device.startswith('TEPINV'):
@@ -231,7 +270,7 @@ class handler(BaseHTTPRequestHandler):
             # Battery Data
             pod = {}
             idx = 1
-            vitals = pw.vitals()
+            vitals = pw.vitals() or {}
             for device in vitals:
                 d = vitals[device]
                 if  device.startswith('TEPOD'):
@@ -250,24 +289,38 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(d, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             pod["backup_reserve_percent"] = pw.get_reserve()
+            d = pw.system_status() or {}
+            pod["nominal_full_pack_energy"] = get_value(d,'nominal_full_pack_energy')
+            pod["nominal_energy_remaining"] = get_value(d,'nominal_energy_remaining')            
+            pod["time_remaining_hours"] = pw.get_time_remaining()
             message = json.dumps(pod) 
         elif self.path == '/version':
             # Firmware Version
-            v = {}
-            v["version"] = pw.version()
-            val = pw.version().split(" ")[0]
-            val = ''.join(i for i in val if i.isdigit() or i in './\\')
-            while len(val.split('.')) < 3:
-                val = val + ".0"
-            l = [int(x, 10) for x in val.split('.')]
-            l.reverse()
-            v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
-            message = json.dumps(v)
+            version = pw.version()
+            if version is None:
+                message = None
+            else:
+                v = {}
+                v["version"] = version
+                val = v["version"].split(" ")[0]
+                val = ''.join(i for i in val if i.isdigit() or i in './\\')
+                while len(val.split('.')) < 3:
+                    val = val + ".0"
+                l = [int(x, 10) for x in val.split('.')]
+                l.reverse()
+                v["vint"] = sum(x * (100 ** i) for i, x in enumerate(l))
+                message = json.dumps(v)
         elif self.path == '/help':
             # Display friendly help screen link and stats
             proxystats['ts'] = int(time.time())
             delta = proxystats['ts'] - proxystats['start']
             proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
+            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            proxystats['site_name'] = pw.site_name()
+            proxystats['cloudmode'] = pw.cloudmode
+            if pw.cloudmode and pw.Tesla is not None:
+                proxystats['siteid'] = pw.Tesla.siteid
+                proxystats['counter'] = pw.Tesla.counter
             contenttype = 'text/html'
             message = '<html>\n<head><meta http-equiv="refresh" content="5" />\n'
             message += '<style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n' 
@@ -285,22 +338,7 @@ class handler(BaseHTTPRequestHandler):
                 str(datetime.datetime.fromtimestamp(time.time())))
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
-            if NOAPI:
-                # If we are in NOAPI mode serve up bogus data
-                filename = "/bogus/" + self.path[1:].replace('/', '.') + ".json"
-                fcontent, ftype = get_static(web_root, filename)
-                if not fcontent:
-                    fcontent = bytes("{}", 'utf-8')
-                    log.debug("No offline content found for: {}".format(filename))
-                else:
-                    log.debug("Served from local filesystem: {}".format(filename))
-                self.send_header('Content-type','{}'.format(ftype))
-                self.end_headers()
-                self.wfile.write(fcontent)
-                return
-            else:
-                # Proxy request to Powerwall
-                message = pw.poll(self.path)
+            message = pw.poll(self.path)
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1
@@ -310,34 +348,48 @@ class handler(BaseHTTPRequestHandler):
             # Serve static assets from web root first, if found.
             if self.path == "/" or self.path == "":
                 self.path = "/index.html"
-            fcontent, ftype = get_static(web_root, self.path)
+                fcontent, ftype = get_static(web_root, self.path)
+                # Replace {VARS} with current data
+                status = pw.status()
+                # convert fcontent to string
+                fcontent = fcontent.decode("utf-8")
+                fcontent = fcontent.replace("{VERSION}", status["version"])
+                fcontent = fcontent.replace("{HASH}", status["git_hash"])
+                fcontent = fcontent.replace("{EMAIL}", email)
+                fcontent = fcontent.replace("{STYLE}", style)
+                # convert fcontent back to bytes
+                fcontent = bytes(fcontent, 'utf-8')
+            else:
+                fcontent, ftype = get_static(web_root, self.path)
             if fcontent:
-                log.debug("Served from local web root: {}".format(self.path))
-                self.send_header('Content-type','{}'.format(ftype))
-                self.end_headers()
-                self.wfile.write(fcontent)
-                return
-
-            # Proxy request to Powerwall web server.
-            proxy_path = self.path
-            if proxy_path.startswith("/"):
-                proxy_path = proxy_path[1:]
-            pw_url = "https://{}/{}".format(pw.host, proxy_path)
-            log.debug("Proxy request to: {}".format(pw_url))
-            r = pw.session.get(
-                url=pw_url,
-                cookies=pw.auth,
-                verify=False,
-                stream=True,
-                timeout=pw.timeout
-            )
-            fcontent = r.content
-            ftype = r.headers['content-type']
+                log.debug("Served from local web root: {} type {}".format(self.path,ftype))
+            # If not found, serve from Powerwall web server
+            elif pw.cloudmode:
+                log.debug("Cloud Mode - File not found: {}".format(self.path))
+                fcontent = bytes("Not Found", 'utf-8')
+                ftype = "text/plain"
+            else:
+                # Proxy request to Powerwall web server.
+                proxy_path = self.path
+                if proxy_path.startswith("/"):
+                    proxy_path = proxy_path[1:]
+                pw_url = "https://{}/{}".format(pw.host, proxy_path)
+                log.debug("Proxy request to: {}".format(pw_url))
+                r = pw.session.get(
+                    url=pw_url,
+                    cookies=pw.auth,
+                    verify=False,
+                    stream=True,
+                    timeout=pw.timeout
+                )
+                fcontent = r.content
+                ftype = r.headers['content-type']
+                
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
                 self.send_header("Cache-Control", "max-age={}".format(browser_cache))
             else:
-                self.send_header("Cache-Control", "no-cache, no-store")
+                self.send_header("Cache-Control", "no-cache, no-store")         
 
             # Inject transformations
             if self.path.split('?')[0] == "/":

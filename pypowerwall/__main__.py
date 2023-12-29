@@ -15,8 +15,10 @@
 import pypowerwall
 import sys
 from . import scan
+from . import cloud
 
 # Global Variables
+AUTHFILE = ".pypowerwall.auth"
 timeout = 1.0
 state = 0
 color = True
@@ -26,6 +28,8 @@ for i in sys.argv:
         continue
     elif(i.lower() == "scan"):
         state = 0
+    elif(i.lower() == "setup"):
+        state = 1
     elif(i.lower() == "-nocolor"):
         color = False
     else:
@@ -38,9 +42,16 @@ for i in sys.argv:
 if(state == 0):
     scan.scan(color, timeout)
 
-# State 1 = Future
+# State 1 = Cloud Mode Setup
 if(state == 1):
-    print("Future Feature")
+    print("pyPowerwall [%s] - Cloud Mode Setup\n" % (pypowerwall.version))
+    # Run Setup
+    c = cloud.TeslaCloud(None)
+    if c.setup():
+        print("Setup Complete. Auth file %s ready to use." % (AUTHFILE))
+    else:
+        print("ERROR: Failed to setup Tesla Cloud Mode")
+        exit(1)
 
 # State 2 = Show Usage
 if(state == 2):
@@ -49,6 +60,7 @@ if(state == 2):
     print("    python -m pypowerwall [command] [<timeout>] [-nocolor] [-h]")
     print("")
     print("      command = scan        Scan local network for Powerwall gateway.")
+    print("      command = setup       Setup Tesla Login for Cloud Mode access.")
     print("      timeout               Seconds to wait per host [Default=%0.1f]" % (timeout))
     print("      -nocolor              Disable color text output.")
     print("      -h                    Show usage.")

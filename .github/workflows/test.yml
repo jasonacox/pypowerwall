@@ -14,7 +14,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.5", "3.6", "3.7", "3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11"]
 
     steps:
       - uses: "actions/checkout@v2"
@@ -27,7 +27,7 @@ jobs:
           python -VV
           python -m site
           python -m pip install --upgrade pip setuptools wheel
-          pip install --upgrade requests protobuf
+          pip install --upgrade requests protobuf teslapy
 
       - name: "Run test.py on ${{ matrix.python-version }}"
         run: "python test.py"

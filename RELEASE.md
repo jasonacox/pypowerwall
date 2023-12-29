@@ -1,9 +1,34 @@
 # RELEASE NOTES
 
+## v0.7.1 - Tesla Cloud Mode
+
+* Simulate Powerwall Energy Gateway via Tesla Cloud API calls. In `cloudmode` API calls to pypowerwall APIs will result in calls made to the Tesla API to fetch the data.
+
+Cloud Mode Setup - Use pypowerwall to fetch your Tesla Owners API Token
+
+```bash
+python3 -m pypowerwall setup
+
+# Token and site information stored in .pypowerwall.auth and .pypowerwall.site
+```
+
+Cloud Mode Code Example
+
+```python
+import pypowerwall
+pw = pypowerwall.Powerwall(email="email@example.com",cloudmode=True)
+pw.power()
+# Output: {'site': 2977, 'solar': 1820, 'battery': -3860, 'load': 937}
+pw.poll('/api/system_status/soe')
+# Output: '{"percentage": 26.403205103271222}'
+```
+
+* Added new API function to compute estimated backup time remaining on the battery: `get_time_remaining()`
+
 ## v0.6.4 - Power Flow Animation
 
 Proxy t29 Updates
-* Default page rendered by proxy (http://pypowerwall/) will render Powerflow Animation
+* Default page rendered by proxy (http://pypowerwall:8675/) will render Powerflow Animation
 * Animation assets (html, css, js, images, fonts, svg) will render from local filesystem instead of pulling from Powerwall TEG portal.
 * Start prep for possible API removals from Powerwall TEG portal (see NOAPI settings)
 

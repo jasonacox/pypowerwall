@@ -144,3 +144,7 @@ tools/set-mode.auth
 tools/set-mode.conf
 tools/tedapi/request.bin
 tools/tedapi/app*
+.pypowerwall.auth
+.pypowerwall.site
+proxy/pypowerwall
+proxy/teslapy

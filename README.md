@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting Powerwall, Powerwall 2 and Powerwall+ systems.
+Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting local access to Powerwall, Powerwall 2 and Powerwall+ systems and Tesla Owner cloud API for all systems including Solar Only and Powerwall 3 systems.
 
 ## Description
 
@@ -33,10 +33,13 @@ You can clone this repo or install the package with pip.  Once installed, pyPowe
 
 ```bash
 # Install pyPowerwall
-python -m pip install pypowerwall
+python3 -m pip install pypowerwall
 
 # Scan Network for Powerwalls
-python -m pypowerwall scan
+python3 -m pypowerwall scan
+
+# (optional) Setup to use Tesla Owners cloud API
+python3 -m pypowerwall setup
 ```
 
 FreeBSD users can install from ports or pkg [FreshPorts](https://www.freshports.org/net-mgmt/py-pypowerwall):
@@ -51,7 +54,7 @@ Via ports:
 # cd /usr/ports/net-mgmt/py-pypowerwall/ && make install clean
 ```
 
-Note: pyPowerwall installation will attempt to install these required python packages: _requests_ and _protobuf_.
+Note: pyPowerwall installation will attempt to install these required python packages: _requests_, _protobuf_ and _teslapy_.
 
 ## Programming with pyPowerwall
 
@@ -64,10 +67,16 @@ and call function to poll data.  Here is an example:
     # Optional: Turn on Debug Mode
     # pypowerwall.set_debug(True)
 
-    # Credentials for your Powerwall - Customer Login Data
+    # Local Mode - Credentials for your Powerwall - Customer Login
     password='password'
     email='email@example.com'
     host = "10.0.1.123"               # Address of your Powerwall Gateway
+    timezone = "America/Los_Angeles"  # Your local timezone
+
+    # (Optional) Cloud Mode - Requires Setup
+    password = ""
+    email='email@example.com'
+    host = ""
     timezone = "America/Los_Angeles"  # Your local timezone
  
     # Connect to Powerwall
@@ -114,6 +123,17 @@ and call function to poll data.  Here is an example:
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize)
 
+ Parameters
+    host                      # Hostname or IP of the Tesla gateway
+    password                  # Customer password for gateway
+    email                     # (required) Customer email for gateway / cloud
+    timezone                  # Desired timezone
+    pwcacheexpire = 5         # Set API cache timeout in seconds
+    timeout = 5               # Timeout for HTTPS calls in seconds
+    poolmaxsize = 10          # Pool max size for http connection re-use (persistent
+                                connections disabled if zero)
+    cloudmode = False         # If True, use Tesla cloud for data (default is False)
+
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
     level()                   # Return battery power level percentage
@@ -134,20 +154,16 @@ and call function to poll data.  Here is an example:
     temps()                   # Return Powerwall Temperatures
     alerts()                  # Return array of Alerts from devices
     system_status(json)       # Returns the system status
-    battery_blocks(json)      # Returns battery specific information merged from system_status() and vitals()
-    grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
+    battery_blocks(json)      # Returns battery specific information merged from 
+                              # system_status() and vitals()
+    grid_status(type)         # Return the power grid status, type ="string" (default),
+                              # "json", or "numeric":
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
-    is_connected()            # Returns True if able to connect and login to Powerwall
+    is_connected()            # Returns True if able to connect to Powerwall
+    get_reserve(scale)        # Get Battery Reserve Percentage
+    get_time_remaining()      # Get the backup time remaining on the battery
     
- Parameters
-    host                    # (required) hostname or IP of the Tesla gateway
-    password                # (required) password for logging into the gateway
-    email                   # (required) email used for logging into the gateway
-    timezone                # (required) desired timezone
-    pwcacheexpire = 5       # Set API cache timeout in seconds
-    timeout = 10            # Timeout for HTTPS calls in seconds
-    poolmaxsize = 10        # Pool max size for http connection re-use (persistent connections disabled if zero)
 ```
 
 ## Tools
