@@ -128,7 +128,7 @@ class TeslaCloud:
                 return False
         # Get site info
         sites = self.getsites()
-        if len(sites) == 0:
+        if sites is None or len(sites) == 0:
             log.error("ERROR: No sites found for %s" % self.email)
             return False
         # Find siteindex - Lookup energy_site_id in sites
@@ -175,7 +175,7 @@ class TeslaCloud:
             return False
         # Check for valid site index
         sites = self.getsites()
-        if len(sites) == 0:
+        if sites is None or len(sites) == 0:
             log.error("ERROR: No sites found for %s" % self.email)
             return False
         # Set siteindex - Find siteid in sites
@@ -209,7 +209,7 @@ class TeslaCloud:
             while self.apilock[name]:
                 time.sleep(0.2)
                 if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- cloud: Timeout waiting for {name} lock")
+                    log.debug(f" -- cloud: Timeout waiting for {name}")
                     return (None, False)
         # Check to see if we have cached data
         if name in self.pwcache:
@@ -224,12 +224,12 @@ class TeslaCloud:
             log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
             response = None
         else:
+            log.debug(f" -- cloud: Retrieved {name} data")
             self.pwcache[name] = response
             self.pwcachetime[name] = time.perf_counter()
         finally:
             # Release lock
             self.apilock[name] = False
-            log.debug(f" -- cloud: Retrieved {name} data")
             return (response, False)
 
     def get_battery(self):
@@ -862,6 +862,10 @@ class TeslaCloud:
             return False
         
         sites = self.getsites()
+        if sites is None or len(sites) == 0:
+            print("\nERROR: No sites found for %s" % self.email)
+            return False
+
         print(f"\n{len(sites)} Sites Found (* = default)")
         print("-"*60)
 
