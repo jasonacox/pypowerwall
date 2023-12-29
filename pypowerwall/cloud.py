@@ -191,6 +191,47 @@ class TeslaCloud:
     
     # Functions to get data from Tesla Cloud
 
+    def _site_api(self, name, ttl, **kwargs):
+        """
+        Get site data from Tesla Cloud
+            name - TeslaPy API name
+            ttl - Cache expiration time in seconds
+            args - Additional API arguments to send
+
+        Returns (response, cached)
+        """
+        if self.tesla is None:
+            log.debug(f" -- cloud: No connection to Tesla Cloud")
+            return (None, False)
+        # Check for lock and wait if api request already sent
+        if name in self.apilock:
+            locktime = time.perf_counter()
+            while self.apilock[name]:
+                time.sleep(0.2)
+                if time.perf_counter() >= locktime + self.timeout:
+                    log.debug(f" -- cloud: Timeout waiting for {name} lock")
+                    return (None, False)
+        # Check to see if we have cached data
+        if name in self.pwcache:
+            if self.pwcachetime[name] > time.perf_counter() - ttl:
+                log.debug(f" -- cloud: Returning cached {name} data")
+                return (self.pwcache[name], True)
+        try:
+            # Set lock
+            self.apilock[name] = True
+            response = self.site.api(name, **kwargs)
+        except Exception as err:
+            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
+            response = None
+        else:
+            self.pwcache[name] = response
+            self.pwcachetime[name] = time.perf_counter()
+        finally:
+            # Release lock
+            self.apilock[name] = False
+            log.debug(f" -- cloud: Retrieved {name} data")
+            return (response, False)
+
     def get_battery(self):
         """
         Get site battery data from Tesla Cloud
@@ -214,35 +255,10 @@ class TeslaCloud:
                 "breaker_alert_enabled": true
             }
         """
-        if self.tesla is None:
-            return None
         # GET api/1/energy_sites/{site_id}/site_status
-        name = "SITE_SUMMARY"
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    return None
-        # Check to see if we have cached data
-        if 'get_battery' in self.pwcache:
-            if self.pwcachetime['get_battery'] > time.perf_counter() - self.pwcacheexpire:
-                return self.pwcache['get_battery']
-        try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name,language="en")
-        except Exception as err:
-            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
-            response = None
-        else:
-            self.pwcache['get_battery'] = response
-            self.pwcachetime['get_battery'] = time.perf_counter()
-        finally:
-            # Release lock
-            self.apilock[name] = False
-            return response
+        (response, _) =  self._site_api("SITE_SUMMARY", 
+                                             self.pwcacheexpire, language="en")
+        return response
     
     def get_site_power(self):
         """
@@ -267,36 +283,12 @@ class TeslaCloud:
                 "wall_connectors": []
             }
         """
-        if self.tesla is None:
-            return None
-        # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en
-        name = "SITE_DATA"
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    return None
-        # Check to see if we have cached data
-        if 'get_site_power' in self.pwcache:
-            if self.pwcachetime['get_site_power'] > time.perf_counter() - self.pwcacheexpire:
-                return self.pwcache['get_site_power']
-        try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name,counter=self.counter,language="en")
-        except Exception as err:
-            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
-            response = None
-        else:
-            self.pwcache['get_site_power'] = response
-            self.pwcachetime['get_site_power'] = time.perf_counter()
-        finally:
+        # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en 
+        (response, cached) =  self._site_api("SITE_DATA", 
+                                             self.pwcacheexpire, counter=self.counter, language="en")
+        if not cached:
             self.counter = (self.counter + 1) % COUNTER_MAX
-            # Release lock
-            self.apilock[name] = False
-            return response
+        return response
     
     def get_site_config(self):
         """
@@ -385,36 +377,10 @@ class TeslaCloud:
     }
         
         """
-        if self.tesla is None:
-            return None
         # GET api/1/energy_sites/{site_id}/site_info
-        name = "SITE_CONFIG"
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    return None
-        # Check to see if we have cached data
-        if 'get_site_config' in self.pwcache:
-            ttl = SITE_CONFIG_TTL if self.pwcacheexpire > 0 else 0
-            if self.pwcachetime['get_site_config'] > time.perf_counter() - ttl:
-                return self.pwcache['get_site_config']
-        try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name,language="en")
-        except Exception as err:
-            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
-            response = None
-        else:
-            self.pwcache['get_site_config'] = response
-            self.pwcachetime['get_site_config'] = time.perf_counter()
-        finally:
-            # Release lock
-            self.apilock[name] = False
-            return response
+        (response, _) =  self._site_api("SITE_CONFIG", 
+                                             SITE_CONFIG_TTL, language="en")
+        return response
 
     def get_time_remaining(self):
         """
@@ -422,35 +388,10 @@ class TeslaCloud:
 
         {'response': {'time_remaining_hours': 7.909122698326978}}
         """
-        if self.tesla is None:
-            return None
         # GET api/1/energy_sites/{site_id}/backup_time_remaining
-        name = "ENERGY_SITE_BACKUP_TIME_REMAINING"
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    return None
-        # Check to see if we have cached data
-        if 'get_time_remaining' in self.pwcache:
-            if self.pwcachetime['get_time_remaining'] > time.perf_counter() - self.pwcacheexpire:
-                return self.pwcache['get_time_remaining']
-        try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name)
-        except Exception as err:
-            log.error(f"ERROR: Failed to retrieve {name} - {repr(err)}")
-            response = None
-        else:
-            self.pwcache['get_time_remaining'] = response
-            self.pwcachetime['get_time_remaining'] = time.perf_counter()
-        finally:
-            # Release lock
-            self.apilock[name] = False
-            return response
+        (response, _) =  self._site_api("ENERGY_SITE_BACKUP_TIME_REMAINING",
+                                                self.pwcacheexpire, language="en")
+        return response
     
     # Function to map Powerwall API to Tesla Cloud Data
 
