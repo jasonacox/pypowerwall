@@ -22,7 +22,7 @@
     email                     # (required) email used for logging into the gateway
     timezone                  # (required) desired timezone
     pwcacheexpire = 5         # Set API cache timeout in seconds
-    timeout = 10              # Timeout for HTTPS calls in seconds
+    timeout = 5               # Timeout for HTTPS calls in seconds
     poolmaxsize = 10          # Pool max size for http connection re-use (persistent connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
 
@@ -62,7 +62,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 0)
+version_tuple = (0, 7, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -89,7 +89,7 @@ class ConnectionError(Exception):
     pass
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=10, poolmaxsize=10, cloudmode=False):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, cloudmode=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -112,7 +112,7 @@ class Powerwall(object):
         self.password = password
         self.email = email
         self.timezone = timezone
-        self.timeout = timeout                  # 10s timeout for http calls
+        self.timeout = timeout                  # 5s timeout for http calls
         self.poolmaxsize = poolmaxsize          # pool max size for http connection re-use
         self.auth = {}                          # caches authentication cookies
         self.pwcachetime = {}                   # holds the cached data timestamps for api

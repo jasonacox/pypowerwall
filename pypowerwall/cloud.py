@@ -14,7 +14,7 @@
     email                   # (required) email used for logging into the gateway
     timezone                # (required) desired timezone
     pwcacheexpire = 5       # Set API cache timeout in seconds
-    timeout = 10            # Timeout for HTTPS calls in seconds
+    timeout = 5             # Timeout for HTTPS calls in seconds
     siteid = None           # (optional) energy_site_id to use
 
  Functions
@@ -33,7 +33,7 @@ import time
 import logging
 import json
 try:
-    from teslapy import Tesla, Retry, JsonDict, Battery, SolarPanel
+    from teslapy import Tesla, JsonDict, Battery, SolarPanel
 except:
     sys.exit("ERROR: Missing python teslapy module. Run 'pip install teslapy'.")
 
@@ -77,14 +77,13 @@ def lookup(data, keylist):
     return data
 
 class TeslaCloud:
-    def __init__(self, email, pwcacheexpire=5, timeout=10, siteid=None):
+    def __init__(self, email, pwcacheexpire=5, timeout=5, siteid=None):
         self.authfile = AUTHFILE
         self.sitefile = SITEFILE
         self.email = email
         self.timeout = timeout
         self.site = None
         self.tesla = None   
-        self.retry = None
         self.apilock = {}                       # holds lock flag for pending cloud api requests
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
@@ -112,14 +111,11 @@ class TeslaCloud:
         """
         Connect to Tesla Cloud via teslapy
         """
-        # Create retry instance for use after successful login
-        self.retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
-
         # Create Tesla instance
         if not os.path.exists(self.authfile):
             log.error("ERROR: Missing auth file %s - run setup" % self.authfile)
             return False
-        self.tesla = Tesla(self.email, cache_file=self.authfile)
+        self.tesla = Tesla(self.email, cache_file=self.authfile, timeout=self.timeout)
         # Check to see if we have a cached token
         if not self.tesla.authorized:
             # Login to Tesla account and cache token
@@ -130,10 +126,6 @@ class TeslaCloud:
             except Exception as err:
                 log.error("ERROR: Login failure - ",err)
                 return False
-        else:
-            # Enable retries
-            self.tesla.close()
-            self.tesla = Tesla(self.email, retry=self.retry, cache_file=self.authfile)
         # Get site info
         sites = self.getsites()
         if len(sites) == 0:
@@ -895,9 +887,6 @@ class TeslaCloud:
             # Update the Tesla User
             self.email = tuser
 
-            # Create retry instance for use after successful login
-            retry = Retry(total=2, status_forcelist=(500, 502, 503, 504), backoff_factor=10)
-
             # Create Tesla instance
             tesla = Tesla(self.email, cache_file=AUTHFILE)
 
@@ -915,7 +904,7 @@ class TeslaCloud:
                 print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
 
                 tesla.close()
-                tesla = Tesla(self.email, retry=retry, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
+                tesla = Tesla(self.email, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
 
                 if not tesla.authorized:
                     try:
@@ -924,10 +913,6 @@ class TeslaCloud:
                     except Exception as err:
                         log.error(f"ERROR: Connection failure - {repr(err)}")
                         return False
-            else:
-                # Enable retries
-                tesla.close()
-                tesla = Tesla(self.email, retry=retry, cache_file=AUTHFILE)
 
         # Connect to Tesla Cloud
         self.siteid = None

@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t33"
+BUILD = "t34"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -65,7 +65,7 @@ timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
 debugmode = os.getenv("PW_DEBUG", "no")
 cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
 browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
-timeout = int(os.getenv("PW_TIMEOUT", "10"))
+timeout = int(os.getenv("PW_TIMEOUT", "5"))
 pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
 https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
