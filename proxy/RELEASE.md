@@ -1,8 +1,8 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t33 (21 Dec 2023)
+### Proxy t35 (29 Dec 2023)
 
-* Add `cloudmode` support for pypowerwall v0.7.0. 
+* Add `cloudmode` support for pypowerwall v0.7.1. 
 
 ### Proxy t32 (20 Dec 2023)
 
