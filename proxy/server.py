@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t35"
+BUILD = "t36"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -71,6 +71,7 @@ https_mode = os.getenv("PW_HTTPS", "no")
 port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
 siteid = os.getenv("PW_SITEID", None)
+authpath = os.getenv("PW_AUTH_PATH", "")
 
 # Global Stats
 proxystats = {}
@@ -86,7 +87,7 @@ proxystats['uptime'] = ""
 proxystats['mem'] = 0
 proxystats['site_name'] = ""
 proxystats['cloudmode'] = False
-proxystats['siteid'] = 0
+proxystats['siteid'] = None
 proxystats['counter'] = 0
 
 if https_mode == "yes":
@@ -128,7 +129,8 @@ def get_value(a, key):
 # Connect to Powerwall
 # TODO: Add support for multiple Powerwalls
 try:
-    pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,timeout,pool_maxsize)
+    pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,
+                               timeout,pool_maxsize,siteid=siteid,authpath=authpath)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")

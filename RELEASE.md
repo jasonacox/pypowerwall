@@ -1,5 +1,19 @@
 # RELEASE NOTES
 
+## v0.7.2 - Cloud Auth Path
+
+* Add pypowerwall setting to define path to cloud auth cache and site files in the initialization. It will default to current directory.
+* Add pypowerwall setting to define energy site id in the initialization. It will default to None.
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(email="email@example.com",cloudmode=True,siteid=1234567,authpath=".auth")
+```
+
+* Proxy will now use `PW_AUTH_PATH` as an environmental variable to set the path for `.pypowerwall.auth` and `.pypowerwall.site`.
+* Proxy also has `PW_SITEID` as an environmental variable to set `siteid`.
+
 ## v0.7.1 - Tesla Cloud Mode
 
 * Simulate Powerwall Energy Gateway via Tesla Cloud API calls. In `cloudmode` API calls to pypowerwall APIs will result in calls made to the Tesla API to fetch the data.

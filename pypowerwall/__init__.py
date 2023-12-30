@@ -15,7 +15,8 @@
     * Can use Tesla Cloud API instead of local Powerwall Gateway (if enabled)
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, cloudmode)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
+        cloudmode, siteid, authpath)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -27,6 +28,8 @@
     poolmaxsize = 10          # Pool max size for http connection re-use (persistent
                                 connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
+    siteid = None             # If cloudmode is True, use this siteid (default is None)
+    authpath = ""             # Path to cloud auth and site files (default current directory)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -69,7 +72,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 1)
+version_tuple = (0, 7, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -96,7 +99,9 @@ class ConnectionError(Exception):
     pass
 
 class Powerwall(object):
-    def __init__(self, host="", password="", email="nobody@nowhere.com", timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, cloudmode=False):
+    def __init__(self, host="", password="", email="nobody@nowhere.com", 
+                 timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, 
+                 cloudmode=False, siteid=None, authpath=""):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -110,6 +115,8 @@ class Powerwall(object):
             timeout      = Seconds for the timeout on http requests
             poolmaxsize  = Pool max size for http connection re-use (persistent connections disabled if zero)
             cloudmode    = If True, use Tesla cloud for data (default is False)
+            siteid       = If cloudmode is True, use this siteid (default is None)  
+            authpath     = Path to cloud auth and site cache files (default current directory)
 
         """
 
@@ -126,13 +133,15 @@ class Powerwall(object):
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
         self.cloudmode = cloudmode              # cloud mode or local mode (default)
+        self.siteid = siteid                    # siteid for cloud mode
+        self.authpath = authpath                # path to auth and site cache files
         self.Tesla = None                       # cloud object for cloud connection
 
         # Check for cloud mode
         if self.cloudmode or self.host == "":
             self.cloudmode = True
             log.debug('Tesla cloud mode enabled')
-            self.Tesla = cloud.TeslaCloud(self.email, pwcacheexpire, timeout)
+            self.Tesla = cloud.TeslaCloud(self.email, pwcacheexpire, timeout, siteid, authpath)
             # Check to see if we can connect to the cloud
             if not self.Tesla.connect():
                 err = "Unable to connect to Tesla Cloud - run pypowerwall setup"

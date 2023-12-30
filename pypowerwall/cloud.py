@@ -48,7 +48,7 @@ COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59           # Site config cache TTL in seconds
 
 # pypowerwall cloud module version
-version_tuple = (0, 0, 2)
+version_tuple = (0, 0, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -82,9 +82,7 @@ def lookup(data, keylist):
     return data
 
 class TeslaCloud:
-    def __init__(self, email, pwcacheexpire=5, timeout=5, siteid=None):
-        self.authfile = AUTHFILE
-        self.sitefile = SITEFILE
+    def __init__(self, email, pwcacheexpire=5, timeout=5, siteid=None, authpath=""):
         self.email = email
         self.timeout = timeout
         self.site = None
@@ -96,6 +94,10 @@ class TeslaCloud:
         self.siteindex = 0                      # site index to use
         self.siteid = siteid                    # site id to use
         self.counter = 0                        # counter for SITE_DATA API
+        self.authpath = authpath                # path to cloud auth and site files
+
+        self.authfile = os.path.join(authpath, AUTHFILE)
+        self.sitefile = os.path.join(authpath, SITEFILE)
 
         if self.siteid is None:
             # Check for site file
@@ -107,7 +109,8 @@ class TeslaCloud:
                         self.siteid = 0
             else:
                 self.siteindex = 0
-
+        log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
+  
         # Check for auth file
         if not os.path.exists(self.authfile):
             log.debug("WARNING: Missing auth file %s - run setup" % self.authfile)
@@ -148,7 +151,7 @@ class TeslaCloud:
                     found = True
                     break
             if not found:
-                log.error("Site %d not found for %s" % (self.siteid, self.email))
+                log.error("Site %r not found for %s" % (self.siteid, self.email))
                 return False
         # Set site
         self.site = sites[self.siteindex]

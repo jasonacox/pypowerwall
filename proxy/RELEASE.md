@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t36 (30 Dec 2023)
+
+* Add `PW_AUTH_PATH` to set location for cloud auth and site files.
+
 ### Proxy t35 (29 Dec 2023)
 
 * Add `cloudmode` support for pypowerwall v0.7.1. 
