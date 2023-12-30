@@ -15,7 +15,8 @@
     * Can use Tesla Cloud API instead of local Powerwall Gateway (if enabled)
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, cloudmode, authpath)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
+        cloudmode, siteid, authpath)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -27,6 +28,7 @@
     poolmaxsize = 10          # Pool max size for http connection re-use (persistent
                                 connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
+    siteid = None             # If cloudmode is True, use this siteid (default is None)
     authpath = ""             # Path to cloud auth and site files (default current directory)
 
  Functions 
