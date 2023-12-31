@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.7.3 - Cloud Mode Setup
+
+* Setup will now check for `PW_AUTH_PATH` environmental variable to set the path for `.pypowerwall.auth` and `.pypowerwall.site` by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/62
+* Move signal handler to capture SIGTERM when proxy halts due to config error by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/62. This ensures a containerized proxy will exit without delay when stopping or restarting the container.
+
 ## v0.7.2 - Cloud Auth Path
 
 * Add pypowerwall setting to define path to cloud auth cache and site files in the initialization. It will default to current directory.
