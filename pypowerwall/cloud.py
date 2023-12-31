@@ -48,7 +48,7 @@ COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59           # Site config cache TTL in seconds
 
 # pypowerwall cloud module version
-version_tuple = (0, 0, 3)
+version_tuple = (0, 0, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -813,9 +813,9 @@ class TeslaCloud:
         print("-" * 60)
         tuser = ""
         # Check for .pypowerwall.auth file
-        if os.path.isfile(AUTHFILE):
-            print("  Found existing Tesla Cloud setup file ({})".format(AUTHFILE))
-            with open(AUTHFILE) as json_file:
+        if os.path.isfile(self.authfile):
+            print("  Found existing Tesla Cloud setup file ({})".format(self.authfile))
+            with open(self.authfile) as json_file:
                 try:
                     data = json.load(json_file)
                     tuser = list(data.keys())[0]
@@ -824,7 +824,7 @@ class TeslaCloud:
                     response = input("\n  Overwrite existing file? [y/N]: ").strip()
                     if response.lower() == "y":
                         tuser = ""
-                        os.remove(AUTHFILE)
+                        os.remove(self.authfile)
                     else:
                         self.email = tuser
                 except Exception as err:
@@ -844,7 +844,7 @@ class TeslaCloud:
             self.email = tuser
 
             # Create Tesla instance
-            tesla = Tesla(self.email, cache_file=AUTHFILE)
+            tesla = Tesla(self.email, cache_file=self.authfile)
 
             if not tesla.authorized:
                 # Login to Tesla account and cache token
@@ -860,7 +860,7 @@ class TeslaCloud:
                 print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
 
                 tesla.close()
-                tesla = Tesla(self.email, state=state, code_verifier=code_verifier, cache_file=AUTHFILE)
+                tesla = Tesla(self.email, state=state, code_verifier=code_verifier, cache_file=self.authfile)
 
                 if not tesla.authorized:
                     try:
@@ -885,8 +885,8 @@ class TeslaCloud:
         print("-"*60)
 
         # Check for existing site file
-        if os.path.isfile(SITEFILE):
-            with open(SITEFILE) as file:
+        if os.path.isfile(self.sitefile):
+            with open(self.sitefile) as file:
                 try:
                     self.siteid = int(file.read())
                 except:
@@ -922,7 +922,7 @@ class TeslaCloud:
         self.site = sites[self.siteindex]
         print("\nSelected site %d - %s (%s)" % (self.siteindex+1, sites[self.siteindex]["site_name"], self.siteid))
         # Write the site id to the sitefile
-        with open(SITEFILE, "w") as f:
+        with open(self.sitefile, "w") as f:
             f.write(str(self.siteid))
         
         return True

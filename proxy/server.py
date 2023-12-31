@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t36"
+BUILD = "t37"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -118,6 +118,11 @@ else:
         (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
 
+# Signal handler - Exit on SIGTERM
+def sigTermHandle(signum, frame):
+    raise SystemExit
+signal.signal(signal.SIGTERM, sigTermHandle)
+
 # Get Value Function - Key to Value or Return Null
 def get_value(a, key):
     if key in a:
@@ -135,7 +140,10 @@ except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
     while True:
-        time.sleep(5) # Infinite loop to keep container running
+        try:
+            time.sleep(5) # Infinite loop to keep container running
+        except (KeyboardInterrupt, SystemExit):
+            os._exit(0)
 if pw.cloudmode:
     log.info("pyPowerwall Proxy Server - Cloud Mode")
     log.info("Connected to Site ID %s (%s)" % (pw.Tesla.siteid, pw.site_name()))
@@ -144,7 +152,10 @@ if pw.cloudmode:
         if not pw.Tesla.change_site(siteid):
             log.error("Fatal Error: Unable to connect. Please fix config and restart.")
             while True:
-                time.sleep(5) # Infinite loop to keep container running
+                try:
+                    time.sleep(5) # Infinite loop to keep container running
+                except (KeyboardInterrupt, SystemExit):
+                    os._exit(0)
 else:
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name()))
@@ -426,11 +437,6 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(bytes(message, "utf8"))
         except:
             log.error("Socket broken sending response [doGET]")
-
-def sigTermHandle(signum, frame):
-    raise SystemExit
-
-signal.signal(signal.SIGTERM, sigTermHandle)
 
 with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):
