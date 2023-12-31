@@ -14,11 +14,13 @@
 # Modules
 import pypowerwall
 import sys
+import os
 from . import scan
 from . import cloud
 
 # Global Variables
 AUTHFILE = ".pypowerwall.auth"
+authpath = os.getenv("PW_AUTH_PATH", "")
 timeout = 1.0
 state = 0
 color = True
@@ -46,7 +48,7 @@ if(state == 0):
 if(state == 1):
     print("pyPowerwall [%s] - Cloud Mode Setup\n" % (pypowerwall.version))
     # Run Setup
-    c = cloud.TeslaCloud(None)
+    c = cloud.TeslaCloud(None, authpath=authpath)
     if c.setup():
         print("Setup Complete. Auth file %s ready to use." % (AUTHFILE))
     else:
