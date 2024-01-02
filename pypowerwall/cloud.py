@@ -931,6 +931,7 @@ if __name__ == "__main__":
 
     # Test code
     set_debug(False)
+    tuser = None
     # Check for .pypowerwall.auth file
     if os.path.isfile(AUTHFILE):
         # Read the json file
@@ -961,9 +962,9 @@ if __name__ == "__main__":
 
     print("Connected to Tesla Cloud")   
 
-    #print("\nSite Data")
-    #sites = cloud.getsites()
-    #print(sites)
+    print("\nSite Data")
+    sites = cloud.getsites()
+    print(sites)
 
     #print("\Battery")
     #r = cloud.get_battery()
