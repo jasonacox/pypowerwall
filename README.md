@@ -122,7 +122,7 @@ and call function to poll data.  Here is an example:
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-              cloudmode, siteid, authpath)
+              cloudmode, siteid, authpath, authmode)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -136,6 +136,7 @@ and call function to poll data.  Here is an example:
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
     siteid                    # If cloudmode is True, use this siteid (default is None)  
     authpath                  # Path to cloud auth and site cache files (default is "")
+    authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)

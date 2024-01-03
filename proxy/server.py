@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t37"
+BUILD = "t38"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -72,6 +72,7 @@ port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
 siteid = os.getenv("PW_SITEID", None)
 authpath = os.getenv("PW_AUTH_PATH", "")
+authmode = os.getenv("PW_AUTH_MODE", "cookie")
 
 # Global Stats
 proxystats = {}
@@ -135,7 +136,8 @@ def get_value(a, key):
 # TODO: Add support for multiple Powerwalls
 try:
     pw = pypowerwall.Powerwall(host,password,email,timezone,cache_expire,
-                               timeout,pool_maxsize,siteid=siteid,authpath=authpath)
+                               timeout,pool_maxsize,siteid=siteid,
+                               authpath=authpath,authmode=authmode)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -222,6 +224,7 @@ class handler(BaseHTTPRequestHandler):
             if pw.cloudmode and pw.Tesla is not None:
                 proxystats['siteid'] = pw.Tesla.siteid
                 proxystats['counter'] = pw.Tesla.counter
+            proxystats['authmode'] = pw.authmode
             message = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
@@ -334,6 +337,7 @@ class handler(BaseHTTPRequestHandler):
             if pw.cloudmode and pw.Tesla is not None:
                 proxystats['siteid'] = pw.Tesla.siteid
                 proxystats['counter'] = pw.Tesla.counter
+            proxystats['authmode'] = pw.authmode
             contenttype = 'text/html'
             message = '<html>\n<head><meta http-equiv="refresh" content="5" />\n'
             message += '<style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n' 
@@ -355,8 +359,13 @@ class handler(BaseHTTPRequestHandler):
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1
-            self.send_header("Set-Cookie", "AuthCookie={};{}".format(pw.auth['AuthCookie'], cookiesuffix))
-            self.send_header("Set-Cookie", "UserRecord={};{}".format(pw.auth['UserRecord'], cookiesuffix))
+            if pw.authmode == "token":
+                # Create bogus cookies
+                self.send_header("Set-Cookie", "AuthCookie=1234567890;{}".format(cookiesuffix))
+                self.send_header("Set-Cookie", "UserRecord=1234567890;{}".format(cookiesuffix))
+            else:
+                self.send_header("Set-Cookie", "AuthCookie={};{}".format(pw.auth['AuthCookie'], cookiesuffix))
+                self.send_header("Set-Cookie", "UserRecord={};{}".format(pw.auth['UserRecord'], cookiesuffix))
 
             # Serve static assets from web root first, if found.
             if self.path == "/" or self.path == "":
@@ -388,13 +397,22 @@ class handler(BaseHTTPRequestHandler):
                     proxy_path = proxy_path[1:]
                 pw_url = "https://{}/{}".format(pw.host, proxy_path)
                 log.debug("Proxy request to: {}".format(pw_url))
-                r = pw.session.get(
-                    url=pw_url,
-                    cookies=pw.auth,
-                    verify=False,
-                    stream=True,
-                    timeout=pw.timeout
-                )
+                if pw.authmode == "token":
+                    r = pw.session.get(
+                        url=pw_url,
+                        headers=pw.auth,
+                        verify=False,
+                        stream=True,
+                        timeout=pw.timeout
+                    )
+                else:
+                    r = pw.session.get(
+                        url=pw_url,
+                        cookies=pw.auth,
+                        verify=False,
+                        stream=True,
+                        timeout=pw.timeout
+                    )
                 fcontent = r.content
                 ftype = r.headers['content-type']
                 

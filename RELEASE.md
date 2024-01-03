@@ -1,5 +1,16 @@
 # RELEASE NOTES
 
+## v0.7.4 - Bearer Token Auth
+
+* This release adds the ability to use a Bearer Token for Authentication for the local Powerwall gateway API calls. This is selectable by defining `authmode='token'` in the initialization. The default mode uses the existing `AuthCookie` and `UserRecord` method.
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(HOST, PASSWORD, EMAIL, TIMEZONE, authmode="token")
+```
+
+
 ## v0.7.3 - Cloud Mode Setup
 
 * Setup will now check for `PW_AUTH_PATH` environmental variable to set the path for `.pypowerwall.auth` and `.pypowerwall.site` by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/62

@@ -13,10 +13,11 @@
     * Will cache responses for 5s to limit number of calls to Powerwall Gateway
     * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
     * Can use Tesla Cloud API instead of local Powerwall Gateway (if enabled)
+    * Uses Auth Cookie or Bearer Token for authorization (configurable)
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-        cloudmode, siteid, authpath)
+        cloudmode, siteid, authpath, authmode)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -30,6 +31,7 @@
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
     siteid = None             # If cloudmode is True, use this siteid (default is None)
     authpath = ""             # Path to cloud auth and site files (default current directory)
+    authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -72,7 +74,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 3)
+version_tuple = (0, 7, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -101,7 +103,7 @@ class ConnectionError(Exception):
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com", 
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, 
-                 cloudmode=False, siteid=None, authpath=""):
+                 cloudmode=False, siteid=None, authpath="", authmode="cookie"):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -117,6 +119,7 @@ class Powerwall(object):
             cloudmode    = If True, use Tesla cloud for data (default is False)
             siteid       = If cloudmode is True, use this siteid (default is None)  
             authpath     = Path to cloud auth and site cache files (default current directory)
+            authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
 
         """
 
@@ -128,7 +131,8 @@ class Powerwall(object):
         self.timezone = timezone
         self.timeout = timeout                  # 5s timeout for http calls
         self.poolmaxsize = poolmaxsize          # pool max size for http connection re-use
-        self.auth = {}                          # caches authentication cookies
+        self.auth = {}                          # caches auth cookies
+        self.token = None                       # caches bearer token
         self.pwcachetime = {}                   # holds the cached data timestamps for api
         self.pwcache = {}                       # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire      # seconds to expire cache 
@@ -136,6 +140,7 @@ class Powerwall(object):
         self.siteid = siteid                    # siteid for cloud mode
         self.authpath = authpath                # path to auth and site cache files
         self.Tesla = None                       # cloud object for cloud connection
+        self.authmode = authmode                # cookie or token
 
         # Check for cloud mode
         if self.cloudmode or self.host == "":
@@ -162,7 +167,16 @@ class Powerwall(object):
             try:
                 f = open(self.cachefile, "r")
                 self.auth = json.load(f)
-                log.debug('loaded auth from cache file %s' % self.cachefile)
+                # Check to see if we have a valid cached session for the mode
+                if self.authmode == "token":
+                    if 'Authorization' in self.auth:
+                        self.token = self.auth['Authorization'].split(' ')[1]
+                    else:
+                        self.auth = {}
+                else:
+                    if 'AuthCookie' not in self.auth or 'UserRecord' not in self.auth:
+                        self.auth = {}
+                log.debug('loaded auth from cache file %s (%s authmode)' % (self.cachefile, self.authmode))
             except:
                 log.debug('no auth cache file')
                 pass
@@ -185,7 +199,11 @@ class Powerwall(object):
 
         # Save Auth cookies
         try:
-            self.auth = {'AuthCookie': r.cookies['AuthCookie'], 'UserRecord': r.cookies['UserRecord']}
+            if self.authmode == "token":
+                self.token = r.json()['token']
+                self.auth = {'Authorization': 'Bearer ' + self.token}
+            else:
+                self.auth = {'AuthCookie': r.cookies['AuthCookie'], 'UserRecord': r.cookies['UserRecord']}
             try:
                 f = open(self.cachefile, "w") 
                 json.dump(self.auth,f)
@@ -202,7 +220,11 @@ class Powerwall(object):
             self.Tesla.logout()
             return
         url = "https://%s/api/logout" % self.host
-        g = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+        if self.authmode == "token":
+            g = self.session.get(url, headers=self.auth, verify=False, timeout=self.timeout)
+        else:
+            g = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+        
         self.auth = {}
 
     def is_connected(self):
@@ -256,10 +278,11 @@ class Powerwall(object):
         
             url = "https://%s%s" % (self.host, api)
             try:
-                if(raw):
-                    r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=True)
+                if self.authmode == "token":
+                    r = self.session.get(url, headers=self.auth, verify=False, timeout=self.timeout, stream=raw)
                 else:
-                    r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
+                    r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=raw)
+
             except requests.exceptions.Timeout:
                 log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
                 return None
@@ -272,6 +295,9 @@ class Powerwall(object):
             if r.status_code >= 400 and r.status_code < 500:
                 # Session Expired - Try to get a new one unless we already tried
                 if(not recursive):
+                    if raw:
+                        # Drain the stream
+                        payload = r.raw.data
                     self._get_session()
                     return self.poll(api, jsonformat, raw, True)
                 else:
