@@ -24,6 +24,7 @@ authpath = os.getenv("PW_AUTH_PATH", "")
 timeout = 1.0
 state = 0
 color = True
+ip = None
 
 for i in sys.argv:
     if(i==sys.argv[0]):
@@ -34,6 +35,8 @@ for i in sys.argv:
         state = 1
     elif(i.lower() == "-nocolor"):
         color = False
+    elif(i.lower()[0:4] == "-ip="):
+        ip = i[4:]
     else:
         try:
             timeout = float(i)
@@ -42,7 +45,7 @@ for i in sys.argv:
 
 # State 0 = Run Scan
 if(state == 0):
-    scan.scan(color, timeout)
+    scan.scan(color, timeout, ip)
 
 # State 1 = Cloud Mode Setup
 if(state == 1):
@@ -65,6 +68,7 @@ if(state == 2):
     print("      command = setup       Setup Tesla Login for Cloud Mode access.")
     print("      timeout               Seconds to wait per host [Default=%0.1f]" % (timeout))
     print("      -nocolor              Disable color text output.")
+    print("      -ip=<ip>              (Scan option) IP address within network to scan.")
     print("      -h                    Show usage.")
     print("")
 

@@ -835,7 +835,7 @@ class TeslaCloud:
             while True:
                 response = input("\n  Email address: ").strip()
                 if "@" not in response:
-                    print("  - Error: Invalid email address\n")
+                    print("  - Error: Invalid email address")
                 else:
                     tuser = response
                     break
@@ -852,7 +852,7 @@ class TeslaCloud:
                 code_verifier = tesla.new_code_verifier()
 
                 try:
-                    print("Open the below address in your browser to login.\n")
+                    print("\nOpen the below address in your browser to login.\n")
                     print(tesla.authorization_url(state=state, code_verifier=code_verifier))
                 except Exception as err:
                     log.error(f"Connection failure - {repr(err)}")
@@ -931,6 +931,7 @@ if __name__ == "__main__":
 
     # Test code
     set_debug(False)
+    tuser = None
     # Check for .pypowerwall.auth file
     if os.path.isfile(AUTHFILE):
         # Read the json file
@@ -961,9 +962,9 @@ if __name__ == "__main__":
 
     print("Connected to Tesla Cloud")   
 
-    #print("\nSite Data")
-    #sites = cloud.getsites()
-    #print(sites)
+    print("\nSite Data")
+    sites = cloud.getsites()
+    print(sites)
 
     #print("\Battery")
     #r = cloud.get_battery()
