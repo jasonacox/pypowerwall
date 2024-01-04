@@ -835,7 +835,7 @@ class TeslaCloud:
             while True:
                 response = input("\n  Email address: ").strip()
                 if "@" not in response:
-                    print("  - Error: Invalid email address\n")
+                    print("  - Error: Invalid email address")
                 else:
                     tuser = response
                     break
@@ -852,7 +852,7 @@ class TeslaCloud:
                 code_verifier = tesla.new_code_verifier()
 
                 try:
-                    print("Open the below address in your browser to login.\n")
+                    print("\nOpen the below address in your browser to login.\n")
                     print(tesla.authorization_url(state=state, code_verifier=code_verifier))
                 except Exception as err:
                     log.error(f"Connection failure - {repr(err)}")

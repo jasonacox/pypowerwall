@@ -24,6 +24,7 @@ authpath = os.getenv("PW_AUTH_PATH", "")
 timeout = 1.0
 state = 0
 color = True
+ip = None
 
 for i in sys.argv:
     if(i==sys.argv[0]):
@@ -34,6 +35,8 @@ for i in sys.argv:
         state = 1
     elif(i.lower() == "-nocolor"):
         color = False
+    elif(i.lower()[0:4] == "-ip="):
+        ip = i[4:]
     else:
         try:
             timeout = float(i)
@@ -42,7 +45,7 @@ for i in sys.argv:
 
 # State 0 = Run Scan
 if(state == 0):
-    scan.scan(color, timeout)
+    scan.scan(color, timeout, ip)
 
 # State 1 = Cloud Mode Setup
 if(state == 1):

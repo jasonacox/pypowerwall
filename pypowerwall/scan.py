@@ -35,7 +35,7 @@ def getmyIP():
     s.close()
     return r
 
-def scan(color=True, timeout=0.4):
+def scan(color=True, timeout=0.4, ip=None):
     """
     pyPowerwall Network Scanner
 
@@ -62,7 +62,8 @@ def scan(color=True, timeout=0.4):
 
     # Fetch my IP address and assume /24 network
     try: 
-        ip = getmyIP()
+        if ip is None:
+            ip = getmyIP()
         network = ipaddress.IPv4Interface(u''+ip+'/24').network
     except:
         print(alert + 'ERROR: Unable to get your IP address and network automatically.' + normal)
