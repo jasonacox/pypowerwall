@@ -68,6 +68,7 @@ if(state == 2):
     print("      command = setup       Setup Tesla Login for Cloud Mode access.")
     print("      timeout               Seconds to wait per host [Default=%0.1f]" % (timeout))
     print("      -nocolor              Disable color text output.")
+    print("      -ip=<ip>              (Scan option) IP address within network to scan.")
     print("      -h                    Show usage.")
     print("")
 
