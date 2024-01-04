@@ -163,6 +163,10 @@ class Powerwall(object):
             else:
                 # Disable http persistent connections
                 self.session = requests
+            # Enforce authmode
+            if self.authmode not in ['cookie', 'token']:
+               log.debug("Invalid value for parameter 'authmode' (%s) switching to default" % str(self.authmode))
+               self.authmode = 'cookie'
             # Load cached auth session
             try:
                 f = open(self.cachefile, "r")
@@ -273,7 +277,7 @@ class Powerwall(object):
 
         if(fetch):
             if(api == '/api/devices/vitals'):
-                # Always want the raw output from the vitals call; protobuf binary payload
+                # Always want the raw stream output from the vitals call; protobuf binary payload
                 raw = True
         
             url = "https://%s%s" % (self.host, api)
@@ -282,7 +286,6 @@ class Powerwall(object):
                     r = self.session.get(url, headers=self.auth, verify=False, timeout=self.timeout, stream=raw)
                 else:
                     r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=raw)
-
             except requests.exceptions.Timeout:
                 log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
                 return None
@@ -294,14 +297,15 @@ class Powerwall(object):
                 return None
             if r.status_code >= 400 and r.status_code < 500:
                 # Session Expired - Try to get a new one unless we already tried
+                log.debug('Session Expired - Trying to get a new one')
                 if(not recursive):
                     if raw:
-                        # Drain the stream
+                        # Drain the stream before retrying
                         payload = r.raw.data
                     self._get_session()
                     return self.poll(api, jsonformat, raw, True)
                 else:
-                    log.debug('ERROR Unable to establish session with Powerwall at %s - check password' % url)
+                    log.error('Unable to establish session with Powerwall at %s - check password' % url)
                     return None
             if(raw):
                 payload = r.raw.data

@@ -2,6 +2,7 @@
 
 ## v0.7.4 - Bearer Token Auth
 
+pyPowerwall Updates
 * This release adds the ability to use a Bearer Token for Authentication for the local Powerwall gateway API calls. This is selectable by defining `authmode='token'` in the initialization. The default mode uses the existing `AuthCookie` and `UserRecord` method.
 
 ```python
@@ -9,6 +10,9 @@ import pypowerwall
 
 pw = pypowerwall.Powerwall(HOST, PASSWORD, EMAIL, TIMEZONE, authmode="token")
 ```
+
+Proxy
+* The above option is extended to the pyPowerwall Proxy via the envrionmental variable `PW_AUTH_MODE` set to cookie (default) or token.
 
 Powerwall Network Scanner
 * Added optional IP address argument to network scanner by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/63. The Scan Function can now accept an additional argument `-ip=` to override the host IP address detection (`python -m pypowerwall scan -ip=192.168.1.100`). This may be useful where the host IP address/network cannot be detected correctly, for instance if pypowerwall is running inside a container.
