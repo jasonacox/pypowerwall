@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.7.5 - Cloud Mode Setup
+
+* Added optional email address argument to Cloud Mode setup (`python -m pypowerwall setup -email=<email>`) by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/64 to streamline Powerwall-Dashboard setup script.
+* Updated network scanner output to advise Powerwall 3 is supported in Cloud Mode by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/64
+
 ## v0.7.4 - Bearer Token Auth
 
 pyPowerwall Updates
