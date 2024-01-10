@@ -48,7 +48,7 @@ COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59           # Site config cache TTL in seconds
 
 # pypowerwall cloud module version
-version_tuple = (0, 0, 4)
+version_tuple = (0, 0, 5)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -805,7 +805,7 @@ class TeslaCloud:
 
         return data
     
-    def setup(self):
+    def setup(self, email=None):
         """
         Set up the Tesla Cloud connection
         """
@@ -832,13 +832,17 @@ class TeslaCloud:
 
         if tuser == "":
             # Create new AUTHFILE
-            while True:
-                response = input("\n  Email address: ").strip()
-                if "@" not in response:
-                    print("  - Error: Invalid email address")
-                else:
-                    tuser = response
-                    break
+            if email not in (None, "") and "@" in email:
+                tuser = email.strip()
+                print(f"\n  Email address: {tuser}")
+            else:
+                while True:
+                    response = input("\n  Email address: ").strip()
+                    if "@" not in response:
+                        print("  - Error: Invalid email address")
+                    else:
+                        tuser = response
+                        break
 
             # Update the Tesla User
             self.email = tuser

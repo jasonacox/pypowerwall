@@ -25,6 +25,7 @@ timeout = 1.0
 state = 0
 color = True
 ip = None
+email = None
 
 for i in sys.argv:
     if(i==sys.argv[0]):
@@ -37,6 +38,8 @@ for i in sys.argv:
         color = False
     elif(i.lower()[0:4] == "-ip="):
         ip = i[4:]
+    elif(i.lower()[0:7] == "-email="):
+        email = i[7:]
     else:
         try:
             timeout = float(i)
@@ -52,7 +55,7 @@ if(state == 1):
     print("pyPowerwall [%s] - Cloud Mode Setup\n" % (pypowerwall.version))
     # Run Setup
     c = cloud.TeslaCloud(None, authpath=authpath)
-    if c.setup():
+    if c.setup(email):
         print("Setup Complete. Auth file %s ready to use." % (AUTHFILE))
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
@@ -62,13 +65,14 @@ if(state == 1):
 if(state == 2):
     print("pyPowerwall [%s]\n" % (pypowerwall.version))
     print("Usage:\n")
-    print("    python -m pypowerwall [command] [<timeout>] [-nocolor] [-h]")
+    print("    python -m pypowerwall [command] [<timeout>] [-nocolor] [-ip=<ip>] [-email=<email>] [-h]")
     print("")
     print("      command = scan        Scan local network for Powerwall gateway.")
     print("      command = setup       Setup Tesla Login for Cloud Mode access.")
-    print("      timeout               Seconds to wait per host [Default=%0.1f]" % (timeout))
-    print("      -nocolor              Disable color text output.")
+    print("      timeout               (Scan option) Seconds to wait per host [Default=%0.1f]" % (timeout))
+    print("      -nocolor              (Scan option) Disable color text output.")
     print("      -ip=<ip>              (Scan option) IP address within network to scan.")
+    print("      -email=<email>        (Setup option) Email address for Tesla Login.")
     print("      -h                    Show usage.")
     print("")
 
