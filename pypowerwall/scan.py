@@ -126,9 +126,9 @@ def scan(color=True, timeout=0.4, ip=None):
                         # Expected response from PW3 {"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}
                         if "User does not have adequate access rights" in g.text:
                             # Found PW3
-                            print(dim + ' - ' + subbold + 'Found Powerwall 3 [Currently Unsupported]')
+                            print(dim + ' - ' + subbold + 'Found Powerwall 3 [Supported in Cloud Mode only]')
                             discovered[addr] = 'Powerwall-3'
-                            firmware[addr] = 'Currently Unsupported - See https://tinyurl.com/pw3support'
+                            firmware[addr] = 'Supported in Cloud Mode only - See https://tinyurl.com/pw3support'
                         else:
                             # Not a Powerwall
                             print(dim + ' - Not a Powerwall')
