@@ -74,7 +74,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 4)
+version_tuple = (0, 7, 5)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
