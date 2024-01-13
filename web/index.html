@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="5;url=https://github.com/jasonacox/pypowerwall">
+    <meta name="description" content="Python module to interface with Tesla Energy Gateways for Powerwall and Solar Power Data.">
+    <meta name="keywords" content="Tesla, Powerwall, Solar, Energy, Gateway, Python, API, Module, Library, Open Source">
+    <meta name="author" content="Jason A. Cox">
+    <meta name="robots" content="index,follow">
+    <title>pyPowerwall</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent shapes from overflowing the window */
+        }
+
+        .container {
+            text-align: center;
+            margin: auto; /* Center container horizontally */
+        }
+
+        .title {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 3em;
+            font-weight: bold;
+            margin-bottom: 20px; /* Add some space between the title and the description */ 
+        }
+
+        .description {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 1.5em;
+            font-weight: lighter;
+            color: gray;
+            margin-bottom: 20px; /* Add some space between the description and the timer */
+        }
+
+        .timer {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 1.2em;
+            color: red;
+        }
+
+        .tiny-text {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 0.8em;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            text-align: center;
+            background-color: #f0f0f0; /* Background color for better visibility */
+            padding: 5px;
+        }
+
+        .shape {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background-color: green;
+            border-radius: 50%;
+            animation: float 5s infinite linear; /* Adjust animation duration as needed */
+        }
+
+	@keyframes float {
+            0% {
+                transform: translateY(0) translateX(-50vw);
+            }
+            25% {
+                transform: translateY(100vh) translateX(-25vw);
+            }
+            50% {
+                transform: translateY(0) translateX(0vw);
+            }
+            75% {
+                transform: translateY(100vh) translateX(25vw);
+            }
+            100% {
+                transform: translateY(0) translateX(50vw);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">pyPowerwall</div>
+        <div class="description">Python module to interface with Tesla Energy Gateways for Powerwall and Solar Power Data.</div>
+        <div class="timer" id="countdown">5</div>
+    </div>
+    
+    <div class="tiny-text">
+        (c) 2024 by Jason A. Cox - Open Source Project - <a href="https://github.com/jasonacox/pypowerwall" target="_blank">https://github.com/jasonacox/pypowerwall</a>
+    </div>
+
+    <!-- Animated shape(s) -->
+    <div class="shape"></div>
+
+    <script>
+        // Countdown timer
+        let countdownElement = document.getElementById("countdown");
+        let countdown = 5;
+
+        function updateCountdown() {
+            countdownElement.textContent = countdown;
+            countdown--;
+
+            if (countdown < 0) {
+                clearInterval(timerInterval);
+                countdownElement.textContent = "Redirecting...";
+            }
+        }
+
+        let timerInterval = setInterval(updateCountdown, 1000);
+    </script>
+</body>
+</html>

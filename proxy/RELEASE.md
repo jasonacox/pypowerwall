@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t39 (12 Jan 2023)
+
+* Fix Critical Bug - 404 HTTP Status Code Handling (Issue https://github.com/jasonacox/pypowerwall/issues/65).
+
 ### Proxy t36 (30 Dec 2023)
 
 * Add `PW_AUTH_PATH` to set location for cloud auth and site files.
