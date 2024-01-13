@@ -74,7 +74,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 5)
+version_tuple = (0, 7, 6)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -294,6 +294,10 @@ class Powerwall(object):
                 return None
             except:
                 log.debug('ERROR Unknown error connecting to Powerwall at %s' % url)
+                return None
+            if r.status_code == 404:
+                # API not found or no longer supported
+                log.debug('ERROR Powerwall API not found at %s' % url)
                 return None
             if r.status_code >= 400 and r.status_code < 500:
                 # Session Expired - Try to get a new one unless we already tried

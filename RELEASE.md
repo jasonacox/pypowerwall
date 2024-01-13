@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.7.6 - 404 Bug Fix
+
+* Fix Critical Bug - 404 HTTP Status Code Handling (Issue https://github.com/jasonacox/pypowerwall/issues/65).
+
 ## v0.7.5 - Cloud Mode Setup
 
 * Added optional email address argument to Cloud Mode setup (`python -m pypowerwall setup -email=<email>`) by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/64 to streamline Powerwall-Dashboard setup script.
