@@ -148,3 +148,4 @@ tools/tedapi/app*
 .pypowerwall.site
 proxy/pypowerwall
 proxy/teslapy
+.fleetapi*
