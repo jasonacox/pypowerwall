@@ -6,15 +6,15 @@ Note: the FleetAPI provides third party access to Tesla Vehicles as well as Ener
 
 ## Requirements
 
-* Tesla Partner Account - To be a developer, you will need to sign up as a Tesla Partner. This requires that you have a legal business entity and website.
-* Web Site - You will to own a domain name (website) and have control of that website.
+* Tesla Partner Account - To be a developer, you will need to sign up as a Tesla Partner. This requires that you have a name (e.g. sole proprietor or business entity) and website.
+* Web Site - You will need to own a domain name (website) and have control of that website.
 
 ## Setup
 
-Step 1 - Sign in to Tesla Developer Portal and make an App Access Request: [Tesla App Access Request](https://developer.tesla.com/request) - During this process, you will need to set up and remember the following account settings:
+Step 1 - Sign in to Tesla Developer Portal and make an App Access Request: See [Tesla App Access Request](https://developer.tesla.com/request) - During this process, you will need to set up and remember the following account settings:
 
 * DOMAIN - The domain name of a website your own and control.
-* REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL will extract the GET variable `code`, that provides a one-time use ability to generate a bearer auth and refresh token used to access your Tesla Powerwall energy devices.
+* REDIRECT_URI - This is the URL that Tesla will direct users to after they authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use code needed to generate the Bearer auth and Refresh token used to access your Tesla Powerwall energy devices.
 * CLIENT_ID - This will be provided to you by Tesla when your request is approved.
 * CLIENT_SECRET - Same as above.
 
