@@ -2,8 +2,8 @@
 
 ## v0.7.7 - Battery Data and Network Scanner
 
-* Proxy: Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs @jasonacox in https://github.com/jasonacox/pypowerwall/pull/67
-* Network Scanner: Improve network scan speed by scanning multiple hosts simultaneously by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/67
+* Proxy t40: Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/67 thanks to @ceeeekay in https://github.com/jasonacox/Powerwall-Dashboard/discussions/402#discussioncomment-8193776
+* Network Scanner: Improve network scan speed by scanning multiple hosts simultaneously by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/67. The number of hosts to scan simultaneously can be adjusted using the optional `-hosts=` argument (default = 30, maximum = 100), e.g. `python -m pypowerwall scan -hosts=50`
 
 ## v0.7.6 - 404 Bug Fix
 
@@ -26,7 +26,7 @@ pw = pypowerwall.Powerwall(HOST, PASSWORD, EMAIL, TIMEZONE, authmode="token")
 ```
 
 Proxy
-* The above option is extended to the pyPowerwall Proxy via the envrionmental variable `PW_AUTH_MODE` set to cookie (default) or token.
+* The above option is extended to the pyPowerwall Proxy via the environmental variable `PW_AUTH_MODE` set to cookie (default) or token.
 
 Powerwall Network Scanner
 * Added optional IP address argument to network scanner by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/63. The Scan Function can now accept an additional argument `-ip=` to override the host IP address detection (`python -m pypowerwall scan -ip=192.168.1.100`). This may be useful where the host IP address/network cannot be detected correctly, for instance if pypowerwall is running inside a container.
@@ -206,7 +206,7 @@ pw.grid_status()
 ## v0.2.0 - Tesla Protocol Buffer Scheme Update
 
 * PyPI 0.2.0
-* Breaking change to Protobuf schemea (PR #2) including:
+* Breaking change to Protobuf schema (PR #2) including:
 * Files `tesla.proto` and `tesla_pb2.py`
 * Impacted output from function `vitals()` and [examples/vitals.py](examples/vitals.py).
 
@@ -214,7 +214,7 @@ pw.grid_status()
 
 * PyPI 0.1.4
 * Changed "Network Scan" default timeout to 400ms for better detection.
-* Added Tesla App style "Battery Level Percentage" Conversion option to `level()` to convert the level reading to the 95% scale used by the App. Ths converts the battery level percentage to be consistent with the Tesla App:
+* Added Tesla App style "Battery Level Percentage" Conversion option to `level()` to convert the level reading to the 95% scale used by the App. This converts the battery level percentage to be consistent with the Tesla App:
 
 ```python
 >>> pw.level(scale=True)
