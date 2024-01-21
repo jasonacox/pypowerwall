@@ -348,21 +348,21 @@ class handler(BaseHTTPRequestHandler):
             vitals = pw.vitals() or {}
             idx = 1
             for device in vitals:
-                d = vitals[device]
+                v = vitals[device]
                 if  device.startswith('TEPOD'):
                     pod["PW%d_name" % idx] = device
-                    pod["PW%d_POD_ActiveHeating" % idx] = int(get_value(d, 'POD_ActiveHeating'))
-                    pod["PW%d_POD_ChargeComplete" % idx] = int(get_value(d, 'POD_ChargeComplete'))
-                    pod["PW%d_POD_ChargeRequest" % idx] = int(get_value(d, 'POD_ChargeRequest'))
-                    pod["PW%d_POD_DischargeComplete" % idx] = int(get_value(d, 'POD_DischargeComplete'))
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(get_value(d, 'POD_PermanentlyFaulted'))
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(get_value(d, 'POD_PersistentlyFaulted'))
-                    pod["PW%d_POD_enable_line" % idx] = int(get_value(d,'POD_enable_line'))
-                    pod["PW%d_POD_available_charge_power" % idx] = get_value(d,'POD_available_charge_power')
-                    pod["PW%d_POD_available_dischg_power" % idx] = get_value(d, 'POD_available_dischg_power')
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(d, 'POD_nom_energy_remaining')
-                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(d, 'POD_nom_energy_to_be_charged')
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(d, 'POD_nom_full_pack_energy')
+                    pod["PW%d_POD_ActiveHeating" % idx] = int(get_value(v, 'POD_ActiveHeating'))
+                    pod["PW%d_POD_ChargeComplete" % idx] = int(get_value(v, 'POD_ChargeComplete'))
+                    pod["PW%d_POD_ChargeRequest" % idx] = int(get_value(v, 'POD_ChargeRequest'))
+                    pod["PW%d_POD_DischargeComplete" % idx] = int(get_value(v, 'POD_DischargeComplete'))
+                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(get_value(v, 'POD_PermanentlyFaulted'))
+                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(get_value(v, 'POD_PersistentlyFaulted'))
+                    pod["PW%d_POD_enable_line" % idx] = int(get_value(v,'POD_enable_line'))
+                    pod["PW%d_POD_available_charge_power" % idx] = get_value(v,'POD_available_charge_power')
+                    pod["PW%d_POD_available_dischg_power" % idx] = get_value(v, 'POD_available_dischg_power')
+                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(v, 'POD_nom_energy_remaining')
+                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(v, 'POD_nom_energy_to_be_charged')
+                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(v, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             # Aggregate data
             pod["backup_reserve_percent"] = pw.get_reserve()
