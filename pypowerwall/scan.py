@@ -21,6 +21,7 @@ import ipaddress
 import requests
 import threading
 import json
+import time
 
 # Backward compatability for python2
 try:
@@ -61,7 +62,11 @@ def scanIP(color, timeout, addr):
     a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     a_socket.settimeout(timeout)
     location = (str(addr), 443)
-    result_of_check = a_socket.connect_ex(location)
+    while True:
+        result_of_check = a_socket.connect_ex(location)
+        if not result_of_check == socket.errno.EAGAIN:
+            break
+        time.sleep(0.1)
     if result_of_check == 0:
         # Check to see if it is a Powerwall
         url = 'https://%s/api/status' % addr
