@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## v0.7.7 - Battery Data
+## v0.7.7 - Battery Data and Network Scanner
 
-* Proxy: Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs.
+* Proxy: Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs @jasonacox in https://github.com/jasonacox/pypowerwall/pull/67
+* Network Scanner: Improve network scan speed by scanning multiple hosts simultaneously by @mcbirse in https://github.com/jasonacox/pypowerwall/pull/67
 
 ## v0.7.6 - 404 Bug Fix
 
