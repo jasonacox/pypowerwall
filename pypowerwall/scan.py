@@ -19,6 +19,7 @@ import pypowerwall
 import socket
 import ipaddress  
 import requests
+import threading
 import json
 
 # Backward compatability for python2
@@ -26,6 +27,18 @@ try:
     input = raw_input
 except NameError:
     pass
+
+# Globals
+discovered = {}
+firmware = {}
+
+# Terminal Color Formatting
+bold = "\033[0m\033[97m\033[1m"
+subbold = "\033[0m\033[32m"
+normal = "\033[97m\033[0m"
+dim = "\033[0m\033[97m\033[2m"
+alert = "\033[0m\033[91m\033[1m"
+alertdim = "\033[0m\033[91m\033[2m"
 
 # Helper Functions
 def getmyIP():
@@ -35,7 +48,50 @@ def getmyIP():
     s.close()
     return r
 
-def scan(color=True, timeout=0.4, ip=None):
+def scanIP(color, timeout, addr):
+    global discovered, firmware
+    global bold, subbold, normal, dim, alert, alertdim
+
+    if(color == False):
+        # Disable Terminal Color Formatting
+        bold = subbold = normal = dim = alert = alertdim = ""
+
+    host = dim + '\r      Host: ' + subbold + '%s ...' % addr + normal
+    print(host, end='')
+    a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    a_socket.settimeout(timeout)
+    location = (str(addr), 443)
+    result_of_check = a_socket.connect_ex(location)
+    if result_of_check == 0:
+        # Check to see if it is a Powerwall
+        url = 'https://%s/api/status' % addr
+        try:
+            g = requests.get(url, verify=False, timeout=5)
+            # Check if 404 response
+            if(g.status_code == 404):
+                # Check if it is a Powerwall 3
+                url = 'https://%s/tedapi/din' % addr
+                g = requests.get(url, verify=False, timeout=5)
+                # Expected response from PW3 {"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}
+                if "User does not have adequate access rights" in g.text:
+                    # Found PW3
+                    print(host + ' OPEN' + dim + ' - ' + subbold + 'Found Powerwall 3 [Supported in Cloud Mode only]')
+                    discovered[addr] = 'Powerwall-3'
+                    firmware[addr] = 'Supported in Cloud Mode only - See https://tinyurl.com/pw3support'
+                else:
+                    # Not a Powerwall
+                    print(host + ' OPEN' + dim + ' - Not a Powerwall')
+            else:
+                data = json.loads(g.text)
+                print(host + ' OPEN' + dim + ' - ' + subbold + 'Found Powerwall %s' % data['din'] + subbold + '\n                                     [Firmware %s]' % data['version'])
+                discovered[addr] = data['din']
+                firmware[addr] = data['version']
+        except:
+            print(host + ' OPEN' + dim + ' - Not a Powerwall')
+
+    a_socket.close()
+
+def scan(color=True, timeout=0.4, hosts=32, ip=None):
     """
     pyPowerwall Network Scanner
 
@@ -48,17 +104,12 @@ def scan(color=True, timeout=0.4, ip=None):
             and Powerwall.  It trys to use your local IP address as a default.
 
     """
+    global discovered, firmware
+    global bold, subbold, normal, dim, alert, alertdim
+
     if(color == False):
         # Disable Terminal Color Formatting
         bold = subbold = normal = dim = alert = alertdim = ""
-    else:
-        # Terminal Color Formatting
-        bold = "\033[0m\033[97m\033[1m"
-        subbold = "\033[0m\033[32m"
-        normal = "\033[97m\033[0m"
-        dim = "\033[0m\033[97m\033[2m"
-        alert = "\033[0m\033[91m\033[1m"
-        alertdim = "\033[0m\033[91m\033[2m"
 
     # Fetch my IP address and assume /24 network
     try: 
@@ -100,48 +151,20 @@ def scan(color=True, timeout=0.4, ip=None):
             print(dim + '           Proceeding with %s instead.' % network)
     
     # Scan network
-    discovered = {}
-    firmware = {}
     print('')
     print(bold + '    Running Scan...' + dim)
     # Loop through each host
     try:
+        threads = []
         for addr in ipaddress.IPv4Network(network):
-            print(dim + '\r      Host: ' + subbold + '%s ...' % addr + normal, end='')
-            a_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            a_socket.settimeout(timeout)
-            location = (str(addr), 443)
-            result_of_check = a_socket.connect_ex(location)
-            if result_of_check == 0:
-                print(" OPEN", end='')
-                # Check to see if it is a Powerwall
-                url = 'https://%s/api/status' % addr
-                try:
-                    g = requests.get(url, verify=False, timeout=5)
-                    # Check if 404 response
-                    if(g.status_code == 404):
-                        # Check if it is a Powerwall 3
-                        url = 'https://%s/tedapi/din' % addr
-                        g = requests.get(url, verify=False, timeout=5)
-                        # Expected response from PW3 {"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}
-                        if "User does not have adequate access rights" in g.text:
-                            # Found PW3
-                            print(dim + ' - ' + subbold + 'Found Powerwall 3 [Supported in Cloud Mode only]')
-                            discovered[addr] = 'Powerwall-3'
-                            firmware[addr] = 'Supported in Cloud Mode only - See https://tinyurl.com/pw3support'
-                        else:
-                            # Not a Powerwall
-                            print(dim + ' - Not a Powerwall')
-                    else:
-                        data = json.loads(g.text)
-                        print(dim + ' - ' + subbold + 'Found Powerwall %s' % data['din'])
-                        print(subbold + '                                     [Firmware %s]' % data['version'])
-                        discovered[addr] = data['din']
-                        firmware[addr] = data['version']
-                except:
-                    print(dim + ' - Not a Powerwall')
-    
-            a_socket.close()
+            thread = threading.Thread(target=scanIP, args=(color, timeout, addr))
+            thread.start()
+            threads.append(thread)
+            if threading.active_count() >= hosts:
+                threads[0].join()
+                threads.pop(0)
+        for thread in threads:
+            thread.join()
         
         print(dim + '\r      Done                           ')
         print('')
