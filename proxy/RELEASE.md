@@ -1,6 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t39 (12 Jan 2023)
+### Proxy t40 (20 Jan 2024)
+
+* Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs.
+
+### Proxy t39 (12 Jan 2024)
 
 * Fix Critical Bug - 404 HTTP Status Code Handling (Issue https://github.com/jasonacox/pypowerwall/issues/65).
 

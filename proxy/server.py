@@ -265,7 +265,25 @@ class handler(BaseHTTPRequestHandler):
             # Frequency, Current, Voltage and Grid Status
             fcv = {}
             idx = 1
+            # Pull freq, current, voltage of each Powerwall via system_status
+            d = pw.system_status() or {}
+            if "battery_blocks" in d:
+                for block in d["battery_blocks"]:
+                    fcv["PW%d_name" % idx] = None # Placeholder for vitals
+                    fcv["PW%d_PINV_Fout" % idx] = get_value(block, "f_out")
+                    fcv["PW%d_PINV_VSplit1" % idx] = None # Placeholder for vitals
+                    fcv["PW%d_PINV_VSplit2" % idx] = None # Placeholder for vitals
+                    fcv["PW%d_PackagePartNumber" % idx] = get_value(block, "PackagePartNumber")
+                    fcv["PW%d_PackageSerialNumber" % idx] = get_value(block, "PackageSerialNumber")
+                    fcv["PW%d_p_out" % idx] = get_value(block, "p_out")
+                    fcv["PW%d_q_out" % idx] = get_value(block, "q_out")
+                    fcv["PW%d_v_out" % idx] = get_value(block, "v_out")
+                    fcv["PW%d_f_out" % idx] = get_value(block, "f_out")
+                    fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
+                    idx = idx + 1
+            # Pull freq, current, voltage of each Powerwall via vitals if available
             vitals = pw.vitals() or {}
+            idx = 1
             for device in vitals:
                 d = vitals[device]
                 if  device.startswith('TEPINV'):
@@ -283,10 +301,52 @@ class handler(BaseHTTPRequestHandler):
             fcv["grid_status"] = pw.grid_status(type="numeric")
             message = json.dumps(fcv)
         elif self.path == '/pod':
-            # Battery Data
+            # Powerwall Battery Data
             pod = {}
-            idx = 1
+            # Get Individual Powerwall Battery Data
+            d = pw.system_status() or {}
+            if "battery_blocks" in d:
+                idx = 1
+                for block in d["battery_blocks"]:
+                    # Vital Placeholders
+                    pod["PW%d_name" % idx] = None
+                    pod["PW%d_POD_ActiveHeating" % idx] = None
+                    pod["PW%d_POD_ChargeComplete" % idx] = None
+                    pod["PW%d_POD_ChargeRequest" % idx] = None
+                    pod["PW%d_POD_DischargeComplete" % idx] = None
+                    pod["PW%d_POD_PermanentlyFaulted" % idx] = None
+                    pod["PW%d_POD_PersistentlyFaulted" % idx] = None
+                    pod["PW%d_POD_enable_line" % idx] = None
+                    pod["PW%d_POD_available_charge_power" % idx] = None
+                    pod["PW%d_POD_available_dischg_power" % idx] = None
+                    pod["PW%d_POD_nom_energy_remaining" % idx] = None
+                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = None
+                    pod["PW%d_POD_nom_full_pack_energy" % idx] = None
+                    # Additional System Status Data
+                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(block, "nominal_energy_remaining") # map
+                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(block, "nominal_full_pack_energy") # map
+                    pod["PW%d_PackagePartNumber" % idx] = get_value(block, "PackagePartNumber")
+                    pod["PW%d_PackageSerialNumber" % idx] = get_value(block, "PackageSerialNumber")
+                    pod["PW%d_pinv_state" % idx] = get_value(block, "pinv_state")
+                    pod["PW%d_pinv_grid_state" % idx] = get_value(block, "pinv_grid_state")
+                    pod["PW%d_p_out" % idx] = get_value(block, "p_out")
+                    pod["PW%d_q_out" % idx] = get_value(block, "q_out")
+                    pod["PW%d_v_out" % idx] = get_value(block, "v_out")
+                    pod["PW%d_f_out" % idx] = get_value(block, "f_out")
+                    pod["PW%d_i_out" % idx] = get_value(block, "i_out")
+                    pod["PW%d_energy_charged" % idx] = get_value(block, "energy_charged")
+                    pod["PW%d_energy_discharged" % idx] = get_value(block, "energy_discharged")
+                    pod["PW%d_off_grid" % idx] = int(get_value(block, "off_grid"))
+                    pod["PW%d_vf_mode" % idx] = int(get_value(block, "vf_mode"))
+                    pod["PW%d_wobble_detected" % idx] = int(get_value(block, "wobble_detected"))
+                    pod["PW%d_charge_power_clamped" % idx] = int(get_value(block, "charge_power_clamped"))
+                    pod["PW%d_backup_ready" % idx] = int(get_value(block, "backup_ready"))
+                    pod["PW%d_OpSeqState" % idx] = get_value(block, "OpSeqState")
+                    pod["PW%d_version" % idx] = get_value(block, "version")
+                    idx = idx + 1
+            # Augment with Vitals Data if available
             vitals = pw.vitals() or {}
+            idx = 1
             for device in vitals:
                 d = vitals[device]
                 if  device.startswith('TEPOD'):
@@ -304,8 +364,8 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(d, 'POD_nom_energy_to_be_charged')
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(d, 'POD_nom_full_pack_energy')
                     idx = idx + 1
+            # Aggregate data
             pod["backup_reserve_percent"] = pw.get_reserve()
-            d = pw.system_status() or {}
             pod["nominal_full_pack_energy"] = get_value(d,'nominal_full_pack_energy')
             pod["nominal_energy_remaining"] = get_value(d,'nominal_energy_remaining')            
             pod["time_remaining_hours"] = pw.get_time_remaining()

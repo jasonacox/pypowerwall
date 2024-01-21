@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.7.7 - Battery Data
+
+* Proxy: Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs.
+
 ## v0.7.6 - 404 Bug Fix
 
 * Fix Critical Bug - 404 HTTP Status Code Handling (Issue https://github.com/jasonacox/pypowerwall/issues/65).
