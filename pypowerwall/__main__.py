@@ -43,7 +43,7 @@ for i in sys.argv:
         try:
             hosts = int(i[7:])
         except:
-            hosts = 30
+            state = 2
     elif(i.lower()[0:7] == "-email="):
         email = i[7:]
     else:
