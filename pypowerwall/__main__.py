@@ -22,7 +22,7 @@ from . import cloud
 AUTHFILE = ".pypowerwall.auth"
 authpath = os.getenv("PW_AUTH_PATH", "")
 timeout = 1.0
-hosts = 32
+hosts = 30
 state = 0
 color = True
 ip = None
@@ -43,7 +43,7 @@ for i in sys.argv:
         try:
             hosts = int(i[7:])
         except:
-            hosts = 32
+            hosts = 30
     elif(i.lower()[0:7] == "-email="):
         email = i[7:]
     else:
@@ -78,7 +78,7 @@ if(state == 2):
     print("      timeout               (Scan option) Seconds to wait per host [Default=%0.1f]" % (timeout))
     print("      -nocolor              (Scan option) Disable color text output.")
     print("      -ip=<ip>              (Scan option) IP address within network to scan.")
-    print("      -hosts=<hosts>        (Scan option) Max no. of hosts to scan simultaneously [Default=%d]" % (hosts))
+    print("      -hosts=<hosts>        (Scan option) Number of hosts to scan simultaneously [Default=%d]" % (hosts))
     print("      -email=<email>        (Setup option) Email address for Tesla Login.")
     print("      -h                    Show usage.")
     print("")

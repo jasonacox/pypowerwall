@@ -23,7 +23,7 @@ import threading
 import json
 import time
 
-# Backward compatability for python2
+# Backward compatibility for python2
 try:
     input = raw_input
 except NameError:
@@ -96,17 +96,19 @@ def scanIP(color, timeout, addr):
 
     a_socket.close()
 
-def scan(color=True, timeout=0.4, hosts=32, ip=None):
+def scan(color=True, timeout=1.0, hosts=30, ip=None):
     """
     pyPowerwall Network Scanner
 
     Parameter:
         color = True or False, print output in color [Default: True]
-        timeout = Seconds to wait per host [Default: 0.4]
+        timeout = Seconds to wait per host [Default: 1.0]
+        hosts = Number of hosts to scan simultaneously [Default: 30]
+        ip = IP address within network to scan [Default: None (detect IP)]
 
     Description
-            This tool will scan your local network looking for a Telsa Energy Gateway
-            and Powerwall.  It trys to use your local IP address as a default.
+            This tool will scan your local network looking for a Tesla Energy Gateway
+            and Powerwall.  It tries to use your local IP address as a default.
 
     """
     global discovered, firmware
@@ -129,6 +131,10 @@ def scan(color=True, timeout=0.4, hosts=32, ip=None):
     print(bold + '\npyPowerwall Network Scanner' + dim + ' [%s]' % (pypowerwall.version) + normal)
     print(dim + 'Scan local network for Tesla Powerwall Gateways')
     print('')
+
+    if(hosts > 100):
+        # Limit simultaneous host scan to no more than 100
+        hosts = 100
 
     if(timeout < 0.2):
         print(alert + 
@@ -162,13 +168,16 @@ def scan(color=True, timeout=0.4, hosts=32, ip=None):
     try:
         threads = []
         for addr in ipaddress.IPv4Network(network):
+            # Scan each host in a separate thread
             thread = threading.Thread(target=scanIP, args=(color, timeout, addr))
             thread.start()
             threads.append(thread)
             if threading.active_count() >= hosts:
+                # Wait for thread to exit when max simultaneous hosts reached
                 threads[0].join()
                 threads.pop(0)
         for thread in threads:
+            # Wait for remaining threads to exit
             thread.join()
         
         print(dim + '\r      Done                           ')
