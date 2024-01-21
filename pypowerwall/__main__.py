@@ -22,6 +22,7 @@ from . import cloud
 AUTHFILE = ".pypowerwall.auth"
 authpath = os.getenv("PW_AUTH_PATH", "")
 timeout = 1.0
+hosts = 30
 state = 0
 color = True
 ip = None
@@ -38,6 +39,11 @@ for i in sys.argv:
         color = False
     elif(i.lower()[0:4] == "-ip="):
         ip = i[4:]
+    elif(i.lower()[0:7] == "-hosts="):
+        try:
+            hosts = int(i[7:])
+        except:
+            state = 2
     elif(i.lower()[0:7] == "-email="):
         email = i[7:]
     else:
@@ -48,7 +54,7 @@ for i in sys.argv:
 
 # State 0 = Run Scan
 if(state == 0):
-    scan.scan(color, timeout, ip)
+    scan.scan(color, timeout, hosts, ip)
 
 # State 1 = Cloud Mode Setup
 if(state == 1):
@@ -65,13 +71,14 @@ if(state == 1):
 if(state == 2):
     print("pyPowerwall [%s]\n" % (pypowerwall.version))
     print("Usage:\n")
-    print("    python -m pypowerwall [command] [<timeout>] [-nocolor] [-ip=<ip>] [-email=<email>] [-h]")
+    print("    python -m pypowerwall [command] [<timeout>] [-nocolor] [-ip=<ip>] [-hosts=<hosts>] [-email=<email>] [-h]")
     print("")
     print("      command = scan        Scan local network for Powerwall gateway.")
     print("      command = setup       Setup Tesla Login for Cloud Mode access.")
     print("      timeout               (Scan option) Seconds to wait per host [Default=%0.1f]" % (timeout))
     print("      -nocolor              (Scan option) Disable color text output.")
     print("      -ip=<ip>              (Scan option) IP address within network to scan.")
+    print("      -hosts=<hosts>        (Scan option) Number of hosts to scan simultaneously [Default=%d]" % (hosts))
     print("      -email=<email>        (Setup option) Email address for Tesla Login.")
     print("      -h                    Show usage.")
     print("")
