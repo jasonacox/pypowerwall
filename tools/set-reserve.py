@@ -261,7 +261,10 @@ def get_level():
     if args.debug: 
         print(f"Retrieving Powerwall battery level reserve setting...")
 
-    data = battery.get_site_info()
+    config = battery.api("SITE_CONFIG")["response"]
+    site = battery.api("SITE_SUMMARY")["response"]
+    # combine config and site data
+    data = {**config, **site}
     if args.debug: 
         print(data)
     return data
