@@ -11,8 +11,7 @@
 
  Usage:
     * Install the required python modules:
-        pip install python-dateutil 
-        pip install -e git+https://github.com/tdorssers/TeslaPy.git#egg=teslapy
+        pip install python-dateutil teslapy
 
     * To use this script:
 
