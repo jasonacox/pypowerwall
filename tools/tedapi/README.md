@@ -11,6 +11,9 @@ The [test.py](test.py) script will query the user for the Powerwall Gateway pass
 git clone https://github.com/jasonacox/pypowerwall.git
 cd pypowerwall/tools/tedapi
 
+# Install required dependencies
+pip install protobuf requests
+
 # Test Script
 python test.py
 ```
