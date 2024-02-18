@@ -7,20 +7,118 @@ Note: the FleetAPI provides third party access to Tesla Vehicles as well as Ener
 ## Requirements
 
 * Tesla Partner Account - To be a developer, you will need to sign up as a Tesla Partner. This requires that you have a name (e.g. sole proprietor or business entity) and website.
-* Web Site - You will need to own a domain name (website) and have control of that website.
+* Web Site - You will need to own a domain name (website) and have control of that website. 
 
 ## Setup
 
 Step 1 - Sign in to Tesla Developer Portal and make an App Access Request: See [Tesla App Access Request](https://developer.tesla.com/request) - During this process, you will need to set up and remember the following account settings:
 
-* DOMAIN - The domain name of a website your own and control.
-* REDIRECT_URI - This is the URL that Tesla will direct users to after they authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use code needed to generate the Bearer auth and Refresh token used to access your Tesla Powerwall energy devices.
 * CLIENT_ID - This will be provided to you by Tesla when your request is approved.
 * CLIENT_SECRET - Same as above.
+* DOMAIN - The domain name of a website your own and control.
+* REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed to generate the Bearer auth and Refresh token used to access your Tesla Powerwall energy devices. Place the [index.html](./index.html) file in a folder under this domain and use this as the REDIRECT_URI path in the setup below. Alternatively, you can just copy the URL from the 404 page during the authorzation process (the code is in the URL).
 
 Step 2 - Run the `create_pem_key.py` script and place the **public** key on your website at the URL: https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem
 
-Step 3 - Run the `setup.py` setup script. This will generate a partner token, register your partner account, generate a user token needed to access your Powerwall. It will also get the site_id and run a query to pull live power data for your Powerwall.
+Step 3 - Run SETUP using the `fleetapi` script. This will ask for all the details above, generate a partner token, register your partner account, generate a user token needed to access your Powerwall. It will also get the site_id and run a query to pull live power data for your Powerwall.
+
+```bash
+python fleetapi.py setup
+```
+
+## Command Line Usage
+
+The `fleetapi.py` script is a command line utility and python class that you can use to monitor and manage your Powerwall. Here are teh command lines:
+
+```
+Tesla FleetAPI - Command Line Interface
+
+Usage: fleetapi.py command [arguments] [-h] [--debug] [--config CONFIG] [--site SITE] [--json]
+
+Commands:
+    setup               Setup FleetAPI for your site
+    sites               List available sites
+    status              Report current power status for your site
+    info                Display information about your site
+    getmode             Get current operational mode setting
+    getreserve          Get current battery reserve level setting
+    setmode             Set operatinoal mode (self_consumption or autonomous)
+    setreserve          Set battery reserve level (prcentage or 'current')
+    
+options:
+  -h, --help            Show this help message and exit
+  --debug               Enable debug mode
+  --config CONFIG       Specify alternate config file (default: .fleetapi.config)
+  --site SITE           Specify site_id
+  --json                Output in JSON format
+```
+
+Examples
+
+```bash
+# Set battery reserve to 80%
+python fleetapi.py setreserve 80
+
+# Set battery reserver to be equal to current charge level
+python fleetapi.py setreserve current
+
+# Set operatinoal mode to Self Consumption
+python fleetapi.py setmode self
+```
+
+## FleetAPI Class
+
+You can import and use the FleetAPI class in your own scripts.
+
+```
+Class:
+    FleetAPI - Tesla FleetAPI Class
+
+ Functions:
+    poll(api, action, data) - poll FleetAPI
+    get_sites() - get sites
+    site_name() - get site name
+
+    get_live_status() - get the current power information for the site
+    get_site_info() - get site info
+    get_battery_reserve() - get battery reserve level
+    get_operating_mode() - get operating mode
+    solar_power() - get solar power
+    grid_power() - get grid power
+    battery_power() - get battery power
+    load_power() - get load power
+    battery_level() - get battery level
+    energy_left() - get energy left
+    total_pack_energy() - get total pack energy
+    grid_status() - get grid status
+    island_status() - get island status
+    firmware_version() - get firmware version
+    
+    set_battery_reserve(reserve) - set battery reserve level (percent)
+    set_operating_mode(mode) - set operating mode (self_consumption or autonomous)
+     
+```
+
+Example Usage
+
+```python
+from fleetapi import FleetAPI
+
+fleet = FleetAPI()
+
+# Current Status
+print(f"Solar: {fleet.solar_power()}")
+print(f"Grid: {fleet.grid_power()}")
+print(f"Load: {fleet.load_power()}")
+print(f"Battery: {fleet.battery_power()}")
+print(f"Battery Level: {fleet.battery_level()}")
+
+# Change Reserve to 30%
+fleet.set_battery_reserve(30)
+
+# Change Operating Mode to Autonomous
+fleet.set_operating_mode("autonomous")
+```
 
 ## References
 
