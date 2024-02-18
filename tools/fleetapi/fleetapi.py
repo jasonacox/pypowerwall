@@ -4,11 +4,8 @@
  Tesla FleetAPI Class
  
  This module allows you to access the Tesla FleetAPI to manage
- your Powerwall. The model can be run in setup mode which
- will walk you through the steps to setup access to the
- Tesla FleetAPI. It generates a partner token, registers your
- partner account, generates a user token, and gets the site_id for
- your Tesla Powerwall.
+ your Powerwall. It has a CLI that can be run in setup mode to
+ walk you through the steps to get access to the Tesla FleetAPI. 
 
  Class:
     FleetAPI - Tesla FleetAPI Class
@@ -17,7 +14,7 @@
     poll(api, action, data) - poll FleetAPI
     get_sites() - get sites
     site_name() - get site name
-
+    ... Get 
     get_live_status() - get the current power information for the site
     get_site_info() - get site info
     get_battery_reserve() - get battery reserve level
@@ -32,25 +29,44 @@
     grid_status() - get grid status
     island_status() - get island status
     firmware_version() - get firmware version
-    
+    ... Set
     set_battery_reserve(reserve) - set battery reserve level (percent)
     set_operating_mode(mode) - set operating mode (self_consumption or autonomous)
-     
+
+ Command Line Interface:
+
+    Usage: fleetapi.py command [arguments] [-h] [--debug] [--config CONFIG] [--site SITE] [--json]
+
+    Commands:
+        setup               Setup FleetAPI for your site
+        sites               List available sites
+        status              Report current power status for your site
+        info                Display information about your site
+        getmode             Get current operational mode setting
+        getreserve          Get current battery reserve level setting
+        setmode             Set operatinoal mode (self_consumption or autonomous)
+        setreserve          Set battery reserve level (prcentage or 'current')
+        
+    options:
+    -h, --help            Show this help message and exit
+    --debug               Enable debug mode
+    --config CONFIG       Specify alternate config file (default: .fleetapi.config)
+    --site SITE           Specify site_id
+    --json                Output in JSON format
+
  Author: Jason A. Cox
+ Date: 18 Feb 2024
  For more information see https://github.com/jasonacox/pypowerwall
 
  Requirements
 
  * Register your application https://developer.tesla.com/
-
  * Before running this script, you must first run create_pem_key.py
    to create a PEM key and register it with Tesla. Put the public
    key in {site}/.well-known/appspecific/com.tesla.3p.public-key.pem
-
- Requires: pip install requests
+ * Python: pip install requests
 
  Tesla FleetAPI Reference: https://developer.tesla.com/docs/fleet-api
-
 """
 
 # FleetAPI Class
