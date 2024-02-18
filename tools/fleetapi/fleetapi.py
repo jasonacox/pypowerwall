@@ -661,11 +661,11 @@ if __name__ == "__main__":
                     print(f"Invalid reserve level {val}, must be 0-100")
                     exit(1)
             elif args.argument == "current":
-                val = fleet.get_battery_level()
+                val = fleet.battery_level()
             else:
                 print("Invalid reserve level, must be 0-100 or 'current' to set to current level.")
                 exit(1)
-            print(fleet.set_battery_reserve(int(args.argument)))
+            print(fleet.set_battery_reserve(int(val)))
         else:
             print("No reserve level specified, exiting...")
         exit(0)
