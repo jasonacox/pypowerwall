@@ -906,8 +906,12 @@ class TeslaCloud:
             else:
                 sitelabel = " "
             siteids.append(s["energy_site_id"])
-            print(" %s%d - %s (%s) - Type: %s" % (sitelabel, idx, s["site_name"], 
+            if "site_name" in s and "resource_type" in s:
+                print(" %s%d - %s (%s) - Type: %s" % (sitelabel, idx, s["site_name"],
                     s["energy_site_id"], s["resource_type"]))
+            else:
+                print(" %s%d - %s (%s) - Type: %s" % (sitelabel, idx, "Unknown",
+                    s["energy_site_id"], "Unknown"))
             idx += 1
         # Ask user to select a site
         while True:

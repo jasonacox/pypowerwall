@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.7.8 - Cloud Setup Fix
+
+* Fix enumeration of energy sites during `cloud mode` setup to handle incomplete sites with Unknown names or types by @dcgibbons in https://github.com/jasonacox/pypowerwall/pull/72 
+
 ## v0.7.7 - Battery Data and Network Scanner
 
 * Proxy t40: Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/67 thanks to @ceeeekay in https://github.com/jasonacox/Powerwall-Dashboard/discussions/402#discussioncomment-8193776
