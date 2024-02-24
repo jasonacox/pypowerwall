@@ -2,7 +2,7 @@
 
 ## v0.7.8 - Cloud Setup Fix
 
-* Fix enumeration of energy sites during `cloud mode` setup to handle incomplete sites with Unknown names or types by @dcgibbons inhttps://github.com/jasonacox/pypowerwall/pull/72 
+* Fix enumeration of energy sites during `cloud mode` setup to handle incomplete sites with Unknown names or types by @dcgibbons in https://github.com/jasonacox/pypowerwall/pull/72 
 
 ## v0.7.7 - Battery Data and Network Scanner
 
