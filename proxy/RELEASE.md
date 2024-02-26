@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t41 (25 Feb 2024)
+
+* Bug fixes for Solar-Only systems using `cloud mode` (see https://github.com/jasonacox/Powerwall-Dashboard/issues/437).
+
 ### Proxy t40 (20 Jan 2024)
 
 * Use /api/system_status battery blocks data to augment /pod and /freq macro data APIs.
