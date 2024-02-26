@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t40"
+BUILD = "t41"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -129,7 +129,7 @@ def get_value(a, key):
     if key in a:
         return a[key]
     else:
-        log.error("Missing key in payload [%s]" % key)
+        log.debug("Missing key in payload [%s]" % key)
         return None
 
 # Connect to Powerwall
@@ -201,18 +201,18 @@ class handler(BaseHTTPRequestHandler):
             # Grid,Home,Solar,Battery,Level - CSV
             contenttype = 'text/plain; charset=utf-8'
             batterylevel = pw.level()
-            grid = pw.grid()
-            solar = pw.solar()
-            battery = pw.battery()
-            home = pw.home()
+            grid = pw.grid() or 0
+            solar = pw.solar() or 0
+            battery = pw.battery() or 0
+            home = pw.home() or 0
             message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
                 % (grid, home, solar, battery, batterylevel)
         elif self.path == '/vitals':
             # Vitals Data - JSON
-            message = pw.vitals(jsonformat=True)
+            message = pw.vitals(jsonformat=True) or {}
         elif self.path == '/strings':
             # Strings Data - JSON
-            message = pw.strings(jsonformat=True)  
+            message = pw.strings(jsonformat=True) or {}
         elif self.path == '/stats':
             # Give Internal Stats
             proxystats['ts'] = int(time.time())
@@ -236,7 +236,7 @@ class handler(BaseHTTPRequestHandler):
             message = json.dumps(proxystats)
         elif self.path == '/temps':
             # Temps of Powerwalls 
-            message = pw.temps(jsonformat=True)
+            message = pw.temps(jsonformat=True) or {}
         elif self.path == '/temps/pw':
             # Temps of Powerwalls with Simple Keys
             pwtemp = {}
@@ -249,7 +249,7 @@ class handler(BaseHTTPRequestHandler):
             message = json.dumps(pwtemp)
         elif self.path == '/alerts':
             # Alerts
-            message = pw.alerts(jsonformat=True)
+            message = pw.alerts(jsonformat=True) or []
         elif self.path == '/alerts/pw':
             # Alerts in dictionary/object format
             pwalerts = {}
@@ -260,7 +260,7 @@ class handler(BaseHTTPRequestHandler):
             else:
                 for alert in alerts:
                     pwalerts[alert] = 1
-                message = json.dumps(pwalerts)
+                message = json.dumps(pwalerts) or {}
         elif self.path == '/freq':
             # Frequency, Current, Voltage and Grid Status
             fcv = {}
@@ -365,18 +365,22 @@ class handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(v, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             # Aggregate data
-            pod["backup_reserve_percent"] = pw.get_reserve()
-            pod["nominal_full_pack_energy"] = get_value(d,'nominal_full_pack_energy')
-            pod["nominal_energy_remaining"] = get_value(d,'nominal_energy_remaining')            
-            pod["time_remaining_hours"] = pw.get_time_remaining()
+            if pod:
+                # Only poll if we have battery data
+                pod["time_remaining_hours"] = pw.get_time_remaining()
+                pod["backup_reserve_percent"] = pw.get_reserve()
+                pod["nominal_full_pack_energy"] = get_value(d,'nominal_full_pack_energy')
+                pod["nominal_energy_remaining"] = get_value(d,'nominal_energy_remaining') 
             message = json.dumps(pod) 
         elif self.path == '/version':
             # Firmware Version
             version = pw.version()
+            v = {}
             if version is None:
-                message = None
+                v["version"] = "SolarOnly"
+                v["vint"] = 0
+                message = json.dumps(v)
             else:
-                v = {}
                 v["version"] = version
                 val = v["version"].split(" ")[0]
                 val = ''.join(i for i in val if i.isdigit() or i in './\\')
@@ -435,8 +439,9 @@ class handler(BaseHTTPRequestHandler):
                 status = pw.status()
                 # convert fcontent to string
                 fcontent = fcontent.decode("utf-8")
-                fcontent = fcontent.replace("{VERSION}", status["version"])
-                fcontent = fcontent.replace("{HASH}", status["git_hash"])
+                # fix the following variables that if they are None, return ""
+                fcontent = fcontent.replace("{VERSION}", status["version"] or "")
+                fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
                 fcontent = fcontent.replace("{EMAIL}", email)
                 fcontent = fcontent.replace("{STYLE}", style)
                 # convert fcontent back to bytes
