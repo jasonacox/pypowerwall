@@ -417,6 +417,8 @@ class handler(BaseHTTPRequestHandler):
             message = message + "</table>\n"
             message = message + '\n<p>Page refresh: %s</p>\n</body>\n</html>' % (
                 str(datetime.datetime.fromtimestamp(time.time())))
+        elif self.path == '/api/troubleshooting/problems':
+            message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
             message = pw.poll(self.path)
@@ -494,7 +496,10 @@ class handler(BaseHTTPRequestHandler):
 
             self.send_header('Content-type','{}'.format(ftype))
             self.end_headers()
-            self.wfile.write(fcontent)
+            try:
+                self.wfile.write(fcontent)
+            except:
+                log.debug("Socket broken sending PROXY response to client [doGET]")
             return
 
         # Count
@@ -519,7 +524,7 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(bytes(message, "utf8"))
         except:
-            log.error("Socket broken sending response [doGET]")
+            log.error("Socket broken sending API response to client [doGET]")
 
 with ThreadingHTTPServer((bind_address, port), handler) as server:
     if(https_mode == "yes"):

@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## v0.7.8 - Cloud Setup Fix
+## v0.7.8 - Cloud Fixes
 
 * Fix enumeration of energy sites during `cloud mode` setup to handle incomplete sites with Unknown names or types by @dcgibbons in https://github.com/jasonacox/pypowerwall/pull/72 
+* Proxy t41 Updates - Bug fixes for Solar-Only systems using `cloud mode` (see https://github.com/jasonacox/Powerwall-Dashboard/issues/437).
 
 ## v0.7.7 - Battery Data and Network Scanner
 

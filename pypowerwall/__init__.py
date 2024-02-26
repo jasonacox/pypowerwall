@@ -297,7 +297,7 @@ class Powerwall(object):
                 return None
             if r.status_code == 404:
                 # API not found or no longer supported
-                log.debug('ERROR Powerwall API not found at %s' % url)
+                log.debug('404 Powerwall API not found at %s' % url)
                 return None
             if r.status_code >= 400 and r.status_code < 500:
                 # Session Expired - Try to get a new one unless we already tried
