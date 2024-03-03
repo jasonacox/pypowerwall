@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.7.9 - Cloud Grid Status
+
+* Bug fix for correct grid status for Solar-Only systems on `cloud mode` (see https://github.com/jasonacox/Powerwall-Dashboard/issues/437)
+
 ## v0.7.8 - Cloud Fixes
 
 * Fix enumeration of energy sites during `cloud mode` setup to handle incomplete sites with Unknown names or types by @dcgibbons in https://github.com/jasonacox/pypowerwall/pull/72 

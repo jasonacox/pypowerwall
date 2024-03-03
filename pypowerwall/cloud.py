@@ -48,7 +48,7 @@ COUNTER_MAX = 64               # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59           # Site config cache TTL in seconds
 
 # pypowerwall cloud module version
-version_tuple = (0, 0, 5)
+version_tuple = (0, 0, 6)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -447,7 +447,7 @@ class TeslaCloud:
             if power is None:
                 data = None
             else:
-                if lookup(power, ("response", "island_status")) == "on_grid": 
+                if lookup(power, ("response", "grid_status")) == "Active": 
                     grid_status = "SystemGridConnected"
                 else: # off_grid or off_grid_unintentional
                     grid_status = "SystemIslandedActive"
@@ -522,13 +522,18 @@ class TeslaCloud:
                     serialNumber = None
                 version = lookup(config, ("response", "version"))
                 # Get grid status
+                #    also "grid_status": "Active"
                 island_status = lookup(power, ("response", "island_status"))
                 if island_status == "on_grid":
                     alert = "SystemConnectedToGrid"
                 elif island_status == "off_grid_intentional":
                     alert = "ScheduledIslandContactorOpen"
-                else:
+                elif island_status == "off_grid":
                     alert = "UnscheduledIslandContactorOpen"
+                else:
+                    alert = ""
+                    if lookup(power, ("response", "grid_status")) == "Active":
+                        alert = "SystemConnectedToGrid"
                 data = {
                     f'STSTSM--{partNumber}--{serialNumber}': {
                         'partNumber': partNumber,
@@ -696,6 +701,9 @@ class TeslaCloud:
                     grid_status = "SystemGridConnected"
                 else: # off_grid or off_grid_unintentional
                     grid_status = "SystemIslandedActive"
+                    # "grid_status": "Active"
+                    if lookup(power, ("response", "grid_status")) == "Active":
+                        grid_status = "SystemGridConnected"
                 data = { # TODO: Fill in 0 values
                     "command_source": "Configuration",
                     "battery_target_power": 0,
