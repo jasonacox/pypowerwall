@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t42 (3 Mar 2024)
+
+* Add Power Flow Animation style (set `PW_STYLE="solar"`) for Solar-Only display. Removes the Powerwall image and related text to display a Grid + Solar + Home powerflow animation.
+
+<img width="443" alt="image" src="https://github.com/jasonacox/Powerwall-Dashboard/assets/836718/37fa7f7b-d4f9-4240-82bc-a81ba2f798c7">
+
 ### Proxy t41 (25 Feb 2024)
 
 * Bug fixes for Solar-Only systems using `cloud mode` (see https://github.com/jasonacox/Powerwall-Dashboard/issues/437).
