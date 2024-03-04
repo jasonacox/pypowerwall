@@ -1,5 +1,30 @@
 # RELEASE NOTES
 
+## v0.8.0 - TeslaGateway Class
+
+* Adds the `TeslaGateway` class to allow easy access to the device configuration and status payloads available from the Gateway WiFi access point (connection to access point is required)
+
+```python
+from pypowerwall.tedapi import TeslaGateway
+
+print("Tesla Powerwall Gateway API Decoder")
+print("Connect to your Powerwall Gateway WiFi.")
+
+# Get GW_PWD from User
+gw_pwd = input("Enter Powerwall Gateway Password: ")
+
+# Fetch data from Powerwall
+gw = TeslaGateway(gw_pwd)
+print("Fetching DIN...")
+print(gw.get_din())
+
+print("Fetching Configuration...")
+print(gw.get_config())
+
+print("Fetching Status...")
+print(gw.get_status())
+```
+
 ## v0.7.9 - Cloud Grid Status
 
 * Bug fix for correct grid status for Solar-Only systems on `cloud mode` (see https://github.com/jasonacox/Powerwall-Dashboard/issues/437)
