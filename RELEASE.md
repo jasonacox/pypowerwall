@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.7.10 - Cache 404 Responses
+
+* Add cache and extended TTL for 404 responses from Powerwall as identified in issue https://github.com/jasonacox/Powerwall-Dashboard/issues/449. This will help reduce load on Powerwall gateway that may be causing rate limiting for some users (Firmware 23.44.0+).
+
 ## v0.7.9 - Cloud Grid Status
 
 * Bug fix for correct grid status for Solar-Only systems on `cloud mode` (see https://github.com/jasonacox/Powerwall-Dashboard/issues/437)

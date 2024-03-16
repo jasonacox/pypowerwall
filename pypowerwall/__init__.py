@@ -74,7 +74,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 9)
+version_tuple = (0, 7, 10)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -296,7 +296,9 @@ class Powerwall(object):
                 log.debug('ERROR Unknown error connecting to Powerwall at %s' % url)
                 return None
             if r.status_code == 404:
-                # API not found or no longer supported
+                # API not found or no longer supported - cache and increase cache TTL by 10 minutes
+                self.pwcachetime[api] = time.perf_counter() + 600
+                self.pwcache[api] = None
                 log.debug('404 Powerwall API not found at %s' % url)
                 return None
             if r.status_code >= 400 and r.status_code < 500:
