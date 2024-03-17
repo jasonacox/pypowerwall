@@ -1,5 +1,29 @@
 # RELEASE NOTES
 
+## v0.7.12 - Cachefile and Alerts
+
+* Added alerts from `/api/solar_powerwall` when vitals not present by @DerickJohnson in #75. The vitals API is not present in firmware versions > 23.44, this provides a workaround to get alerts.
+* Allow customization of the cachefile location and name by @emptywee in #74 via `cachefile` parameter.
+
+```python
+# Example
+import pypowerwall
+pw = pypowerwall.Powerwall(
+     host="10.1.2.30",
+     password="secret",
+     email="me@example.com",
+     timezone="America/Los_Angeles",
+     pwcacheexpire=5, 
+     timeout=5, 
+     poolmaxsize=10,
+     cloudmode=False, 
+     siteid=None, 
+     authpath="", 
+     authmode="cookie",
+     cachefile=".powerwall",
+     )
+```
+
 ## v0.7.11 - Cooldown Mode
 
 * Updated logic to disable vitals API calls for Firmware 23.44.0+
