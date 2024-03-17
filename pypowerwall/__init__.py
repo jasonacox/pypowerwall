@@ -103,7 +103,7 @@ class ConnectionError(Exception):
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com", 
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10, 
-                 cloudmode=False, siteid=None, authpath="", authmode="cookie"):
+                 cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall"):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -120,11 +120,11 @@ class Powerwall(object):
             siteid       = If cloudmode is True, use this siteid (default is None)  
             authpath     = Path to cloud auth and site cache files (default current directory)
             authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
-
+            cachefile    = Path to cache file (default current directory)
         """
 
         # Attributes
-        self.cachefile = ".powerwall"  # Stores auth session information
+        self.cachefile = cachefile  # Stores auth session information
         self.host = host
         self.password = password
         self.email = email
