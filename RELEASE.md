@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.7.13 - Strings
+
+* Added logic to pull string data from `/api/solar_powerwall` API if vitals data is not available.
+
 ## v0.7.12 - Cachefile Option
 
 * Allow customization of the cachefile location and name by @emptywee in #74 via `cachefile` parameter.
