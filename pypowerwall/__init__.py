@@ -683,15 +683,26 @@ class Powerwall(object):
         """
         alerts = []
         devices = self.vitals() or {}
-        for device in devices:
-            if 'alerts' in devices[device]:
-                for i in devices[device]['alerts']:
-                    if(alertsonly):
-                        alerts.append(i)
-                    else:
-                        item = {}
-                        item[device] = i
-                        alerts.append(item)
+
+        if devices:
+            for device in devices:
+                if 'alerts' in devices[device]:
+                    for i in devices[device]['alerts']:
+                        if(alertsonly):
+                            alerts.append(i)
+                        else:
+                            item = {}
+                            item[device] = i
+                            alerts.append(item)
+        elif not devices and alertsonly is True:
+            data = self.poll('/api/solar_powerwall', jsonformat=True)
+            for alert, value in data['pvac_alerts'].items():
+                if value is True:
+                    alerts.append(alert)
+            for alert, value in data['pvs_alerts'].items():
+                if value is True:
+                    alerts.append(alert)
+
         if (jsonformat):
             json_out = json.dumps(alerts, indent=4, sort_keys=True)
             return json_out
