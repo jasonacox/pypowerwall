@@ -1,11 +1,9 @@
 # RELEASE NOTES
 
-## v0.7.13 - Strings
+## v0.7.12 - Cachefile and Vitals
 
-* Added logic to pull string data from `/api/solar_powerwall` API if vitals data is not available.
-
-## v0.7.12 - Cachefile Option
-
+* Added logic to pull string data from `/api/solar_powerwall` API if vitals data is not available by @jasonacox in #76.
+* Added alerts from `/api/solar_powerwall` when vitals not present by @DerickJohnson in #75. The vitals API is not present in firmware versions > 23.44, this provides a workaround to get alerts.
 * Allow customization of the cachefile location and name by @emptywee in #74 via `cachefile` parameter.
 
 ```python
