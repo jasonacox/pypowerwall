@@ -1,7 +1,8 @@
 # RELEASE NOTES
 
-## v0.7.12 - Cachefile Option
+## v0.7.12 - Cachefile and Alerts
 
+* Added alerts from `/api/solar_powerwall` when vitals not present by @DerickJohnson in #75. The vitals API is not present in firmware versions > 23.44, this provides a workaround to get alerts.
 * Allow customization of the cachefile location and name by @emptywee in #74 via `cachefile` parameter.
 
 ```python
