@@ -74,7 +74,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 10)
+version_tuple = (0, 7, 11)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -141,6 +141,8 @@ class Powerwall(object):
         self.authpath = authpath                # path to auth and site cache files
         self.Tesla = None                       # cloud object for cloud connection
         self.authmode = authmode                # cookie or token
+        self.pwcooldown = 0                     # rate limit cooldown time - pause api calls
+        self.vitals_api = True                  # vitals api is available for local mode
 
         # Check for cloud mode
         if self.cloudmode or self.host == "":
@@ -276,7 +278,14 @@ class Powerwall(object):
                     fetch = False
 
         if(fetch):
+            if self.pwcooldown > time.perf_counter():
+                # Rate limited - return None
+                log.debug('Rate limit cooldown period - Pausing API calls')
+                return None
             if(api == '/api/devices/vitals'):
+                if not self.vitals_api:
+                    # Vitals API is not available
+                    return None
                 # Always want the raw stream output from the vitals call; protobuf binary payload
                 raw = True
         
@@ -296,10 +305,24 @@ class Powerwall(object):
                 log.debug('ERROR Unknown error connecting to Powerwall at %s' % url)
                 return None
             if r.status_code == 404:
-                # API not found or no longer supported - cache and increase cache TTL by 10 minutes
+                # API not found or no longer supported 
+                log.error('404 Powerwall API not found at %s' % url)
+                if api == '/api/devices/vitals':
+                    # Check Powerwall Firmware version
+                    version = self.version(int_value=True)
+                    if version >= 23440:
+                        # Vitals API not available for Firmware >= 23.44.0
+                        self.vitals_api = False
+                        log.error('Firmware %s detected - Does not support vitals API - disabling.' % (version))          
+                # Cache and increase cache TTL by 10 minutes
                 self.pwcachetime[api] = time.perf_counter() + 600
                 self.pwcache[api] = None
-                log.debug('404 Powerwall API not found at %s' % url)
+                return None
+            if r.status_code == 429:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('429 Rate limited by Powerwall API at %s - Activating 5 minute cooldown' % url)
+                # Serve up cached data if it exists
                 return None
             if r.status_code >= 400 and r.status_code < 500:
                 # Session Expired - Try to get a new one unless we already tried
@@ -608,10 +631,24 @@ class Powerwall(object):
                 log.debug('ERROR unable to find %s in payload: %r' % (param, payload))
                 return None
 
-    def version(self):
+    def version(self, int_value=False):
         """ Firmware Version """
-        return self.status('version')
-
+        if not int_value:
+            return self.status('version')
+        # Convert version to integer
+        version = self.status('version')
+        if version is None:
+            return None
+        else:
+            val = version.split(" ")[0]
+            val = ''.join(i for i in val if i.isdigit() or i in './\\')
+            while len(val.split('.')) < 3:
+                val = val + ".0"
+            l = [int(x, 10) for x in val.split('.')]
+            l.reverse()
+            vint = sum(x * (100 ** i) for i, x in enumerate(l))
+        return vint
+    
     def uptime(self):
         """ System Uptime """
         return self.status('up_time_seconds')

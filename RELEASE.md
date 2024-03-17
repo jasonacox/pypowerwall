@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.7.11 - Cooldown Mode
+
+* Updated logic to disable vitals API calls for Firmware 23.44.0+
+* Added rate limit detection and cooldown mode to allow Powerwall gateway time to recover.
+
 ## v0.7.10 - Cache 404 Responses
 
 * Add cache and extended TTL for 404 responses from Powerwall as identified in issue https://github.com/jasonacox/Powerwall-Dashboard/issues/449. This will help reduce load on Powerwall gateway that may be causing rate limiting for some users (Firmware 23.44.0+).
