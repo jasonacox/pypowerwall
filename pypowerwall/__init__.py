@@ -32,7 +32,8 @@
     siteid = None             # If cloudmode is True, use this siteid (default is None)
     authpath = ""             # Path to cloud auth and site files (default current directory)
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
-
+    cachefile = ".powerwall"  # Path to cache file (default current directory)
+    
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
     level()                   # Return battery power level percentage
@@ -74,7 +75,7 @@ import sys
 from . import tesla_pb2           # Protobuf definition for vitals
 from . import cloud               # Tesla Cloud API
 
-version_tuple = (0, 7, 11)
+version_tuple = (0, 7, 12)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
