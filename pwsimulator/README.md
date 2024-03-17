@@ -23,6 +23,18 @@ You can use pyPowerwall simulator to mimic the responses from the Powerwall Gate
     python3 test.py
     ```
 
+3. Test using the pypowerwall proxy against the simulator:
+
+    ```bash
+    # Launch Proxy
+    cd ..
+    export PW_PASSWORD="password"
+    export PW_EMAIL="me@example.com"
+    export PW_DEBUG="yes"
+    python3 proxy/server.py
+    # Open http://localhost:8675/example.html
+    ```
+
 ## Build Your Own
 
 1. Build the Docker Container
