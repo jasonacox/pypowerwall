@@ -555,19 +555,19 @@ class Powerwall(object):
                 # else
         # If no devices found pull from /api/solar_powerwall
         if not v:
-            # Build a device map
-            devmap = []
+            # Build a string map: A, B, C, D, A1, B2, etc.
+            string_map = []
             for number in ['','1','2','3','4','5','6','7','8']:
                 for letter in ['A','B','C','D']:
-                    devmap.append(letter + number)
-            payload = self.poll('/api/solar_powerwall', jsonformat=True)
-            if payload is not None and 'pvac_status' in payload:
+                    string_map.append(letter + number)
+            payload = self.poll('/api/solar_powerwall', jsonformat=True) or {}
+            if payload and 'pvac_status' in payload:
                 # Strings are in PVAC status section
                 pvac = payload['pvac_status']
                 if 'string_vitals' in pvac:
                     i = 0
                     for string in pvac['string_vitals']:
-                        name = devmap[i]
+                        name = string_map[i]
                         result[name] = {}
                         result[name]['Connected'] = string['connected']
                         result[name]['Voltage'] = string['measured_voltage']
