@@ -27,6 +27,28 @@ import json
 server_address = ('0.0.0.0', 443)
 print('pyPowerwall - Powerwall Simulator - Running')
 
+# Static Results
+SOLAR = 6500
+HOME = 900
+GRID = -2100
+POWERWALL = -3500
+api = {
+    '/api/status': '{"din":"1232100-00-E--TG123456789ABC","start_time":"2024-03-11 09:12:41 +0800","up_time_seconds":"127h34m16.275122187s","is_new":false,"version":"23.44.0 9064fc6a","git_hash":"4064fc6a5b32425509f91f19556f2431cb7f6872","commission_count":0,"device_type":"teg","teg_type":"unknown","sync_type":"v2.1","cellular_disabled":false,"can_reboot":true}',
+    '/api/site_info/site_name': '{"site_name":"Tesla Energy Gateway","timezone":"America/Los_Angeles"}',
+    '/api/sitemaster': '{"status":"StatusUp","running":true,"connected_to_tesla":true,"power_supply_mode":false,"can_reboot":"Yes"}',
+    '/api/troubleshooting/problems': '{"problems":[]}',
+    '/api/customer/registration': '{"privacy_notice":null,"limited_warranty":null,"grid_services":null,"marketing":null,"registered":true,"timed_out_registration":false}',
+    '/api/system_status/grid_faults': '[]',
+    '/api/networks': '[{"network_name":"ethernet_tesla_internal_default","interface":"EthType","enabled":true,"dhcp":true,"extra_ips":[{"ip":"192.168.90.2","netmask":24}],"active":true,"primary":true,"lastTeslaConnected":true,"lastInternetConnected":true,"iface_network_info":{"network_name":"ethernet_tesla_internal_default","ip_networks":[{"IP":"","Mask":"////AA=="}],"gateway":"","interface":"EthType","state":"DeviceStateReady","state_reason":"DeviceStateReasonNone","signal_strength":0,"hw_address":""}},{"network_name":"gsm_tesla_internal_default","interface":"GsmType","enabled":true,"dhcp":null,"active":true,"primary":false,"lastTeslaConnected":false,"lastInternetConnected":false,"iface_network_info":{"network_name":"gsm_tesla_internal_default","ip_networks":[{"IP":"","Mask":"/////w=="}],"gateway":"","interface":"GsmType","state":"DeviceStateReady","state_reason":"DeviceStateReasonNone","signal_strength":71,"hw_address":""}}]',
+    '/api/site_info': '{"max_system_energy_kWh":27,"max_system_power_kW":10.8,"site_name":"Tesla Energy Gateway","timezone":"America/Los_Angeles","max_site_meter_power_kW":1000000000,"min_site_meter_power_kW":-1000000000,"nominal_system_energy_kWh":27,"nominal_system_power_kW":10.8,"panel_max_current":100,"grid_code":{"grid_code":"60Hz_240V_s_UL1741SA:2019_California","grid_voltage_setting":240,"grid_freq_setting":60,"grid_phase_setting":"Split","country":"United States","state":"California","utility":"Southern California Edison"}}',
+    '/api/meters/aggregates': '{"site":{"last_communication_time":"2021-10-17T07:23:34.290637169-07:00","instant_power":%d,"instant_reactive_power":-439,"instant_apparent_power":1414.830731925201,"frequency":0,"energy_exported":687.6503234502925,"energy_imported":887602.0847810425,"instant_average_voltage":210.20168600655896,"instant_average_current":12.47,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":1,"instant_total_current":12.47},"battery":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":330,"instant_apparent_power":335.4101966249685,"frequency":60.019999999999996,"energy_exported":136540,"energy_imported":161080,"instant_average_voltage":242.95,"instant_average_current":0.6000000000000001,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":2,"instant_total_current":0.6000000000000001},"load":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":-131,"instant_apparent_power":1546.0599115170148,"frequency":0,"energy_exported":0,"energy_imported":1120094.4344575922,"instant_average_voltage":210.20168600655896,"instant_average_current":7.328675755492901,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"instant_total_current":7.328675755492901},"solar":{"last_communication_time":"2021-10-17T07:23:34.290245943-07:00","instant_power":%d,"instant_reactive_power":-20,"instant_apparent_power":240.8318915758459,"frequency":60.012,"energy_exported":257720,"energy_imported":0,"instant_average_voltage":242.4,"instant_average_current":0.9488448844884488,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1000000000,"num_meters_aggregated":1,"instant_total_current":0.9488448844884488}}' % (GRID, POWERWALL, HOME, SOLAR),
+    '/api/system_status/soe': '{"percentage":23.975388097174584}',
+    '/api/system_status/grid_status': '{"grid_status":"SystemGridConnected","grid_services_active":false}',
+    '/api/powerwalls': '{"powerwalls":[]}',  
+    '/api/auth/toggle/supported': '{"toggle_auth_supported":true}', 
+}
+
+# Handlers
 class handler(BaseHTTPRequestHandler):
     # POST Handler
     def do_POST(self):
@@ -74,29 +96,18 @@ class handler(BaseHTTPRequestHandler):
                 # convert payload to json
                 message = json.dumps(payload)
                 valid = True
-        #
-        # Meters - Aggregates
-        elif self.path == '/api/meters/aggregates':
+        
+        # Static API Values
+        elif self.path in api:
             valid = False
             if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
                 # Valid Login
                 self.send_response(200)
                 self.send_header('Content-type','application/json')
                 self.end_headers()
-                message = '{"site":{"last_communication_time":"2021-10-17T07:23:34.290637169-07:00","instant_power":1345,"instant_reactive_power":-439,"instant_apparent_power":1414.830731925201,"frequency":0,"energy_exported":687.6503234502925,"energy_imported":887602.0847810425,"instant_average_voltage":210.20168600655896,"instant_average_current":12.47,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":1,"instant_total_current":12.47},"battery":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":-60,"instant_reactive_power":330,"instant_apparent_power":335.4101966249685,"frequency":60.019999999999996,"energy_exported":136540,"energy_imported":161080,"instant_average_voltage":242.95,"instant_average_current":0.6000000000000001,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":2,"instant_total_current":0.6000000000000001},"load":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":1540.5,"instant_reactive_power":-131,"instant_apparent_power":1546.0599115170148,"frequency":0,"energy_exported":0,"energy_imported":1120094.4344575922,"instant_average_voltage":210.20168600655896,"instant_average_current":7.328675755492901,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"instant_total_current":7.328675755492901},"solar":{"last_communication_time":"2021-10-17T07:23:34.290245943-07:00","instant_power":240,"instant_reactive_power":-20,"instant_apparent_power":240.8318915758459,"frequency":60.012,"energy_exported":257720,"energy_imported":0,"instant_average_voltage":242.4,"instant_average_current":0.9488448844884488,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1000000000,"num_meters_aggregated":1,"instant_total_current":0.9488448844884488}}'
+                message = api[self.path]
                 valid = True
-        #
-        # Battery - SOE
-        elif self.path == '/api/system_status/soe':
-            valid = False
-            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
-                # Valid Login
-                self.send_response(200)
-                self.send_header('Content-type','application/json')
-                self.end_headers()
-                message = '{"percentage":23.975388097174584}'
-                valid = True
-        #
+        
         # Vitals - Firmware 23.44.0+ does not support this API
         elif self.path == '/api/devices/vitals':
             valid = False
@@ -107,8 +118,8 @@ class handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 message = '{"code":404,"error":"File Not Found","message":"Firmware does not support vitals API"}'
                 valid = True
-        # 
-        # Simulator doesn't support API Requested
+        
+        # Unknown API - Simulator doesn't support API Requested
         else:
             valid = False
             if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
