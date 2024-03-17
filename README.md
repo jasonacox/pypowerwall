@@ -122,7 +122,7 @@ and call function to poll data.  Here is an example:
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-              cloudmode, siteid, authpath, authmode)
+              cloudmode, siteid, authpath, authmode, cachefile)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -137,6 +137,7 @@ and call function to poll data.  Here is an example:
     siteid                    # If cloudmode is True, use this siteid (default is None)  
     authpath                  # Path to cloud auth and site cache files (default is "")
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
+    cachefile = ".powerwall"  # Path to cache file (default current directory)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -573,7 +574,13 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 23.12.11 452c76cb | 4-Aug-2023 | STSTSM firmware showing 2023-07-20-ga38210a892 | v0.6.2 Proxy t26 | 4.23.6-1844 |
 | 23.28.1 fa0c1ad0 | 11-Sep-2023 | STSTSM firmware showing 2023-08-22-g807640ca4a | v0.6.2 Proxy t26 | 4.24.5-1931 |
 | 23.28.2 27626f98 | 13-Oct-2023 | STSTSM firmware showing 2023-09-12-gafa2393b50 | v0.6.2 Proxy t26 | 4.25.6-1976 |
+| 23.36.3 aa269d353 | 22-Dec-2023 | STSTSM firmware showing 2023-11-30-g6e07d12eea | .. | .. |
+| 23.36.4 4064fc6a | 17-Jan-2024 | STSTSM firmware showing 2023-11-30-g6e07d12eea |  .. | .. |
+| 23.44.0 eb113390 | 25-Jan-2024 | STSTSM firmware showing Unknown - No vitals available |  .. | .. |
+| 23.44.3-msa | 7-Feb-2024 | No vitals available |  .. | .. |
+| 24.4.0 0fe780c9 | 15-Mar-2024 | No vitals available |  .. | .. |
 
+* Beginning with 23.44.0, Tesla has removed the /api/devices/vitals API endpoint. For discussion about this and future updates, see [Tesla Powerwall Firmware Upgrades - Observations](https://github.com/jasonacox/Powerwall-Dashboard/discussions/109).
 
 ### Devices and Alerts
 
