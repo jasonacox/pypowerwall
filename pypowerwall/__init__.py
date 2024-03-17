@@ -684,6 +684,11 @@ class Powerwall(object):
         alerts = []
         devices = self.vitals() or {}
 
+        """
+        The vitals API is not present in firmware versions > 23.44, this 
+        is a workaround to get alerts from the /api/solar_powerwall endpoint
+        for newer firmware versions
+        """
         if devices:
             for device in devices:
                 if 'alerts' in devices[device]:
