@@ -695,11 +695,13 @@ class Powerwall(object):
                             item[device] = i
                             alerts.append(item)
         elif not devices and alertsonly is True:
-            data = self.poll('/api/solar_powerwall', jsonformat=True)
-            for alert, value in data['pvac_alerts'].items():
+            data = self.poll('/api/solar_powerwall', jsonformat=True) or {}
+            pvac_alerts = data.get('pvac_alerts') or {}
+            for alert, value in pvac_alerts.items():
                 if value is True:
                     alerts.append(alert)
-            for alert, value in data['pvs_alerts'].items():
+            pvs_alerts = data.get('pvs_alerts') or {}
+            for alert, value in pvs_alerts.items():
                 if value is True:
                     alerts.append(alert)
 
