@@ -548,8 +548,8 @@ with ThreadingHTTPServer((bind_address, port), Handler) as server:
 
     # noinspection PyBroadException
     try:
-        server.serve_forever()
-    except Exception:
+        server.serve_forever()        
+    except (Exception, KeyboardInterrupt, SystemExit):
         print(' CANCEL \n')
 
     log.info("pyPowerwall Proxy Stopped")
