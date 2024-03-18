@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t43 (17 Mar 2024)
+
+* Update to pypowerwall 0.7.12 and add `/api/solar_powerwall` to ALLOWLIST. Using new API, proxy is able to produce `/alerts/` list and some `/strings` data for newer Firmware version (>23.44) that no longer support the vitals API.
+
 ### Proxy t42 (3 Mar 2024)
 
 * Add Power Flow Animation style (set `PW_STYLE="solar"`) for Solar-Only display. Removes the Powerwall image and related text to display a Grid + Solar + Home powerflow animation.
