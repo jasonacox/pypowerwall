@@ -11,24 +11,17 @@
     and Powerwall.  It uses your local IP address as a default.
 
 """
-
 # Modules
-from __future__ import print_function
-from logging import disable  # make python 2 compatible
-import pypowerwall
-import socket
+import errno
 import ipaddress
-import requests
-import threading
 import json
+import socket
+import threading
 import time
 
-# Backward compatibility for python2
-try:
-    # noinspection PyUnresolvedReferences,PyShadowingBuiltins
-    input = raw_input
-except NameError:
-    pass
+import requests
+
+import pypowerwall
 
 # Globals
 discovered = {}
@@ -67,12 +60,13 @@ def scan_ip(color, timeout, addr):
     location = (str(addr), 443)
     while True:
         result_of_check = a_socket.connect_ex(location)
-        if not result_of_check == socket.errno.EAGAIN:
+        if not result_of_check == errno.EAGAIN:
             break
         time.sleep(0.1)
     if result_of_check == 0:
         # Check to see if it is a Powerwall
         url = 'https://%s/api/status' % addr
+        # noinspection PyBroadException
         try:
             g = requests.get(url, verify=False, timeout=5)
             # Check if 404 response
@@ -96,7 +90,7 @@ def scan_ip(color, timeout, addr):
                     'din'] + subbold + '\n                                     [Firmware %s]' % data['version'])
                 discovered[addr] = data['din']
                 firmware[addr] = data['version']
-        except:
+        except Exception:
             print(host + ' OPEN' + dim + ' - Not a Powerwall')
 
     a_socket.close()
@@ -125,11 +119,12 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
         bold = subbold = normal = dim = alert = alertdim = ""
 
     # Fetch my IP address and assume /24 network
+    # noinspection PyBroadException
     try:
         if ip is None:
             ip = getmy_ip()
         network = ipaddress.IPv4Interface(u'' + ip + '/24').network
-    except:
+    except Exception:
         print(alert + 'ERROR: Unable to get your IP address and network automatically.' + normal)
         network = '192.168.0.0/24'
 
@@ -149,19 +144,21 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
     print(dim + '    Your network appears to be: ' + bold + '%s' % network + normal)
     print('')
 
+    # noinspection PyBroadException
     try:
         response = input(subbold + "    Enter " + bold + "Network" + subbold +
                          " or press enter to use %s: " % network + normal)
-    except:
+    except Exception:
         # Assume user aborted
         print(alert + '  Cancel\n\n' + normal)
         exit()
 
     if response != '':
         # Verify we have a valid network 
+        # noinspection PyBroadException
         try:
             network = ipaddress.IPv4Network(u'' + response)
-        except:
+        except Exception:
             print('')
             print(alert + '    ERROR: %s is not a valid network.' % response + normal)
             print(dim + '           Proceeding with %s instead.' % network)
