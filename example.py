@@ -11,7 +11,7 @@ if __name__ == "__main__":
     password = os.environ.get('PW_PASSWORD', 'password')
     email = os.environ.get('PW_EMAIL', 'email@example.com')
     host = os.environ.get('PW_HOST', 'localhost')  # Change to the IP of your Powerwall
-    timezone = os.environ.get('PW_TZ', 'America/Los_Angeles')  # Change to your local timezone/tz
+    timezone = os.environ.get('PW_TIMEZONE', 'America/Los_Angeles')  # Change to your local timezone/tz
 
     # Connect to Powerwall
     pw = pypowerwall.Powerwall(host, password, email, timezone, cloudmode=False)

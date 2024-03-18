@@ -9,7 +9,7 @@ if __name__ == "__main__":
     # Credentials for your Powerwall - Customer Login Data
     # Set appropriate env vars or change the defaults
     email = os.environ.get('PW_EMAIL', 'email@example.com')
-    timezone = os.environ.get('PW_TZ', 'America/Los_Angeles')  # Change to your local timezone/tz
+    timezone = os.environ.get('PW_TIMEZONE', 'America/Los_Angeles')  # Change to your local timezone/tz
     auth_path = os.environ.get('PW_AUTH_PATH', "")
 
     # Connect to Powerwall
