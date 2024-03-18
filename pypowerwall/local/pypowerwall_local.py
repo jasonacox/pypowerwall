@@ -5,6 +5,8 @@ from typing import Union, Tuple, Optional, Any
 
 import requests
 
+import pypowerwall.local.tesla_pb2 as tesla_pb2
+
 from pypowerwall.local.exceptions import LoginError
 from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
 
@@ -181,11 +183,11 @@ class PyPowerwallLocal(PyPowerwallBase):
                 payload = r.raw.data
             else:
                 payload = r.text
-            try:
-                payload = json.loads(payload)
-            except Exception as exc:
-                log.error(f'Unable to parse payload as JSON: {exc}')
-                return None
+                try:
+                    payload = json.loads(payload)
+                except Exception as exc:
+                    log.error(f'Unable to parse payload as JSON: {exc}')
+                    return None
             self.pwcache[api] = payload
             self.pwcachetime[api] = time.perf_counter()
             return payload
