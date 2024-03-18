@@ -62,112 +62,112 @@ After importing pypowerwall, you simply create a handle for your Powerwall devic
 and call function to poll data.  Here is an example:
 
 ```python
-import pypowerwall
-
-# Optional: Turn on Debug Mode
-# pypowerwall.set_debug(True)
-
-# Local Mode - Credentials for your Powerwall - Customer Login
-password='password'
-email='email@example.com'
-host = "10.0.1.123"               # Address of your Powerwall Gateway
-timezone = "America/Los_Angeles"  # Your local timezone
-
-# (Optional) Cloud Mode - Requires Setup
-password = ""
-email='email@example.com'
-host = ""
-timezone = "America/Los_Angeles"  # Your local timezone
-
-# Connect to Powerwall
-pw = pypowerwall.Powerwall(host,password,email,timezone)
-
-# Some System Info
-print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
-print("System Uptime: %s\n" % pw.uptime())
-
-# Pull Sensor Power Data
-grid = pw.grid()
-solar = pw.solar()
-battery = pw.battery()
-home = pw.home()
-
-# Display Data
-print("Battery power level: %0.0f%%" % pw.level())
-print("Combined power metrics: %r" % pw.power())
-print("")
-
-# Display Power in kW
-print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
-print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
-print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
-print("Home Power: %0.2fkW" % (float(home)/1000.0))
-print("")
-
-# Raw JSON Payload Examples
-print("Grid raw: %r\n" % pw.grid(verbose=True))
-print("Solar raw: %r\n" % pw.solar(verbose=True))
-
-# Display Device Vitals
-print("Vitals: %r\n" % pw.vitals())
-
-# Display String Data
-print("String Data: %r\n" % pw.strings())
-```
-
-### pyPowerwall Module Class and Functions 
-```
- set_debug(True, color=True)
-
- Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-              cloudmode, siteid, authpath, authmode, cachefile)
-
- Parameters
-    host                      # Hostname or IP of the Tesla gateway
-    password                  # Customer password for gateway
-    email                     # (required) Customer email for gateway / cloud
-    timezone                  # Desired timezone
-    pwcacheexpire = 5         # Set API cache timeout in seconds
-    timeout = 5               # Timeout for HTTPS calls in seconds
-    poolmaxsize = 10          # Pool max size for http connection re-use (persistent
-                                connections disabled if zero)
-    cloudmode = False         # If True, use Tesla cloud for data (default is False)
-    siteid                    # If cloudmode is True, use this siteid (default is None)  
-    authpath                  # Path to cloud auth and site cache files (default is "")
-    authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
-    cachefile = ".powerwall"  # Path to cache file (default current directory)
-
- Functions 
-    poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
-    level()                   # Return battery power level percentage
-    power()                   # Return power data returned as dictionary
-    site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
-    solar(verbose):           # Return solar sensor data (W or raw JSON if verbose=True)
-    battery(verbose):         # Return battery sensor data (W or raw JSON if verbose=True)
-    load(verbose)             # Return load sensor data (W or raw JSON if verbose=True)
-    grid()                    # Alias for site()
-    home()                    # Alias for load()
-    vitals(json)              # Return Powerwall device vitals (dict or json if True)
-    strings(json, verbose)    # Return solar panel string data
-    din()                     # Return DIN
-    uptime()                  # Return uptime - string hms format
-    version()                 # Return system version
-    status(param)             # Return status (JSON) or individual param
-    site_name()               # Return site name
-    temps()                   # Return Powerwall Temperatures
-    alerts()                  # Return array of Alerts from devices
-    system_status(json)       # Returns the system status
-    battery_blocks(json)      # Returns battery specific information merged from 
-                              # system_status() and vitals()
-    grid_status(type)         # Return the power grid status, type ="string" (default),
-                              # "json", or "numeric":
-                              #     - "string": "UP", "DOWN", "SYNCING"
-                              #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
-    is_connected()            # Returns True if able to connect to Powerwall
-    get_reserve(scale)        # Get Battery Reserve Percentage
-    get_time_remaining()      # Get the backup time remaining on the battery
-    
+  import pypowerwall
+  
+  # Optional: Turn on Debug Mode
+  # pypowerwall.set_debug(True)
+  
+  # Local Mode - Credentials for your Powerwall - Customer Login
+  password='password'
+  email='email@example.com'
+  host = "10.0.1.123"               # Address of your Powerwall Gateway
+  timezone = "America/Los_Angeles"  # Your local timezone
+  
+  # (Optional) Cloud Mode - Requires Setup
+  password = ""
+  email='email@example.com'
+  host = ""
+  timezone = "America/Los_Angeles"  # Your local timezone
+  
+  # Connect to Powerwall
+  pw = pypowerwall.Powerwall(host,password,email,timezone)
+  
+  # Some System Info
+  print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
+  print("System Uptime: %s\n" % pw.uptime())
+  
+  # Pull Sensor Power Data
+  grid = pw.grid()
+  solar = pw.solar()
+  battery = pw.battery()
+  home = pw.home()
+  
+  # Display Data
+  print("Battery power level: %0.0f%%" % pw.level())
+  print("Combined power metrics: %r" % pw.power())
+  print("")
+  
+  # Display Power in kW
+  print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
+  print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
+  print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
+  print("Home Power: %0.2fkW" % (float(home)/1000.0))
+  print("")
+  
+  # Raw JSON Payload Examples
+  print("Grid raw: %r\n" % pw.grid(verbose=True))
+  print("Solar raw: %r\n" % pw.solar(verbose=True))
+  
+  # Display Device Vitals
+  print("Vitals: %r\n" % pw.vitals())
+  
+  # Display String Data
+  print("String Data: %r\n" % pw.strings())
+  ```
+  
+  ### pyPowerwall Module Class and Functions 
+  ```
+   set_debug(True, color=True)
+  
+   Classes
+      Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
+                cloudmode, siteid, authpath, authmode, cachefile)
+  
+   Parameters
+      host                      # Hostname or IP of the Tesla gateway
+      password                  # Customer password for gateway
+      email                     # (required) Customer email for gateway / cloud
+      timezone                  # Desired timezone
+      pwcacheexpire = 5         # Set API cache timeout in seconds
+      timeout = 5               # Timeout for HTTPS calls in seconds
+      poolmaxsize = 10          # Pool max size for http connection re-use (persistent
+                                  connections disabled if zero)
+      cloudmode = False         # If True, use Tesla cloud for data (default is False)
+      siteid                    # If cloudmode is True, use this siteid (default is None)  
+      authpath                  # Path to cloud auth and site cache files (default is "")
+      authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
+      cachefile = ".powerwall"  # Path to cache file (default current directory)
+  
+   Functions 
+      poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
+      level()                   # Return battery power level percentage
+      power()                   # Return power data returned as dictionary
+      site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
+      solar(verbose):           # Return solar sensor data (W or raw JSON if verbose=True)
+      battery(verbose):         # Return battery sensor data (W or raw JSON if verbose=True)
+      load(verbose)             # Return load sensor data (W or raw JSON if verbose=True)
+      grid()                    # Alias for site()
+      home()                    # Alias for load()
+      vitals(json)              # Return Powerwall device vitals (dict or json if True)
+      strings(json, verbose)    # Return solar panel string data
+      din()                     # Return DIN
+      uptime()                  # Return uptime - string hms format
+      version()                 # Return system version
+      status(param)             # Return status (JSON) or individual param
+      site_name()               # Return site name
+      temps()                   # Return Powerwall Temperatures
+      alerts()                  # Return array of Alerts from devices
+      system_status(json)       # Returns the system status
+      battery_blocks(json)      # Returns battery specific information merged from 
+                                # system_status() and vitals()
+      grid_status(type)         # Return the power grid status, type ="string" (default),
+                                # "json", or "numeric":
+                                #     - "string": "UP", "DOWN", "SYNCING"
+                                #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
+      is_connected()            # Returns True if able to connect to Powerwall
+      get_reserve(scale)        # Get Battery Reserve Percentage
+      get_time_remaining()      # Get the backup time remaining on the battery
+      
 ```
 
 ## Tools

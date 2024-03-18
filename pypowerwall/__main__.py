@@ -17,7 +17,7 @@ import sys
 import os
 
 from pypowerwall import PyPowerwallCloud
-from . import scan
+from pypowerwall import scan
 
 # Global Variables
 AUTHFILE = ".pypowerwall.auth"

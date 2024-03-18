@@ -75,9 +75,9 @@ from typing import Union, Optional
 # noinspection PyPackageRequirements
 import urllib3
 
-from cloud.pypowerwall_cloud import PyPowerwallCloud
-from local.pypowerwall_local import PyPowerwallLocal
-from pypowerwall_base import parse_version, PyPowerwallBase
+from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
+from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
+from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
 
 urllib3.disable_warnings()  # Disable SSL warnings
 

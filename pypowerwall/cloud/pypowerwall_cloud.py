@@ -6,9 +6,9 @@ from typing import Optional
 
 from teslapy import Tesla
 
-from cloud.exceptions import PyPowerwallCloudNoTeslaAuthFile, PyPowerwallCloudTeslaNotConnected
-from cloud.mock_data import *
-from pypowerwall_base import PyPowerwallBase
+from pypowerwall.cloud.exceptions import PyPowerwallCloudNoTeslaAuthFile, PyPowerwallCloudTeslaNotConnected
+from pypowerwall.cloud.mock_data import *
+from pypowerwall.pypowerwall_base import PyPowerwallBase
 
 log = logging.getLogger(__name__)
 

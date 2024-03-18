@@ -5,9 +5,8 @@ from typing import Union, Tuple, Optional, Any
 
 import requests
 
-import tesla_pb2
-from local.exceptions import LoginError
-from pypowerwall_base import PyPowerwallBase, parse_version
+from pypowerwall.local.exceptions import LoginError
+from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
 
 log = logging.getLogger(__name__)
 
