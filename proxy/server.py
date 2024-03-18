@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t42"
+BUILD = "t43"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -51,7 +51,7 @@ ALLOWLIST = [
     '/api/operation', '/api/site_info/grid_codes', '/api/solars', '/api/solars/brands',
     '/api/customer', '/api/meters', '/api/installer', '/api/networks', 
     '/api/system/networks', '/api/meters/readings', '/api/synchrometer/ct_voltage_references',
-    '/api/troubleshooting/problems', '/api/auth/toggle/supported'
+    '/api/troubleshooting/problems', '/api/auth/toggle/supported', '/api/solar_powerwall',
     ]
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
