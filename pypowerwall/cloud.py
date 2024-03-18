@@ -808,6 +808,9 @@ class TeslaCloud:
         elif api == '/api/troubleshooting/problems':
             data = json.loads('{"problems":[]}')
 
+        elif api == '/api/solar_powerwall':
+            data = json.loads('{}')
+
         else:
             data = {"ERROR": f"Unknown API: {api}"}
 

@@ -553,6 +553,28 @@ class Powerwall(object):
                     # for   
                     deviceidx += 1
                 # else
+        # If no devices found pull from /api/solar_powerwall
+        if not v:
+            # Build a string map: A, B, C, D, A1, B2, etc.
+            string_map = []
+            for number in ['','1','2','3','4','5','6','7','8']:
+                for letter in ['A','B','C','D']:
+                    string_map.append(letter + number)
+            payload = self.poll('/api/solar_powerwall', jsonformat=True) or {}
+            if payload and 'pvac_status' in payload:
+                # Strings are in PVAC status section
+                pvac = payload['pvac_status']
+                if 'string_vitals' in pvac:
+                    i = 0
+                    for string in pvac['string_vitals']:
+                        name = string_map[i]
+                        result[name] = {}
+                        result[name]['Connected'] = string['connected']
+                        result[name]['Voltage'] = string['measured_voltage']
+                        result[name]['Current'] = string['current']
+                        result[name]['Power'] = string['measured_power']
+                        i += 1
+        # Return result
         if (jsonformat):
             json_out = json.dumps(result, indent=4, sort_keys=True)
             return json_out
