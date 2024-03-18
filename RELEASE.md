@@ -1,4 +1,9 @@
 # RELEASE NOTES
+## v0.8.0 - Refactoring
+
+* Refactor Local and Cloud based operation code into respective modules.
+* Make meaning of the `jsonformat` parameter consistent across all method calls. 
+* Work in progress
 
 ## v0.7.12 - Cachefile, Alerts & Strings
 

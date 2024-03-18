@@ -42,6 +42,7 @@ import sys
 import os
 import argparse
 import configparser
+
 try:
     import teslapy
 except:
@@ -53,7 +54,8 @@ CONFIGNAME = CONFIGFILE = f"{SCRIPTNAME}.conf"
 AUTHFILE = f"{SCRIPTNAME}.auth"
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description='Read/Set Powerwall minimum backup reserve battery level using Tesla Owner API (Tesla Cloud)')
+parser = argparse.ArgumentParser(
+    description='Read/Set Powerwall minimum backup reserve battery level using Tesla Owner API (Tesla Cloud)')
 parser.add_argument('-l', '--login', action="store_true", help='login to Tesla account only and save auth token')
 parser.add_argument('-n', '--number', action="store_true", help='give simple numeric/boolean response only')
 parser.add_argument('-d', '--debug', action="store_true", help='enable verbose debug output')
@@ -150,6 +152,7 @@ else:
         sys.exit(f"\nERROR: Failed to save config to '{CONFIGNAME}' - {err}")
 
     print(f"\nConfig saved to '{CONFIGNAME}'\n")
+
 
 # Global Variables
 
@@ -251,22 +254,24 @@ def tesla_login(email):
 
     return sitelist
 
+
 def get_level():
     """
     Retrieve Powerwall battery level backup reserve setting
     """
     global dayloaded, power, soe
 
-    if args.debug: 
+    if args.debug:
         print(f"Retrieving Powerwall battery level reserve setting...")
 
     config = battery.api("SITE_CONFIG")["response"]
     site = battery.api("SITE_SUMMARY")["response"]
     # combine config and site data
     data = {**config, **site}
-    if args.debug: 
+    if args.debug:
         print(data)
     return data
+
 
 def set_level(level):
     """
@@ -274,13 +279,14 @@ def set_level(level):
     """
     global dayloaded, power, soe
 
-    if args.debug: 
+    if args.debug:
         print(f"Setting Powerwall battery level reserve setting...")
 
     data = battery.set_backup_reserve_percent(level)
-    if args.debug: 
+    if args.debug:
         print(data)
     return data
+
 
 # MAIN
 
@@ -315,7 +321,7 @@ if args.read:
     data = get_level()
     level = data["backup_reserve_percent"]
     pw_count = data["battery_count"]
-    if args.debug or not args.number: 
+    if args.debug or not args.number:
         print(f"READ: Current Battery Reserve Setting: {level}% for {pw_count} Powerwalls")
     else:
         print(f"{level}")
@@ -331,7 +337,7 @@ elif args.set:
     if args.debug or not args.number:
         print(f"SET: Current Battery Reserve Setting: {level}% - Response: {data}")
     else:
-        print(data=="Updated")
+        print(data == "Updated")
 elif args.current:
     # Set reserve using current battery level
     data = get_level()
@@ -340,4 +346,4 @@ elif args.current:
     if args.debug or not args.number:
         print(f"SET: Current Battery Reserve Setting: {level}% - Response: {data}")
     else:
-        print(data=="Updated")
+        print(data == "Updated")

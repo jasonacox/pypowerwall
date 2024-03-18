@@ -14,10 +14,10 @@
 
 # Modules
 from __future__ import print_function
-from logging import disable   # make python 2 compatible 
+from logging import disable  # make python 2 compatible
 import pypowerwall
 import socket
-import ipaddress  
+import ipaddress
 import requests
 import threading
 import json
@@ -25,6 +25,7 @@ import time
 
 # Backward compatibility for python2
 try:
+    # noinspection PyUnresolvedReferences,PyShadowingBuiltins
     input = raw_input
 except NameError:
     pass
@@ -41,19 +42,21 @@ dim = "\033[0m\033[97m\033[2m"
 alert = "\033[0m\033[91m\033[1m"
 alertdim = "\033[0m\033[91m\033[2m"
 
+
 # Helper Functions
-def getmyIP():
+def getmy_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     r = s.getsockname()[0]
     s.close()
     return r
 
-def scanIP(color, timeout, addr):
+
+def scan_ip(color, timeout, addr):
     global discovered, firmware
     global bold, subbold, normal, dim, alert, alertdim
 
-    if(color == False):
+    if not color:
         # Disable Terminal Color Formatting
         bold = subbold = normal = dim = alert = alertdim = ""
 
@@ -73,11 +76,12 @@ def scanIP(color, timeout, addr):
         try:
             g = requests.get(url, verify=False, timeout=5)
             # Check if 404 response
-            if(g.status_code == 404):
+            if g.status_code == 404:
                 # Check if it is a Powerwall 3
                 url = 'https://%s/tedapi/din' % addr
                 g = requests.get(url, verify=False, timeout=5)
-                # Expected response from PW3 {"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}
+                # Expected response from PW3
+                # {"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}
                 if "User does not have adequate access rights" in g.text:
                     # Found PW3
                     print(host + ' OPEN' + dim + ' - ' + subbold + 'Found Powerwall 3 [Supported in Cloud Mode only]')
@@ -88,13 +92,15 @@ def scanIP(color, timeout, addr):
                     print(host + ' OPEN' + dim + ' - Not a Powerwall')
             else:
                 data = json.loads(g.text)
-                print(host + ' OPEN' + dim + ' - ' + subbold + 'Found Powerwall %s' % data['din'] + subbold + '\n                                     [Firmware %s]' % data['version'])
+                print(host + ' OPEN' + dim + ' - ' + subbold + 'Found Powerwall %s' % data[
+                    'din'] + subbold + '\n                                     [Firmware %s]' % data['version'])
                 discovered[addr] = data['din']
                 firmware[addr] = data['version']
         except:
             print(host + ' OPEN' + dim + ' - Not a Powerwall')
 
     a_socket.close()
+
 
 def scan(color=True, timeout=1.0, hosts=30, ip=None):
     """
@@ -114,31 +120,30 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
     global discovered, firmware
     global bold, subbold, normal, dim, alert, alertdim
 
-    if(color == False):
+    if not color:
         # Disable Terminal Color Formatting
         bold = subbold = normal = dim = alert = alertdim = ""
 
     # Fetch my IP address and assume /24 network
-    try: 
+    try:
         if ip is None:
-            ip = getmyIP()
-        network = ipaddress.IPv4Interface(u''+ip+'/24').network
+            ip = getmy_ip()
+        network = ipaddress.IPv4Interface(u'' + ip + '/24').network
     except:
         print(alert + 'ERROR: Unable to get your IP address and network automatically.' + normal)
         network = '192.168.0.0/24'
-        ip = None
 
-    print(bold + '\npyPowerwall Network Scanner' + dim + ' [%s]' % (pypowerwall.version) + normal)
+    print(bold + '\npyPowerwall Network Scanner' + dim + ' [%s]' % pypowerwall.version + normal)
     print(dim + 'Scan local network for Tesla Powerwall Gateways')
     print('')
 
-    if(hosts > 100):
+    if hosts > 100:
         # Limit simultaneous host scan to no more than 100
         hosts = 100
 
-    if(timeout < 0.2):
-        print(alert + 
-            '    WARNING: Setting a low timeout (%0.2fs) may cause misses.\n' % timeout)
+    if timeout < 0.2:
+        print(alert +
+              '    WARNING: Setting a low timeout (%0.2fs) may cause misses.\n' % timeout)
 
     # Ask user to verify network
     print(dim + '    Your network appears to be: ' + bold + '%s' % network + normal)
@@ -146,21 +151,21 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
 
     try:
         response = input(subbold + "    Enter " + bold + "Network" + subbold +
-                                    " or press enter to use %s: " % network + normal)
+                         " or press enter to use %s: " % network + normal)
     except:
         # Assume user aborted
         print(alert + '  Cancel\n\n' + normal)
         exit()
 
-    if(response != ''):
+    if response != '':
         # Verify we have a valid network 
         try:
-            network = ipaddress.IPv4Network(u''+response)
+            network = ipaddress.IPv4Network(u'' + response)
         except:
             print('')
             print(alert + '    ERROR: %s is not a valid network.' % response + normal)
             print(dim + '           Proceeding with %s instead.' % network)
-    
+
     # Scan network
     print('')
     print(bold + '    Running Scan...' + dim)
@@ -169,7 +174,7 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
         threads = []
         for addr in ipaddress.IPv4Network(network):
             # Scan each host in a separate thread
-            thread = threading.Thread(target=scanIP, args=(color, timeout, addr))
+            thread = threading.Thread(target=scan_ip, args=(color, timeout, addr))
             thread.start()
             threads.append(thread)
             if threading.active_count() >= hosts:
@@ -179,7 +184,7 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
         for thread in threads:
             # Wait for remaining threads to exit
             thread.join()
-        
+
         print(dim + '\r      Done                           ')
         print('')
 
@@ -189,13 +194,6 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
 
     print(normal + 'Discovered %d Powerwall Gateway' % len(discovered))
     for ip in discovered:
-        print(dim + '     %s [%s] Firmware %s' % (ip,discovered[ip],firmware[ip]))
+        print(dim + '     %s [%s] Firmware %s' % (ip, discovered[ip], firmware[ip]))
 
     print(normal + ' ')
-
-
-
-    
-    
-
-

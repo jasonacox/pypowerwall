@@ -797,7 +797,7 @@ LocalAuthAPICheckAuthStatusResponse = _reflection.GeneratedProtocolMessageType('
   })
 _sym_db.RegisterMessage(LocalAuthAPICheckAuthStatusResponse)
 
-if _descriptor._USE_C_DESCRIPTORS == False:
+if not _descriptor._USE_C_DESCRIPTORS:
 
   DESCRIPTOR._options = None
   _EXTERNALAUTHTYPE._serialized_start=13104

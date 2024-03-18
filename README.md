@@ -62,58 +62,57 @@ After importing pypowerwall, you simply create a handle for your Powerwall devic
 and call function to poll data.  Here is an example:
 
 ```python
-    import pypowerwall
+import pypowerwall
 
-    # Optional: Turn on Debug Mode
-    # pypowerwall.set_debug(True)
+# Optional: Turn on Debug Mode
+# pypowerwall.set_debug(True)
 
-    # Local Mode - Credentials for your Powerwall - Customer Login
-    password='password'
-    email='email@example.com'
-    host = "10.0.1.123"               # Address of your Powerwall Gateway
-    timezone = "America/Los_Angeles"  # Your local timezone
+# Local Mode - Credentials for your Powerwall - Customer Login
+password='password'
+email='email@example.com'
+host = "10.0.1.123"               # Address of your Powerwall Gateway
+timezone = "America/Los_Angeles"  # Your local timezone
 
-    # (Optional) Cloud Mode - Requires Setup
-    password = ""
-    email='email@example.com'
-    host = ""
-    timezone = "America/Los_Angeles"  # Your local timezone
- 
-    # Connect to Powerwall
-    pw = pypowerwall.Powerwall(host,password,email,timezone)
+# (Optional) Cloud Mode - Requires Setup
+password = ""
+email='email@example.com'
+host = ""
+timezone = "America/Los_Angeles"  # Your local timezone
 
-    # Some System Info
-    print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
-    print("System Uptime: %s\n" % pw.uptime())
+# Connect to Powerwall
+pw = pypowerwall.Powerwall(host,password,email,timezone)
 
-    # Pull Sensor Power Data
-    grid = pw.grid()
-    solar = pw.solar()
-    battery = pw.battery()
-    home = pw.home()
+# Some System Info
+print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
+print("System Uptime: %s\n" % pw.uptime())
 
-    # Display Data
-    print("Battery power level: %0.0f%%" % pw.level())
-    print("Combined power metrics: %r" % pw.power())
-    print("")
+# Pull Sensor Power Data
+grid = pw.grid()
+solar = pw.solar()
+battery = pw.battery()
+home = pw.home()
 
-    # Display Power in kW
-    print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
-    print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
-    print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
-    print("Home Power: %0.2fkW" % (float(home)/1000.0))
-    print("")
+# Display Data
+print("Battery power level: %0.0f%%" % pw.level())
+print("Combined power metrics: %r" % pw.power())
+print("")
 
-    # Raw JSON Payload Examples
-    print("Grid raw: %r\n" % pw.grid(verbose=True))
-    print("Solar raw: %r\n" % pw.solar(verbose=True))
+# Display Power in kW
+print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
+print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
+print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
+print("Home Power: %0.2fkW" % (float(home)/1000.0))
+print("")
 
-    # Display Device Vitals
-    print("Vitals: %r\n" % pw.vitals())
+# Raw JSON Payload Examples
+print("Grid raw: %r\n" % pw.grid(verbose=True))
+print("Solar raw: %r\n" % pw.solar(verbose=True))
 
-    # Display String Data
-    print("String Data: %r\n" % pw.strings())
+# Display Device Vitals
+print("Vitals: %r\n" % pw.vitals())
 
+# Display String Data
+print("String Data: %r\n" % pw.strings())
 ```
 
 ### pyPowerwall Module Class and Functions 
