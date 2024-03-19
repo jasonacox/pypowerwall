@@ -80,7 +80,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
 
         # Check for auth file
-        if not os.path.exists(os.path.expanduser(self.authfile)):
+        if not os.path.exists(self.authfile):
             msg = f"Missing auth file {self.authfile} - run setup"
             log.warning(msg)
             raise PyPowerwallCloudNoTeslaAuthFile(msg)
