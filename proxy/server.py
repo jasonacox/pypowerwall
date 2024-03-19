@@ -42,7 +42,7 @@ import signal
 import ssl
 from transform import get_static, inject_js
 
-BUILD = "t43"
+BUILD = "t44"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls', 
@@ -418,7 +418,9 @@ class handler(BaseHTTPRequestHandler):
             message = message + '\n<p>Page refresh: %s</p>\n</body>\n</html>' % (
                 str(datetime.datetime.fromtimestamp(time.time())))
         elif self.path == '/api/troubleshooting/problems':
-            message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
+            # Simulate old API call and respond with empty list
+            message = '{"problems": []}'
+            # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
             message = pw.poll(self.path)
