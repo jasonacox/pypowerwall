@@ -60,10 +60,10 @@ class PyPowerwallCloud(PyPowerwallBase):
         self.siteindex = 0  # site index to use
         self.siteid = siteid  # site id to use
         self.counter = 0  # counter for SITE_DATA API
-        self.authpath = authpath  # path to cloud auth and site files
+        self.authpath = os.path.expanduser(authpath)  # path to cloud auth and site files
         self.timeout = timeout
-        self.authfile = os.path.join(os.path.expanduser(authpath), AUTHFILE)
-        self.sitefile = os.path.join(os.path.expanduser(authpath), SITEFILE)
+        self.authfile = os.path.join(self.authpath, AUTHFILE)
+        self.sitefile = os.path.join(self.authpath, SITEFILE)
         self.poll_api_map = self.init_poll_api_map()
 
         if self.siteid is None:
