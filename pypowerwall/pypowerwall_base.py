@@ -1,6 +1,6 @@
 import abc
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, Union
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,8 @@ class PyPowerwallBase:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def poll(self, api: str, force: bool = False, recursive: bool = False, raw: bool = False) -> dict:
+    def poll(self, api: str, force: bool = False,
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
         raise NotImplementedError
 
     @abc.abstractmethod

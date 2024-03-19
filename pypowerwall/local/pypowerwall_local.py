@@ -108,7 +108,9 @@ class PyPowerwallLocal(PyPowerwallBase):
 
         self.auth = {}
 
-    def poll(self, api: str, force=False, recursive=False, raw=False) -> Optional[dict]:
+    def poll(self, api: str, force: bool = False,
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
+
         # Query powerwall and return payload
         raw = False
         payload = None

@@ -4,3 +4,7 @@ class PyPowerwallCloudNoTeslaAuthFile(Exception):
 
 class PyPowerwallCloudTeslaNotConnected(Exception):
     pass
+
+
+class PyPowerwallCloudNotImplemented(Exception):
+    pass

@@ -2,12 +2,14 @@ import json
 import logging
 import os
 import time
-from typing import Optional
+from typing import Optional, Union
 
 from teslapy import Tesla
 
-from pypowerwall.cloud.exceptions import PyPowerwallCloudNoTeslaAuthFile, PyPowerwallCloudTeslaNotConnected
+from pypowerwall.cloud.decorators import not_implemented_mock_data
+from pypowerwall.cloud.exceptions import *
 from pypowerwall.cloud.mock_data import *
+from pypowerwall.cloud.stubs import *
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 
 log = logging.getLogger(__name__)
@@ -18,14 +20,14 @@ COUNTER_MAX = 64  # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59  # Site config cache TTL in seconds
 
 
-def set_debug(toggle=True, color=True):
-    """Enable verbose logging"""
-    if toggle:
+def set_debug(debug=False, quiet=False, color=True):
+    logging.basicConfig(format='%(levelname)s: %(message)s')
+    if not quiet:
+        log.setLevel(logging.INFO)
         if color:
-            logging.basicConfig(format='\x1b[31;1m%(levelname)s:%(message)s\x1b[0m', level=logging.DEBUG)
-        else:
-            logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
-        log.setLevel(logging.DEBUG)
+            logging.basicConfig(format='\x1b[31;1m%(levelname)s: %(message)s\x1b[0m')
+        if debug:
+            log.setLevel(logging.DEBUG)
     else:
         log.setLevel(logging.NOTSET)
 
@@ -44,6 +46,7 @@ def lookup(data, keylist):
     return data
 
 
+# noinspection PyMethodMayBeStatic
 class PyPowerwallCloud(PyPowerwallBase):
     def __init__(self, email: Optional[str], pwcacheexpire: int = 5, timeout: int = 5, siteid: Optional[int] = None,
                  authpath: str = ""):
@@ -59,8 +62,9 @@ class PyPowerwallCloud(PyPowerwallBase):
         self.counter = 0  # counter for SITE_DATA API
         self.authpath = authpath  # path to cloud auth and site files
         self.timeout = timeout
-        self.authfile = os.path.join(authpath, AUTHFILE)
-        self.sitefile = os.path.join(authpath, SITEFILE)
+        self.authfile = os.path.join(os.path.expanduser(authpath), AUTHFILE)
+        self.sitefile = os.path.join(os.path.expanduser(authpath), SITEFILE)
+        self.poll_api_map = self.init_poll_api_map()
 
         if self.siteid is None:
             # Check for site file
@@ -76,10 +80,49 @@ class PyPowerwallCloud(PyPowerwallBase):
         log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
 
         # Check for auth file
-        if not os.path.exists(self.authfile):
+        if not os.path.exists(os.path.expanduser(self.authfile)):
             msg = f"Missing auth file {self.authfile} - run setup"
             log.warning(msg)
             raise PyPowerwallCloudNoTeslaAuthFile(msg)
+
+    def init_poll_api_map(self) -> dict:
+        # API map for local to cloud call conversion
+        return {
+            # Somewhat Real Actions
+            "/api/status": self.get_api_status,
+            "/api/system_status/grid_status": self.get_api_system_status_grid_status,
+            "/api/site_info/site_name": self.get_api_site_info_site_name,
+            "/api/site_info": self.get_api_site_info,
+            "/api/system_status/soe": self.get_api_system_status_soe,
+            "/api/devices/vitals": self.get_api_devices_vitals,
+            "/vitals": self.get_vitals,
+            "/api/meters/aggregates": self.get_api_meters_aggregates,
+            "/api/operation": self.get_api_operation,
+            "/api/system_status": self.get_api_system_status,
+            # Possible Actions
+            "/api/logout": self.api_logout,
+            "/api/login/Basic": self.api_login_basic,
+            # Mock Actions
+            "/api/meters/site": self.get_api_meters_site,
+            "/api/meters/solar": self.get_unimplemented_api,
+            "/api/auth/toggle/supported": self.get_api_auth_toggle_supported,
+            "/api/sitemaster": self.get_api_sitemaster,
+            "/api/powerwalls": self.get_api_powerwalls,
+            "/api/customer/registration": self.get_api_customer_registration,
+            "/api/system/update/status": self.get_api_system_update_status,
+            "/api/system_status/grid_faults": self.get_api_system_status_grid_faults,
+            "/api/site_info/grid_codes": self.get_api_unimplemented_timeout,
+            "/api/solars": self.get_api_solars,
+            "/api/solars/brands": self.get_api_solars_brands,
+            "/api/customer": self.get_api_customer,
+            "/api/meters": self.get_api_meters,
+            "/api/installer": self.get_api_installer,
+            "/api/networks": self.get_api_unimplemented_timeout,
+            "/api/meters/readings": self.get_api_unimplemented_timeout,
+            "/api/synchrometer/ct_voltage_references": self.get_api_synchrometer_ct_voltage_references,
+            "/api/troubleshooting/problems": self.get_api_troubleshooting_problems,
+            "/api/solar_powerwall": self.get_api_solar_powerwall,
+        }
 
     def authenticate(self):
         log.debug('Tesla cloud mode enabled')
@@ -106,7 +149,8 @@ class PyPowerwallCloud(PyPowerwallBase):
             code_verifier = self.tesla.new_code_verifier()
             try:
                 self.tesla.fetch_token(
-                    authorization_response=self.tesla.authorization_url(state=state, code_verifier=code_verifier))
+                    authorization_response=self.tesla.authorization_url(state=state, code_verifier=code_verifier)
+                )
             except Exception as err:
                 log.error("Login failure - %s" % repr(err))
                 return False
@@ -131,9 +175,28 @@ class PyPowerwallCloud(PyPowerwallBase):
                 return False
         # Set site
         self.site = sites[self.siteindex]
-        log.debug(
-            f"Connected to Tesla Cloud - Site {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
+        log.debug(f"Connected to Tesla Cloud - Site {self.siteid} "
+                  f"({sites[self.siteindex]['site_name']}) for {self.email}")
         return True
+
+    # Function to map Powerwall API to Tesla Cloud Data
+    def poll(self, api: str, force: bool = False,
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
+        """
+        Map Powerwall API to Tesla Cloud Data
+        """
+        if self.tesla is None:
+            raise PyPowerwallCloudTeslaNotConnected
+        # API Map - Determine what data we need based on Powerwall APIs
+        log.debug(f" -- cloud: Request for {api}")
+
+        func = self.poll_api_map.get(api)
+        if func:
+            return func()
+        else:
+            # raise PyPowerwallCloudNotImplemented(api)
+            # or pass a custom error response:
+            return {"ERROR": f"Unknown API: {api}"}
 
     def getsites(self):
         """
@@ -393,419 +456,334 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         return 0.0
 
-    # Function to map Powerwall API to Tesla Cloud Data
-    def poll(self, api, force=False, recursive=False, raw=False) -> dict:
-        """
-        Map Powerwall API to Tesla Cloud Data
+    def get_api_system_status_soe(self) -> Optional[Union[dict, list, str, bytes]]:
+        battery = self.get_battery()
+        if battery is None:
+            data = None
+        else:
+            percentage_charged = lookup(battery, ("response", "percentage_charged")) or 0
+            # percentage_charged is scaled to keep 5% buffer at bottom
+            soe = (percentage_charged + (5 / 0.95)) * 0.95
+            data = {
+                "percentage": soe
+            }
+        return data
 
-        """
-        if self.tesla is None:
-            raise PyPowerwallCloudTeslaNotConnected
-        # API Map - Determine what data we need based on Powerwall APIs
-        log.debug(f" -- cloud: Request for {api}")
+    def get_api_status(self) -> Optional[Union[dict, list, str, bytes]]:
+        # TOOO: Fix start_time and up_time_seconds
+        config = self.get_site_config()
+        if config is None:
+            data = None
+        else:
+            data = {
+                "din": lookup(config, ("response", "id")),  # 1232100-00-E--TGxxxxxxxxxxxx
+                "start_time": lookup(config, ("response", "installation_date")),  # "2023-10-13 04:01:45 +0800"
+                "up_time_seconds": None,  # "1541h38m20.998412744s"
+                "is_new": False,
+                "version": lookup(config, ("response", "version")),  # 23.28.2 27626f98
+                "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd34",
+                "commission_count": 0,
+                "device_type": lookup(config, ("response", "components", "gateway")),  # teg
+                "teg_type": "unknown",
+                "sync_type": "v2.1",
+                "cellular_disabled": False,
+                "can_reboot": True
+            }
+        return data
 
-        # Dynamic Values
-        if api == '/api/status':
-            # TOOO: Fix start_time and up_time_seconds
-            config = self.get_site_config()
-            if config is None:
-                data = None
-            else:
-                data = {
-                    "din": lookup(config, ("response", "id")),  # 1232100-00-E--TGxxxxxxxxxxxx
-                    "start_time": lookup(config, ("response", "installation_date")),  # "2023-10-13 04:01:45 +0800"
-                    "up_time_seconds": None,  # "1541h38m20.998412744s"
-                    "is_new": False,
-                    "version": lookup(config, ("response", "version")),  # 23.28.2 27626f98
-                    "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd34",
-                    "commission_count": 0,
-                    "device_type": lookup(config, ("response", "components", "gateway")),  # teg
-                    "teg_type": "unknown",
-                    "sync_type": "v2.1",
-                    "cellular_disabled": False,
-                    "can_reboot": True
+    def get_api_system_status_grid_status(self) -> Optional[Union[dict, list, str, bytes]]:
+        power = self.get_site_power()
+        if power is None:
+            data = None
+        else:
+            if lookup(power, ("response", "grid_status")) == "Active":
+                grid_status = "SystemGridConnected"
+            else:  # off_grid or off_grid_unintentional
+                grid_status = "SystemIslandedActive"
+            data = {
+                "grid_status": grid_status,  # SystemIslandedActive or SystemTransitionToGrid
+                "grid_services_active": lookup(power, ("response", "grid_services_active"))
+                # true when participating in VPP event
+            }
+        return data
+
+    def get_api_site_info_site_name(self) -> Optional[Union[dict, list, str, bytes]]:
+        config = self.get_site_config()
+        if config is None:
+            data = None
+        else:
+            sitename = lookup(config, ("response", "site_name"))
+            tz = lookup(config, ("response", "installation_time_zone"))
+            data = {
+                "site_name": sitename,
+                "timezone": tz
+            }
+        return data
+
+    def get_api_site_info(self) -> Optional[Union[dict, list, str, bytes]]:
+        config = self.get_site_config()
+        if config is None:
+            data = None
+        else:
+            nameplate_power = int(lookup(config, ("response", "nameplate_power")) or 0) / 1000
+            nameplate_energy = int(lookup(config, ("response", "nameplate_energy")) or 0) / 1000
+            max_site_meter_power_ac = lookup(config, ("response", "max_site_meter_power_ac"))
+            min_site_meter_power_ac = lookup(config, ("response", "min_site_meter_power_ac"))
+            utility = lookup(config, ("response", "tariff_content", "utility"))
+            sitename = lookup(config, ("response", "site_name"))
+            tz = lookup(config, ("response", "installation_time_zone"))
+            data = {
+                "max_system_energy_kWh": nameplate_energy,
+                "max_system_power_kW": nameplate_power,
+                "site_name": sitename,
+                "timezone": tz,
+                "max_site_meter_power_kW": max_site_meter_power_ac,
+                "min_site_meter_power_kW": min_site_meter_power_ac,
+                "nominal_system_energy_kWh": nameplate_energy,
+                "nominal_system_power_kW": nameplate_power,
+                "panel_max_current": None,
+                "grid_code": {
+                    "grid_code": None,
+                    "grid_voltage_setting": None,
+                    "grid_freq_setting": None,
+                    "grid_phase_setting": None,
+                    "country": None,
+                    "state": None,
+                    "utility": utility
                 }
+            }
+        return data
 
-        elif api == '/api/system_status/grid_status':
-            power = self.get_site_power()
-            if power is None:
-                data = None
+    def get_api_devices_vitals(self) -> Optional[Union[dict, list, str, bytes]]:
+        # Protobuf payload - not implemented - use /vitals instead
+        data = None
+        log.warning("Protobuf payload - not implemented for /api/devices/vitals - use /vitals instead")
+        return data
+
+    def get_vitals(self) -> Optional[Union[dict, list, str, bytes]]:
+        # Simulated Vitals
+        config = self.get_site_config()
+        power = self.get_site_power()
+        if config is None or power is None:
+            data = None
+        else:
+            din = lookup(config, ("response", "id"))
+            parts = din.split("--")
+            if len(parts) == 2:
+                part_number = parts[0]
+                serial_number = parts[1]
             else:
+                part_number = None
+                serial_number = None
+            version = lookup(config, ("response", "version"))
+            # Get grid status
+            #    also "grid_status": "Active"
+            island_status = lookup(power, ("response", "island_status"))
+            if island_status == "on_grid":
+                alert = "SystemConnectedToGrid"
+            elif island_status == "off_grid_intentional":
+                alert = "ScheduledIslandContactorOpen"
+            elif island_status == "off_grid":
+                alert = "UnscheduledIslandContactorOpen"
+            else:
+                alert = ""
+                if lookup(power, ("response", "grid_status")) == "Active":
+                    alert = "SystemConnectedToGrid"
+            data = {
+                f'STSTSM--{part_number}--{serial_number}': {
+                    'partNumber': part_number,
+                    'serialNumber': serial_number,
+                    'manufacturer': 'Simulated',
+                    'firmwareVersion': version,
+                    'lastCommunicationTime': int(time.time()),
+                    'teslaEnergyEcuAttributes': {
+                        'ecuType': 207
+                    },
+                    'STSTSM-Location': 'Simulated',
+                    'alerts': [
+                        alert
+                    ]
+                }
+            }
+        return data
+
+    def get_api_meters_aggregates(self) -> Optional[Union[dict, list, str, bytes]]:
+        config = self.get_site_config()
+        power = self.get_site_power()
+        if config is None or power is None:
+            data = None
+        else:
+            timestamp = lookup(power, ("response", "timestamp"))
+            solar_power = lookup(power, ("response", "solar_power"))
+            battery_power = lookup(power, ("response", "battery_power"))
+            load_power = lookup(power, ("response", "load_power"))
+            grid_power = lookup(power, ("response", "grid_power"))
+            battery_count = lookup(config, ("response", "battery_count"))
+            inverters = lookup(config, ("response", "components", "inverters"))
+            if inverters is not None:
+                solar_inverters = len(inverters)
+            elif lookup(config, ("response", "components", "solar")):
+                solar_inverters = 1
+            else:
+                solar_inverters = 0
+            data = API_METERS_AGGREGATES_STUB
+            data['site'].update({
+                "last_communication_time": timestamp,
+                "instant_power": grid_power,
+            })
+            data['battery'].update({
+                "last_communication_time": timestamp,
+                "instant_power": battery_power,
+                "num_meters_aggregated": battery_count,
+            })
+            data['load'].update({
+                "last_communication_time": timestamp,
+                "instant_power": load_power,
+
+            })
+            data['solar'].update({
+                "last_communication_time": timestamp,
+                "instant_power": solar_power,
+                "num_meters_aggregated": solar_inverters,
+            })
+        return data
+
+    def get_api_operation(self) -> Optional[Union[dict, list, str, bytes]]:
+        config = self.get_site_config()
+        if config is None:
+            data = None
+        else:
+            default_real_mode = lookup(config, ("response", "default_real_mode"))
+            backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent")) or 0
+            # backup_reserve_percent is scaled to keep 5% buffer at bottom
+            backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
+            data = {
+                "real_mode": default_real_mode,
+                "backup_reserve_percent": backup
+            }
+        return data
+
+    def get_api_system_status(self) -> Optional[Union[dict, list, str, bytes]]:
+        power = self.get_site_power()
+        config = self.get_site_config()
+        battery = self.get_battery()
+        if power is None or config is None or battery is None:
+            data = None
+        else:
+            # timestamp = lookup(power, ("response", "timestamp"))
+            solar_power = lookup(power, ("response", "solar_power"))
+            # battery_power = lookup(power, ("response", "battery_power"))
+            # load_power = lookup(power, ("response", "load_power"))
+            grid_services_power = lookup(power, ("response", "grid_services_power"))
+            # grid_status = lookup(power, ("response", "grid_status"))
+            # grid_services_active = lookup(power, ("response", "grid_services_active"))
+            battery_count = lookup(config, ("response", "battery_count"))
+            total_pack_energy = lookup(battery, ("response", "total_pack_energy"))
+            energy_left = lookup(battery, ("response", "energy_left"))
+            nameplate_power = lookup(config, ("response", "nameplate_power"))
+            # nameplate_energy = lookup(config, ("response", "nameplate_energy"))
+            if lookup(power, ("response", "island_status")) == "on_grid":
+                grid_status = "SystemGridConnected"
+            else:  # off_grid or off_grid_unintentional
+                grid_status = "SystemIslandedActive"
+                # "grid_status": "Active"
                 if lookup(power, ("response", "grid_status")) == "Active":
                     grid_status = "SystemGridConnected"
-                else:  # off_grid or off_grid_unintentional
-                    grid_status = "SystemIslandedActive"
-                data = {
-                    "grid_status": grid_status,  # SystemIslandedActive or SystemTransitionToGrid
-                    "grid_services_active": lookup(power, ("response", "grid_services_active"))
-                    # true when participating in VPP event
-                }
-
-        elif api == '/api/site_info/site_name':
-            config = self.get_site_config()
-            if config is None:
-                data = None
-            else:
-                sitename = lookup(config, ("response", "site_name"))
-                tz = lookup(config, ("response", "installation_time_zone"))
-                data = {
-                    "site_name": sitename,
-                    "timezone": tz
-                }
-
-        elif api == '/api/site_info':
-            config = self.get_site_config()
-            if config is None:
-                data = None
-            else:
-                nameplate_power = int(lookup(config, ("response", "nameplate_power")) or 0) / 1000
-                nameplate_energy = int(lookup(config, ("response", "nameplate_energy")) or 0) / 1000
-                max_site_meter_power_ac = lookup(config, ("response", "max_site_meter_power_ac"))
-                min_site_meter_power_ac = lookup(config, ("response", "min_site_meter_power_ac"))
-                utility = lookup(config, ("response", "tariff_content", "utility"))
-                sitename = lookup(config, ("response", "site_name"))
-                tz = lookup(config, ("response", "installation_time_zone"))
-                data = {
-                    "max_system_energy_kWh": nameplate_energy,
-                    "max_system_power_kW": nameplate_power,
-                    "site_name": sitename,
-                    "timezone": tz,
-                    "max_site_meter_power_kW": max_site_meter_power_ac,
-                    "min_site_meter_power_kW": min_site_meter_power_ac,
-                    "nominal_system_energy_kWh": nameplate_energy,
-                    "nominal_system_power_kW": nameplate_power,
-                    "panel_max_current": None,
-                    "grid_code": {
-                        "grid_code": None,
-                        "grid_voltage_setting": None,
-                        "grid_freq_setting": None,
-                        "grid_phase_setting": None,
-                        "country": None,
-                        "state": None,
-                        "utility": utility
-                    }
-                }
-
-        elif api == '/api/devices/vitals':
-            # Protobuf payload - not implemented - use /vitals instead
-            data = None
-
-        elif api == '/vitals':
-            # Simulated Vitals
-            config = self.get_site_config()
-            power = self.get_site_power()
-            if config is None or power is None:
-                data = None
-            else:
-                din = lookup(config, ("response", "id"))
-                parts = din.split("--")
-                if len(parts) == 2:
-                    part_number = parts[0]
-                    serial_number = parts[1]
-                else:
-                    part_number = None
-                    serial_number = None
-                version = lookup(config, ("response", "version"))
-                # Get grid status
-                #    also "grid_status": "Active"
-                island_status = lookup(power, ("response", "island_status"))
-                if island_status == "on_grid":
-                    alert = "SystemConnectedToGrid"
-                elif island_status == "off_grid_intentional":
-                    alert = "ScheduledIslandContactorOpen"
-                elif island_status == "off_grid":
-                    alert = "UnscheduledIslandContactorOpen"
-                else:
-                    alert = ""
-                    if lookup(power, ("response", "grid_status")) == "Active":
-                        alert = "SystemConnectedToGrid"
-                data = {
-                    f'STSTSM--{part_number}--{serial_number}': {
-                        'partNumber': part_number,
-                        'serialNumber': serial_number,
-                        'manufacturer': 'Simulated',
-                        'firmwareVersion': version,
-                        'lastCommunicationTime': int(time.time()),
-                        'teslaEnergyEcuAttributes': {
-                            'ecuType': 207
-                        },
-                        'STSTSM-Location': 'Simulated',
-                        'alerts': [
-                            alert
-                        ]
-                    }
-                }
-
-        elif api in ['/api/system_status/soe']:
-            battery = self.get_battery()
-            if battery is None:
-                data = None
-            else:
-                percentage_charged = lookup(battery, ("response", "percentage_charged")) or 0
-                # percentage_charged is scaled to keep 5% buffer at bottom
-                soe = (percentage_charged + (5 / 0.95)) * 0.95
-                data = {
-                    "percentage": soe
-                }
-
-        elif api == '/api/meters/aggregates':
-            config = self.get_site_config()
-            power = self.get_site_power()
-            if config is None or power is None:
-                data = None
-            else:
-                timestamp = lookup(power, ("response", "timestamp"))
-                solar_power = lookup(power, ("response", "solar_power"))
-                battery_power = lookup(power, ("response", "battery_power"))
-                load_power = lookup(power, ("response", "load_power"))
-                grid_power = lookup(power, ("response", "grid_power"))
-                battery_count = lookup(config, ("response", "battery_count"))
-                inverters = lookup(config, ("response", "components", "inverters"))
-                if inverters is not None:
-                    solar_inverters = len(inverters)
-                elif lookup(config, ("response", "components", "solar")):
-                    solar_inverters = 1
-                else:
-                    solar_inverters = 0
-                data = {
-                    "site": {
-                        "last_communication_time": timestamp,
-                        "instant_power": grid_power,
-                        "instant_reactive_power": 0,
-                        "instant_apparent_power": 0,
-                        "frequency": 0,
-                        "energy_exported": 0,
-                        "energy_imported": 0,
-                        "instant_average_voltage": 0,
-                        "instant_average_current": 0,
-                        "i_a_current": 0,
-                        "i_b_current": 0,
-                        "i_c_current": 0,
-                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                        "timeout": 1500000000,
-                        "num_meters_aggregated": 1,
-                        "instant_total_current": None
-                    },
-                    "battery": {
-                        "last_communication_time": timestamp,
-                        "instant_power": battery_power,
-                        "instant_reactive_power": 0,
-                        "instant_apparent_power": 0,
-                        "frequency": 0,
-                        "energy_exported": 0,
-                        "energy_imported": 0,
-                        "instant_average_voltage": 0,
-                        "instant_average_current": 0,
-                        "i_a_current": 0,
-                        "i_b_current": 0,
-                        "i_c_current": 0,
-                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                        "timeout": 1500000000,
-                        "num_meters_aggregated": battery_count,
-                        "instant_total_current": 0
-                    },
-                    "load": {
-                        "last_communication_time": timestamp,
-                        "instant_power": load_power,
-                        "instant_reactive_power": 0,
-                        "instant_apparent_power": 0,
-                        "frequency": 0,
-                        "energy_exported": 0,
-                        "energy_imported": 0,
-                        "instant_average_voltage": 0,
-                        "instant_average_current": 0,
-                        "i_a_current": 0,
-                        "i_b_current": 0,
-                        "i_c_current": 0,
-                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                        "timeout": 1500000000,
-                        "instant_total_current": 0
-                    },
-                    "solar": {
-                        "last_communication_time": timestamp,
-                        "instant_power": solar_power,
-                        "instant_reactive_power": 0,
-                        "instant_apparent_power": 0,
-                        "frequency": 0,
-                        "energy_exported": 0,
-                        "energy_imported": 0,
-                        "instant_average_voltage": 0,
-                        "instant_average_current": 0,
-                        "i_a_current": 0,
-                        "i_b_current": 0,
-                        "i_c_current": 0,
-                        "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
-                        "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
-                        "timeout": 1000000000,
-                        "num_meters_aggregated": solar_inverters,
-                        "instant_total_current": 0
-                    }
-                }
-
-        elif api == '/api/operation':
-            config = self.get_site_config()
-            if config is None:
-                data = None
-            else:
-                default_real_mode = lookup(config, ("response", "default_real_mode"))
-                backup_reserve_percent = lookup(config, ("response", "backup_reserve_percent")) or 0
-                # backup_reserve_percent is scaled to keep 5% buffer at bottom
-                backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
-                data = {
-                    "real_mode": default_real_mode,
-                    "backup_reserve_percent": backup
-                }
-
-        elif api == '/api/system_status':
-            power = self.get_site_power()
-            config = self.get_site_config()
-            battery = self.get_battery()
-            if power is None or config is None or battery is None:
-                data = None
-            else:
-                # timestamp = lookup(power, ("response", "timestamp"))
-                solar_power = lookup(power, ("response", "solar_power"))
-                # battery_power = lookup(power, ("response", "battery_power"))
-                # load_power = lookup(power, ("response", "load_power"))
-                grid_services_power = lookup(power, ("response", "grid_services_power"))
-                # grid_status = lookup(power, ("response", "grid_status"))
-                # grid_services_active = lookup(power, ("response", "grid_services_active"))
-                battery_count = lookup(config, ("response", "battery_count"))
-                total_pack_energy = lookup(battery, ("response", "total_pack_energy"))
-                energy_left = lookup(battery, ("response", "energy_left"))
-                nameplate_power = lookup(config, ("response", "nameplate_power"))
-                # nameplate_energy = lookup(config, ("response", "nameplate_energy"))
-                if lookup(power, ("response", "island_status")) == "on_grid":
-                    grid_status = "SystemGridConnected"
-                else:  # off_grid or off_grid_unintentional
-                    grid_status = "SystemIslandedActive"
-                    # "grid_status": "Active"
-                    if lookup(power, ("response", "grid_status")) == "Active":
-                        grid_status = "SystemGridConnected"
-                data = {  # TODO: Fill in 0 values
-                    "command_source": "Configuration",
-                    "battery_target_power": 0,
-                    "battery_target_reactive_power": 0,
-                    "nominal_full_pack_energy": total_pack_energy,
-                    "nominal_energy_remaining": energy_left,
-                    "max_power_energy_remaining": 0,  # TODO: Calculate
-                    "max_power_energy_to_be_charged": 0,  # TODO: Calculate
-                    "max_charge_power": nameplate_power,
-                    "max_discharge_power": nameplate_power,
-                    "max_apparent_power": nameplate_power,
-                    "instantaneous_max_discharge_power": 0,
-                    "instantaneous_max_charge_power": 0,
-                    "instantaneous_max_apparent_power": 0,
-                    "hardware_capability_charge_power": 0,
-                    "hardware_capability_discharge_power": 0,
-                    "grid_services_power": grid_services_power,
-                    "system_island_state": grid_status,
-                    "available_blocks": battery_count,
-                    "available_charger_blocks": 0,
-                    "battery_blocks": [],  # TODO: Populate with battery blocks
-                    "ffr_power_availability_high": 0,
-                    "ffr_power_availability_low": 0,
-                    "load_charge_constraint": 0,
-                    "max_sustained_ramp_rate": 0,
-                    "grid_faults": [],  # TODO: Populate with grid faults
-                    "can_reboot": "Yes",
-                    "smart_inv_delta_p": 0,
-                    "smart_inv_delta_q": 0,
-                    "last_toggle_timestamp": "2023-10-13T04:08:05.957195-07:00",
-                    "solar_real_power_limit": solar_power,
-                    "score": 10000,
-                    "blocks_controlled": battery_count,
-                    "primary": True,
-                    "auxiliary_load": 0,
-                    "all_enable_lines_high": True,
-                    "inverter_nominal_usable_power": 0,
-                    "expected_energy_remaining": 0
-                }
-
-        # Possible Actions
-        elif api == '/api/logout':
-            data = '{"status":"ok"}'
-        elif api == '/api/login/Basic':
-            data = '{"status":"ok"}'
-
-        # Static Mock Values
-        elif api == '/api/meters/site':
-            data = json.loads(METERS_SITE)
-
-        elif api == '/api/meters/solar':
-            data = None
-
-        elif api == '/api/auth/toggle/supported':
-            data = json.loads('{"toggle_auth_supported":true}')
-
-        elif api == '/api/sitemaster':
-            data = json.loads('{"status":"StatusUp","running":true,"connected_to_tesla":true,"power_supply_mode":false,'
-                              '"can_reboot":"Yes"}')
-
-        elif api == '/api/powerwalls':
-            data = json.loads(POWERWALLS)
-
-        elif api == '/api/customer/registration':
-            data = json.loads(
-                '{"privacy_notice":null,"limited_warranty":null,"grid_services":null,"marketing":null,'
-                '"registered":true,"timed_out_registration":false}')
-
-        elif api == '/api/system/update/status':
-            data = json.loads(
-                '{"state":"/update_succeeded","info":{"status":["nonactionable"]},"current_time":1702756114429,'
-                '"last_status_time":1702753309227,"version":"23.28.2 27626f98","offline_updating":false,'
-                '"offline_update_error":"","estimated_bytes_per_second":null}')
-
-        elif api == '/api/system_status/grid_faults':
-            data = json.loads('[]')
-
-        elif api == '/api/site_info/grid_codes':
-            data = "TIMEOUT!"
-
-        elif api == '/api/solars':
-            data = json.loads('[{"brand":"Tesla","model":"Solar Inverter 7.6","power_rating_watts":7600}]')
-
-        elif api == '/api/solars/brands':
-            data = json.loads(SOLARS_BRANDS)
-
-        elif api == '/api/customer':
-            data = json.loads('{"registered":true}')
-
-        elif api == '/api/meters':
-            data = json.loads(METERS)
-
-        elif api == '/api/installer':
-            data = json.loads(INSTALLER)
-
-        elif api == '/api/networks':
-            data = json.loads(NETWORKS)
-
-        elif api == '/api/system/networks':
-            data = "TIMEOUT!"
-
-        elif api == '/api/meters/readings':
-            data = "TIMEOUT!"
-
-        elif api == '/api/synchrometer/ct_voltage_references':
-            data = json.loads('{"ct1":"Phase1","ct2":"Phase2","ct3":"Phase1"}')
-
-        elif api == '/api/troubleshooting/problems':
-            data = json.loads('{"problems":[]}')
-
-        elif api == '/api/solar_powerwall':
-            data = json.loads('{}')
-
-        else:
-            data = {"ERROR": f"Unknown API: {api}"}
+            data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
+            data.update({
+                "nominal_full_pack_energy": total_pack_energy,
+                "nominal_energy_remaining": energy_left,
+                "max_charge_power": nameplate_power,
+                "max_discharge_power": nameplate_power,
+                "max_apparent_power": nameplate_power,
+                "grid_services_power": grid_services_power,
+                "system_island_state": grid_status,
+                "available_blocks": battery_count,
+                "solar_real_power_limit": solar_power,
+                "blocks_controlled": battery_count,
+            })
 
         return data
+
+    @not_implemented_mock_data
+    def api_logout(self) -> Optional[Union[dict, list, str, bytes]]:
+        return {"status": "ok"}
+
+    @not_implemented_mock_data
+    def api_login_basic(self) -> Optional[Union[dict, list, str, bytes]]:
+        return {"status": "ok"}
+
+    @not_implemented_mock_data
+    def get_api_meters_site(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads(METERS_SITE)
+
+    @not_implemented_mock_data
+    def get_unimplemented_api(self) -> Optional[Union[dict, list, str, bytes]]:
+        return None
+
+    @not_implemented_mock_data
+    def get_api_unimplemented_timeout(self) -> Optional[Union[dict, list, str, bytes]]:
+        return "TIMEOUT!"
+
+    @not_implemented_mock_data
+    def get_api_auth_toggle_supported(self) -> Optional[Union[dict, list, str, bytes]]:
+        return {"toggle_auth_supported": True}
+
+    @not_implemented_mock_data
+    def get_api_sitemaster(self) -> Optional[Union[dict, list, str, bytes]]:
+        return {"status": "StatusUp", "running": True, "connected_to_tesla": True, "power_supply_mode": False,
+                "can_reboot": "Yes"}
+
+    @not_implemented_mock_data
+    def get_api_powerwalls(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads(POWERWALLS)
+
+    @not_implemented_mock_data
+    def get_api_customer_registration(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads('{"privacy_notice":null,"limited_warranty":null,"grid_services":null,"marketing":null,'
+                          '"registered":true,"timed_out_registration":false}')
+
+    @not_implemented_mock_data
+    def get_api_system_update_status(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads('{"state":"/update_succeeded","info":{"status":["nonactionable"]},'
+                          '"current_time":1702756114429,"last_status_time":1702753309227,"version":"23.28.2 27626f98",'
+                          '"offline_updating":false,"offline_update_error":"","estimated_bytes_per_second":null}')
+
+    @not_implemented_mock_data
+    def get_api_system_status_grid_faults(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads('[]')
+
+    @not_implemented_mock_data
+    def get_api_solars(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads('[{"brand":"Tesla","model":"Solar Inverter 7.6","power_rating_watts":7600}]')
+
+    @not_implemented_mock_data
+    def get_api_solars_brands(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads(SOLARS_BRANDS)
+
+    @not_implemented_mock_data
+    def get_api_customer(self) -> Optional[Union[dict, list, str, bytes]]:
+        return {"registered": True}
+
+    @not_implemented_mock_data
+    def get_api_meters(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads(METERS)
+
+    @not_implemented_mock_data
+    def get_api_installer(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads(INSTALLER)
+
+    @not_implemented_mock_data
+    def get_api_synchrometer_ct_voltage_references(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads('{"ct1":"Phase1","ct2":"Phase2","ct3":"Phase1"}')
+
+    @not_implemented_mock_data
+    def get_api_troubleshooting_problems(self) -> Optional[Union[dict, list, str, bytes]]:
+        return json.loads('{"problems":[]}')
+
+    @not_implemented_mock_data
+    def get_api_solar_powerwall(self) -> Optional[Union[dict, list, str, bytes]]:
+        return {}
 
     def setup(self, email=None):
         """
@@ -952,42 +930,44 @@ class PyPowerwallCloud(PyPowerwallBase):
 
 if __name__ == "__main__":
     # Test code
-    set_debug(False)
+    set_debug(quiet=False, debug=True, color=True)
     tesla_user = None
     # Check for .pypowerwall.auth file
-    if os.path.isfile(AUTHFILE):
+    AUTHPATH = ""
+    auth_file = os.path.join(os.path.expanduser(AUTHPATH), AUTHFILE)
+    if os.path.isfile(auth_file):
         # Read the json file
-        with open(AUTHFILE) as tjson_file:
+        with open(auth_file) as tjson_file:
             # noinspection PyBroadException
             try:
                 tdata = json.load(tjson_file)
                 tesla_user = list(tdata.keys())[0]
-                print(f"Using Tesla User: {tesla_user}")
+                log.info(f"Using Tesla User: {tesla_user}")
             except Exception:
                 tesla_user = None
 
     while not tesla_user:
         tresponse = input("Tesla User Email address: ").strip()
         if "@" not in tresponse:
-            print("Invalid email address\n")
+            log.info("Invalid email address\n")
         else:
             tesla_user = tresponse
             break
 
-    cloud = PyPowerwallCloud(tesla_user)
+    cloud = PyPowerwallCloud(tesla_user, authpath=AUTHPATH)
 
     if not cloud.connect():
-        print("Failed to connect to Tesla Cloud")
+        log.info("Failed to connect to Tesla Cloud")
         cloud.setup()
         if not cloud.connect():
-            print("Failed to connect to Tesla Cloud")
+            log.critical("Failed to connect to Tesla Cloud")
             exit(1)
 
-    print("Connected to Tesla Cloud")
+    log.info("Connected to Tesla Cloud")
 
-    print("\nSite Data")
+    log.info("Site Data")
     tsites = cloud.getsites()
-    print(tsites)
+    log.info(tsites)
 
     # print("\Battery")
     # r = cloud.get_battery()
@@ -1010,8 +990,8 @@ if __name__ == "__main__":
     # '/api/meters/readings','/api/synchrometer/ct_voltage_references']
     items = ['/api/status', '/api/system_status/grid_status', '/api/site_info/site_name',
              '/api/devices/vitals', '/api/system_status/soe', '/api/meters/aggregates',
-             '/api/operation', '/api/system_status']
+             '/api/operation', '/api/system_status', '/api/synchrometer/ct_voltage_references',
+             '/vitals']
     for i in items:
-        print(f"poll({i}):")
-        print(cloud.poll(i))
-        print("\n")
+        log.info(f"poll({i}):")
+        log.info(cloud.poll(i))
