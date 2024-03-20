@@ -427,7 +427,9 @@ class Handler(BaseHTTPRequestHandler):
             message += "</table>\n"
             message += f'\n<p>Page refresh: {str(datetime.datetime.fromtimestamp(time.time()))}</p>\n</body>\n</html>'
         elif self.path == '/api/troubleshooting/problems':
-            message: str = pw.poll('/api/troubleshooting/problems', jsonformat=True) or json.dumps({"problems": []})
+            # Simulate old API call and respond with empty list
+            message = '{"problems": []}'
+            # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
             message: str = pw.poll(self.path, jsonformat=True)
