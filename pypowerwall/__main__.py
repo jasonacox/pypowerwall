@@ -16,9 +16,7 @@ import os
 import sys
 
 # Modules
-import pypowerwall
-from pypowerwall import PyPowerwallCloud
-from pypowerwall import scan
+from pypowerwall import version
 
 # Global Variables
 AUTHFILE = ".pypowerwall.auth"
@@ -31,9 +29,8 @@ color = True
 ip = None
 email = None
 
-
 # Setup parser and groups
-p = argparse.ArgumentParser(prog="PyPowerwall", description=f"PyPowerwall Module v{pypowerwall.__version__}")
+p = argparse.ArgumentParser(prog="PyPowerwall", description=f"PyPowerwall Module v{version}")
 subparsers = p.add_subparsers(dest="command", title='commands (run <command> -h to see usage information)',
                               required=True)
 setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
@@ -58,8 +55,10 @@ command = args.command
 
 # Cloud Mode Setup
 if command == 'setup':
+    from pypowerwall import PyPowerwallCloud
+
     email = args.email
-    print("pyPowerwall [%s] - Cloud Mode Setup\n" % pypowerwall.version)
+    print("pyPowerwall [%s] - Cloud Mode Setup\n" % version)
     # Run Setup
     c = PyPowerwallCloud(None, authpath=authpath)
     if c.setup(email):
@@ -69,6 +68,9 @@ if command == 'setup':
         exit(1)
 # Run Scan
 elif command == 'scan':
+    from pypowerwall import scan
+
+    print("pyPowerwall [%s] - Scanner\n" % version)
     color = not args.nocolor
     ip = args.ip
     hosts = args.hosts
