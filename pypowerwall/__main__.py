@@ -11,17 +11,19 @@
 
 """
 
+import argparse
+import os
+import sys
+
 # Modules
 import pypowerwall
-import sys
-import os
-
 from pypowerwall import PyPowerwallCloud
 from pypowerwall import scan
 
 # Global Variables
 AUTHFILE = ".pypowerwall.auth"
-authpath = os.getenv("PW_AUTH_PATH", "")
+authpath = os.getenv("PW_AUTHPATH", "")
+
 timeout = 1.0
 hosts = 30
 state = 0
@@ -29,38 +31,34 @@ color = True
 ip = None
 email = None
 
-for i in sys.argv:
-    if i == sys.argv[0]:
-        continue
-    elif i.lower() == "scan":
-        state = 0
-    elif i.lower() == "setup":
-        state = 1
-    elif i.lower() == "-nocolor":
-        color = False
-    elif i.lower()[0:4] == "-ip=":
-        ip = i[4:]
-    elif i.lower()[0:7] == "-hosts=":
-        # noinspection PyBroadException
-        try:
-            hosts = int(i[7:])
-        except Exception:
-            state = 2
-    elif i.lower()[0:7] == "-email=":
-        email = i[7:]
-    else:
-        # noinspection PyBroadException
-        try:
-            timeout = float(i)
-        except Exception:
-            state = 2
 
-# State 0 = Run Scan
-if state == 0:
-    scan.scan(color, timeout, hosts, ip)
+# Setup parser and groups
+p = argparse.ArgumentParser(prog="PyPowerwall", description=f"PyPowerwall Module v{pypowerwall.__version__}")
+subparsers = p.add_subparsers(dest="command", title='commands (run <command> -h to see usage information)',
+                              required=True)
+setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
+setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
 
-# State 1 = Cloud Mode Setup
-if state == 1:
+scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
+scan_args.add_argument("timeout", type=float, default=timeout,
+                       help=f"(Scan option) Seconds to wait per host [Default={timeout:.1f}]")
+scan_args.add_argument("-nocolor", action="store_true", default=not color,
+                       help="(Scan option) Disable color text output.")
+scan_args.add_argument("-ip", type=str, default=ip, help="(Scan option) IP address within network to scan.")
+scan_args.add_argument("-hosts", type=int, default=hosts,
+                       help=f"(Scan option) Number of hosts to scan simultaneously [Default={hosts}]")
+
+if len(sys.argv) == 1:
+    p.print_help(sys.stderr)
+    sys.exit(1)
+
+# parse args
+args = p.parse_args()
+command = args.command
+
+# Cloud Mode Setup
+if command == 'setup':
+    email = args.email
     print("pyPowerwall [%s] - Cloud Mode Setup\n" % pypowerwall.version)
     # Run Setup
     c = PyPowerwallCloud(None, authpath=authpath)
@@ -69,22 +67,13 @@ if state == 1:
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
         exit(1)
-
-# State 2 = Show Usage
-if state == 2:
-    print("pyPowerwall [%s]\n" % pypowerwall.version)
-    print("Usage:\n")
-    print(
-        "    python -m pypowerwall [command] [<timeout>] [-nocolor] [-ip=<ip>] [-hosts=<hosts>] [-email=<email>] [-h]")
-    print("")
-    print("      command = scan        Scan local network for Powerwall gateway.")
-    print("      command = setup       Setup Tesla Login for Cloud Mode access.")
-    print("      timeout               (Scan option) Seconds to wait per host [Default=%0.1f]" % timeout)
-    print("      -nocolor              (Scan option) Disable color text output.")
-    print("      -ip=<ip>              (Scan option) IP address within network to scan.")
-    print("      -hosts=<hosts>        (Scan option) Number of hosts to scan simultaneously [Default=%d]" % hosts)
-    print("      -email=<email>        (Setup option) Email address for Tesla Login.")
-    print("      -h                    Show usage.")
-    print("")
-
-# End
+# Run Scan
+elif command == 'scan':
+    color = not args.nocolor
+    ip = args.ip
+    hosts = args.hosts
+    timeout = args.timeout
+    scan.scan(color, timeout, hosts, ip)
+# Print Usage
+else:
+    p.print_help()
