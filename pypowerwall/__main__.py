@@ -40,13 +40,13 @@ setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mo
 setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
 
 scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
-scan_args.add_argument("timeout", type=float, default=timeout,
-                       help=f"(Scan option) Seconds to wait per host [Default={timeout:.1f}]")
+scan_args.add_argument("-timeout", type=float, default=timeout,
+                       help=f"Seconds to wait per host [Default={timeout:.1f}]")
 scan_args.add_argument("-nocolor", action="store_true", default=not color,
-                       help="(Scan option) Disable color text output.")
+                       help="Disable color text output.")
 scan_args.add_argument("-ip", type=str, default=ip, help="(Scan option) IP address within network to scan.")
 scan_args.add_argument("-hosts", type=int, default=hosts,
-                       help=f"(Scan option) Number of hosts to scan simultaneously [Default={hosts}]")
+                       help=f"Number of hosts to scan simultaneously [Default={hosts}]")
 
 if len(sys.argv) == 1:
     p.print_help(sys.stderr)
