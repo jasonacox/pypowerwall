@@ -4,6 +4,7 @@ import time
 from typing import Union, Tuple, Optional, Any
 
 import requests
+from requests import Response
 
 import pypowerwall.local.tesla_pb2 as tesla_pb2
 
@@ -136,9 +137,11 @@ class PyPowerwallLocal(PyPowerwallBase):
             url = "https://%s%s" % (self.host, api)
             try:
                 if self.authmode == "token":
-                    r = self.session.get(url, headers=self.auth, verify=False, timeout=self.timeout, stream=raw)
+                    r: Response = self.session.get(url, headers=self.auth, verify=False, timeout=self.timeout,
+                                                   stream=raw)
                 else:
-                    r = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout, stream=raw)
+                    r: Response = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout,
+                                                   stream=raw)
             except requests.exceptions.Timeout:
                 log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
                 return None
@@ -185,11 +188,18 @@ class PyPowerwallLocal(PyPowerwallBase):
                 payload = r.raw.data
             else:
                 payload = r.text
-                try:
-                    payload = json.loads(payload)
-                except Exception as exc:
-                    log.error(f'Unable to parse payload as JSON: {exc}')
+                if not payload:
+                    log.debug(f"Empty response from Powerwall at {url}")
                     return None
+                elif 'application/json' in r.headers.get('Content-Type'):
+                    try:
+                        payload = json.loads(payload)
+                    except Exception as exc:
+                        log.error(f"Unable to parse payload '{payload}' as JSON, even though it was supposed to "
+                                  f"be a json: {exc}")
+                        return None
+                else:
+                    log.debug(f"Non-json response from Powerwall at {url}: '{payload}', serving as is.")
             self.pwcache[api] = payload
             self.pwcachetime[api] = time.perf_counter()
             return payload
