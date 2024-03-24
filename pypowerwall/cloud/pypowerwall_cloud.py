@@ -79,12 +79,6 @@ class PyPowerwallCloud(PyPowerwallBase):
                 self.siteindex = 0
         log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
 
-        # Check for auth file
-        if not os.path.exists(self.authfile):
-            msg = f"Missing auth file {self.authfile} - run setup"
-            log.warning(msg)
-            raise PyPowerwallCloudNoTeslaAuthFile(msg)
-
     def init_poll_api_map(self) -> dict:
         # API map for local to cloud call conversion
         return {
@@ -137,10 +131,13 @@ class PyPowerwallCloud(PyPowerwallBase):
         """
         Connect to Tesla Cloud via teslapy
         """
-        # Create Tesla instance
+        # Check for auth file
         if not os.path.exists(self.authfile):
-            log.error("Missing auth file %s - run setup" % self.authfile)
-            return False
+            msg = f"Missing auth file {self.authfile} - run setup"
+            log.warning(msg)
+            raise PyPowerwallCloudNoTeslaAuthFile(msg)
+
+        # Create Tesla instance
         self.tesla = Tesla(self.email, cache_file=self.authfile, timeout=self.timeout)
         # Check to see if we have a cached token
         if not self.tesla.authorized:
@@ -933,7 +930,7 @@ if __name__ == "__main__":
     set_debug(quiet=False, debug=True, color=True)
     tesla_user = None
     # Check for .pypowerwall.auth file
-    AUTHPATH = ""
+    AUTHPATH = os.environ.get('PW_AUTHPATH', "")
     auth_file = os.path.join(os.path.expanduser(AUTHPATH), AUTHFILE)
     if os.path.isfile(auth_file):
         # Read the json file
