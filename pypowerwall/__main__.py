@@ -20,7 +20,7 @@ from pypowerwall import version
 
 # Global Variables
 AUTHFILE = ".pypowerwall.auth"
-authpath = os.getenv("PW_AUTHPATH", "")
+authpath = os.getenv("PW_AUTH_PATH", "")
 
 timeout = 1.0
 hosts = 30

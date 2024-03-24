@@ -930,7 +930,7 @@ if __name__ == "__main__":
     set_debug(quiet=False, debug=True, color=True)
     tesla_user = None
     # Check for .pypowerwall.auth file
-    AUTHPATH = os.environ.get('PW_AUTHPATH', "")
+    AUTHPATH = os.environ.get('PW_AUTH_PATH', "")
     auth_file = os.path.join(os.path.expanduser(AUTHPATH), AUTHFILE)
     if os.path.isfile(auth_file):
         # Read the json file
