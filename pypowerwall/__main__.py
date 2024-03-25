@@ -33,6 +33,7 @@ email = None
 p = argparse.ArgumentParser(prog="PyPowerwall", description=f"PyPowerwall Module v{version}")
 subparsers = p.add_subparsers(dest="command", title='commands (run <command> -h to see usage information)',
                               required=True)
+
 setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
 setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
 
@@ -41,7 +42,7 @@ scan_args.add_argument("-timeout", type=float, default=timeout,
                        help=f"Seconds to wait per host [Default={timeout:.1f}]")
 scan_args.add_argument("-nocolor", action="store_true", default=not color,
                        help="Disable color text output.")
-scan_args.add_argument("-ip", type=str, default=ip, help="(Scan option) IP address within network to scan.")
+scan_args.add_argument("-ip", type=str, default=ip, help="IP address within network to scan.")
 scan_args.add_argument("-hosts", type=int, default=hosts,
                        help=f"Number of hosts to scan simultaneously [Default={hosts}]")
 
