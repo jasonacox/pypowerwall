@@ -568,15 +568,12 @@ class Powerwall(object):
         if system_status is None:
             return None
 
-        devices: dict = self.vitals()
-        if not devices:
-            return None
+        devices: dict = self.vitals() or {}
 
         result = {}
         # copy the info from system_status into result
         # but change the key to the battery serial number
-        for i in range(system_status['available_blocks']):
-            bat = system_status['battery_blocks'][i]
+        for bat in system_status['battery_blocks']:
             sn = bat['PackageSerialNumber']
             bat_res = {}
             for j in bat:
