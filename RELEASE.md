@@ -1,9 +1,13 @@
 # RELEASE NOTES
+
 ## v0.8.0 - Refactoring
 
-* Refactor Local and Cloud based operation code into respective modules.
-* Make meaning of the `jsonformat` parameter consistent across all method calls. 
-* Work in progress
+* Refactored pyPowerwall by @emptywee in https://github.com/jasonacox/pypowerwall/pull/77 including:
+* Moved Local and Cloud based operation code into respective modules, providing better abstraction and making it easier to maintain and extend going forward.
+* Made meaning of the `jsonformat` parameter consistent across all method calls (breaking API change).
+* Removed Python 2.7 support.
+* Cleaned up code and adopted a more pythoinc style.
+* Fixed battery_blocks() for non-vitals systems.
 
 ## v0.7.12 - Cachefile, Alerts & Strings
 
