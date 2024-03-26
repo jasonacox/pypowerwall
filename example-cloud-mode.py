@@ -8,13 +8,12 @@ if __name__ == "__main__":
 
     # Credentials for your Powerwall - Customer Login Data
     # Set appropriate env vars or change the defaults
-    password = os.environ.get('PW_PASSWORD', 'password')
     email = os.environ.get('PW_EMAIL', 'email@example.com')
-    host = os.environ.get('PW_HOST', 'localhost')  # Change to the IP of your Powerwall
     timezone = os.environ.get('PW_TIMEZONE', 'America/Los_Angeles')  # Change to your local timezone/tz
+    auth_path = os.environ.get('PW_AUTH_PATH', "")
 
     # Connect to Powerwall
-    pw = pypowerwall.Powerwall(host, password, email, timezone, cloudmode=False)
+    pw = pypowerwall.Powerwall("", "", email, timezone, authpath=auth_path, cloudmode=True)
 
     # Display Metric Examples
     print("Battery power level: %0.0f%%" % pw.level())
@@ -27,4 +26,3 @@ if __name__ == "__main__":
     # Raw JSON Data Examples
     print("Grid raw: %r" % pw.grid(verbose=True))
     print("Solar raw: %r" % pw.solar(verbose=True))
-    print("Strings raw: %r" % pw.strings(verbose=True, jsonformat=True))

@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t51 (18 Mar 2024)
+
+* Update to pypowerwall 0.8.0
+* Minor bug fixes.
+
 ### Proxy t43 (17 Mar 2024)
 
 * Update to pypowerwall 0.7.12 and add `/api/solar_powerwall` to ALLOWLIST. Using new API, proxy is able to produce `/alerts/` list and some `/strings` data for newer Firmware version (>23.44) that no longer support the vitals API.
