@@ -41,6 +41,11 @@ class PyPowerwallBase:
         raise NotImplementedError
 
     @abc.abstractmethod
+    def post(self, api: str, payload: Optional[dict], din: Optional[str],
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
+        raise NotImplementedError
+
+    @abc.abstractmethod
     def vitals(self) -> Optional[dict]:
         raise NotImplementedError
 

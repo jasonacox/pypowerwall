@@ -180,7 +180,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                         # noinspection PyUnusedLocal
                         payload = r.raw.data
                     self._get_session()
-                    return self.poll(api)
+                    return self.poll(api, raw=raw, recursive=True)
                 else:
                     log.error('Unable to establish session with Powerwall at %s - check password' % url)
                     return None
@@ -206,6 +206,65 @@ class PyPowerwallLocal(PyPowerwallBase):
         else:
             # should be already a dict in cache, so just return it
             return payload
+
+    def post(self, api: str, payload: Optional[dict], din: Optional[str],
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
+
+        # We probably should not cache responses here
+        # Also, we may have to use different HTTP Methods such as POST, PUT, PATCH based on Powerwall API requirements
+        # For now we assume it's taking POST calls
+
+        url = "https://%s%s" % (self.host, api)
+        try:
+            if self.authmode == "token":
+                r = self.session.post(url, headers=self.auth, json=payload, verify=False, timeout=self.timeout,
+                                      stream=raw)
+            else:
+                r = self.session.post(url, cookies=self.auth, json=payload, verify=False, timeout=self.timeout,
+                                      stream=raw)
+        except requests.exceptions.Timeout:
+            log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
+            return None
+        except requests.exceptions.ConnectionError:
+            log.debug('ERROR Unable to connect to Powerwall at %s' % url)
+            return None
+        except Exception as exc:
+            log.debug('ERROR Unknown error connecting to Powerwall at %s: %s' % (url, exc))
+            return None
+        if r.status_code == 404:
+            log.debug('404 Powerwall API not found at %s' % url)
+            return None
+        if 400 <= r.status_code < 500:
+            # Session Expired - Try to get a new one unless we already tried
+            log.debug('Session Expired - Trying to get a new one')
+            if not recursive:
+                if raw:
+                    # Drain the stream before retrying
+                    # noinspection PyUnusedLocal
+                    response = r.raw.data
+                self._get_session()
+                return self.post(api=api, payload=payload, din=din, raw=raw, recursive=True)
+            else:
+                log.error('Unable to establish session with Powerwall at %s - check password' % url)
+                return None
+        if raw:
+            response = r.raw.data
+        else:
+            response = r.text
+            if not response:
+                log.debug(f"Empty response from Powerwall at {url}")
+                return None
+            elif 'application/json' in r.headers.get('Content-Type'):
+                try:
+                    response = json.loads(response)
+                except Exception as exc:
+                    log.error(f"Unable to parse response '{response}' as JSON, even though it was supposed to "
+                              f"be a json: {exc}")
+                    return None
+            else:
+                log.debug(f"Non-json response from Powerwall at {url}: '{response}', serving as is.")
+
+        return response
 
     def version(self, int_value=False):
         """ Firmware Version """

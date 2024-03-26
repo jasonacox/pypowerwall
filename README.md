@@ -141,6 +141,7 @@ and call function to poll data.  Here is an example:
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
+    post(api, payload, json)  # Send payload to Powerwall api (dict if json=True)
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -167,7 +168,10 @@ and call function to poll data.  Here is an example:
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
     is_connected()            # Returns True if able to connect to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
+    get_mode()                # Get Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
+
+    set_battery_op_reserve(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
     
 ```
 

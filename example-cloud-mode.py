@@ -24,5 +24,6 @@ if __name__ == "__main__":
     print("Home Power: %0.2fkW" % (float(pw.home()) / 1000.0))
 
     # Raw JSON Data Examples
+    print("Status: %s" % pw.status())
     print("Grid raw: %r" % pw.grid(verbose=True))
     print("Solar raw: %r" % pw.solar(verbose=True))
