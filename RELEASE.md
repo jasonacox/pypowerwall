@@ -1,12 +1,22 @@
 # RELEASE NOTES
 
+## v0.8.1 - Set battery reserve, operation mode
+
+* Added `get_mode()` function.
+* Added `set_mode()` function.
+* Added `set_reserve()` function.
+* Added `set_operation()` function to set battery operation mode and/or reserve level. Likely won't work in the local mode.
+* Added basic validation for main class `__init__()` parameters (a.k.a. user input).
+* Handle 401/403 errors from Powerwall separately in local mode.
+* Handle 50x errors from Powerwall in local mode.
+
 ## v0.8.0 - Refactoring
 
 * Refactored pyPowerwall by @emptywee in https://github.com/jasonacox/pypowerwall/pull/77 including:
-* Moved Local and Cloud based operation code into respective modules, providing better abstraction and making it easier to maintain and extend going forward.
-* Made meaning of the `jsonformat` parameter consistent across all method calls (breaking API change).
-* Removed Python 2.7 support.
-* Cleaned up code and adopted a more pythoinc style.
+  * Moved Local and Cloud based operation code into respective modules, providing better abstraction and making it easier to maintain and extend going forward.
+  * Made meaning of the `jsonformat` parameter consistent across all method calls (breaking API change).
+  * Removed Python 2.7 support.
+  * Cleaned up code and adopted a more pythoinc style.
 * Fixed battery_blocks() for non-vitals systems.
 
 ## v0.7.12 - Cachefile, Alerts & Strings

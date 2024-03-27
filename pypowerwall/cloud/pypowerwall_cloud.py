@@ -65,6 +65,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         self.authfile = os.path.join(self.authpath, AUTHFILE)
         self.sitefile = os.path.join(self.authpath, SITEFILE)
         self.poll_api_map = self.init_poll_api_map()
+        self.post_api_map = self.init_post_api_map()
 
         if self.siteid is None:
             # Check for site file
@@ -78,6 +79,11 @@ class PyPowerwallCloud(PyPowerwallBase):
             else:
                 self.siteindex = 0
         log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
+
+    def init_post_api_map(self) -> dict:
+        return {
+            "/api/operation": self.post_api_operation,
+        }
 
     def init_poll_api_map(self) -> dict:
         # API map for local to cloud call conversion
@@ -190,6 +196,28 @@ class PyPowerwallCloud(PyPowerwallBase):
         func = self.poll_api_map.get(api)
         if func:
             return func()
+        else:
+            # raise PyPowerwallCloudNotImplemented(api)
+            # or pass a custom error response:
+            return {"ERROR": f"Unknown API: {api}"}
+
+    def post(self, api: str, payload: Optional[dict], din: Optional[str],
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
+        """
+        Map Powerwall API to Tesla Cloud Data
+        """
+        if self.tesla is None:
+            raise PyPowerwallCloudTeslaNotConnected
+        # API Map - Determine what data we need based on Powerwall APIs
+        log.debug(f" -- cloud: Request for {api}")
+
+        func = self.post_api_map.get(api)
+        if func:
+            kwargs = {
+                'payload': payload,
+                'din': din
+            }
+            return func(**kwargs)
         else:
             # raise PyPowerwallCloudNotImplemented(api)
             # or pass a custom error response:
@@ -923,6 +951,54 @@ class PyPowerwallCloud(PyPowerwallBase):
 
     def vitals(self) -> Optional[dict]:
         return self.poll('/vitals')
+
+    def post_api_operation(self, **kwargs):
+        payload = kwargs.get('payload', {})
+        din = kwargs.get('din')
+
+        if not payload.get('backup_reserve_percent') and not payload.get('real_mode'):
+            raise PyPowerwallCloudInvalidPayload("/api/operation payload missing required parameters. Either "
+                                                 "'backup_reserve_percent or 'real_mode', or both must present.")
+
+        if not din:
+            log.warning("No valid DIN provided, will adjust the first battery on site.")
+
+        batteries = self.tesla.battery_list()
+        log.debug(f"Got batteries: {batteries}")
+        for battery in batteries:
+            if din and battery.get('gateway_id') != din:
+                continue
+            try:
+                op_level = battery.set_backup_reserve_percent(payload['backup_reserve_percent'])
+                op_mode = battery.set_operation(payload['real_mode'])
+                log.debug(f"Op Level: {op_level}")
+                log.debug(f"Op Mode: {op_mode}")
+                return {
+                    'set_backup_reserve_percent': {
+                        'backup_reserve_percent': payload['backup_reserve_percent'],
+                        'din': din,
+                        'result': op_level
+                    },
+                    'set_operation': {
+                        'real_mode': payload['real_mode'],
+                        'din': din,
+                        'result': op_mode
+                    }
+                }
+            except Exception as exc:
+                return {'error': f"{exc}"}
+        return {
+            'set_backup_reserve_percent': {
+                'backup_reserve_percent': payload['backup_reserve_percent'],
+                'din': din,
+                'result': 'BatteryNotFound'
+            },
+            'set_operation': {
+                'real_mode': payload['real_mode'],
+                'din': din,
+                'result': 'BatteryNotFound'
+            }
+        }
 
 
 if __name__ == "__main__":

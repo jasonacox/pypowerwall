@@ -8,3 +8,7 @@ class PyPowerwallCloudTeslaNotConnected(Exception):
 
 class PyPowerwallCloudNotImplemented(Exception):
     pass
+
+
+class PyPowerwallCloudInvalidPayload(Exception):
+    pass
