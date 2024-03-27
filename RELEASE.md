@@ -3,8 +3,12 @@
 ## v0.8.1 - Set battery reserve, operation mode
 
 * Added `get_mode()` function.
+* Added `set_mode()` function.
+* Added `set_reserve()` function.
 * Added `set_battery_op_reserve()` function to set battery operation mode and/or reserve level. Likely won't work in the local mode.
 * Added basic validation for main class `__init__()` parameters (a.k.a. user input).
+* Handle 401/403 errors from Powerwall separately in local mode.
+* Handle 50x errors from Powerwall in local mode.
 
 ## v0.8.0 - Refactoring
 

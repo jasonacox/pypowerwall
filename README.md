@@ -169,6 +169,8 @@ and call function to poll data.  Here is an example:
     is_connected()            # Returns True if able to connect to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
     get_mode()                # Get Current Battery Operation Mode
+    set_reserve(level)        # Set Battery Reserve Percentage
+    set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
 
     set_battery_op_reserve(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode

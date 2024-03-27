@@ -165,13 +165,13 @@ class PyPowerwallLocal(PyPowerwallBase):
                 self.pwcachetime[api] = time.perf_counter() + 600
                 self.pwcache[api] = None
                 return None
-            if r.status_code == 429:
+            elif r.status_code == 429:
                 # Rate limited - Switch to cooldown mode for 5 minutes
                 self.pwcooldown = time.perf_counter() + 300
                 log.error('429 Rate limited by Powerwall API at %s - Activating 5 minute cooldown' % url)
-                # Serve up cached data if it exists
+                # Serve up cached data if it exists (@emptywee: this doesn't look like we serve up cached data here?)
                 return None
-            if 400 <= r.status_code < 500:
+            elif r.status_code == 401:
                 # Session Expired - Try to get a new one unless we already tried
                 log.debug('Session Expired - Trying to get a new one')
                 if not recursive:
@@ -184,6 +184,20 @@ class PyPowerwallLocal(PyPowerwallBase):
                 else:
                     log.error('Unable to establish session with Powerwall at %s - check password' % url)
                     return None
+            elif r.status_code == 403:
+                # Unauthorized
+                log.error('403 Unauthorized by Powerwall API at %s - Endpoint disabled in this firmware or '
+                          'user lacks permission' % url)
+                self.pwcachetime[api] = time.perf_counter() + 600
+                self.pwcache[api] = None
+                return None
+            elif 400 <= r.status_code < 500:
+                log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
+                return None
+            elif r.status_code >= 500:
+                log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))
+                return None
+
             if raw:
                 payload = r.raw.data
             else:
@@ -234,7 +248,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         if r.status_code == 404:
             log.debug('404 Powerwall API not found at %s' % url)
             return None
-        if 400 <= r.status_code < 500:
+        elif r.status_code == 401:
             # Session Expired - Try to get a new one unless we already tried
             log.debug('Session Expired - Trying to get a new one')
             if not recursive:
@@ -247,6 +261,17 @@ class PyPowerwallLocal(PyPowerwallBase):
             else:
                 log.error('Unable to establish session with Powerwall at %s - check password' % url)
                 return None
+        elif r.status_code == 403:
+            # Unauthorized
+            log.error('403 Unauthorized by Powerwall API at %s - Endpoint disabled in this firmware or '
+                      'user lacks permission' % url)
+            return None
+        elif 400 <= r.status_code < 500:
+            log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
+            return None
+        elif r.status_code >= 500:
+            log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))
+            return None
         if raw:
             response = r.raw.data
         else:

@@ -1,6 +1,5 @@
 # Test Functions of the Powerwall API
 import os
-import time
 
 import pypowerwall
 
@@ -24,7 +23,7 @@ def test_battery_mode_change(pw):
     else:
         new_mode = 'self_consumption'
 
-    resp = pw.set_battery_op_reserve(mode=new_mode)
+    resp = pw.set_mode(mode=new_mode)
     if resp and resp.get('set_operation', {}).get('result') == 'Updated':
         # if we got a valid response from API, let's assume it worked :)
         installed_mode = resp.get('set_operation', {}).get('real_mode')
@@ -34,7 +33,7 @@ def test_battery_mode_change(pw):
     if installed_mode != new_mode:
         print(f"Set battery operation mode to {new_mode} failed.")
     # revert to original value just in case
-    pw.set_battery_op_reserve(mode=original_mode)
+    pw.set_mode(mode=original_mode)
 
 
 def test_battery_reserve_change(pw):
@@ -44,7 +43,7 @@ def test_battery_reserve_change(pw):
     else:
         new_reserve_level = 50
 
-    resp = pw.set_battery_op_reserve(level=new_reserve_level)
+    resp = pw.set_reserve(level=new_reserve_level)
     if resp and resp.get('set_backup_reserve_percent', {}).get('result') == 'Updated':
         # if we got a valid response from API, let's assume it worked :)
         installed_level = resp.get('set_backup_reserve_percent', {}).get('backup_reserve_percent')
@@ -54,13 +53,15 @@ def test_battery_reserve_change(pw):
     if installed_level != new_reserve_level:
         print(f"Set battery reserve level to {new_reserve_level}% failed.")
     # revert to original value just in case
-    pw.set_battery_op_reserve(level=original_reserve_level)
+    pw.set_reserve(level=original_reserve_level)
 
 
 def test_post_functions(pw):
     # test battery reserve and mode change
+    print("Testing set_battery_op_reserve()...")
     test_battery_mode_change(pw)
     test_battery_reserve_change(pw)
+    print("Post functions test complete.")
 
 
 def run(include_post_funcs=False):
@@ -159,4 +160,4 @@ def run(include_post_funcs=False):
 
 
 if __name__ == "__main__":
-    run(include_post_funcs=False)
+    run(include_post_funcs=True)

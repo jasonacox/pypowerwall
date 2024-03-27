@@ -62,6 +62,8 @@
     is_connected()            # Returns True if able to connect and login to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
     get_mode()                # Get Current Battery Operation Mode
+    set_reserve(level)        # Set Battery Reserve Percentage
+    set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
 
     set_battery_op_reserve(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
@@ -519,6 +521,30 @@ class Powerwall(object):
         if data and data.get('real_mode'):
             return data['real_mode']
         return None
+
+    def set_reserve(self, level: float) -> Optional[dict]:
+        """
+        Set battery reserve level.
+
+        Args:
+            level:   Set battery reserve level in percents (range of 5-100 is accepted)
+
+        Returns:
+            Dictionary with operation results.
+        """
+        return self.set_battery_op_reserve(level=level)
+
+    def set_mode(self, mode: str) -> Optional[dict]:
+        """
+        Set battery operation mode.
+
+        Args:
+            mode:    Set battery operation mode (self_consumption, backup, autonomous, etc.)
+
+        Returns:
+            Dictionary with operation results.
+        """
+        return self.set_battery_op_reserve(mode=mode)
 
     def set_battery_op_reserve(self, level: Optional[float] = None, mode: Optional[str] = None,
                                jsonformat: bool = False) -> Optional[Union[dict, str]]:
