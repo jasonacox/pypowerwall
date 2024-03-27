@@ -66,7 +66,7 @@
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
 
-    set_battery_op_reserve(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
+    set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
 
  Requirements
     This module requires the following modules: requests, protobuf, teslapy
@@ -532,7 +532,7 @@ class Powerwall(object):
         Returns:
             Dictionary with operation results.
         """
-        return self.set_battery_op_reserve(level=level)
+        return self.set_operation(level=level)
 
     def set_mode(self, mode: str) -> Optional[dict]:
         """
@@ -544,10 +544,10 @@ class Powerwall(object):
         Returns:
             Dictionary with operation results.
         """
-        return self.set_battery_op_reserve(mode=mode)
+        return self.set_operation(mode=mode)
 
-    def set_battery_op_reserve(self, level: Optional[float] = None, mode: Optional[str] = None,
-                               jsonformat: bool = False) -> Optional[Union[dict, str]]:
+    def set_operation(self, level: Optional[float] = None, mode: Optional[str] = None,
+                      jsonformat: bool = False) -> Optional[Union[dict, str]]:
         """
         Set battery operation mode and reserve level.
 

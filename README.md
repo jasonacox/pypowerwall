@@ -173,7 +173,7 @@ and call function to poll data.  Here is an example:
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
 
-    set_battery_op_reserve(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
+    set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
     
 ```
 

@@ -58,7 +58,7 @@ def test_battery_reserve_change(pw):
 
 def test_post_functions(pw):
     # test battery reserve and mode change
-    print("Testing set_battery_op_reserve()...")
+    print("Testing set_operation()...")
     test_battery_mode_change(pw)
     test_battery_reserve_change(pw)
     print("Post functions test complete.")
