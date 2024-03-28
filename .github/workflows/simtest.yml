@@ -18,7 +18,7 @@ jobs:
 
     services:
       simulator:
-        image: jasonacox/pwsimulator
+        image: ${{ secrets.DOCKERHUB_USERNAME }}/pwsimulator
         ports:
            - 443:443
 
