@@ -26,7 +26,7 @@ import json
 import os
 
 
-version_tuple = (0, 0, 2)
+version_tuple = (0, 0, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
