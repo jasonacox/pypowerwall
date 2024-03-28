@@ -5,6 +5,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+env:
+  IMAGE_REPOSITORY: ${{ secrets.DOCKERHUB_USERNAME }}
+
 jobs:
   tests:
     name: "Python ${{ matrix.python-version }}"
@@ -18,7 +21,7 @@ jobs:
 
     services:
       simulator:
-        image: ${{ secrets.DOCKERHUB_USERNAME }}/pwsimulator
+        image: ${{ env.IMAGE_REPOSITORY }}/pwsimulator
         ports:
            - 443:443
 
