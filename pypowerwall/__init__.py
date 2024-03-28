@@ -491,6 +491,17 @@ class Powerwall(object):
                 if value is True:
                     alerts.append(alert)
 
+        # Augment with inferred alerts from the grid_status
+        grid_status = self.poll('/api/system_status/grid_status')
+        if grid_status:
+            alert = grid_status.get('grid_status')
+            if alert == 'SystemGridConnected' and 'SystemConnectedToGrid' not in alerts:
+                alerts.append('SystemConnectedToGrid')
+            else:
+                alerts.append(alert)
+            if grid_status.get('grid_services_active'):
+                alerts.append('GridServicesActive')
+
         if jsonformat:
             return json.dumps(alerts, indent=4, sort_keys=True)
         else:
