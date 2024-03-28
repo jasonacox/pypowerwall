@@ -49,37 +49,38 @@ api = {
     '/api/meters/aggregates': '{"site":{"last_communication_time":"2021-10-17T07:23:34.290637169-07:00","instant_power":%d,"instant_reactive_power":-439,"instant_apparent_power":1414.830731925201,"frequency":0,"energy_exported":687.6503234502925,"energy_imported":887602.0847810425,"instant_average_voltage":210.20168600655896,"instant_average_current":12.47,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":1,"instant_total_current":12.47},"battery":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":330,"instant_apparent_power":335.4101966249685,"frequency":60.019999999999996,"energy_exported":136540,"energy_imported":161080,"instant_average_voltage":242.95,"instant_average_current":0.6000000000000001,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":2,"instant_total_current":0.6000000000000001},"load":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":-131,"instant_apparent_power":1546.0599115170148,"frequency":0,"energy_exported":0,"energy_imported":1120094.4344575922,"instant_average_voltage":210.20168600655896,"instant_average_current":7.328675755492901,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"instant_total_current":7.328675755492901},"solar":{"last_communication_time":"2021-10-17T07:23:34.290245943-07:00","instant_power":%d,"instant_reactive_power":-20,"instant_apparent_power":240.8318915758459,"frequency":60.012,"energy_exported":257720,"energy_imported":0,"instant_average_voltage":242.4,"instant_average_current":0.9488448844884488,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1000000000,"num_meters_aggregated":1,"instant_total_current":0.9488448844884488}}' % (GRID, POWERWALL, HOME, SOLAR),
     '/api/system_status/soe': '{"percentage":23.975388097174584}',
     '/api/system_status/grid_status': '{"grid_status":"SystemGridConnected","grid_services_active":false}',
-    '/api/powerwalls': '{"powerwalls":[]}',  
-    '/api/auth/toggle/supported': '{"toggle_auth_supported":true}', 
+    '/api/powerwalls': '{"powerwalls":[]}',
+    '/api/auth/toggle/supported': '{"toggle_auth_supported":true}',
     '/api/solar_powerwall': '{"pvac_status":{"state":"PVAC_Active","disabled":false,"disabled_reasons":[],"grid_state":"Grid_Compliant","inv_state":"INV_Grid_Connected","v_out":241.60000000000002,"f_out":59.992000000000004,"p_out":0,"q_out":-10,"i_out":1.12,"string_vitals":[{"string_id":1,"connected":true,"measured_voltage":10.3,"current":0,"measured_power":0},{"string_id":2,"connected":false,"measured_voltage":33.2,"current":0,"measured_power":0},{"string_id":3,"connected":true,"measured_voltage":11,"current":0,"measured_power":0},{"string_id":4,"connected":true,"measured_voltage":10.3,"current":0,"measured_power":0}]},"pvs_status":{"state":"PVS_GridSupporting","disabled":false,"enable_output":true,"v_ll":242.4,"self_test_state":"PVS_SelfTestOff"},"pv_power_limit":230.39999999999998,"power_status_setpoint":"on","pvac_alerts":{"LastRxTime":"2024-03-18T20:40:15.175038-07:00","ReceivedMuxBitmask":1,"PVAC_alertMatrixIndex":0,"PVAC_a001_inv_L1_HW_overcurrent":false,"PVAC_a002_inv_L2_HW_overcurrent":false,"PVAC_a003_inv_HVBus_HW_overvoltage":false,"PVAC_a004_pv_HW_CMPSS_OC_STGA":false,"PVAC_a005_pv_HW_CMPSS_OC_STGB":false,"PVAC_a006_pv_HW_CMPSS_OC_STGC":false,"PVAC_a007_pv_HW_CMPSS_OC_STGD":false,"PVAC_a008_inv_HVBus_undervoltage":false,"PVAC_a009_SwAppBoot":false,"PVAC_a010_inv_AC_overvoltage":false,"PVAC_a011_inv_AC_undervoltage":false,"PVAC_a012_inv_AC_overfrequency":false,"PVAC_a013_inv_AC_underfrequency":false,"PVAC_a014_PVS_disabled_relay":false,"PVAC_a015_pv_HW_Allegro_OC_STGA":false,"PVAC_a016_pv_HW_Allegro_OC_STGB":false,"PVAC_a017_pv_HW_Allegro_OC_STGC":false,"PVAC_a018_pv_HW_Allegro_OC_STGD":false,"PVAC_a019_ambient_overtemperature":false,"PVAC_a020_dsp_overtemperature":false,"PVAC_a021_dcac_heatsink_overtemperature":false,"PVAC_a022_mppt_heatsink_overtemperature":false,"PVAC_a023_unused":false,"PVAC_a024_PVACrx_Command_mia":false,"PVAC_a025_PVS_Status_mia":false,"PVAC_a026_inv_AC_peak_overvoltage":false,"PVAC_a027_inv_K1_relay_welded":false,"PVAC_a028_inv_K2_relay_welded":false,"PVAC_a029_pump_faulted":false,"PVAC_a030_fan_faulted":false,"PVAC_a031_VFCheck_OV":false,"PVAC_a032_VFCheck_UV":false,"PVAC_a033_VFCheck_OF":false,"PVAC_a034_VFCheck_UF":false,"PVAC_a035_VFCheck_RoCoF":false,"PVAC_a036_inv_lost_iL_control":false,"PVAC_a037_PVS_processor_nERROR":false,"PVAC_a038_inv_failed_xcap_precharge":false,"PVAC_a039_inv_HVBus_SW_overvoltage":false,"PVAC_a040_pump_correction_saturated":false,"PVAC_a041_excess_PV_clamp_triggered":false,"PVAC_a042_mppt_curve_scan_completed":false,"PVAC_a043_fan_speed_mismatch_detected":false,"PVAC_a044_fan_deadband_toggled":false},"pvs_alerts":{"LastRxTime":"2024-03-18T20:40:15.065876-07:00","ReceivedMuxBitmask":0,"PVS_a001_WatchdogReset":false,"PVS_a002_SW_App_Boot":false,"PVS_a003_V12vOutOfBounds":false,"PVS_a004_V1v5OutOfBounds":false,"PVS_a005_VAfdRefOutOfBounds":false,"PVS_a006_GfOvercurrent300":false,"PVS_a007_UNUSED_7":false,"PVS_a008_UNUSED_8":false,"PVS_a009_GfOvercurrent030":false,"PVS_a010_PvIsolationTotal":false,"PVS_a011_PvIsolationStringA":false,"PVS_a012_PvIsolationStringB":false,"PVS_a013_PvIsolationStringC":false,"PVS_a014_PvIsolationStringD":false,"PVS_a015_SelfTestGroundFault":false,"PVS_a016_ESMFault":false,"PVS_a017_MciStringA":false,"PVS_a018_MciStringB":true,"PVS_a019_MciStringC":false,"PVS_a020_MciStringD":false,"PVS_a021_RapidShutdown":false,"PVS_a022_Mci1SignalLevel":false,"PVS_a023_Mci2SignalLevel":false,"PVS_a024_Mci3SignalLevel":false,"PVS_a025_Mci4SignalLevel":false,"PVS_a026_Mci1PvVoltage":false,"PVS_a027_Mci2PvVoltage":false,"PVS_a028_systemInitFailed":false,"PVS_a029_PvArcFault":false,"PVS_a030_VDcOv":false,"PVS_a031_Mci3PvVoltage":false,"PVS_a032_Mci4PvVoltage":false,"PVS_a033_dataException":false,"PVS_a034_PeImpedance":false,"PVS_a035_PvArcDetected":false,"PVS_a036_PvArcLockout":false,"PVS_a037_PvArcFaultData1":false,"PVS_a038_PvArcFault_SelfTest":false,"PVS_a039_SelfTestRelayFault":false,"PVS_a040_LEDIrrationalFault":false,"PVS_a041_MciPowerSwitch":false,"PVS_a042_MciPowerFault":false,"PVS_a043_InactiveUnsafePvStrings":false,"PVS_a044_FaultStatePvStringSafety":false,"PVS_a045_RelayCoilIrrationalFault":false,"PVS_a046_RelayCoilIrrationalLockout":false,"PVS_a047_AcSensorIrrationalFault":false,"PVS_a048_DcSensorIrrationalFault":false,"PVS_a049_arcSignalMibspiHealth":false,"PVS_a050_RelayCoilIrrationalWarning":false,"PVS_a051_DcBusShortCircuitDetected":false,"PVS_a052_PvArcFault_PreSelfTest":false,"PVS_a053_PvArcFaultData2":false,"PVS_a054_PvArcFaultData3":false,"PVS_a055_PvArcFaultData4":false,"PVS_a056_PvIsolation24HrLockout":false,"PVS_a057_DisabledDuringSelftest":false,"PVS_a058_MciOpenOnFault":false,"PVS_a059_MciOpen":true,"PVS_a060_MciClose":false,"PVS_a061_SelfTestRelayFaultLockout":false,"PVS_a062_arcSoftLockout":false,"PVS_a063_sbsComplete_info":false}}',
 }
 
+
 # Handlers
-class handler(BaseHTTPRequestHandler):
+class Handler(BaseHTTPRequestHandler):
     # POST Handler
     def do_POST(self):
         message = "ERROR!"
-        valid = False
+        session_valid = False
         # Login
         if self.path == '/api/login/Basic':
-            valid = True
+            session_valid = True
             self.send_response(200)
             self.send_header('Content-type','application/json')
             self.send_header('set-cookie', 'AuthCookie=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==; Path=/')
             self.send_header('set-cookie', 'UserRecord=1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer123456==; Path=/')
             self.end_headers()
-            message = '{"email":"test@example.com","firstname":"Tesla","lastname":"Energy","roles":["Home_Owner"],"token":"1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==","provider":"Basic","loginTime":"2021-10-17T00:39:09.852064316-07:00"}'              
+            message = '{"email":"test@example.com","firstname":"Tesla","lastname":"Energy","roles":["Home_Owner"],"token":"1234567890qwertyuiopasdfghjklZXcvbnm1234567890Qwertyuiopasdfghjklzxcvbnm1234567890qwer==","provider":"Basic","loginTime":"2021-10-17T00:39:09.852064316-07:00"}'
             # TODO: Add check for right login credentials or send 401
             # self.send_response(401)
             # self.send_header('Content-type','application/json')
             # message = '{"code":401,"error":"bad credentials","message":"Login Error"}'
         #
-        # Error 
-        if (not valid):
-            self.send_response(403)
-            self.send_header('Content-type','application/json')
+        # Token expired
+        if not session_valid:
+            self.send_response(401)
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
-            message = '{"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}'
+            message = '{"code":401,"message":"Token Expired"}'
 
         # Send Response
         self.wfile.write(bytes(message, "utf8"))
@@ -87,87 +88,91 @@ class handler(BaseHTTPRequestHandler):
     # GET Handler
     def do_GET(self):
         message = "ERROR!"
-        valid = False
         # Handlers
         #
         # Status - SOE
         if self.path == '/api/status':
-            valid = False
-            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
+            session_valid = False
+            if 'cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']:
                 # Valid Login
                 self.send_response(200)
-                self.send_header('Content-type','application/json')
+                self.send_header('Content-type', 'application/json')
                 self.end_headers()
-                payload = {'din': '1232100-00-E--TG123456789ABC', 'start_time': '2024-03-11 09:12:41 +0800', 'up_time_seconds': '127h34m16.275122187s', 'is_new': False, 'version': '23.44.0 9064fc6a', 'git_hash': '4064fc6a5b32425509f91f19556f2431cb7f6872', 'commission_count': 0, 'device_type': 'teg', 'teg_type': 'unknown', 'sync_type': 'v2.1', 'cellular_disabled': False, 'can_reboot': True}
+                payload = {'din': '1232100-00-E--TG123456789ABC', 'start_time': '2024-03-11 09:12:41 +0800',
+                           'up_time_seconds': '127h34m16.275122187s', 'is_new': False, 'version': '23.44.0 9064fc6a',
+                           'git_hash': '4064fc6a5b32425509f91f19556f2431cb7f6872', 'commission_count': 0,
+                           'device_type': 'teg', 'teg_type': 'unknown', 'sync_type': 'v2.1', 'cellular_disabled': False,
+                           'can_reboot': True}
                 # convert payload to json
                 message = json.dumps(payload)
-                valid = True
-        
+                session_valid = True
+
         # Static API Values
         elif self.path in api:
-            valid = False
-            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
+            session_valid = False
+            if 'cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']:
                 # Valid Login
                 self.send_response(200)
-                self.send_header('Content-type','application/json')
+                self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 message = api[self.path]
-                valid = True
-        
+                session_valid = True
+
         # Vitals - Firmware 23.44.0+ does not support this API
         elif self.path == '/api/devices/vitals':
-            valid = False
-            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
+            session_valid = False
+            if 'cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']:
                 # Valid Login
                 if not VITALS:
                     print("Firmware does not support vitals API")
                     self.send_response(404)
-                    self.send_header('Content-type','application/json')
+                    self.send_header('Content-type', 'application/json')
                     self.end_headers()
                     message = '{"code":404,"error":"File Not Found","message":"Firmware does not support vitals API"}'
-                    valid = True
+                    session_valid = True
                 else:
                     # Send protobuf example payload
                     print("Sending vitals.protobuf.bin")
                     self.send_response(200)
-                    self.send_header('Content-type','application/octet-stream')
+                    self.send_header('Content-type', 'application/octet-stream')
                     self.end_headers()
                     message = b'\n\xf9\x01\n~\n|\n&\n$STSTSM--1232100-00-E--T0000000000000\x12\x0e\n\x0c1232100-00-E\x1a\x10\n\x0eT0000000000000"\x07\n\x05TESLA:\x18\n\x162023-11-30-g6e07d12eeaJ\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xcf\x01\x12\x1a\n\x0fSTSTSM-Location*\x07Gateway\x1a\x0eGridCodesWrite\x1a\x0eGridCodesWrite\x1a\x15SystemConnectedToGrid\x1a\x11FWUpdateSucceeded\x1a\x11PodCommissionTime\n\xe7\x01\n\x9e\x01\n\x9b\x01\n%\n#TETHC--2012170-25-E--T0000000000000\x12\x0e\n\x0c2012170-25-E\x1a\x10\n\x0eT0000000000000"\x07\n\x05TESLA2&\n$STSTSM--1232100-00-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xe0\x01\x12(\n\tTHC_State*\x1bTHC_STATE_AUTONOMOUSCONTROL\x12\x1a\n\x0fTHC_AmbientTemp!833333/@\n\xb4\x04\n\x97\x01\n\x94\x01\n"\n TEPOD--1081100-13-V--T0000000000\x12\x0e\n\x0c1081100-13-V\x1a\r\n\x0bT0000000000"\x07\n\x05TESLA2%\n#TETHC--2012170-25-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc7\xe4\xed\xae\x06Z\x05\n\x03\x08\xe2\x01\x12\'\n\x1cPOD_nom_energy_to_be_charged!\x00\x00\x00\x00\x00v\xc1@\x12#\n\x18POD_nom_energy_remaining!\x00\x00\x00\x00\x00k\xb2@\x12#\n\x18POD_nom_full_pack_energy!\x00\x00\x00\x00\x00\xae\xc9@\x12%\n\x1aPOD_available_charge_power!\x00\x00\x00\x00\x00\xc4\xb8@\x12%\n\x1aPOD_available_dischg_power!\x00\x00\x00\x00\x00p\xc7@\x12\x17\n\tPOD_state*\nPOD_ACTIVE\x12\x13\n\x0fPOD_enable_line0\x01\x12\x16\n\x12POD_ChargeComplete0\x00\x12\x19\n\x15POD_DischargeComplete0\x00\x12\x1b\n\x17POD_PersistentlyFaulted0\x00\x12\x1a\n\x16POD_PermanentlyFaulted0\x00\x12\x15\n\x11POD_ChargeRequest0\x00\x12\x15\n\x11POD_ActiveHeating0\x00\x12\x0f\n\x0bPOD_CCVhold0\x00\n\xe9\x04\n\x98\x01\n\x95\x01\n#\n!TEPINV--1081100-13-V--T0000000000\x12\x0e\n\x0c1081100-13-V\x1a\r\n\x0bT0000000000"\x07\n\x05TESLA2%\n#TETHC--2012170-25-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xfd\x01\x12 \n\x15PINV_EnergyDischarged!\x00\x00\x00\xc0\r\xceYA\x12\x1d\n\x12PINV_EnergyCharged!\x00\x00\x00\x00d\x0b]A\x12\x17\n\x0cPINV_VSplit1!\x00\x00\x00\x00\x00@^@\x12\x17\n\x0cPINV_VSplit2!\x9a\x99\x99\x99\x999^@\x12\x1c\n\x11PINV_PllFrequency!\x1a/\xdd$\x06\x01N@\x12\x12\n\x0ePINV_PllLocked0\x01\x12\x14\n\tPINV_Pout!H\xe1z\x14\xaeG\xe1\xbf\x12\x14\n\tPINV_Qout!{\x14\xaeG\xe1z\x84?\x12\x14\n\tPINV_Vout!43333Cn@\x12\x14\n\tPINV_Fout!\xa6\x9b\xc4 \xb0\x02N@\x12\x1c\n\x18PINV_ReadyForGridForming0\x01\x12 \n\nPINV_State*\x12PINV_GridFollowing\x12 \n\x0ePINV_GridState*\x0eGrid_Compliant\x12\x1b\n\x17PINV_HardwareEnableLine0\x01\x12+\n\x11PINV_PowerLimiter*\x16PWRLIM_POD_Power_Limit\x1a#PINV_a067_overvoltageNeutralChassis\n\xe7\x01\n\x9e\x01\n\x9b\x01\n%\n#TETHC--3012170-05-B--T0000000000000\x12\x0e\n\x0c3012170-05-B\x1a\x10\n\x0eT0000000000000"\x07\n\x05TESLA2&\n$STSTSM--1232100-00-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xe0\x01\x12(\n\tTHC_State*\x1bTHC_STATE_AUTONOMOUSCONTROL\x12\x1a\n\x0fTHC_AmbientTemp!hfffff.@\n\xb4\x04\n\x97\x01\n\x94\x01\n"\n TEPOD--1081100-10-U--T0000000000\x12\x0e\n\x0c1081100-10-U\x1a\r\n\x0bT0000000000"\x07\n\x05TESLA2%\n#TETHC--3012170-05-B--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xe2\x01\x12\'\n\x1cPOD_nom_energy_to_be_charged!\x00\x00\x00\x00\x80\xce\xc0@\x12#\n\x18POD_nom_energy_remaining!\x00\x00\x00\x00\x00\x98\xb1@\x12#\n\x18POD_nom_full_pack_energy!\x00\x00\x00\x00\x00\x8e\xc8@\x12%\n\x1aPOD_available_charge_power!\x00\x00\x00\x00\x00X\xbb@\x12%\n\x1aPOD_available_dischg_power!\x00\x00\x00\x00\x00p\xc7@\x12\x17\n\tPOD_state*\nPOD_ACTIVE\x12\x13\n\x0fPOD_enable_line0\x01\x12\x16\n\x12POD_ChargeComplete0\x00\x12\x19\n\x15POD_DischargeComplete0\x00\x12\x1b\n\x17POD_PersistentlyFaulted0\x00\x12\x1a\n\x16POD_PermanentlyFaulted0\x00\x12\x15\n\x11POD_ChargeRequest0\x00\x12\x15\n\x11POD_ActiveHeating0\x00\x12\x0f\n\x0bPOD_CCVhold0\x00\n\xe9\x04\n\x98\x01\n\x95\x01\n#\n!TEPINV--1081100-10-U--T0000000000\x12\x0e\n\x0c1081100-10-U\x1a\r\n\x0bT0000000000"\x07\n\x05TESLA2%\n#TETHC--3012170-05-B--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xfd\x01\x12 \n\x15PINV_EnergyDischarged!\x00\x00\x00\x80\xeb\x12YA\x12\x1d\n\x12PINV_EnergyCharged!\x00\x00\x00\x80\x013\\A\x12\x17\n\x0cPINV_VSplit1!\xcd\xcc\xcc\xcc\xccL^@\x12\x17\n\x0cPINV_VSplit2!\x9a\x99\x99\x99\x999^@\x12\x1c\n\x11PINV_PllFrequency!\xc4 \xb0rh\x01N@\x12\x12\n\x0ePINV_PllLocked0\x01\x12\x14\n\tPINV_Pout!\xa4p=\n\xd7\xa3\xe0\xbf\x12\x14\n\tPINV_Qout!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x14\n\tPINV_Vout!gffffFn@\x12\x14\n\tPINV_Fout!\xa6\x9b\xc4 \xb0\x02N@\x12\x1c\n\x18PINV_ReadyForGridForming0\x01\x12 \n\nPINV_State*\x12PINV_GridFollowing\x12 \n\x0ePINV_GridState*\x0eGrid_Compliant\x12\x1b\n\x17PINV_HardwareEnableLine0\x01\x12+\n\x11PINV_PowerLimiter*\x16PWRLIM_POD_Power_Limit\x1a#PINV_a067_overvoltageNeutralChassis\n\xa0\x08\n\x9c\x01\n\x99\x01\n$\n"PVAC--1538100-00-F--C0000000000000\x12\x0e\n\x0c1538100-00-F\x1a\x10\n\x0eC0000000000000"\x07\n\x05TESLA2%\n#TETHC--2012170-25-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xa8\x02\x12\x14\n\tPVAC_Iout!\n\xd7\xa3p=\n\x1f@\x12\x19\n\x0ePVAC_VL1Ground!\x99\x99\x99\x99\x999^@\x12\x19\n\x0ePVAC_VL2Ground!\x99\x99\x99\x99\x999^@\x12!\n\x16PVAC_VHvMinusChassisDC!\x00\x00\x00\x00\x00@j\xc0\x12\x1b\n\x10PVAC_PVCurrent_A!\xd7\xa3p=\n\xd7\xfb?\x12\x1b\n\x10PVAC_PVCurrent_B!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x1b\n\x10PVAC_PVCurrent_C!gfffff\x04@\x12\x1b\n\x10PVAC_PVCurrent_D!\xecQ\xb8\x1e\x85\xeb\x03@\x12#\n\x18PVAC_PVMeasuredVoltage_A!gffff\x0ep@\x12#\n\x18PVAC_PVMeasuredVoltage_B!\xcc\xcc\xcc\xcc\xcc\xcc\x00\xc0\x12#\n\x18PVAC_PVMeasuredVoltage_C!gfffffr@\x12#\n\x18PVAC_PVMeasuredVoltage_D!\xcd\xcc\xcc\xcc\xcclr@\x12!\n\x16PVAC_PVMeasuredPower_A!\x00\x00\x00\x00\x00\x90{@\x12!\n\x16PVAC_PVMeasuredPower_B!\x00\x00\x00\x00\x00\x00\x00\x00\x12!\n\x16PVAC_PVMeasuredPower_C!\x00\x00\x00\x00\x00P\x87@\x12!\n\x16PVAC_PVMeasuredPower_D!\x00\x00\x00\x00\x00\xd8\x86@\x12&\n\x1bPVAC_LifetimeEnergyPV_Total!\x00\x00\x00\xc0\x89izA\x12\x14\n\tPVAC_Vout!433333n@\x12\x14\n\tPVAC_Fout!6^\xbaI\x0c\x02N@\x12\x14\n\tPVAC_Pout!\x00\x00\x00\x00\x00\xa0\x9e@\x12\x14\n\tPVAC_Qout!\x00\x00\x00\x00\x00\x004@\x12\x19\n\nPVAC_State*\x0bPVAC_Active\x12 \n\x0ePVAC_GridState*\x0eGrid_Compliant\x12#\n\rPVAC_InvState*\x12INV_Grid_Connected\x12\x1b\n\x0ePVAC_PvState_A*\tPV_Active\x12\x1b\n\x0ePVAC_PvState_B*\tPV_Active\x12\x1b\n\x0ePVAC_PvState_C*\tPV_Active\x12$\n\x0ePVAC_PvState_D*\x12PV_Active_Parallel\x12\x1d\n\x17PVI-PowerStatusSetpoint*\x02on\n\x9a\x03\n\x9a\x01\n\x97\x01\n#\n!PVS--1538100-00-F--C0000000000000\x12\x0e\n\x0c1538100-00-F\x1a\x10\n\x0eC0000000000000"\x07\n\x05TESLA2$\n"PVAC--1538100-00-F--C0000000000000:\x10\n\x0e44857755923fa5J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\xa9\x02\x12\x12\n\x07PVS_vLL!433333n@\x12\x17\n\tPVS_State*\nPVS_Active\x12$\n\x11PVS_SelfTestState*\x0fPVS_SelfTestOff\x12\x14\n\x10PVS_EnableOutput0\x01\x12\x19\n\x15PVS_StringA_Connected0\x01\x12\x19\n\x15PVS_StringB_Connected0\x00\x12\x19\n\x15PVS_StringC_Connected0\x01\x12\x19\n\x15PVS_StringD_Connected0\x01\x1a\x13PVS_a018_MciStringB\x1a\x11PVS_a060_MciClose\n\xc1\x0f\n\x9f\x01\n\x9c\x01\n&\n$TESYNC--1493315-01-F--J0000000000000\x12\x0e\n\x0c1493315-01-F\x1a\x10\n\x0eJ0000000000000"\x07\n\x05TESLA2&\n$STSTSM--1232100-00-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06Z\x05\n\x03\x08\x83\x02\x12\x1b\n\x10ISLAND_VL1N_Main!\x00\x00\x00\x00\x00`^@\x12\x1d\n\x12ISLAND_FreqL1_Main!\xc2\xf5(\\\x8f\x02N@\x12\x1b\n\x10ISLAND_VL1N_Load!\x00\x00\x00\x00\x00`^@\x12\x1d\n\x12ISLAND_FreqL1_Load!\xc2\xf5(\\\x8f\x02N@\x12#\n\x18ISLAND_PhaseL1_Main_Load!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x1b\n\x10ISLAND_VL2N_Main!\x00\x00\x00\x00\x00`^@\x12\x1d\n\x12ISLAND_FreqL2_Main!\xc2\xf5(\\\x8f\x02N@\x12\x1b\n\x10ISLAND_VL2N_Load!\x00\x00\x00\x00\x00`^@\x12\x1d\n\x12ISLAND_FreqL2_Load!\xc2\xf5(\\\x8f\x02N@\x12#\n\x18ISLAND_PhaseL2_Main_Load!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x1b\n\x10ISLAND_VL3N_Main!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x1d\n\x12ISLAND_FreqL3_Main!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x1b\n\x10ISLAND_VL3N_Load!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x1d\n\x12ISLAND_FreqL3_Load!\x00\x00\x00\x00\x00\x00\x00\x00\x12#\n\x18ISLAND_PhaseL3_Main_Load!\x00\x00\x00\x00\x00\x90f\xc0\x12 \n\x15ISLAND_L1L2PhaseDelta!\x00\x00\x00\x00\x00\x90f\xc0\x12 \n\x15ISLAND_L1L3PhaseDelta!\x00\x00\x00\x00\x00\x90f\xc0\x12 \n\x15ISLAND_L2L3PhaseDelta!\x00\x00\x00\x00\x00\x90f\xc0\x123\n\x10ISLAND_GridState*\x1fISLAND_GridState_Grid_Compliant\x12\x18\n\x14ISLAND_L1MicrogridOk0\x01\x12\x18\n\x14ISLAND_L2MicrogridOk0\x01\x12\x18\n\x14ISLAND_L3MicrogridOk0\x00\x12"\n\x1eISLAND_ReadyForSynchronization0\x01\x12\x18\n\x14ISLAND_GridConnected0\x01\x12\x1a\n\x16SYNC_ExternallyPowered0\x00\x12\x1a\n\x16SYNC_SiteSwitchEnabled0\x00\x12$\n\x19METER_X_CTA_InstRealPower!\x00\x00\x00\x00\x00\xa0i@\x12$\n\x19METER_X_CTB_InstRealPower!\x00\x00\x00\x00\x00`b\xc0\x12$\n\x19METER_X_CTC_InstRealPower!\x00\x00\x00\x00\x00\x00\x00\x00\x12(\n\x1dMETER_X_CTA_InstReactivePower!\x00\x00\x00\x00\x00\x00M\xc0\x12(\n\x1dMETER_X_CTB_InstReactivePower!\x00\x00\x00\x00\x00\x80Q\xc0\x12(\n\x1dMETER_X_CTC_InstReactivePower!\x00\x00\x00\x00\x00\x00\x00\x00\x12\'\n\x1cMETER_X_LifetimeEnergyImport!\x00\x00\x00\x00\xa8WeA\x12\'\n\x1cMETER_X_LifetimeEnergyExport!\x00\x00\x00\x80=\x13^A\x12\x17\n\x0cMETER_X_VL1N!\x85\xebQ\xb8\x1e5^@\x12\x17\n\x0cMETER_X_VL2N!\xf6(\\\x8f\xc2E^@\x12\x17\n\x0cMETER_X_VL3N!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x18\n\rMETER_X_CTA_I!\xbdt\x93\x18\x04\xd6\x03@\x12\x18\n\rMETER_X_CTB_I!33333\xb3\x02@\x12\x18\n\rMETER_X_CTC_I!\x00\x00\x00\x00\x00\x00\x00\x00\x12$\n\x19METER_Y_CTA_InstRealPower!\x00\x00\x00\x00\x00\x00\x00\x00\x12$\n\x19METER_Y_CTB_InstRealPower!\x00\x00\x00\x00\x00\x00\x00\x00\x12$\n\x19METER_Y_CTC_InstRealPower!\x00\x00\x00\x00\x00\x00\x00\x00\x12(\n\x1dMETER_Y_CTA_InstReactivePower!\x00\x00\x00\x00\x00\x00\x00\x00\x12(\n\x1dMETER_Y_CTB_InstReactivePower!\x00\x00\x00\x00\x00\x00\x00\x00\x12(\n\x1dMETER_Y_CTC_InstReactivePower!\x00\x00\x00\x00\x00\x00\x00\x00\x12\'\n\x1cMETER_Y_LifetimeEnergyImport!\x00\x00\x00\x00\x00\x00\x00@\x12\'\n\x1cMETER_Y_LifetimeEnergyExport!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x17\n\x0cMETER_Y_VL1N!\xf6(\\\x8f\xc25^@\x12\x17\n\x0cMETER_Y_VL2N!gffffF^@\x12\x17\n\x0cMETER_Y_VL3N!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x18\n\rMETER_Y_CTA_I!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x18\n\rMETER_Y_CTB_I!\x00\x00\x00\x00\x00\x00\x00\x00\x12\x18\n\rMETER_Y_CTC_I!\x00\x00\x00\x00\x00\x00\x00\x00\x1a\x15SYNC_a001_SW_App_Boot\x1a\x1aSYNC_a046_DoCloseArguments\n\x84\x01\n\x81\x01\n\x7f\n\x17\n\x15TESLA--J0000000000000\x1a\x10\n\x0eJ0000000000000"\x07\n\x05TESLA2&\n$STSTSM--1232100-00-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06R\x00Z\x05"\x03\n\x01\x01\n\xd9\x01\n\x90\x01\n\x8d\x01\n\x17\n\x15NEURIO--V000000000000\x1a\x0f\n\rV000000000000"\x08\n\x06NEURIO2&\n$STSTSM--1232100-00-E--T0000000000000:\r\n\x0b1.7.2-TeslaJ\x06\x08\xc8\xe4\xed\xae\x06R\x11\n\x0f\n\rPWRview-73533Z\x05"\x03\n\x01\x05\x12\x1f\n\x13NEURIO_CT0_Location*\x08solarRGM\x12#\n\x18NEURIO_CT0_InstRealPower!\x00\x00\x00\xa0pA\x9e@\n\xa1\x01\n\x9e\x01\n\x9b\x01\n%\n#TESLA--1538100-00-F--C0000000000000\x1a\x1e\n\x1c1538100-00-F--C0000000000000"\x07\n\x05TESLA2&\n$STSTSM--1232100-00-E--T0000000000000:\x10\n\x0e4064fc6a5b3242J\x06\x08\xc8\xe4\xed\xae\x06R\x00Z\x05\x1a\x03\x08\x80<'
                     self.wfile.write(message)
                     return
-        
+
         # Unknown API - Simulator doesn't support API Requested
         else:
-            valid = False
-            if('cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']):
+            session_valid = False
+            if 'cookie' in self.headers and '1234567890qwertyuiopasdfghjklZXcvbnm' in self.headers['cookie']:
                 # Valid Login
                 print("Simulator doesn't support API Requested: " + self.path)
                 self.send_response(200)
-                self.send_header('Content-type','application/json')
+                self.send_header('Content-type', 'application/json')
                 self.end_headers()
                 message = ''
-                valid = True
+                session_valid = True
         #
-        # Error 
-        if (not valid):
+        # Token Expired
+        if not session_valid:
             print(self.headers['cookie'])
-            self.send_response(403)
-            self.send_header('Content-type','application/json')
+            self.send_response(401)
+            self.send_header('Content-type', 'application/json')
             self.end_headers()
-            message = '{"code":403,"error":"Unable to GET to resource","message":"User does not have adequate access rights"}'
+            message = '{"code":401,"message":"Token Expired"}'
             print(message)
         #
         # Send Response
         self.wfile.write(bytes(message, "utf8"))
 
+
+# noinspection PyBroadException
 try:
-    with HTTPServer(server_address, handler) as server:
+    # noinspection PyTypeChecker
+    with HTTPServer(server_address, Handler) as server:
         server.socket = ssl.wrap_socket(server.socket,
-                               server_side=True,
-                               certfile='localhost.pem',
-                               ssl_version=ssl.PROTOCOL_TLS)
+                                        server_side=True,
+                                        certfile='localhost.pem',
+                                        ssl_version=ssl.PROTOCOL_TLS)
         server.serve_forever()
-except:
+except Exception:
     print(' CANCEL \n')
-
-

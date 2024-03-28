@@ -169,7 +169,6 @@ class PyPowerwallLocal(PyPowerwallBase):
                 # Rate limited - Switch to cooldown mode for 5 minutes
                 self.pwcooldown = time.perf_counter() + 300
                 log.error('429 Rate limited by Powerwall API at %s - Activating 5 minute cooldown' % url)
-                # Serve up cached data if it exists (@emptywee: this doesn't look like we serve up cached data here?)
                 return None
             elif r.status_code == 401:
                 # Session Expired - Try to get a new one unless we already tried
