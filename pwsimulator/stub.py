@@ -25,9 +25,14 @@ import ssl
 import json
 import os
 
+
+version_tuple = (0, 0, 1)
+version = __version__ = '%d.%d.%d' % version_tuple
+__author__ = 'jasonacox'
+
 # Create Simulator
 server_address = ('0.0.0.0', 443)
-print('pyPowerwall - Powerwall Simulator - Running')
+print(f'pyPowerwall - Powerwall Simulator v{__version__} by @{__author__} - Running')
 
 # Environmental Variables
 VITALS = os.getenv('VITALS', True)
