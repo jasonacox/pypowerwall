@@ -1,0 +1,5 @@
+bs4==0.0.2
+requests
+protobuf
+teslapy
+
