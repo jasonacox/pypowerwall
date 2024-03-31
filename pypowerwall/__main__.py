@@ -48,9 +48,9 @@ scan_args.add_argument("-hosts", type=int, default=hosts,
                        help=f"Number of hosts to scan simultaneously [Default={hosts}]")
 
 set_mode_args = subparsers.add_parser("set", help='Set Powerwall Mode and Reserve Level')
-set_mode_args.add_argument("-mode", type=str, default="self_consumption",
+set_mode_args.add_argument("-mode", type=str, default=None,
                             help="Powerwall Mode: self_consumption, backup, or autonomous")
-set_mode_args.add_argument("-reserve", type=int, default=20,
+set_mode_args.add_argument("-reserve", type=int, default=None,
                             help="Set Battery Reserve Level [Default=20]")
 set_mode_args.add_argument("-current", action="store_true", default=False,
                             help="Set Battery Reserve Level to Current Charge")
@@ -107,16 +107,18 @@ elif command == 'set':
     pw = pypowerwall.Powerwall(email=email, host="", authpath=authpath)
     if args.mode:
         mode = args.mode.lower()
-        reserve = args.reserve
         if mode not in ['self_consumption', 'backup', 'autonomous']:
             print("ERROR: Invalid Mode [%s] - must be one of self_consumption, backup, or autonomous" % mode)
             exit(1)
-        pw.set_mode(mode, reserve)
+        print("Setting Powerwall Mode to %s" % mode)
+        pw.set_mode(mode)
     if args.reserve:
         reserve = args.reserve
+        print("Setting Powerwall Reserve to %s" % reserve)
         pw.set_reserve(reserve)
     if args.current:
         current = float(pw.level())
+        print("Setting Powerwall Reserve to Current Charge Level %s" % current)
         pw.set_reserve(current)
 # Get Powerwall Mode
 elif command == 'get':
