@@ -742,28 +742,30 @@ class Powerwall(object):
             # Ensure we can write to the provided authpath
             dirname = self.authpath
             if not dirname:
+                log.debug("No authpath provided, using current directory.")
                 dirname = '.'
-            self._check_if_dir_is_writable(dirname)
+            self._check_if_dir_is_writable(dirname, "authpath")
         # If local mode, check appropriate parameters, too
         else:
             # Ensure we can create a cachefile
             dirname = os.path.dirname(self.cachefile)
             if not dirname:
+                log.debug("No cachefile provided, using current directory.")
                 dirname = '.'
-            self._check_if_dir_is_writable(dirname)
+            self._check_if_dir_is_writable(dirname, "cachefile")
 
     @staticmethod
-    def _check_if_dir_is_writable(dirpath):
+    def _check_if_dir_is_writable(dirpath, name=""):
         # Ensure we can write to the provided authpath
         if not os.path.exists(dirpath):
             try:
                 os.makedirs(dirpath, exist_ok=True)
             except Exception as exc:
-                raise PyPowerwallInvalidConfigurationParameter(f"Unable to create directory at "
+                raise PyPowerwallInvalidConfigurationParameter(f"Unable to create {name} directory at "
                                                                f"'{dirpath}': {exc}")
         elif not os.path.isdir(dirpath):
-            raise PyPowerwallInvalidConfigurationParameter(f"'{dirpath}' must be a directory.")
+            raise PyPowerwallInvalidConfigurationParameter(f"'{dirpath}' must be a directory ({name}).")
         else:
             if not os.access(dirpath, os.W_OK):
-                raise PyPowerwallInvalidConfigurationParameter(f"Directory '{dirpath}' is not writable. "
+                raise PyPowerwallInvalidConfigurationParameter(f"Directory '{dirpath}' is not writable for {name}. "
                                                                f"Check permissions.")
