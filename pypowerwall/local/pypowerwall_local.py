@@ -29,7 +29,6 @@ class PyPowerwallLocal(PyPowerwallBase):
 
         self.session = None
         self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcache = {}  # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
@@ -286,7 +285,8 @@ class PyPowerwallLocal(PyPowerwallBase):
                     return None
             else:
                 log.debug(f"Non-json response from Powerwall at {url}: '{response}', serving as is.")
-
+        # invalidate appropriate read cache on (more or less) successful call to writable API
+        super()._invalidate_cache(api)
         return response
 
     def version(self, int_value=False):

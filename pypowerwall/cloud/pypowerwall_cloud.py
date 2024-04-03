@@ -2,9 +2,9 @@ import json
 import logging
 import os
 import time
-from typing import Optional, Union
+from typing import Optional, Union, List
 
-from teslapy import Tesla
+from teslapy import Tesla, Battery, SolarPanel
 
 from pypowerwall.cloud.decorators import not_implemented_mock_data
 from pypowerwall.cloud.exceptions import *
@@ -55,7 +55,6 @@ class PyPowerwallCloud(PyPowerwallBase):
         self.tesla = None
         self.apilock = {}  # holds lock flag for pending cloud api requests
         self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcache = {}  # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.siteindex = 0  # site index to use
         self.siteid = siteid  # site id to use
@@ -195,7 +194,12 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         func = self.poll_api_map.get(api)
         if func:
-            return func()
+            kwargs = {
+                'force': force,
+                'recursive': recursive,
+                'raw': raw
+            }
+            return func(**kwargs)
         else:
             # raise PyPowerwallCloudNotImplemented(api)
             # or pass a custom error response:
@@ -217,13 +221,17 @@ class PyPowerwallCloud(PyPowerwallBase):
                 'payload': payload,
                 'din': din
             }
-            return func(**kwargs)
+            res = func(**kwargs)
+            if res:
+                # invalidate appropriate read cache on (more or less) successful call to writable API
+                super()._invalidate_cache(api)
+            return res
         else:
             # raise PyPowerwallCloudNotImplemented(api)
             # or pass a custom error response:
             return {"ERROR": f"Unknown API: {api}"}
 
-    def getsites(self):
+    def getsites(self) -> Optional[List[Union[Battery, SolarPanel]]]:
         """
         Get list of Tesla Energy sites
         """
@@ -264,7 +272,7 @@ class PyPowerwallCloud(PyPowerwallBase):
 
     # Functions to get data from Tesla Cloud
 
-    def _site_api(self, name, ttl, **kwargs):
+    def _site_api(self, name: str, ttl: int, force: bool, **kwargs):
         """
         Private function to get site data from Tesla Cloud using
         TeslaPy API.  This function uses a lock to prevent threads
@@ -274,6 +282,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         Arguments:
             name - TeslaPy API name
             ttl - Cache expiration time in seconds
+            force - If True skip cache
             kwargs - Variable arguments to pass to API call
 
         Returns (response, cached)
@@ -289,10 +298,10 @@ class PyPowerwallCloud(PyPowerwallBase):
             while self.apilock[name]:
                 time.sleep(0.2)
                 if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- cloud: Timeout waiting for {name}")
+                    log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
                     return None, False
         # Check to see if we have cached data
-        if name in self.pwcache:
+        if name in self.pwcache and not force:
             if self.pwcachetime[name] > time.perf_counter() - ttl:
                 log.debug(f" -- cloud: Returning cached {name} data")
                 return self.pwcache[name], True
@@ -313,7 +322,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             self.apilock[name] = False
             return response, False
 
-    def get_battery(self):
+    def get_battery(self, force: bool = False):
         """
         Get site battery data from Tesla Cloud
 
@@ -337,11 +346,10 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         """
         # GET api/1/energy_sites/{site_id}/site_status
-        (response, _) = self._site_api("SITE_SUMMARY",
-                                       self.pwcacheexpire, language="en")
+        (response, _) = self._site_api("SITE_SUMMARY", self.pwcacheexpire, language="en", force=force)
         return response
 
-    def get_site_power(self):
+    def get_site_power(self, force: bool = False):
         """
         Get site power data from Tesla Cloud
 
@@ -365,16 +373,18 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         """
         # GET api/1/energy_sites/{site_id}/live_status?counter={counter}&language=en
-        (response, cached) = self._site_api("SITE_DATA",
-                                            self.pwcacheexpire, counter=self.counter + 1, language="en")
+        (response, cached) = self._site_api("SITE_DATA", self.pwcacheexpire, counter=self.counter + 1,
+                                            language="en", force=force)
         if not cached:
             self.counter = (self.counter + 1) % COUNTER_MAX
         return response
 
-    def get_site_config(self):
+    def get_site_config(self, force: bool = False):
         """
         Get site configuration data from Tesla Cloud
 
+        Args:
+            force:     if True, skip cache
         "response": {
             "id": "1232100-00-E--TGxxxxxxxxxxxx",
             "site_name": "Tesla Energy Gateway",
@@ -459,19 +469,18 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         """
         # GET api/1/energy_sites/{site_id}/site_info
-        (response, _) = self._site_api("SITE_CONFIG",
-                                       SITE_CONFIG_TTL, language="en")
+        (response, _) = self._site_api("SITE_CONFIG", SITE_CONFIG_TTL, language="en", force=force)
         return response
 
-    def get_time_remaining(self) -> Optional[float]:
+    def get_time_remaining(self, force: bool = False) -> Optional[float]:
         """
         Get backup time remaining from Tesla Cloud
 
         {'response': {'time_remaining_hours': 7.909122698326978}}
         """
         # GET api/1/energy_sites/{site_id}/backup_time_remaining
-        (response, _) = self._site_api("ENERGY_SITE_BACKUP_TIME_REMAINING",
-                                       self.pwcacheexpire, language="en")
+        (response, _) = self._site_api("ENERGY_SITE_BACKUP_TIME_REMAINING", self.pwcacheexpire, language="en",
+                                       force=force)
 
         # {'response': {'time_remaining_hours': 7.909122698326978}}
         if response is None or not isinstance(response, dict):
@@ -481,8 +490,9 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         return 0.0
 
-    def get_api_system_status_soe(self) -> Optional[Union[dict, list, str, bytes]]:
-        battery = self.get_battery()
+    def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        battery = self.get_battery(force=force)
         if battery is None:
             data = None
         else:
@@ -494,9 +504,10 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_status(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         # TOOO: Fix start_time and up_time_seconds
-        config = self.get_site_config()
+        force = kwargs.get('force', False)
+        config = self.get_site_config(force=force)
         if config is None:
             data = None
         else:
@@ -516,8 +527,9 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_system_status_grid_status(self) -> Optional[Union[dict, list, str, bytes]]:
-        power = self.get_site_power()
+    def get_api_system_status_grid_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        power = self.get_site_power(force=force)
         if power is None:
             data = None
         else:
@@ -532,8 +544,9 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_site_info_site_name(self) -> Optional[Union[dict, list, str, bytes]]:
-        config = self.get_site_config()
+    def get_api_site_info_site_name(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        config = self.get_site_config(force=force)
         if config is None:
             data = None
         else:
@@ -545,8 +558,9 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_site_info(self) -> Optional[Union[dict, list, str, bytes]]:
-        config = self.get_site_config()
+    def get_api_site_info(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        config = self.get_site_config(force=force)
         if config is None:
             data = None
         else:
@@ -579,16 +593,18 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_devices_vitals(self) -> Optional[Union[dict, list, str, bytes]]:
+    # noinspection PyUnusedLocal
+    def get_api_devices_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         # Protobuf payload - not implemented - use /vitals instead
         data = None
         log.warning("Protobuf payload - not implemented for /api/devices/vitals - use /vitals instead")
         return data
 
-    def get_vitals(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         # Simulated Vitals
-        config = self.get_site_config()
-        power = self.get_site_power()
+        force = kwargs.get('force', False)
+        config = self.get_site_config(force=force)
+        power = self.get_site_power(force=force)
         if config is None or power is None:
             data = None
         else:
@@ -632,9 +648,10 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_meters_aggregates(self) -> Optional[Union[dict, list, str, bytes]]:
-        config = self.get_site_config()
-        power = self.get_site_power()
+    def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        config = self.get_site_config(force=force)
+        power = self.get_site_power(force=force)
         if config is None or power is None:
             data = None
         else:
@@ -673,8 +690,9 @@ class PyPowerwallCloud(PyPowerwallBase):
             })
         return data
 
-    def get_api_operation(self) -> Optional[Union[dict, list, str, bytes]]:
-        config = self.get_site_config()
+    def get_api_operation(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        config = self.get_site_config(force)
         if config is None:
             data = None
         else:
@@ -688,10 +706,11 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
-    def get_api_system_status(self) -> Optional[Union[dict, list, str, bytes]]:
-        power = self.get_site_power()
-        config = self.get_site_config()
-        battery = self.get_battery()
+    def get_api_system_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        power = self.get_site_power(force=force)
+        config = self.get_site_config(force=force)
+        battery = self.get_battery(force=force)
         if power is None or config is None or battery is None:
             data = None
         else:
@@ -730,84 +749,103 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         return data
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def api_logout(self) -> Optional[Union[dict, list, str, bytes]]:
+    def api_logout(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {"status": "ok"}
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def api_login_basic(self) -> Optional[Union[dict, list, str, bytes]]:
+    def api_login_basic(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {"status": "ok"}
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_meters_site(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_meters_site(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads(METERS_SITE)
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_unimplemented_api(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_unimplemented_api(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return None
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_unimplemented_timeout(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_unimplemented_timeout(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return "TIMEOUT!"
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_auth_toggle_supported(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_auth_toggle_supported(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {"toggle_auth_supported": True}
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_sitemaster(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_sitemaster(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {"status": "StatusUp", "running": True, "connected_to_tesla": True, "power_supply_mode": False,
                 "can_reboot": "Yes"}
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_powerwalls(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_powerwalls(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads(POWERWALLS)
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_customer_registration(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_customer_registration(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads('{"privacy_notice":null,"limited_warranty":null,"grid_services":null,"marketing":null,'
                           '"registered":true,"timed_out_registration":false}')
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_system_update_status(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_system_update_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads('{"state":"/update_succeeded","info":{"status":["nonactionable"]},'
                           '"current_time":1702756114429,"last_status_time":1702753309227,"version":"23.28.2 27626f98",'
                           '"offline_updating":false,"offline_update_error":"","estimated_bytes_per_second":null}')
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_system_status_grid_faults(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_system_status_grid_faults(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads('[]')
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_solars(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_solars(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads('[{"brand":"Tesla","model":"Solar Inverter 7.6","power_rating_watts":7600}]')
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_solars_brands(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_solars_brands(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads(SOLARS_BRANDS)
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_customer(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_customer(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {"registered": True}
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_meters(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_meters(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads(METERS)
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_installer(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_installer(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads(INSTALLER)
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_synchrometer_ct_voltage_references(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_synchrometer_ct_voltage_references(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads('{"ct1":"Phase1","ct2":"Phase2","ct3":"Phase1"}')
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_troubleshooting_problems(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_troubleshooting_problems(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return json.loads('{"problems":[]}')
 
+    # noinspection PyUnusedLocal
     @not_implemented_mock_data
-    def get_api_solar_powerwall(self) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_solar_powerwall(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {}
 
     def setup(self, email=None):

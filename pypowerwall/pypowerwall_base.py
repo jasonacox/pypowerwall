@@ -4,6 +4,11 @@ from typing import Optional, Any, Union
 
 log = logging.getLogger(__name__)
 
+# Define which write API calls should invalidate which read API cache keys
+WRITE_OP_READ_OP_CACHE_MAP = {
+    '/api/operation': ['/api/operation', 'SITE_CONFIG']  # local and cloud mode respectively
+}
+
 
 def parse_version(version: str) -> Optional[int]:
     if version is None or not isinstance(version, str):
@@ -23,6 +28,7 @@ class PyPowerwallBase:
 
     def __init__(self, email: str):
         super().__init__()
+        self.pwcache = {}  # holds the cached data for api
         self.auth = None
         self.token = None  # caches bearer token
         self.email = email
@@ -75,3 +81,8 @@ class PyPowerwallBase:
         except Exception as e:
             log.debug(f"ERROR unable to parse payload '{payload}': {e}")
         return {'site': site, 'solar': solar, 'battery': battery, 'load': load}
+
+    def _invalidate_cache(self, api: str):
+        cache_keys = WRITE_OP_READ_OP_CACHE_MAP.get(api, [])
+        for cache_key in cache_keys:
+            self.pwcache[cache_key] = None

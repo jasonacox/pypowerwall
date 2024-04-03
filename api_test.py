@@ -75,7 +75,9 @@ def run(include_post_funcs=False):
         # Connect to Powerwall
         pw = pypowerwall.Powerwall(h, password, email, timezone, authpath=auth_path, cachefile=cachefile_path)
 
+        # noinspection PyUnusedLocal
         aggregates = pw.poll('/api/meters/aggregates')
+        # noinspection PyUnusedLocal
         coe = pw.poll('/api/system_status/soe')
 
         # Pull Sensor Power Data
