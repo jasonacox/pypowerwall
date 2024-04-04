@@ -119,6 +119,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             # is it expired?
             if time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire:
                 payload = self.pwcache[api]
+                log.debug(' -- local: Returning cached %s' % api)
                 # We do the override here to ensure that we cache the force entry
 
         if not payload or force:
@@ -133,6 +134,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                 # Always want the raw stream output from the vitals call; protobuf binary payload
                 raw = True
 
+            log.debug(' -- local: Request Powerwall for %s' % api)
             url = "https://%s%s" % (self.host, api)
             try:
                 if self.authmode == "token":
