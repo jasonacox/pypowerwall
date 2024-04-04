@@ -301,7 +301,7 @@ class PyPowerwallCloud(PyPowerwallBase):
                     log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
                     return None, False
         # Check to see if we have cached data
-        if name in self.pwcache and not force:
+        if self.pwcache.get(name) is not None and not force:
             if self.pwcachetime[name] > time.perf_counter() - ttl:
                 log.debug(f" -- cloud: Returning cached {name} data")
                 return self.pwcache[name], True
