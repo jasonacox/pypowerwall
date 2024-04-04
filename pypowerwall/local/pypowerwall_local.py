@@ -115,7 +115,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         raw = False
         payload = None
         # Check cache
-        if api in self.pwcache and api in self.pwcachetime:
+        if self.pwcache.get(api) is not None and self.pwcachetime.get(api) is not None:
             # is it expired?
             if time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire:
                 payload = self.pwcache[api]
