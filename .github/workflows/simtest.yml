@@ -18,7 +18,7 @@ jobs:
 
     services:
       simulator:
-        image: jasonacox/pwsimulator
+        image: ${{ github.repository_owner }}/pwsimulator
         ports:
            - 443:443
 

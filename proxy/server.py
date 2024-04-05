@@ -46,7 +46,7 @@ import pypowerwall
 from pypowerwall import parse_version
 from transform import get_static, inject_js
 
-BUILD = "t51"
+BUILD = "t52"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -77,6 +77,10 @@ style = os.getenv("PW_STYLE", "clear") + ".js"
 siteid = os.getenv("PW_SITEID", None)
 authpath = os.getenv("PW_AUTH_PATH", "")
 authmode = os.getenv("PW_AUTH_MODE", "cookie")
+cf = ".powerwall"
+if authpath:
+    cf = os.path.join(authpath, ".powerwall")
+cachefile = os.getenv("PW_CACHE_FILE", cf)
 
 # Global Stats
 proxystats = {
@@ -148,7 +152,8 @@ def get_value(a, key):
 try:
     pw = pypowerwall.Powerwall(host, password, email, timezone, cache_expire,
                                timeout, pool_maxsize, siteid=siteid,
-                               authpath=authpath, authmode=authmode)
+                               authpath=authpath, authmode=authmode,
+                               cachefile=cachefile)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")

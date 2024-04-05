@@ -29,7 +29,6 @@ class PyPowerwallLocal(PyPowerwallBase):
 
         self.session = None
         self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcache = {}  # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
@@ -116,10 +115,11 @@ class PyPowerwallLocal(PyPowerwallBase):
         raw = False
         payload = None
         # Check cache
-        if api in self.pwcache and api in self.pwcachetime:
+        if self.pwcache.get(api) is not None and self.pwcachetime.get(api) is not None:
             # is it expired?
             if time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire:
                 payload = self.pwcache[api]
+                log.debug(' -- local: Returning cached %s' % api)
                 # We do the override here to ensure that we cache the force entry
 
         if not payload or force:
@@ -134,6 +134,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                 # Always want the raw stream output from the vitals call; protobuf binary payload
                 raw = True
 
+            log.debug(' -- local: Request Powerwall for %s' % api)
             url = "https://%s%s" % (self.host, api)
             try:
                 if self.authmode == "token":
@@ -165,13 +166,12 @@ class PyPowerwallLocal(PyPowerwallBase):
                 self.pwcachetime[api] = time.perf_counter() + 600
                 self.pwcache[api] = None
                 return None
-            if r.status_code == 429:
+            elif r.status_code == 429:
                 # Rate limited - Switch to cooldown mode for 5 minutes
                 self.pwcooldown = time.perf_counter() + 300
                 log.error('429 Rate limited by Powerwall API at %s - Activating 5 minute cooldown' % url)
-                # Serve up cached data if it exists
                 return None
-            if 400 <= r.status_code < 500:
+            elif r.status_code == 401 or r.status_code == 403:
                 # Session Expired - Try to get a new one unless we already tried
                 log.debug('Session Expired - Trying to get a new one')
                 if not recursive:
@@ -180,10 +180,23 @@ class PyPowerwallLocal(PyPowerwallBase):
                         # noinspection PyUnusedLocal
                         payload = r.raw.data
                     self._get_session()
-                    return self.poll(api)
+                    return self.poll(api, raw=raw, recursive=True)
                 else:
-                    log.error('Unable to establish session with Powerwall at %s - check password' % url)
+                    if r.status_code == 401:
+                        log.error('Unable to establish session with Powerwall at %s - check password' % url)
+                    else:
+                        log.error('403 Unauthorized by Powerwall API at %s - Endpoint disabled in this firmware or '
+                                  'user lacks permission' % url)
+                    self.pwcachetime[api] = time.perf_counter() + 600
+                    self.pwcache[api] = None
                     return None
+            elif 400 <= r.status_code < 500:
+                log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
+                return None
+            elif r.status_code >= 500:
+                log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))
+                return None
+
             if raw:
                 payload = r.raw.data
             else:
@@ -206,6 +219,77 @@ class PyPowerwallLocal(PyPowerwallBase):
         else:
             # should be already a dict in cache, so just return it
             return payload
+
+    def post(self, api: str, payload: Optional[dict], din: Optional[str],
+             recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
+
+        # We probably should not cache responses here
+        # Also, we may have to use different HTTP Methods such as POST, PUT, PATCH based on Powerwall API requirements
+        # For now we assume it's taking POST calls
+
+        url = "https://%s%s" % (self.host, api)
+        try:
+            if self.authmode == "token":
+                r = self.session.post(url, headers=self.auth, json=payload, verify=False, timeout=self.timeout,
+                                      stream=raw)
+            else:
+                r = self.session.post(url, cookies=self.auth, json=payload, verify=False, timeout=self.timeout,
+                                      stream=raw)
+        except requests.exceptions.Timeout:
+            log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
+            return None
+        except requests.exceptions.ConnectionError:
+            log.debug('ERROR Unable to connect to Powerwall at %s' % url)
+            return None
+        except Exception as exc:
+            log.debug('ERROR Unknown error connecting to Powerwall at %s: %s' % (url, exc))
+            return None
+        if r.status_code == 404:
+            log.debug('404 Powerwall API not found at %s' % url)
+            return None
+        elif r.status_code == 401:
+            # Session Expired - Try to get a new one unless we already tried
+            log.debug('Session Expired - Trying to get a new one')
+            if not recursive:
+                if raw:
+                    # Drain the stream before retrying
+                    # noinspection PyUnusedLocal
+                    response = r.raw.data
+                self._get_session()
+                return self.post(api=api, payload=payload, din=din, raw=raw, recursive=True)
+            else:
+                log.error('Unable to establish session with Powerwall at %s - check password' % url)
+                return None
+        elif r.status_code == 403:
+            # Unauthorized
+            log.error('403 Unauthorized by Powerwall API at %s - Endpoint disabled in this firmware or '
+                      'user lacks permission' % url)
+            return None
+        elif 400 <= r.status_code < 500:
+            log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
+            return None
+        elif r.status_code >= 500:
+            log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))
+            return None
+        if raw:
+            response = r.raw.data
+        else:
+            response = r.text
+            if not response:
+                log.debug(f"Empty response from Powerwall at {url}")
+                return None
+            elif 'application/json' in r.headers.get('Content-Type'):
+                try:
+                    response = json.loads(response)
+                except Exception as exc:
+                    log.error(f"Unable to parse response '{response}' as JSON, even though it was supposed to "
+                              f"be a json: {exc}")
+                    return None
+            else:
+                log.debug(f"Non-json response from Powerwall at {url}: '{response}', serving as is.")
+        # invalidate appropriate read cache on (more or less) successful call to writable API
+        super()._invalidate_cache(api)
+        return response
 
     def version(self, int_value=False):
         """ Firmware Version """

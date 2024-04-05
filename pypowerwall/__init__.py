@@ -36,6 +36,7 @@
     
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
+    post(api, payload, json)  # Send payload to Powerwall api (dict if json=True)
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -60,7 +61,12 @@
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
     is_connected()            # Returns True if able to connect and login to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
+    get_mode()                # Get Current Battery Operation Mode
+    set_reserve(level)        # Set Battery Reserve Percentage
+    set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
+
+    set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
 
  Requirements
     This module requires the following modules: requests, protobuf, teslapy
@@ -70,18 +76,21 @@ import json
 import logging
 import os.path
 import sys
+from json import JSONDecodeError
 from typing import Union, Optional
 
 # noinspection PyPackageRequirements
 import urllib3
 
+from pypowerwall.aux import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
+from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter, InvalidBatteryReserveLevelException
 from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
 from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 8, 0)
+version_tuple = (0, 8, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -146,13 +155,19 @@ class Powerwall(object):
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
         self.client: PyPowerwallBase
-        # Check for cloud mode
-        if self.cloudmode or self.host == "":
+
+        # Make certain assumptions here
+        if not self.host:
             self.cloudmode = True
+
+        # Validate provided parameters
+        self._validate_init_configuration()
+
+        # Check for cloud mode
+        if self.cloudmode:
             self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
             # Check to see if we can connect to the cloud
         else:
-            self.cloudmode = False
             self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
                                            self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile)
 
@@ -173,7 +188,7 @@ class Powerwall(object):
             return False
 
     def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False,
-             force=False) -> Union[dict, str]:
+             force=False) -> Optional[Union[dict, list, str, bytes]]:
         """
         Query Tesla Energy Gateway Powerwall for API Response
         
@@ -184,12 +199,35 @@ class Powerwall(object):
             recursive   = If True, this is a recursive call and do not allow additional recursive calls
             force       = If True, bypass the cache and make the API call to the gateway, has no meaning in Cloud mode
         """
-        # Check to see if we are in cloud mode
         payload = self.client.poll(api, force, recursive, raw)
         if jsonformat:
-            return json.dumps(payload)
+            try:
+                return json.dumps(payload)
+            except JSONDecodeError:
+                log.error(f"Unable to dump response '{payload}' as JSON. I know you asked for it, sorry.")
         else:
             return payload
+
+    def post(self, api: str, payload: Optional[dict], din: Optional[str] = None, jsonformat=False, raw=False,
+             recursive=False) -> Optional[Union[dict, list, str, bytes]]:
+        """
+        Send a command to Tesla Energy Gateway
+
+        Args:
+            api         = URI
+            payload     = Arbitrary payload to send
+            din         = System DIN (ignored in Cloud mode)
+            raw         = If True, send raw data back (useful for binary responses, has no meaning in Cloud mode)
+            recursive   = If True, this is a recursive call and do not allow additional recursive calls
+        """
+        response = self.client.post(api, payload, din, recursive, raw)
+        if jsonformat:
+            try:
+                return json.dumps(response)
+            except JSONDecodeError:
+                log.error(f"Unable to dump response '{response}' as JSON. I know you asked for it, sorry.")
+        else:
+            return response
 
     def level(self, scale=False):
         """ 
@@ -453,12 +491,23 @@ class Powerwall(object):
                 if value is True:
                     alerts.append(alert)
 
+        # Augment with inferred alerts from the grid_status
+        grid_status = self.poll('/api/system_status/grid_status')
+        if grid_status:
+            alert = grid_status.get('grid_status')
+            if alert == 'SystemGridConnected' and 'SystemConnectedToGrid' not in alerts:
+                alerts.append('SystemConnectedToGrid')
+            else:
+                alerts.append(alert)
+            if grid_status.get('grid_services_active'):
+                alerts.append('GridServicesActive')
+
         if jsonformat:
             return json.dumps(alerts, indent=4, sort_keys=True)
         else:
             return alerts
 
-    def get_reserve(self, scale=True) -> Optional[float]:
+    def get_reserve(self, scale=True, force=False) -> Optional[float]:
         """
         Get Battery Reserve Percentage  
         Tesla App reserves 5% of battery => ( (batterylevel / 0.95) - (5 / 0.95) )
@@ -466,7 +515,7 @@ class Powerwall(object):
         Args:
             scale    = If True (default) use Tesla's 5% reserve calculation
         """
-        data = self.poll('/api/operation')
+        data = self.poll('/api/operation', force=force)
         if data is not None and 'backup_reserve_percent' in data:
             percent = float(data['backup_reserve_percent'])
             if scale:
@@ -474,6 +523,69 @@ class Powerwall(object):
                 percent = float((percent / 0.95) - (5 / 0.95))
             return percent
         return None
+
+    def get_mode(self, force=False) -> Optional[float]:
+        """
+        Get Battery Operation Mode
+        """
+        data = self.poll('/api/operation', force=force)
+        if data and data.get('real_mode'):
+            return data['real_mode']
+        return None
+
+    def set_reserve(self, level: float) -> Optional[dict]:
+        """
+        Set battery reserve level.
+
+        Args:
+            level:   Set battery reserve level in percents (range of 5-100 is accepted)
+
+        Returns:
+            Dictionary with operation results.
+        """
+        return self.set_operation(level=level)
+
+    def set_mode(self, mode: str) -> Optional[dict]:
+        """
+        Set battery operation mode.
+
+        Args:
+            mode:    Set battery operation mode (self_consumption, backup, autonomous, etc.)
+
+        Returns:
+            Dictionary with operation results.
+        """
+        return self.set_operation(mode=mode)
+
+    def set_operation(self, level: Optional[float] = None, mode: Optional[str] = None,
+                      jsonformat: bool = False) -> Optional[Union[dict, str]]:
+        """
+        Set battery operation mode and reserve level.
+
+        Args:
+            level:   Set battery reserve level in percents (range of 5-100 is accepted)
+            mode:    Set battery operation mode (self_consumption, backup, autonomous, etc.)
+            jsonformat:  Set to True to receive json formatted string
+
+        Returns:
+            Dictionary with operation results, if jsonformat is False, else a JSON string
+        """
+        if level and (level < 5 or level > 100):
+            raise InvalidBatteryReserveLevelException('Level can be in range of 5 to 100 only.')
+
+        if not level:
+            level = self.get_reserve()
+
+        if not mode:
+            mode = self.get_mode()
+
+        payload = {
+            'backup_reserve_percent': level,
+            'real_mode': mode
+        }
+
+        result = self.post(api='/api/operation', payload=payload, din=self.din(), jsonformat=jsonformat)
+        return result
 
     # noinspection PyShadowingBuiltins
     def grid_status(self, type="string") -> Optional[Union[str, int]]:
@@ -606,3 +718,54 @@ class Powerwall(object):
             The time remaining in hours
         """
         return self.client.get_time_remaining()
+
+    def _validate_init_configuration(self):
+
+        # Basic user input validation for starters. Can be expanded to limit other parameters such as cache
+        # expiration range, timeout range, etc
+
+        # Check for valid hostname/IP address
+        if (self.host and (
+                not isinstance(self.host, str) or
+                (not IPV4_6_REGEX.match(self.host) and not HOST_REGEX.match(self.host))
+        )):
+            raise PyPowerwallInvalidConfigurationParameter(f"Invalid powerwall host: '{self.host}'. Must be in the "
+                                                           f"form of IP address or a valid form of a hostname or FQDN.")
+
+        # If cloud mode requested, check appropriate parameters
+        if self.cloudmode:
+            # Ensure email is set and syntactically correct
+            if not self.email or not isinstance(self.email, str) or not EMAIL_REGEX.match(self.email):
+                raise PyPowerwallInvalidConfigurationParameter(f"A valid email address is required to run in "
+                                                               f"cloud mode: '{self.email}' did not pass validation.")
+
+            # Ensure we can write to the provided authpath
+            dirname = self.authpath
+            if not dirname:
+                log.debug("No authpath provided, using current directory.")
+                dirname = '.'
+            self._check_if_dir_is_writable(dirname, "authpath")
+        # If local mode, check appropriate parameters, too
+        else:
+            # Ensure we can create a cachefile
+            dirname = os.path.dirname(self.cachefile)
+            if not dirname:
+                log.debug("No cachefile provided, using current directory.")
+                dirname = '.'
+            self._check_if_dir_is_writable(dirname, "cachefile")
+
+    @staticmethod
+    def _check_if_dir_is_writable(dirpath, name=""):
+        # Ensure we can write to the provided authpath
+        if not os.path.exists(dirpath):
+            try:
+                os.makedirs(dirpath, exist_ok=True)
+            except Exception as exc:
+                raise PyPowerwallInvalidConfigurationParameter(f"Unable to create {name} directory at "
+                                                               f"'{dirpath}': {exc}")
+        elif not os.path.isdir(dirpath):
+            raise PyPowerwallInvalidConfigurationParameter(f"'{dirpath}' must be a directory ({name}).")
+        else:
+            if not os.access(dirpath, os.W_OK):
+                raise PyPowerwallInvalidConfigurationParameter(f"Directory '{dirpath}' is not writable for {name}. "
+                                                               f"Check permissions.")
