@@ -169,8 +169,8 @@ and call function to poll data.  Here is an example:
     is_connected()            # Returns True if able to connect to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
     get_mode()                # Get Current Battery Operation Mode
-    set_reserve(level)        # Set Battery Reserve Percentage
-    set_mode(mode)            # Set Current Battery Operation Mode
+    set_reserve(level)        # Set Battery Reserve Percentage (only cloud mode)
+    set_mode(mode)            # Set Current Battery Operation Mode (only cloud mode)
     get_time_remaining()      # Get the backup time remaining on the battery
 
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
@@ -187,10 +187,27 @@ The following are some useful tools based on pypowerwall:
 
 * [Powerwall Dashboard](https://github.com/jasonacox/Powerwall-Dashboard#powerwall-dashboard) - Monitoring Dashboard for the Tesla Powerwall using Grafana, InfluxDB, Telegraf and pyPowerwall.
 
-## Powerwall Scanner
+## Powerwall Command Line
 
-pyPowerwall has a built in feature to scan your network for available Powerwall gateways.  This will help you find the IP address of your Powerwall.
+pyPowerwall has a built in feature to scan your network for available Powerwall gateways and set/get operational and reserve modes.
 
+```
+Usage: PyPowerwall [-h] {setup,scan,set,get,version} ...
+
+PyPowerwall Module v0.8.1
+
+Options:
+  -h, --help            Show this help message and exit
+
+Commands (run <command> -h to see usage information):
+  {setup,scan,set,get,version}
+    setup               Setup Tesla Login for Cloud Mode access
+    scan                Scan local network for Powerwall gateway
+    set                 Set Powerwall Mode and Reserve Level
+    get                 Get Powerwall Settings and Power Levels
+    version             Print version information
+```
+   
 ```bash
 # Install pyPowerwall if you haven't already
 python -m pip install pypowerwall
@@ -216,6 +233,35 @@ Scan local network for Tesla Powerwall Gateways
 
 Discovered 1 Powerwall Gateway
      10.0.1.36 [1232100-00-E--TG123456789ABG]
+```
+
+Get Power Levels, Operation Mode, and Battery Reserve Level
+
+```bash
+# Setup Connection with Tesla Cloud
+python -m pypowerwall setup
+
+# Get Power Levels, Operation Mode, and Battery Reserve Setting
+#
+# Usage: PyPowerwall get [-h] [-format FORMAT]
+#  -h, --help      show this help message and exit
+#  -format FORMAT  Output format: text, json, csv
+#
+python -m pypowerwall get
+python -m pypowerwall get -format json
+python -m pypowerwall get -format csv
+
+# Set Operation Mode and Battery Reserve Setting
+#
+# Usage: PyPowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]
+#  -h, --help        show this help message and exit
+#  -mode MODE        Powerwall Mode: self_consumption, backup, or autonomous
+#  -reserve RESERVE  Set Battery Reserve Level [Default=20]
+#  -current          Set Battery Reserve Level to Current Charge
+#
+python -m pypowerwall set -mode self_consumption
+python -m pypowerwall set -reserve 30
+python -m pypowerwall set -current
 ```
 
 ## Example API Calls

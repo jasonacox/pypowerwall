@@ -32,6 +32,7 @@ print(pypowerwall.version)" | (cd ..; python3)`
   echo ""
 
   # Restore link for testing
+  rm -rf pypowerwall
   ln -s ../pypowerwall pypowerwall
 
 else

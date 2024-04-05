@@ -2,13 +2,28 @@
 
 ## v0.8.1 - Set battery reserve, operation mode
 
-* Added `get_mode()` function.
-* Added `set_mode()` function.
-* Added `set_reserve()` function.
-* Added `set_operation()` function to set battery operation mode and/or reserve level. Likely won't work in the local mode.
+* Added `get_mode()`, `set_mode()`,`set_reserve()`,and `set_operation()` function to set battery operation mode and/or reserve level by @emptywee in https://github.com/jasonacox/pypowerwall/pull/78. Likely won't work in the local mode.
 * Added basic validation for main class `__init__()` parameters (a.k.a. user input).
-* Handle 401/403 errors from Powerwall separately in local mode.
+* Better handling of 401/403 errors from Powerwall in local mode.
 * Handle 50x errors from Powerwall in local mode.
+* New command line functions (`set` and `get`):
+
+```
+usage: PyPowerwall [-h] {setup,scan,set,get,version} ...
+
+PyPowerwall Module v0.8.1
+
+options:
+  -h, --help            show this help message and exit
+
+commands (run <command> -h to see usage information):
+  {setup,scan,set,get,version}
+    setup               Setup Tesla Login for Cloud Mode access
+    scan                Scan local network for Powerwall gateway
+    set                 Set Powerwall Mode and Reserve Level
+    get                 Get Powerwall Settings and Power Levels
+    version             Print version information
+```
 
 ## v0.8.0 - Refactoring
 
