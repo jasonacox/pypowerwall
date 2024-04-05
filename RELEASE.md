@@ -6,6 +6,7 @@
 * Added basic validation for main class `__init__()` parameters (a.k.a. user input).
 * Better handling of 401/403 errors from Powerwall in local mode.
 * Handle 50x errors from Powerwall in local mode.
+* Added Alerts for Grid Status `alerts()`.
 * New command line functions (`set` and `get`):
 
 ```
