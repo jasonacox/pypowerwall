@@ -48,28 +48,26 @@ LEVEL=`echo ${STATE} | cut -f5 -d,`
 CUR=`echo ${STATE} | cut -f6 -d,`
 
 # Current date and time
-MONTH=`date +%m`
+MONTH=`date +%b`
 DATE=`date +%d`
 YEAR=`date +%Y`
 HOUR=`date +%H`
 MINUTE=`date +%M`
 H=`date +%H | bc` # remove leading zero
 M=`date +%M | bc`
-echo "$MONTH/$DATE/$YEAR ${HOUR}:${MINUTE}: The battery level is ${LEVEL}, Grid=${GRID}, House=${HOUSE}, Solar=${SO
-LAR}, PW=${PW}, Reserve Setting=${CUR}, Clouds=${CLOUDS}"
+echo "$MONTH $DATE $YEAR ${HOUR}:${MINUTE}: The battery level is ${LEVEL}, Grid=${GRID}, House=${HOUSE}, Solar=${SOLAR}, PW=${PW}, Reserve Setting=${CUR}, Clouds=${CLOUDS}"
 
 # Function to change reserve
 change() {
     echo "Change to ${1}"
     /usr/bin/python3 set-reserve.py --set $1
-    echo "$MONTH/$DATE/$YEAR ${HOUR}:${MINUTE}: Updated to ${1} - The battery level is ${LEVEL}, Grid=${GRID}, Hous
-e=${HOUSE}, Solar=${SOLAR}, PW=${PW}, Reserve was=${CUR}" >> $LOGFILE
+    echo "$MONTH $DATE $YEAR ${HOUR}:${MINUTE}: Updated to ${1} - The battery level is ${LEVEL}, Grid=${GRID}, House=${HOUSE}, Solar=${SOLAR}, PW=${PW}, Reserve was=${CUR}" | tee -a $LOGFILE
 }
 
 # Logic for operations
 
 # WINTER - Nov, Dec and Jan - Adjust Reserve to save energy for peak
-if (( "${MONTH}" == "11" )) || ((  "${MONTH}" == "12")) || (( "${MONTH}" == "01" )); then
+if [[ "${MONTH}" =~ ^(Nov|Dec|Jan)$ ]]; then
     # From 9am to 4pm - Peak solar production time - charge battery
     if (( $H >= 9 )) && (( $H < 16 )); then
         # 9am to 4pm
