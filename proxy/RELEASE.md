@@ -1,5 +1,13 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t53 (11 Apr 2024)
+
+* Add DISABLED API handling logic.
+
+### Proxy t52 (5 Apr 2024)
+
+*  Update to pyPowerwall proxy v0.8.1
+
 ### Proxy t51 (18 Mar 2024)
 
 * Update to pypowerwall 0.8.0

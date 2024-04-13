@@ -46,7 +46,7 @@ import pypowerwall
 from pypowerwall import parse_version
 from transform import get_static, inject_js
 
-BUILD = "t52"
+BUILD = "t53"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -56,6 +56,9 @@ ALLOWLIST = [
     '/api/customer', '/api/meters', '/api/installer', '/api/networks',
     '/api/system/networks', '/api/meters/readings', '/api/synchrometer/ct_voltage_references',
     '/api/troubleshooting/problems', '/api/auth/toggle/supported', '/api/solar_powerwall',
+]
+DISABLED = [
+    '/api/customer/registration',
 ]
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
@@ -435,6 +438,9 @@ class Handler(BaseHTTPRequestHandler):
             # Simulate old API call and respond with empty list
             message = '{"problems": []}'
             # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
+        elif self.path in DISABLED:
+            # Disabled API Calls
+            message = '{"status": "404 Response - API Disabled"}'
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
             message: str = pw.poll(self.path, jsonformat=True)

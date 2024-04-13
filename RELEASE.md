@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.8.2 - 503 Error Handling
+
+* Added 5 minute cooldown for HTTP 503 Service Unavailable errors from API calls.
+* Proxy: Added DISABLED API handling logic.
+
 ## v0.8.1 - Set battery reserve, operation mode
 
 * Added `get_mode()`, `set_mode()`,`set_reserve()`,and `set_operation()` function to set battery operation mode and/or reserve level by @emptywee in https://github.com/jasonacox/pypowerwall/pull/78. Likely won't work in the local mode.

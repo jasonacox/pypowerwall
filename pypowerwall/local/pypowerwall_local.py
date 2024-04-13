@@ -193,6 +193,11 @@ class PyPowerwallLocal(PyPowerwallBase):
             elif 400 <= r.status_code < 500:
                 log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
                 return None
+            elif r.status_code == 503:
+                log.error('503 Service Unavailable at %s - Activating 5 minute API cooldown' % url)
+                self.pwcachetime[api] = time.perf_counter() + 300
+                self.pwcache[api] = None
+                return None
             elif r.status_code >= 500:
                 log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))
                 return None

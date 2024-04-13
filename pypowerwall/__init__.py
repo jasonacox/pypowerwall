@@ -90,7 +90,7 @@ from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 8, 1)
+version_tuple = (0, 8, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
