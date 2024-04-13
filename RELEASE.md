@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.8.3 - Error Handling
+
+* Added additional error handling logic to clean up exceptions.
+
 ## v0.8.2 - 503 Error Handling
 
 * Added 5 minute cooldown for HTTP 503 Service Unavailable errors from API calls.
