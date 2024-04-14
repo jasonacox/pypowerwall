@@ -28,6 +28,13 @@
     /strings data.
     Set: PW_EMAIL and leave PW_HOST blank to use this mode.
 
+ Control Mode
+    An optional mode is to enable control commands to set backup reserve
+    percentage and mode of the Powerwall.  This requires that you set
+    and use the PW_CONTROL_SECRET environmental variable.  This mode
+    is disabled by default and should be used with caution.
+    Set: PW_CONTROL_SECRET to enable this mode.
+
 """
 import datetime
 import json
