@@ -3,6 +3,7 @@
 ## v0.8.3 - Error Handling
 
 * Added additional error handling logic to clean up exceptions.
+* Proxy: Added command APIs for setting backup reserve and operating mode.
 
 ## v0.8.2 - 503 Error Handling
 
