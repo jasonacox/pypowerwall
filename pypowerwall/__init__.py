@@ -602,6 +602,10 @@ class Powerwall(object):
 
         payload: dict = self.poll('/api/system_status/grid_status')
 
+        if payload is None:
+            log.error(f"Failed to get /api/system_status/grid_status")
+            return None
+
         if type == "json":
             return json.dumps(payload, indent=4, sort_keys=True)
 
