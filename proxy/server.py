@@ -489,6 +489,7 @@ class Handler(BaseHTTPRequestHandler):
                                 else:
                                     if value.isdigit():
                                         message = json.dumps(pw_control.set_reserve(int(value)))
+                                        log.info(f"Control Command: Set Reserve to {value}")
                                     else:
                                         message = '{"error": "Control Command Value Invalid"}'
                             elif action == 'mode':
@@ -498,6 +499,7 @@ class Handler(BaseHTTPRequestHandler):
                                 else:
                                     if value in ['self_consumption', 'backup', 'autonomous']:
                                         message = json.dumps(pw_control.set_mode(value))
+                                        log.info(f"Control Command: Set Mode to {value}")
                                     else:
                                         message = '{"error": "Control Command Value Invalid"}'
                             else:
