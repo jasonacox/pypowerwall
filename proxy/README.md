@@ -4,9 +4,11 @@
 
 This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway and will proxy API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level), and many others (see [HELP](https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md) for full list). With the instructions below, you can containerize this proxy and run it as an endpoint for tools like telegraf to pull metrics without needing to authenticate.
 
-Because pyPowerwall is designed to cache the auth and high frequency API calls, while also utilising HTTP persistent connections, this will reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway.
+**Cache**: Because pyPowerwall is designed to cache the auth and high frequency API calls and use HTTP persistent connections. This will help reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway. Logic in pypowerwall will also activate cooldown modes if the Gateway responds with errors indicating overload.
 
-Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/pypowerwall)
+**Local or Cloud**: The proxy uses the built in abstraction of pypowerwall to operate in two modes: `local mode` and `cloud mode`. Local mode will connect directly with your Powerwall's Tesla Energy Gateway (TEG) to pull realtime data. Cloud mode will connect to the Tesla cloud APIs to pull realtime data. Cloud mode has lower fidelity than local mode and does not include some data points available on the the local API.
+
+**Control Mode**: An optional mode allows the proxy to send control commands to set backup reserve percentage and mode of the Powerwall.  This requires that you set and use the `PW_CONTROL_SECRET` environmental variable. For safety reasons, this mode is disabled by default and should be used with caution.
 
 ## Quick Start
 
@@ -14,21 +16,25 @@ Docker: docker pull [jasonacox/pypowerwall](https://hub.docker.com/r/jasonacox/p
 
     ```bash
     docker run \
-    -d \
-    -p 8675:8675 \
-    -e PW_PORT='8675' \
-    -e PW_PASSWORD='password' \
-    -e PW_EMAIL='email@example.com' \
-    -e PW_HOST='IP_of_Powerwall_Gateway' \
-    -e PW_TIMEZONE='America/Los_Angeles' \
-    -e TZ='America/Los_Angeles' \
-    -e PW_CACHE_EXPIRE='5' \
-    -e PW_DEBUG='no' \
-    -e PW_HTTPS='no' \
-    -e PW_STYLE='clear' \
-    --name pypowerwall \
-    --restart unless-stopped \
-    jasonacox/pypowerwall
+        -d \
+        -p 8675:8675 \
+        -e PW_PORT='8675' \
+        -e PW_PASSWORD='password' \
+        -e PW_EMAIL='email@example.com' \
+        -e PW_HOST='IP_of_Powerwall_Gateway' \
+        -e PW_TIMEZONE='America/Los_Angeles' \
+        -e TZ='America/Los_Angeles' \
+        -e PW_CACHE_EXPIRE='5' \
+        -e PW_DEBUG='no' \
+        -e PW_HTTPS='no' \
+        -e PW_STYLE='clear' \
+        --name pypowerwall \
+        --restart unless-stopped \
+        jasonacox/pypowerwall
+
+    # Cloud Mode Setup - Optional
+    docker exec -it pypowerwall python3 -m pypowerwall setup -email=email@example.com
+    docker restart pypowerwall
     ```
 
 2. Test the Proxy
@@ -68,11 +74,11 @@ The `Dockerfile` here will allow you to containerize the proxy server for clean 
 
     ```bash
     docker run \
-    -d \
-    -p 8675:8675 \
-    --name pypowerwall \
-    --restart unless-stopped \
-    pypowerwall
+        -d \
+        -p 8675:8675 \
+        --name pypowerwall \
+        --restart unless-stopped \
+        pypowerwall
     ```
 
 3. Test the Proxy
@@ -142,10 +148,10 @@ The pyPowerwall Proxy will react to the following environmental variables with (
 
 Powerwall Settings
 
-* PW_PASSWORD - Powerwall customer password ("password")
-* PW_EMAIL - Powerwall customer email ("email@example.com")
-* PW_HOST - Powerwall hostname or IP address ("hostname")
-* PW_TIMEZONE - Local timezone ("America/Los_Angeles")
+* PW_PASSWORD - Powerwall customer password ("password") [required]
+* PW_EMAIL - Powerwall customer email ("email@example.com") [required for cloudmode]
+* PW_HOST - Powerwall hostname or IP address ("hostname") [required for local mode]
+* PW_TIMEZONE - Local timezone ("America/Los_Angeles") [optional]
 
 Proxy Settings
 
@@ -163,6 +169,57 @@ Proxy Settings
     * white (uses `#ffffff` ![#ffffff](https://via.placeholder.com/12/ffffff/000000.png?text=+))
     * grafana (uses `#161719` ![#161719](https://via.placeholder.com/12/161719/000000.png?text=+))
     * grafana-dark (uses `#111217` ![#111217](https://via.placeholder.com/12/111217/000000.png?text=+))
+* PW_AUTH_PATH - Location (path) for authentication and cache files ("")
+* PW_AUTH_MODE - Use `cookie` (default) or `token` for authentication
+* PW_CACHE_FILE - Proxy cache file path, with override PW_AUTH_PATH if provided (".powerwall")
+* PW_SITEID - For `cloud mode`, if you have multiple sites configured, use this site ID ("")
+* PW_CONTROL_SECRET - If provided, will activate the Powerwall control commands to adjust Powerwall backup reserve level and mode (disabled by default)
+
+## Control Mode
+
+If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will attempt to connect ot the cloud in addition to local mode setup (if you are using local mode). The `PW_EMAIL` must match your Tesla account and you need to run **cloud setup** before using this mode.
+
+_WARNING_: Activating control mode means that the proxy can make changes to your system. This will be available to anyone who can access the proxy. For safety reasons, this mode is disabled by default and should be used with caution.
+
+```bash
+# Run Proxy 
+docker run \
+    -d \
+    -p 8675:8675 \
+    -e PW_PORT='8675' \
+    -e PW_PASSWORD='password' \
+    -e PW_EMAIL='email@example.com' \
+    -e PW_HOST='IP_of_Powerwall_Gateway' \
+    -e PW_TIMEZONE='America/Los_Angeles' \
+    -e TZ='America/Los_Angeles' \
+    -e PW_CONTROL_SECRET='YourSecretToken` \
+    --name pypowerwall \
+    --restart unless-stopped \
+    jasonacox/pypowerwall
+
+# Setup Cloud
+docker exec -it pypowerwall python3 -m pypowerwall setup -email=email@example.com
+docker restart pypowerwall
+```
+
+APIs
+
+* Set Mode: `/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption` 
+* Set Reserve: `/control/reserve?token=$PW_CONTROL_SECRET&value=20`
+
+Examples
+
+```bash
+# Set Mode
+curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption
+
+# Set Reserve
+curl http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET&value=20
+
+# Omit Value to Read Settings
+curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET
+curl http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET
+```
 
 ## Release Notes
 
