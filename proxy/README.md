@@ -211,14 +211,14 @@ Examples
 
 ```bash
 # Set Mode
-curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption
+curl "http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption"
 
 # Set Reserve
-curl http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET&value=20
+curl "http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET&value=20"
 
 # Omit Value to Read Settings
-curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET
-curl http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET
+curl "http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET"
+curl "http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET"
 ```
 
 ## Release Notes
