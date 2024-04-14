@@ -192,7 +192,7 @@ docker run \
     -e PW_HOST='IP_of_Powerwall_Gateway' \
     -e PW_TIMEZONE='America/Los_Angeles' \
     -e TZ='America/Los_Angeles' \
-    -e PW_CONTROL_SECRET='YourSecretToken` \
+    -e PW_CONTROL_SECRET='YourSecretToken' \
     --name pypowerwall \
     --restart unless-stopped \
     jasonacox/pypowerwall
