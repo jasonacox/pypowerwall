@@ -90,7 +90,7 @@ from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 8, 2)
+version_tuple = (0, 8, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -602,6 +602,10 @@ class Powerwall(object):
 
         payload: dict = self.poll('/api/system_status/grid_status')
 
+        if payload is None:
+            log.error(f"Failed to get /api/system_status/grid_status")
+            return None
+
         if type == "json":
             return json.dumps(payload, indent=4, sort_keys=True)
 
@@ -613,7 +617,7 @@ class Powerwall(object):
                    'SystemMicroGridFaulted': {'string': 'DOWN', 'numeric': 0},
                    'SystemWaitForUser': {'string': 'DOWN', 'numeric': 0}}
 
-        grid_status = payload['grid_status']
+        grid_status = payload.get('grid_status')
         status = gridmap.get(grid_status, {}).get(type)
         if status is None:
             log.debug(f"ERROR unable to parse payload '{payload}' for grid_status of type: {type}")
