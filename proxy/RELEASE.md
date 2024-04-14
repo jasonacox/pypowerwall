@@ -5,7 +5,7 @@
 * Fix `/pod` API to add `time_remaining_hours` and `backup_reserve_percent` for cloud mode.
 * Added GET command APIs to set backup reserve and operating mode settings. Requires setting `PW_CONTROL_SECRET`. Use with caution.
 
-```
+```bash
 # Set Mode
 curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption
 
