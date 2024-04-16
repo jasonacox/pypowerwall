@@ -90,7 +90,7 @@ from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 8, 3)
+version_tuple = (0, 8, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -563,15 +563,16 @@ class Powerwall(object):
         Set battery operation mode and reserve level.
 
         Args:
-            level:   Set battery reserve level in percents (range of 5-100 is accepted)
+            level:   Set battery reserve level in percents (range of 0-100 is accepted)
             mode:    Set battery operation mode (self_consumption, backup, autonomous, etc.)
             jsonformat:  Set to True to receive json formatted string
 
         Returns:
             Dictionary with operation results, if jsonformat is False, else a JSON string
         """
-        if level and (level < 5 or level > 100):
-            raise InvalidBatteryReserveLevelException('Level can be in range of 5 to 100 only.')
+        if level and (level < 0 or level > 100):
+            log.error(f"Level can be in range of 0 to 100 only.")
+            return None
 
         if not level:
             level = self.get_reserve()
@@ -598,6 +599,7 @@ class Powerwall(object):
             type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
         """
         if type not in ['json', 'string', 'numeric']:
+            log.error(f"Invalid value for parameter 'type': {type}")
             raise ValueError("Invalid value for parameter 'type': " + str(type))
 
         payload: dict = self.poll('/api/system_status/grid_status')
