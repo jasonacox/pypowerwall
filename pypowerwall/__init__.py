@@ -580,6 +580,10 @@ class Powerwall(object):
         if not mode:
             mode = self.get_mode()
 
+        # If level is 0, set it to False - Disable reserve
+        if level == 0:
+            level = False
+
         payload = {
             'backup_reserve_percent': level,
             'real_mode': mode
