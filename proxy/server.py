@@ -190,6 +190,7 @@ else:
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name().strip()))
 
+pw_control = None
 if control_secret:
     log.info("Control Commands Activating - WARNING: Use with caution!")
     try:
@@ -204,6 +205,9 @@ if control_secret:
         control_secret = ""
     if pw_control:
         log.info("Control Mode Enabled: Cloud Mode Connected")
+    else:
+        log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
+        control_secret = None
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
