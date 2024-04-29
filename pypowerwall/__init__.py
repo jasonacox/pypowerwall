@@ -538,7 +538,7 @@ class Powerwall(object):
         Set battery reserve level.
 
         Args:
-            level:   Set battery reserve level in percents (range of 5-100 is accepted)
+            level:   Set battery reserve level in percents (range of 0-100 is accepted)
 
         Returns:
             Dictionary with operation results.
@@ -574,20 +574,17 @@ class Powerwall(object):
             log.error(f"Level can be in range of 0 to 100 only.")
             return None
 
-        if not level:
+        if level is None:
             level = self.get_reserve()
 
         if not mode:
             mode = self.get_mode()
 
-        # If level is 0, set it to False - Disable reserve
-        if level == 0:
-            level = False
-
         payload = {
-            'backup_reserve_percent': level,
+            'backup_reserve_percent': level if level > 0 else False,
             'real_mode': mode
         }
+        log.debug(f"Setting operation: {payload}")
 
         result = self.post(api='/api/operation', payload=payload, din=self.din(), jsonformat=jsonformat)
         return result
