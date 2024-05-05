@@ -1,20 +1,26 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t54 (13 Apr 2024)
+### Proxy t55 (4 May 2024)
 
 * Fix `/pod` API to add `time_remaining_hours` and `backup_reserve_percent` for cloud mode.
-* Added GET command APIs to set backup reserve and operating mode settings. Requires setting `PW_CONTROL_SECRET`. Use with caution.
+* Replaced t54 - Move control to POST see https://github.com/jasonacox/pypowerwall/issues/87
+* Added GET APIs to retrieve backup reserve and operating mode settings
+* Added POST command APIs to set backup reserve and operating mode settings. **Requires setting `PW_CONTROL_SECRET` for the proxy. Use with caution.**
 
 ```bash
 # Set Mode
-curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption
+export MODE=self_consumption
+export RESERVE=20
+export PW_CONTROL_SECRET=mySecretKey
+
+curl -X POST -d "value=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
 
 # Set Reserve
-curl http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET&value=20
+curl -X POST -d "value=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 
-# Omit Value to Read Settings
-curl http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET
-curl http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET
+# Read Settings
+curl http://localhost:8675/control/mode
+curl http://localhost:8675/control/reserve
 ```
 
 ### Proxy t53 (11 Apr 2024)
