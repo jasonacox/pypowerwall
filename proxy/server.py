@@ -54,7 +54,7 @@ from pypowerwall import parse_version
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t54"
+BUILD = "t55"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -98,6 +98,7 @@ control_secret = os.getenv("PW_CONTROL_SECRET", "")
 proxystats = {
     'pypowerwall': "%s Proxy %s" % (pypowerwall.version, BUILD),
     'gets': 0,
+    'posts': 0,
     'errors': 0,
     'timeout': 0,
     'uri': {},
@@ -190,6 +191,7 @@ else:
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name().strip()))
 
+pw_control = None
 if control_secret:
     log.info("Control Commands Activating - WARNING: Use with caution!")
     try:
@@ -204,6 +206,9 @@ if control_secret:
         control_secret = ""
     if pw_control:
         log.info("Control Mode Enabled: Cloud Mode Connected")
+    else:
+        log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
+        control_secret = None
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -222,6 +227,70 @@ class Handler(BaseHTTPRequestHandler):
         # replace function to avoid lookup delays
         hostaddr, hostport = self.client_address[:2]
         return hostaddr
+    
+    def do_POST(self):
+        global proxystats
+        contenttype = 'application/json'
+        message = '{"error": "Invalid Request"}'
+        if self.path.startswith('/control'):
+            # curl -X POST -d "value=20&token=1234" http://localhost:8675/control/reserve
+            # curl -X POST -d "value=backup&token=1234" http://localhost:8675/control/mode
+            message = None
+            if not control_secret:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                try:
+                    action = urlparse(self.path).path.split('/')[2]
+                    post_data = self.rfile.read(int(self.headers['Content-Length']))
+                    query_params = parse_qs(post_data.decode('utf-8'))
+                    value = query_params.get('value', [''])[0]
+                    token = query_params.get('token', [''])[0]
+                except Exception as e:
+                    message = '{"error": "Control Command Error: Invalid Request"}'
+                    log.error(f"Control Command Error: {e}")
+                if not message:
+                    # Check if unable to connect to cloud
+                    if pw_control.client is None:
+                        message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
+                        log.error("Control Command Error: Unable to connect to cloud mode - Run Setup")
+                    else:
+                        if token == control_secret:
+                            if action == 'reserve':
+                                # ensure value is an integer
+                                if not value:
+                                    # return current reserve level in json string
+                                    message = '{"reserve": %s}' % pw_control.get_reserve()
+                                elif value.isdigit():
+                                    message = json.dumps(pw_control.set_reserve(int(value)))
+                                    log.info(f"Control Command: Set Reserve to {value}")
+                                else:
+                                    message = '{"error": "Control Command Value Invalid"}'
+                            elif action == 'mode':
+                                if not value:
+                                    # return current mode in json string
+                                    message = '{"mode": "%s"}' % pw_control.get_mode()
+                                elif value in ['self_consumption', 'backup', 'autonomous']:
+                                    message = json.dumps(pw_control.set_mode(value))
+                                    log.info(f"Control Command: Set Mode to {value}")
+                                else:
+                                    message = '{"error": "Control Command Value Invalid"}'
+                            else:
+                                message = '{"error": "Invalid Command Action"}'
+                        else:
+                            message = '{"unauthorized": "Control Command Token Invalid"}'
+        if "error" in message:
+            self.send_response(400)
+            proxystats['errors'] = proxystats['errors'] + 1
+        elif "unauthorized" in message:
+            self.send_response(401)
+        else:
+            self.send_response(200)
+            proxystats['posts'] = proxystats['posts'] + 1
+        self.send_header('Content-type', contenttype)
+        self.send_header('Content-Length', str(len(message)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(message.encode("utf8"))
 
     def do_GET(self):
         global proxystats
@@ -467,52 +536,12 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
             message: str = pw.poll(self.path, jsonformat=True)
-        elif self.path.startswith('/control/'):
-            # URL = /control/{action}?value={value}&token={token}
-            message = None
-            if not control_secret:
-                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
-            else:
-                try:
-                    action = urlparse(self.path).path.split('/')[2]
-                    query_params = parse_qs(urlparse(self.path).query)
-                    value = query_params.get('value', [''])[0]
-                    token = query_params.get('token', [''])[0]
-                except Exception as e:
-                    message = '{"error": "Control Command Error: Invalid URL"}'
-                    log.error(f"Control Command Error: {e}")
-                if not message:                        
-                    # Check if unable to connect to cloud
-                    if pw_control.client is None:
-                        message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
-                        log.error("Control Command Error: Unable to connect to cloud mode - Run Setup")
-                    else:
-                        if token == control_secret:
-                            if action == 'reserve':
-                                # ensure value is an integer
-                                if not value:
-                                    # return current reserve level in json string
-                                    message = '{"reserve": %s}' % pw_control.get_reserve()
-                                else:
-                                    if value.isdigit():
-                                        message = json.dumps(pw_control.set_reserve(int(value)))
-                                        log.info(f"Control Command: Set Reserve to {value}")
-                                    else:
-                                        message = '{"error": "Control Command Value Invalid"}'
-                            elif action == 'mode':
-                                if not value:
-                                    # return current mode in json string
-                                    message = '{"mode": "%s"}' % pw_control.get_mode()
-                                else:
-                                    if value in ['self_consumption', 'backup', 'autonomous']:
-                                        message = json.dumps(pw_control.set_mode(value))
-                                        log.info(f"Control Command: Set Mode to {value}")
-                                    else:
-                                        message = '{"error": "Control Command Value Invalid"}'
-                            else:
-                                message = '{"error": "Control Command Not Found"}'
-                        else:
-                            message = '{"error": "Control Command Token Invalid"}'
+        elif self.path.startswith('/control/reserve'):
+            # Current battery reserve level
+            message = '{"reserve": %s}' % pw_control.get_reserve()
+        elif self.path.startswith('/control/mode'):
+            # Current operating mode
+            message = '{"mode": "%s"}' % pw_control.get_mode()
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1

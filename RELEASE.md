@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.8.4 - Set Reserve
+
+* Updated `set_reserve(level)` logic to handle levels from 0 to 100. Identified by @spoonwzd in #85
+
 ## v0.8.3 - Error Handling
 
 * Added additional error handling logic to clean up exceptions.
