@@ -204,21 +204,27 @@ docker restart pypowerwall
 
 APIs
 
-* Set Mode: `/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption` 
-* Set Reserve: `/control/reserve?token=$PW_CONTROL_SECRET&value=20`
+* Use `GET` method to read and `POST` to set.
+* Mode: `/control/mode` value=$MODE token=$PW_CONTROL_SECRET
+* Reserve: `/control/reserve` value=$RESERVE token=$PW_CONTROL_SECRET
 
 Examples
 
 ```bash
+export MODE=self_consumption
+export RESERVE=20
+export PW_CONTROL_SECRET=mySecretKey
+
 # Set Mode
-curl "http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET&value=self_consumption"
+curl -X POST -d "value=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
 
 # Set Reserve
-curl "http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET&value=20"
+curl -X POST -d "value=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 
-# Omit Value to Read Settings
-curl "http://localhost:8675/control/mode?token=$PW_CONTROL_SECRET"
-curl "http://localhost:8675/control/reserve?token=$PW_CONTROL_SECRET"
+# Read Settings
+curl http://localhost:8675/control/mode
+curl http://localhost:8675/control/reserve
+```
 ```
 
 ## Release Notes
