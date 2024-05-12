@@ -33,27 +33,6 @@
     set_battery_reserve(reserve) - set battery reserve level (percent)
     set_operating_mode(mode) - set operating mode (self_consumption or autonomous)
 
- Command Line Interface:
-
-    Usage: fleetapi.py command [arguments] [-h] [--debug] [--config CONFIG] [--site SITE] [--json]
-
-    Commands:
-        setup               Setup FleetAPI for your site
-        sites               List available sites
-        status              Report current power status for your site
-        info                Display information about your site
-        getmode             Get current operational mode setting
-        getreserve          Get current battery reserve level setting
-        setmode             Set operatinoal mode (self_consumption or autonomous)
-        setreserve          Set battery reserve level (prcentage or 'current')
-        
-    options:
-    -h, --help            Show this help message and exit
-    --debug               Enable debug mode
-    --config CONFIG       Specify alternate config file (default: .fleetapi.config)
-    --site SITE           Specify site_id
-    --json                Output in JSON format
-
  Author: Jason A. Cox
  Date: 18 Feb 2024
  For more information see https://github.com/jasonacox/pypowerwall
@@ -77,9 +56,10 @@ import requests
 import logging
 import sys
 import urllib.parse
+import time
 
 # Defaults
-CONFIGFILE = ".fleetapi.config"
+CONFIGFILE = ".pypowerwall.fleetapi"
 SCOPE = "openid offline_access energy_device_data energy_cmds"
 
 fleet_api_urls = {
@@ -96,7 +76,7 @@ def log(msg):
     logger.debug(msg)
 
 class FleetAPI:
-    def __init__(self, configfile=None, debug=False, site_id=None):
+    def __init__(self, configfile=None, debug=False, site_id=None, pwcacheexpire: int = 5):
         self.CLIENT_ID = ""
         self.CLIENT_SECRET = ""
         self.DOMAIN = ""
@@ -109,13 +89,16 @@ class FleetAPI:
         self.site_id = ""
         self.debug = debug 
         self.CONFIGFILE = CONFIGFILE
+        self.pwcachetime = {}  # holds the cached data timestamps for api
+        self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
+        self.pwcache = {}  # holds the cached data for api
 
         if debug:
             logger.setLevel(logging.DEBUG)
         if configfile:
             self.CONFIGFILE = configfile
         self.load_config()
-        if site:
+        if site_id:
             self.site_id = site_id
 
     # Function to return a random string of characters and numbers
@@ -194,7 +177,7 @@ class FleetAPI:
         self.save_config()
         
     # Poll FleetAPI
-    def poll(self, api="api/1/products", action="GET", data=None, recursive=False):
+    def poll(self, api="api/1/products", action="GET", data=None, recursive=False, force=False):
         url = f"{self.AUDIENCE}/{api}"
         headers = {
             "Content-Type": "application/json",
@@ -205,22 +188,33 @@ class FleetAPI:
             log(f"POST: {url} {json.dumps(data)}")
             response = requests.post(url, headers=headers, data=json.dumps(data))
         else:
+            # Check if we have a cached response
+            if not force and api in self.pwcachetime:
+                if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
+                    log(f"Using cached data for {api}")
+                    return self.pwcache[api]
             log(f"GET: {url}")
             response = requests.get(url, headers=headers)
         if response.status_code == 401 and not recursive:
             # Token expired, refresh token and try again
             self.new_token()
-            return self.poll(api, action, data, True)
+            data = self.poll(api, action, data, True)
         elif response.status_code == 401:
             print("Token expired, refresh token failed, exiting...")
-            return None
+            data = None
         elif response.status_code != 200:
             print(f"Error: {response.status_code}")
             print(response.text)
-            return None
-        return response.json()
+            data = None
+        else:
+            data = response.json()
+        if action == "GET":
+            # Cache the data
+            self.pwcachetime[api] = time.time()
+            self.pwcache[api] = data
+        return data
     
-    def get_live_status(self):
+    def get_live_status(self, force=False):
         # Get the current power information for the site.
         """
         {
@@ -242,11 +236,11 @@ class FleetAPI:
             }
         }
         """
-        payload = self.poll(f"api/1/energy_sites/{self.site_id}/live_status")    
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/live_status", force=force)    
         log(f"get_live_status: {payload}")
         return self.keyval(payload, "response")
 
-    def get_site_info(self):
+    def get_site_info(self, force=False):
         # Get site info
         """
         {
@@ -350,11 +344,11 @@ class FleetAPI:
             'tariff_content': {}
         }
         """
-        payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_info")
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_info", force=force)
         log(f"get_site_info: {payload}")
         return self.keyval(payload, "response")
     
-    def get_site_status(self):
+    def get_site_status(self, force=False):
         # Get site status
         """
         {
@@ -376,20 +370,20 @@ class FleetAPI:
             }
         }
         """
-        payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_status")
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_status", force=force)
         log(f"get_site_status: {payload}")
         return self.keyval(payload, "response")
 
-    def get_backup_time_remaining(self):
+    def get_backup_time_remaining(self, force=False):
         # Get backup time remaining
         """
         {'response': {'time_remaining_hours': 9.863332186566478}}
         """
-        payload = self.poll(f"api/1/energy_sites/{self.site_id}/backup_time_remaining")
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/backup_time_remaining", force=force)
         log(f"get_backup_time_remaining: {payload}")
         return self.keyval(payload, "response")
     
-    def get_products(self):
+    def get_products(self, force=False):
         # Get list of Tesla products assigned to user
         """
         {
@@ -435,7 +429,7 @@ class FleetAPI:
             "count": 2
             }
         """
-        payload = self.poll(f"api/1/products")
+        payload = self.poll(f"api/1/products", force=force)
         log(f"get_products: {payload}")
         return self.keyval(payload, "response")
     
@@ -446,6 +440,8 @@ class FleetAPI:
         data = {"backup_reserve_percent": reserve}
         # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/backup' 
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/backup", "POST", data)
+        # Invalidate cache
+        self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
         return payload
 
     def set_operating_mode(self, mode: str):
@@ -455,16 +451,18 @@ class FleetAPI:
             return False
         # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/operation' 
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/operation", "POST", data)
+        # Invalidate cache
+        self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
         return payload
             
-    def get_operating_mode(self):
-        return self.keyval(self.get_site_info(), "default_real_mode")
+    def get_operating_mode(self, force=False):
+        return self.keyval(self.get_site_info(force=force), "default_real_mode")
 
-    def get_battery_reserve(self):
-        return self.keyval(self.get_site_info(), "backup_reserve_percent")
+    def get_battery_reserve(self, force=False):
+        return self.keyval(self.get_site_info(force=force), "backup_reserve_percent")
 
-    def getsites(self):
-        payload = self.poll("api/1/products")
+    def getsites(self, force=False):
+        payload = self.poll("api/1/products", force=force)
         return self.keyval(payload, "response")
     
     # Macros for common data
@@ -521,6 +519,11 @@ class FleetAPI:
                 if isinstance(val, str) and len(val) > 50:
                     val = val[:50] + "..." + val[-5:]
                 print(f"  {item}: {val}")
+            # Ask user if they wish to overwrite the configuration
+            overwrite = input("\nDo you want to overwrite this configuration? [y/N]: ")
+            if not overwrite.lower().startswith("y"):
+                print("Exiting...")
+                return False
         else:
             print("No configuration found")
         # Get the client_id and client_secret from the user
@@ -573,7 +576,7 @@ class FleetAPI:
             print(f"       Make sure you have created the PEM key file and uploaded it to your website.")
             print()
             print("Run create_pem_key.py to create a PEM key file for your website.")
-            exit(1)
+            return False
         print(f"   * Success: PEM Key file verified at {verify_url}.")
         print()
         # Check to see if already cached
@@ -738,163 +741,6 @@ class FleetAPI:
         print("Setup complete.")
         print("You can now use this script to manage your Tesla Powerwall.")
         print()
+        return True
 
 # End of FleetAPI Class
-            
-# Main - Command Line Interface
-if __name__ == "__main__":   
-    import argparse
-    # Display help if no arguments
-    if len(sys.argv) == 1:
-        print("Tesla FleetAPI - Command Line Interface\n")
-        print("Usage: fleetapi.py command [arguments] [-h] [--debug] [--config CONFIG] [--site SITE] [--json]\n")
-        print("Commands:")
-        print("    setup               Setup FleetAPI for your site")
-        print("    sites               List available sites")
-        print("    status              Report current power status for your site")
-        print("    info                Display information about your site")
-        print("    getmode             Get current operational mode setting")
-        print("    getreserve          Get current battery reserve level setting")
-        print("    setmode             Set operatinoal mode (self_consumption or autonomous)")
-        print("    setreserve          Set battery reserve level (prcentage or 'current')\n")
-        print("options:")
-        print("  --debug               Enable debug mode")
-        print("  --config CONFIG       Specify alternate config file (default: .fleetapi.config)")
-        print("  --site SITE           Specify site_id")
-        print("  --json                Output in JSON format")
-        exit(0)
-
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Tesla FleetAPI - Command Line Interface')
-    parser.add_argument("command", choices=["setup", "sites", "status", "info", "getmode", "getreserve",
-                         "setmode", "setreserve"], help="Select command to execute")
-    parser.add_argument("argument", nargs="?", default=None, help="Argument for setmode or setreserve command")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
-    parser.add_argument("--config", help="Specify alternate config file")
-    parser.add_argument("--site", help="Specify site_id")
-    parser.add_argument("--json", action="store_true", help="Output in JSON format")
-    
-    # Adding descriptions for each command
-    parser.add_help = False  # Disabling default help message
-    args = parser.parse_args()
-
-    settings_file = CONFIGFILE
-    if args.config:
-        # Use alternate config file if specified
-        settings_file = args.config
-
-    # Create FleetAPI object
-    settings_debug = False
-    settings_site = None
-    if args.debug:
-        settings_debug = True
-    if args.site:
-        settings_site = args.site
-    
-    # Create FleetAPI object
-    fleet = FleetAPI(configfile=settings_file, debug=settings_debug, site=settings_site)   
-
-    # Load Configuration
-    if not fleet.load_config():
-        print(f"  Configuration file not found: {settings_file}")
-        if args.command != "setup":
-            print("  Run setup to configure environment")
-            exit(1)
-        else:
-            fleet.setup()
-            if not fleet.load_config():
-                print("  Setup failed, exiting...")
-                exit(1)
-        exit(0)
-
-    # Command: Run Setup
-    if args.command == "setup":
-        fleet.setup()
-        exit(0)
-
-    # Command: List Sites
-    if args.command == "sites":
-        sites = fleet.getsites()
-        if args.json:
-            print(json.dumps(sites, indent=4))
-        else:
-            for site in sites:
-                print(f"  {site['energy_site_id']} - {site['site_name']}")
-        exit(0)
-
-    # Command: Status
-    if args.command == "status":
-        status = fleet.get_live_status()
-        if args.json:
-            print(json.dumps(status, indent=4))
-        else:
-            for key in status:
-                print(f"  {key}: {status[key]}")
-        exit(0)
-
-    # Command: Site Info
-    if args.command == "info":
-        info = fleet.get_site_info()
-        if args.json:
-            print(json.dumps(info, indent=4))
-        else:
-            for key in info:
-                print(f"  {key}: {info[key]}")
-        exit(0)
-
-    # Command: Get Operating Mode
-    if args.command == "getmode":
-        mode = fleet.get_operating_mode()
-        if args.json:
-            print(json.dumps({"mode": mode}, indent=4))
-        else:
-            print(f"{mode}")
-        exit(0)
-
-    # Command: Get Battery Reserve
-    if args.command == "getreserve":
-        reserve = fleet.get_battery_reserve()
-        if args.json:
-            print(json.dumps({"reserve": reserve}, indent=4))
-        else:
-            print(f"{reserve}")
-        exit(0)
-
-    # Command: Set Operating Mode
-    if args.command == "setmode":
-        if args.argument:
-            # autonomous or self_consumption
-            if args.argument in ["self", "self_consumption"]:
-                print(fleet.set_operating_mode("self_consumption"))
-            elif args.argument in ["auto", "time", "autonomous"]:
-                print(fleet.set_operating_mode("autonomous"))
-            else:
-                print("Invalid mode, must be 'self' or 'auto'")
-                exit(1)
-        else:
-            print("No mode specified, exiting...")
-        exit(0)
-
-    # Command: Set Battery Reserve
-    if args.command == "setreserve":
-        if args.argument:
-            if args.argument.isdigit():
-                val = int(args.argument)
-                if val < 0 or val > 100:
-                    print(f"Invalid reserve level {val}, must be 0-100")
-                    exit(1)
-            elif args.argument == "current":
-                val = fleet.battery_level()
-            else:
-                print("Invalid reserve level, must be 0-100 or 'current' to set to current level.")
-                exit(1)
-            print(fleet.set_battery_reserve(int(val)))
-        else:
-            print("No reserve level specified, exiting...")
-        exit(0)
-
-    print("No command specified, exiting...")
-    exit(1)
-
-
-

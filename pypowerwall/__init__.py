@@ -86,11 +86,12 @@ from pypowerwall.aux import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
 from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter, InvalidBatteryReserveLevelException
 from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
+from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 8, 4)
+version_tuple = (0, 9, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -115,7 +116,8 @@ def set_debug(toggle=True, color=True):
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
-                 cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall"):
+                 cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
+                 fleetapi=False, configfile=".pypowerwall.fleetapi"):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -133,6 +135,8 @@ class Powerwall(object):
             authpath     = Path to cloud auth and site cache files (default current directory)
             authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
             cachefile    = Path to cache file (default current directory)
+            fleetapi     = If True, use Tesla Fleet API for data (default is False)
+            configfile   = Path to fleetapi configuration file (default current directory)
         """
 
         # Attributes
@@ -145,8 +149,6 @@ class Powerwall(object):
         self.poolmaxsize = poolmaxsize  # pool max size for http connection re-use
         self.auth = {}  # caches auth cookies
         self.token = None  # caches bearer token
-        self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcache = {}  # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.cloudmode = cloudmode  # cloud mode or local mode (default)
         self.siteid = siteid  # siteid for cloud mode
@@ -155,6 +157,8 @@ class Powerwall(object):
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
         self.client: PyPowerwallBase
+        self.configfile = configfile
+        self.fleetapi = fleetapi
 
         # Make certain assumptions here
         if not self.host:
@@ -165,8 +169,11 @@ class Powerwall(object):
 
         # Check for cloud mode
         if self.cloudmode:
-            self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
-            # Check to see if we can connect to the cloud
+            if self.fleetapi:
+                self.client = PyPowerwallFleetAPI(self.email, self.pwcacheexpire, self.timeout, self.siteid,
+                                                  self.authpath)
+            else:
+                self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
         else:
             self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
                                            self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile)

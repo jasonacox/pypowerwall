@@ -57,23 +57,22 @@ def lookup(data, keylist):
 # noinspection PyMethodMayBeStatic
 class PyPowerwallFleetAPI(PyPowerwallBase):
     def __init__(self, email: Optional[str], pwcacheexpire: int = 5, timeout: int = 5, siteid: Optional[int] = None,
-                 configfile: str = ""):
+                 authpath: str = ""):
         super().__init__(email)
         self.fleet = None
         self.siteid = siteid
         self.apilock = {}  # holds lock flag for pending api requests
-        self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.siteindex = 0  # site index to use
         self.siteid = siteid  # site id to use
         self.counter = 0  # counter for SITE_DATA API
         self.timeout = timeout
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
-        self.configfile = configfile or CONFIGFILE
+        self.authpath = os.path.expanduser(authpath)  # path to configfile
+        self.configfile = os.path.join(self.authpath, CONFIGFILE)
 
         # Initialize FleetAPI
-        self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid)
+        self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid, pwcacheexpire=pwcacheexpire)
            
         # Load Configuration
         if not self.fleet.load_config():
@@ -161,7 +160,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                 log.error("Site %r not found for %s" % (self.siteid, self.email))
                 return False
         # Set site
-        self.site = sites[self.siteindex]
+        self.siteid = sites[self.siteindex]
         log.debug(f"Connected to Tesla FleetAPI - Site {self.siteid} "
                   f"({sites[self.siteindex]['site_name']}) for {self.email}")
         return True
@@ -172,8 +171,6 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         """
         Map Powerwall API to Tesla FleetAPI Data
         """
-        if self.tesla is None:
-            raise PyPowerwallFleetAPITeslaNotConnected
         # API Map - Determine what data we need based on Powerwall APIs
         log.debug(f" -- fleetapi: Request for {api}")
 
@@ -193,8 +190,6 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         """
         Map Powerwall API to Tesla FleetAPI Data
         """
-        if self.tesla is None:
-            raise PyPowerwallFleetAPITeslaNotConnected
         # API Map - Determine what data we need based on Powerwall APIs
         log.debug(f" -- fleetapi: Request for {api}")
 
@@ -218,10 +213,10 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         """
         Get list of Tesla Energy sites
         """
-        if self.site is None:
+        if self.siteid is None:
             return None
         try:
-            sitelist = self.fleet.get_sites()
+            sitelist = self.fleet.getsites()
         except Exception as err:
             log.error(f"Failed to retrieve sitelist - {repr(err)}")
             return None
@@ -247,7 +242,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             if site['energy_site_id'] == siteid:
                 self.siteid = siteid
                 self.siteindex = idx
-                self.site = sites[self.siteindex]
+                self.siteid = sites[self.siteindex]
                 log.debug(f"Changed site to {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
                 return True
         log.error("Site %d not found for %s" % (siteid, self.email))
@@ -389,7 +384,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        percentage_charged = self.fleet.battery_level() or 0
+        percentage_charged = self.fleet.battery_level(force=force) or 0
         data = {
             "percentage": percentage_charged
         }
@@ -397,7 +392,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        config = self.fleet.get_site_info()
+        config = self.fleet.get_site_info(force=force)
         if config is None:
             data = None
         else:
@@ -415,11 +410,10 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                 "cellular_disabled": False,
                 "can_reboot": True
             }
-        return data
 
     def get_api_system_status_grid_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        power = self.fleet.get_live_status()
+        power = self.fleet.get_live_status(force=force)
         if power is None:
             data = None
         else:
@@ -436,7 +430,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_site_info_site_name(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        config = self.fleet.get_site_info()
+        config = self.fleet.get_site_info(force=force)
         if config is None:
             data = None
         else:
@@ -450,7 +444,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_site_info(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        config = self.fleet.get_site_info()
+        config = self.fleet.get_site_info(force=force)
         if config is None:
             data = None
         else:
@@ -493,8 +487,8 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
     def get_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         # Simulated Vitals
         force = kwargs.get('force', False)
-        config = self.fleet.get_site_info()
-        power = self.fleet.get_live_status()
+        config = self.fleet.get_site_info(force=force)
+        power = self.fleet.get_live_status(force=force)
         if config is None or power is None:
             data = None
         else:
@@ -540,8 +534,8 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        config = self.fleet.get_site_info()
-        power = self.fleet.get_live_status()
+        config = self.fleet.get_site_info(force=force)
+        power = self.fleet.get_live_status(force=force)
         if config is None or power is None:
             data = None
         else:
@@ -583,7 +577,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_operation(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        config = self.fleet.get_site_info()
+        config = self.fleet.get_site_info(force=force)
         if config is None:
             data = None
         else:
@@ -597,8 +591,8 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
     def get_api_system_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        power = self.fleet.get_live_status()
-        config = self.fleet.get_site_info()
+        power = self.fleet.get_live_status(force=force)
+        config = self.fleet.get_site_info(force=force)
         
         battery = self.get_battery(force=force)
         if power is None or config is None or battery is None:
@@ -607,8 +601,8 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             solar_power = power.get("solar_power")
             grid_services_power = power.get("grid_services_power")
             battery_count = config.get("battery_count")
-            total_pack_energy = self.fleet.total_pack_energy()
-            energy_left = self.fleet.energy_left()
+            total_pack_energy = self.fleet.total_pack_energy(force=force)
+            energy_left = self.fleet.energy_left(force=force)
             nameplate_power = config.get("nameplate_power")
             
             if power.get("island_status") == "on_grid":
@@ -779,7 +773,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 if __name__ == "__main__":
     set_debug(quiet=False, debug=True, color=True)
 
-    fleet = PyPowerwallFleetAPI(tesla_user, authpath=AUTHPATH)
+    fleet = PyPowerwallFleetAPI()
 
     if not fleet.connect():
         log.info("Failed to connect to Tesla FleetAPI")

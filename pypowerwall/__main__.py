@@ -38,6 +38,8 @@ subparsers = p.add_subparsers(dest="command", title='commands (run <command> -h 
 setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
 setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
 
+setup_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
+
 scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
 scan_args.add_argument("-timeout", type=float, default=timeout,
                        help=f"Seconds to wait per host [Default={timeout:.1f}]")
@@ -81,6 +83,18 @@ if command == 'setup':
         print("Setup Complete. Auth file %s ready to use." % AUTHFILE)
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
+        exit(1)
+# FleetAPI Mode Setup
+elif command == 'fleetapi':
+    from pypowerwall import PyPowerwallFleetAPI
+
+    print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
+    # Run Setup
+    c = PyPowerwallFleetAPI(None, authpath=authpath)
+    if c.setup():
+        print(f"Setup Complete. Config file {c.configfile} ready to use.")
+    else:
+        print("Setup Aborted.")
         exit(1)
 # Run Scan
 elif command == 'scan':
