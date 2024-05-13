@@ -51,10 +51,11 @@ from typing import Optional
 
 import pypowerwall
 from pypowerwall import parse_version
+from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t55"
+BUILD = "t56"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -93,10 +94,12 @@ if authpath:
     cf = os.path.join(authpath, ".powerwall")
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
+configfile = os.getenv("PW_CONFIG_FILE", CONFIGFILE)
 
 # Global Stats
 proxystats = {
     'pypowerwall': "%s Proxy %s" % (pypowerwall.version, BUILD),
+    'mode': "Unknown",
     'gets': 0,
     'posts': 0,
     'errors': 0,
@@ -109,6 +112,7 @@ proxystats = {
     'mem': 0,
     'site_name': "",
     'cloudmode': False,
+    'fleetapi': False,
     'siteid': None,
     'counter': 0
 }
@@ -166,7 +170,8 @@ try:
     pw = pypowerwall.Powerwall(host, password, email, timezone, cache_expire,
                                timeout, pool_maxsize, siteid=siteid,
                                authpath=authpath, authmode=authmode,
-                               cachefile=cachefile)
+                               cachefile=cachefile, configfile=configfile,
+                               auto_select=True)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -175,8 +180,13 @@ except Exception as e:
             time.sleep(5)  # Infinite loop to keep container running
         except (KeyboardInterrupt, SystemExit):
             sys.exit(0)
-if pw.cloudmode:
-    log.info("pyPowerwall Proxy Server - Cloud Mode")
+if pw.cloudmode or pw.fleetapi:
+    if pw.fleetapi:
+        proxystats['mode'] = "FleetAPI"
+        log.info("pyPowerwall Proxy Server - Fleet API Mode")
+    else:
+        proxystats['mode'] = "Cloud"
+        log.info("pyPowerwall Proxy Server - Cloud Mode")
     log.info("Connected to Site ID %s (%s)" % (pw.client.siteid, pw.site_name().strip()))
     if siteid is not None and siteid != str(pw.client.siteid):
         log.info("Switch to Site ID %s" % siteid)
@@ -188,6 +198,7 @@ if pw.cloudmode:
                 except (KeyboardInterrupt, SystemExit):
                     sys.exit(0)
 else:
+    proxystats['mode'] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name().strip()))
 
@@ -195,12 +206,13 @@ pw_control = None
 if control_secret:
     log.info("Control Commands Activating - WARNING: Use with caution!")
     try:
-        if pw.cloudmode:
+        if pw.cloudmode or pw.fleetapi:
             pw_control = pw
         else:
             pw_control = pypowerwall.Powerwall("", password, email, siteid=siteid,
                                                authpath=authpath, authmode=authmode,
-                                               cachefile=cachefile)
+                                               cachefile=cachefile, configfile=configfile,
+                                               auto_select=True)
     except Exception as e:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = ""
@@ -334,7 +346,8 @@ class Handler(BaseHTTPRequestHandler):
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             proxystats['site_name'] = pw.site_name()
             proxystats['cloudmode'] = pw.cloudmode
-            if pw.cloudmode and pw.client is not None:
+            proxystats['fleetapi'] = pw.fleetapi
+            if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
                 proxystats['siteid'] = pw.client.siteid
                 proxystats['counter'] = pw.client.counter
             proxystats['authmode'] = pw.authmode
@@ -504,7 +517,8 @@ class Handler(BaseHTTPRequestHandler):
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             proxystats['site_name'] = pw.site_name()
             proxystats['cloudmode'] = pw.cloudmode
-            if pw.cloudmode and pw.client is not None:
+            proxystats['fleetapi'] = pw.fleetapi
+            if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
                 proxystats['siteid'] = pw.client.siteid
                 proxystats['counter'] = pw.client.counter
             proxystats['authmode'] = pw.authmode
@@ -573,7 +587,7 @@ class Handler(BaseHTTPRequestHandler):
             if fcontent:
                 log.debug("Served from local web root: {} type {}".format(self.path, ftype))
             # If not found, serve from Powerwall web server
-            elif pw.cloudmode:
+            elif pw.cloudmode or pw.fleetapi:
                 log.debug("Cloud Mode - File not found: {}".format(self.path))
                 fcontent = bytes("Not Found", 'utf-8')
                 ftype = "text/plain"

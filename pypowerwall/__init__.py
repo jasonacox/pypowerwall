@@ -194,7 +194,7 @@ class Powerwall(object):
         if self.cloudmode:
             if self.fleetapi:
                 self.client = PyPowerwallFleetAPI(self.email, self.pwcacheexpire, self.timeout, self.siteid,
-                                                  self.authpath)
+                                                  self.configfile)
             else:
                 self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
         else:
@@ -783,12 +783,11 @@ class Powerwall(object):
                 dirname = '.'
             self._check_if_dir_is_writable(dirname, "authpath")
         elif self.fleetapi:
-            # Ensure we can write to the provided configfile
-            dirname = os.path.dirname(self.configfile)
-            if not dirname:
-                log.debug("No configfile provided, using current directory.")
-                dirname = '.'
-            self._check_if_dir_is_writable(dirname, "configfile")
+            # Ensure we can write to the configfile
+            if os.access(self.configfile, os.W_OK):
+                log.debug(f"Config file '{self.configfile}' is writable.")
+            else:
+                raise PyPowerwallInvalidConfigurationParameter(f"Config file '{self.configfile}' is not writable.")
         else:
             # If local mode, check appropriate parameters, and ensure we can write to the provided cachefile
             dirname = os.path.dirname(self.cachefile)

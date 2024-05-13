@@ -69,14 +69,10 @@ fleet_api_urls = {
 }
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def log(msg):
-    logger.debug(msg)
+log = logging.getLogger(__name__)
 
 class FleetAPI:
-    def __init__(self, configfile=None, debug=False, site_id=None, pwcacheexpire: int = 5):
+    def __init__(self, configfile=CONFIGFILE, debug=False, site_id=None, pwcacheexpire: int = 5):
         self.CLIENT_ID = ""
         self.CLIENT_SECRET = ""
         self.DOMAIN = ""
@@ -88,7 +84,7 @@ class FleetAPI:
         self.refresh_token = ""
         self.site_id = ""
         self.debug = debug 
-        self.CONFIGFILE = CONFIGFILE
+        self.configfile = configfile
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcache = {}  # holds the cached data for api
@@ -96,7 +92,8 @@ class FleetAPI:
         if debug:
             logger.setLevel(logging.DEBUG)
         if configfile:
-            self.CONFIGFILE = configfile
+            self.configfile = configfile
+            log.debug(f"Using config file: {self.configfile}")  
         self.load_config()
         if site_id:
             self.site_id = site_id
@@ -115,8 +112,8 @@ class FleetAPI:
     
     # Load Configuration
     def load_config(self):
-        if os.path.isfile(self.CONFIGFILE):
-            with open(self.CONFIGFILE, 'r') as f:
+        if os.path.isfile(self.configfile):
+            with open(self.configfile, 'r') as f:
                 config = json.loads(f.read())
             # Set the global variables
             self.CLIENT_ID = config['CLIENT_ID']
@@ -129,10 +126,10 @@ class FleetAPI:
             self.access_token = config['access_token']
             self.refresh_token = config['refresh_token']
             self.site_id = config['site_id']
-            log(f"Configuration loaded: {self.CONFIGFILE}")
+            log.debug(f"Configuration loaded: {self.configfile}")
             return config
         else:
-            log(f"Configuration file not found: {self.CONFIGFILE}")
+            log.debug(f"Configuration file not found: {self.configfile}")
             return False
 
     # Save Configuration
@@ -151,7 +148,7 @@ class FleetAPI:
             "site_id": self.site_id
         }
         # Save the config dictionary to the file
-        with open(self.CONFIGFILE, 'w') as f:
+        with open(self.configfile, 'w') as f:
             f.write(json.dumps(config, indent=4))
 
     # Refresh Token
@@ -185,15 +182,15 @@ class FleetAPI:
         }
         if action == "POST":
             # Post to FleetAPI with json data payload
-            log(f"POST: {url} {json.dumps(data)}")
+            log.debug(f"POST: {url} {json.dumps(data)}")
             response = requests.post(url, headers=headers, data=json.dumps(data))
         else:
             # Check if we have a cached response
             if not force and api in self.pwcachetime:
                 if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
-                    log(f"Using cached data for {api}")
+                    log.debug(f"Using cached data for {api}")
                     return self.pwcache[api]
-            log(f"GET: {url}")
+            log.debug(f"GET: {url}")
             response = requests.get(url, headers=headers)
         if response.status_code == 401 and not recursive:
             # Token expired, refresh token and try again
@@ -237,7 +234,7 @@ class FleetAPI:
         }
         """
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/live_status", force=force)    
-        log(f"get_live_status: {payload}")
+        log.debug(f"get_live_status: {payload}")
         return self.keyval(payload, "response")
 
     def get_site_info(self, force=False):
@@ -345,7 +342,7 @@ class FleetAPI:
         }
         """
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_info", force=force)
-        log(f"get_site_info: {payload}")
+        log.debug(f"get_site_info: {payload}")
         return self.keyval(payload, "response")
     
     def get_site_status(self, force=False):
@@ -371,7 +368,7 @@ class FleetAPI:
         }
         """
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_status", force=force)
-        log(f"get_site_status: {payload}")
+        log.debug(f"get_site_status: {payload}")
         return self.keyval(payload, "response")
 
     def get_backup_time_remaining(self, force=False):
@@ -380,7 +377,7 @@ class FleetAPI:
         {'response': {'time_remaining_hours': 9.863332186566478}}
         """
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/backup_time_remaining", force=force)
-        log(f"get_backup_time_remaining: {payload}")
+        log.debug(f"get_backup_time_remaining: {payload}")
         return self.keyval(payload, "response")
     
     def get_products(self, force=False):
@@ -430,12 +427,12 @@ class FleetAPI:
             }
         """
         payload = self.poll(f"api/1/products", force=force)
-        log(f"get_products: {payload}")
+        log.debug(f"get_products: {payload}")
         return self.keyval(payload, "response")
     
     def set_battery_reserve(self, reserve: int):
         if reserve < 0 or reserve > 100:
-            log(f"Invalid reserve level: {reserve}")
+            log.debug(f"Invalid reserve level: {reserve}")
             return False
         data = {"backup_reserve_percent": reserve}
         # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/backup' 
@@ -447,7 +444,7 @@ class FleetAPI:
     def set_operating_mode(self, mode: str):
         data = {"default_real_mode": mode}
         if mode not in ["self_consumption", "autonomous"]:
-            log(f"Invalid mode: {mode}")
+            log.debug(f"Invalid mode: {mode}")
             return False
         # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/operation' 
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/operation", "POST", data)
@@ -582,7 +579,7 @@ class FleetAPI:
         # Check to see if already cached
         if self.partner_token:
             print("  Using cached token.")
-            log(f"Cached partner token: {self.partner_token}")
+            log.debug(f"Cached partner token: {self.partner_token}")
         else:
             # If not cached, generate a new token
             data = {
@@ -595,14 +592,14 @@ class FleetAPI:
             headers = {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
-            log(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
             response = requests.post('https://auth.tesla.com/oauth2/v3/token', 
                             data=data, headers=headers)
-            log(f"Response Code: {response.status_code}")
+            log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json()['access_token']
             self.partner_token = partner_token
             print(f"   Got Token: {partner_token[:40]}...\n")
-            log(f"Partner Token: {partner_token}")
+            log.debug(f"Partner Token: {partner_token}")
             # Save the configuration
             self.save_config()
             print("  Configuration saved")
@@ -622,11 +619,11 @@ class FleetAPI:
             data = {
                 'domain': self.DOMAIN,
             }
-            log(f"POST: {url} {json.dumps(data)}")
+            log.debug(f"POST: {url} {json.dumps(data)}")
             response = requests.post(url, headers=headers, data=json.dumps(data))
-            log(f"  Response Code: {response.status_code}")
+            log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
-            log(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
+            log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
             # Save the configuration
             self.save_config()
             print("  Configuration saved")
@@ -653,7 +650,7 @@ class FleetAPI:
             if code.startswith("http"):
                 code = code.split("code=")[1].split("&")[0]
             print()
-            log(f"Code: {code}")
+            log.debug(f"Code: {code}")
 
             # Step 3D - Exchange the authorization code for a token
             #   The access_token will be used as the Bearer token 
@@ -671,10 +668,10 @@ class FleetAPI:
             headers = {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
-            log(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
             response = requests.post('https://auth.tesla.com/oauth2/v3/token',
                             data=data, headers=headers)
-            log(f"Response Code: {response.status_code}")
+            log.debug(f"Response Code: {response.status_code}")
             # Extract access_token and refresh_token from this response
             access_token = response.json()['access_token']
             refresh_token = response.json()['refresh_token']
@@ -700,7 +697,7 @@ class FleetAPI:
             if not self.site_id:
                 self.site_id = sites[0]['energy_site_id']
                 sel = 1
-            log(sites)
+            log.debug(sites)
             print("  Sites:")
             for i, site in enumerate(sites):
                 if self.site_id == site['energy_site_id']:
@@ -718,7 +715,7 @@ class FleetAPI:
                 if site:
                     self.site_id = sites[int(site)-1]['energy_site_id']
             print()
-            log(f"Site ID: {self.site_id}")
+            log.debug(f"Site ID: {self.site_id}")
             # Save the configuration
             self.save_config()
             print("  Configuration saved")
