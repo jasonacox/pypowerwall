@@ -478,16 +478,16 @@ class FleetAPI:
         return self.keyval(self.get_live_status(), "load_power")
     def site_name(self):
         return self.keyval(self.get_site_info(), "site_name")
-    def battery_level(self):
-        return self.keyval(self.get_live_status(), "percentage_charged")
+    def battery_level(self, force=False):
+        return self.keyval(self.get_live_status(force=force), "percentage_charged")
     def battery_reserve(self):
         return self.get_battery_reserve()
     def operating_mode(self):
         return self.get_operating_mode()
-    def energy_left(self):
-        return self.keyval(self.get_site_status(), "energy_left") # FIXME: This is not in the API
-    def total_pack_energy(self):
-        return self.keyval(self.get_site_status(), "total_pack_energy")  # FIXME: This is not in the API
+    def energy_left(self, force=False):
+        return self.keyval(self.get_site_status(force=force), "energy_left") # FIXME: This is not in the API
+    def total_pack_energy(self, force=False):
+        return self.keyval(self.get_site_status(force=force), "total_pack_energy")  # FIXME: This is not in the API
     def grid_status(self):
         return self.keyval(self.get_live_status(), "grid_status")
     def island_status(self):

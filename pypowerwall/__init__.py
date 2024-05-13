@@ -88,6 +88,8 @@ from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
 from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
+from pypowerwall.fleetapi.fleetapi import CONFIGFILE
+from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
@@ -98,7 +100,6 @@ __author__ = 'jasonacox'
 log = logging.getLogger(__name__)
 log.debug('%s version %s', __name__, __version__)
 log.debug('Python %s on %s', sys.version, sys.platform)
-
 
 def set_debug(toggle=True, color=True):
     """Enable verbose logging"""
@@ -117,7 +118,7 @@ class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
-                 fleetapi=False, configfile=".pypowerwall.fleetapi"):
+                 fleetapi=False, configfile=CONFIGFILE, auto_select=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -137,6 +138,7 @@ class Powerwall(object):
             cachefile    = Path to cache file (default current directory)
             fleetapi     = If True, use Tesla Fleet API for data (default is False)
             configfile   = Path to fleetapi configuration file (default current directory)
+            auto_select  = If True, select the best available mode to connect (default is False)
         """
 
         # Attributes
@@ -163,6 +165,27 @@ class Powerwall(object):
         # Make certain assumptions here
         if not self.host:
             self.cloudmode = True
+
+        # Auto select mode if requested
+        if auto_select:
+            if self.host:
+                log.debug("Auto selecting local mode")
+                self.cloudmode = False
+                self.fleetapi = False
+            elif os.path.exists(self.configfile):
+                log.debug("Auto selecting FleetAPI Mode")
+                self.cloudmode = True
+                self.fleetapi=True
+            elif os.path.exists(self.authpath + AUTHFILE):
+                if self.email == "nobody@nowhere.com":
+                    with open(authpath + AUTHFILE, 'r') as file:
+                        auth = json.load(file)
+                    self.email = list(auth.keys())[0]
+                self.cloudmode = True
+                self.fleetapi = False            
+                log.debug("Auto selecting Cloud Mode (email: %s)" % self.email)    
+            else:
+                log.error("Auto Select Failed: Unable to use local, cloud or fleetapi mode.")
 
         # Validate provided parameters
         self._validate_init_configuration()
@@ -747,7 +770,7 @@ class Powerwall(object):
                                                            f"form of IP address or a valid form of a hostname or FQDN.")
 
         # If cloud mode requested, check appropriate parameters
-        if self.cloudmode:
+        if self.cloudmode and not self.fleetapi:
             # Ensure email is set and syntactically correct
             if not self.email or not isinstance(self.email, str) or not EMAIL_REGEX.match(self.email):
                 raise PyPowerwallInvalidConfigurationParameter(f"A valid email address is required to run in "
@@ -759,9 +782,15 @@ class Powerwall(object):
                 log.debug("No authpath provided, using current directory.")
                 dirname = '.'
             self._check_if_dir_is_writable(dirname, "authpath")
-        # If local mode, check appropriate parameters, too
+        elif self.fleetapi:
+            # Ensure we can write to the provided configfile
+            dirname = os.path.dirname(self.configfile)
+            if not dirname:
+                log.debug("No configfile provided, using current directory.")
+                dirname = '.'
+            self._check_if_dir_is_writable(dirname, "configfile")
         else:
-            # Ensure we can create a cachefile
+            # If local mode, check appropriate parameters, and ensure we can write to the provided cachefile
             dirname = os.path.dirname(self.cachefile)
             if not dirname:
                 log.debug("No cachefile provided, using current directory.")

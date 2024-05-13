@@ -583,9 +583,10 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         else:
             default_real_mode = config.get("default_real_mode")
             backup_reserve_percent = config.get("backup_reserve_percent") or 0
+            backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
             data = {
                 "real_mode": default_real_mode,
-                "backup_reserve_percent": backup_reserve_percent
+                "backup_reserve_percent": backup
             }
         return data
 
@@ -593,9 +594,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         force = kwargs.get('force', False)
         power = self.fleet.get_live_status(force=force)
         config = self.fleet.get_site_info(force=force)
-        
-        battery = self.get_battery(force=force)
-        if power is None or config is None or battery is None:
+        if power is None or config is None:
             data = None
         else:
             solar_power = power.get("solar_power")

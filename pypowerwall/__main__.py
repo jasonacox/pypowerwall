@@ -17,10 +17,10 @@ import sys
 import json
 
 # Modules
-from pypowerwall import version
+from pypowerwall import version, set_debug
+from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
 
 # Global Variables
-AUTHFILE = ".pypowerwall.auth"
 authpath = os.getenv("PW_AUTH_PATH", "")
 
 timeout = 1.0
@@ -63,6 +63,9 @@ get_mode_args.add_argument("-format", type=str, default="text",
 
 version_args = subparsers.add_parser("version", help='Print version information')
 
+# Add a global debug flag
+p.add_argument("-debug", action="store_true", default=False, help="Enable debug output")
+
 if len(sys.argv) == 1:
     p.print_help(sys.stderr)
     sys.exit(1)
@@ -70,6 +73,10 @@ if len(sys.argv) == 1:
 # parse args
 args = p.parse_args()
 command = args.command
+
+# Set Debug Mode
+if args.debug:
+    set_debug(True)
 
 # Cloud Mode Setup
 if command == 'setup':
@@ -108,17 +115,17 @@ elif command == 'scan':
     scan.scan(color, timeout, hosts, ip)
 # Set Powerwall Mode
 elif command == 'set':
+    # If no arguments, print usage
+    if not args.mode and not args.reserve and not args.current:
+        print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]")
+        exit(1)
     import pypowerwall
     print("pyPowerwall [%s] - Set Powerwall Mode and Power Levels\n" % version)
-    # Load email from auth file
-    auth_file = authpath + AUTHFILE
-    if not os.path.exists(auth_file):
-        print("ERROR: Auth file %s not found. Run 'setup' to create." % auth_file)
+    # Determine which cloud mode to use
+    pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
+    if not pw.client:
+        print("ERROR: FleetAPI and Cloud access are not configured. Run 'fleetapi' or 'setup' to create.")
         exit(1)
-    with open(auth_file, 'r') as file:
-        auth = json.load(file)
-    email = list(auth.keys())[0]
-    pw = pypowerwall.Powerwall(email=email, host="", authpath=authpath)
     if args.mode:
         mode = args.mode.lower()
         if mode not in ['self_consumption', 'backup', 'autonomous']:
@@ -138,14 +145,7 @@ elif command == 'set':
 elif command == 'get':
     import pypowerwall
     # Load email from auth file
-    auth_file = authpath + AUTHFILE
-    if not os.path.exists(auth_file):
-        print("ERROR: Auth file %s not found. Run 'setup' to create." % auth_file)
-        exit(1)
-    with open(auth_file, 'r') as file:
-        auth = json.load(file)
-    email = list(auth.keys())[0]
-    pw = pypowerwall.Powerwall(email=email, host="", authpath=authpath)
+    pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
     output = {
         'site': pw.site_name(),
         'din': pw.din(),
