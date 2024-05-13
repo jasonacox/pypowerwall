@@ -176,8 +176,8 @@ class Powerwall(object):
                 log.debug("Auto selecting FleetAPI Mode")
                 self.cloudmode = True
                 self.fleetapi=True
-            elif os.path.exists(self.authpath + AUTHFILE):
-                if self.email == "nobody@nowhere.com":
+            elif os.path.exists(os.path.join(self.authpath, AUTHFILE)):
+                if not self.email or self.email == "nobody@nowhere.com":
                     with open(authpath + AUTHFILE, 'r') as file:
                         auth = json.load(file)
                     self.email = list(auth.keys())[0]

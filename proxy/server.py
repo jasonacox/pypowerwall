@@ -94,7 +94,9 @@ if authpath:
     cf = os.path.join(authpath, ".powerwall")
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
-configfile = os.getenv("PW_CONFIG_FILE", CONFIGFILE)
+
+# Set configfile in authpath
+configfile = os.path.join(authpath, CONFIGFILE)
 
 # Global Stats
 proxystats = {
