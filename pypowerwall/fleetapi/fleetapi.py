@@ -526,7 +526,7 @@ class FleetAPI:
                 print("Exiting...")
                 return False
         else:
-            print("No configuration found - Creating: {self.configfile}")
+            print(f"No configuration found - Creating: {self.configfile}")
         # Get the client_id and client_secret from the userl
         print("\nStep 3 - Enter your Tesla FleetAPI credentials...")
         client_id = input(f"  Enter Client ID [{self.CLIENT_ID}]: ")

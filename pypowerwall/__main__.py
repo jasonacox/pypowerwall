@@ -88,7 +88,7 @@ if command == 'setup':
     # Run Setup
     c = PyPowerwallCloud(None, authpath=authpath)
     if c.setup(email):
-        print("Setup Complete. Auth file %s ready to use." % AUTHFILE)
+        print(f"Setup Complete. Auth file {c.authfile} ready to use.")
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
         exit(1)
@@ -98,10 +98,7 @@ elif command == 'fleetapi':
 
     print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
     # Run Setup
-    configfile = CONFIGFILE
-    if authpath:
-        configfile = os.path.join(authpath, configfile)
-    c = PyPowerwallFleetAPI(None, configfile=configfile)
+    c = PyPowerwallFleetAPI(None, authpath=authpath)
     if c.setup():
         print(f"Setup Complete. Config file {c.configfile} ready to use.")
     else:

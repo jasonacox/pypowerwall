@@ -34,7 +34,7 @@
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
-    configfile = CONFIGFILE   # Path to fleetapi configuration file (default current directory)
+    auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
     
  Functions 
@@ -120,7 +120,7 @@ class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
-                 fleetapi=False, configfile=CONFIGFILE, auto_select=False):
+                 fleetapi=False, auto_select=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -139,7 +139,6 @@ class Powerwall(object):
             authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
             cachefile    = Path to cache file (default current directory)
             fleetapi     = If True, use Tesla FleetAPI for data (default is False)
-            configfile   = Path to fleetapi configuration file (default current directory)
             auto_select  = If True, select the best available mode to connect (default is False)
         """
 
@@ -161,8 +160,8 @@ class Powerwall(object):
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
         self.client: PyPowerwallBase
-        self.configfile = configfile
         self.fleetapi = fleetapi
+        self.mode = "unknown"
 
         # Make certain assumptions here
         if not self.host:
@@ -174,17 +173,20 @@ class Powerwall(object):
                 log.debug("Auto selecting local mode")
                 self.cloudmode = False
                 self.fleetapi = False
-            elif os.path.exists(self.configfile):
+                self.mode = "local"
+            elif os.path.exists(os.path.join(self.authpath, CONFIGFILE)):
                 log.debug("Auto selecting FleetAPI Mode")
                 self.cloudmode = True
                 self.fleetapi=True
+                self.mode = "fleetapi"
             elif os.path.exists(os.path.join(self.authpath, AUTHFILE)):
                 if not self.email or self.email == "nobody@nowhere.com":
                     with open(authpath + AUTHFILE, 'r') as file:
                         auth = json.load(file)
                     self.email = list(auth.keys())[0]
                 self.cloudmode = True
-                self.fleetapi = False            
+                self.fleetapi = False     
+                self.mode = "cloud"       
                 log.debug("Auto selecting Cloud Mode (email: %s)" % self.email)    
             else:
                 log.error("Auto Select Failed: Unable to use local, cloud or fleetapi mode.")
@@ -196,7 +198,7 @@ class Powerwall(object):
         if self.cloudmode:
             if self.fleetapi:
                 self.client = PyPowerwallFleetAPI(self.email, self.pwcacheexpire, self.timeout, self.siteid,
-                                                  self.configfile)
+                                                  self.authpath)
             else:
                 self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
         else:
@@ -786,6 +788,7 @@ class Powerwall(object):
             self._check_if_dir_is_writable(dirname, "authpath")
         elif self.fleetapi:
             # Ensure we can write to the configfile
+            self.configfile = os.path.join(self.authpath, CONFIGFILE)
             if os.access(self.configfile, os.W_OK):
                 log.debug(f"Config file '{self.configfile}' is writable.")
             else:

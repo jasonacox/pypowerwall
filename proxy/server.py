@@ -95,9 +95,6 @@ if authpath:
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 
-# Set configfile in authpath
-configfile = os.path.join(authpath, CONFIGFILE)
-
 # Global Stats
 proxystats = {
     'pypowerwall': "%s Proxy %s" % (pypowerwall.version, BUILD),
@@ -172,8 +169,7 @@ try:
     pw = pypowerwall.Powerwall(host, password, email, timezone, cache_expire,
                                timeout, pool_maxsize, siteid=siteid,
                                authpath=authpath, authmode=authmode,
-                               cachefile=cachefile, configfile=configfile,
-                               auto_select=True)
+                               cachefile=cachefile, auto_select=True)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -213,13 +209,12 @@ if control_secret:
         else:
             pw_control = pypowerwall.Powerwall("", password, email, siteid=siteid,
                                                authpath=authpath, authmode=authmode,
-                                               cachefile=cachefile, configfile=configfile,
-                                               auto_select=True)
+                                               cachefile=cachefile, auto_select=True)
     except Exception as e:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = ""
     if pw_control:
-        log.info("Control Mode Enabled: Cloud Mode Connected")
+        log.info(f"Control Mode Enabled: Cloud Mode ({pw.mode}) Connected")
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = None

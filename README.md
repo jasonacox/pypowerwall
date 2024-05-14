@@ -150,8 +150,7 @@ and call function to poll data.  Here is an example:
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-               cloudmode, siteid, authpath, authmode, cachefile, 
-               fleetapi, configfile, auto_select)
+               cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -168,7 +167,6 @@ and call function to poll data.  Here is an example:
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
-    configfile = CONFIGFILE   # Path to fleetapi configuration file (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
 
  Functions 

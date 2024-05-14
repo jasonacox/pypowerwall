@@ -55,7 +55,7 @@ def lookup(data, keylist):
 # noinspection PyMethodMayBeStatic
 class PyPowerwallFleetAPI(PyPowerwallBase):
     def __init__(self, email: Optional[str], pwcacheexpire: int = 5, timeout: int = 5, siteid: Optional[int] = None,
-                 configfile: str = CONFIGFILE):
+                 authpath: str = ""):
         super().__init__(email)
         self.fleet = None
         self.apilock = {}  # holds lock flag for pending api requests
@@ -65,7 +65,8 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         self.timeout = timeout
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
-        self.configfile = configfile  # FleetAPI client config file name
+        self.authpath = authpath
+        self.configfile = os.path.join(self.authpath, CONFIGFILE)
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize FleetAPI
@@ -378,7 +379,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         Get backup time remaining from Tesla FleetAPI
         TODO
         """
-        return self.fleet.get_time_remaining()
+        return self.fleet.get_backup_time_remaining()
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
