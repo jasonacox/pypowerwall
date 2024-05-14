@@ -512,7 +512,7 @@ class FleetAPI:
         # Display current configuration if we have it
         config = self.load_config()
         if config:
-            print("Current Configuration:")
+            print(f"Current Configuration - Loaded: {self.configfile}:")
             for item in config:
                 val = config[item]
                 if isinstance(val, dict):
@@ -526,8 +526,8 @@ class FleetAPI:
                 print("Exiting...")
                 return False
         else:
-            print("No configuration found")
-        # Get the client_id and client_secret from the user
+            print("No configuration found - Creating: {self.configfile}")
+        # Get the client_id and client_secret from the userl
         print("\nStep 3 - Enter your Tesla FleetAPI credentials...")
         client_id = input(f"  Enter Client ID [{self.CLIENT_ID}]: ")
         if client_id:

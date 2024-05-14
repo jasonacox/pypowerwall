@@ -19,6 +19,7 @@ import json
 # Modules
 from pypowerwall import version, set_debug
 from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
+from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 
 # Global Variables
 authpath = os.getenv("PW_AUTH_PATH", "")
@@ -97,7 +98,10 @@ elif command == 'fleetapi':
 
     print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
     # Run Setup
-    c = PyPowerwallFleetAPI(None)
+    configfile = CONFIGFILE
+    if authpath:
+        configfile = os.path.join(authpath, configfile)
+    c = PyPowerwallFleetAPI(None, configfile=configfile)
     if c.setup():
         print(f"Setup Complete. Config file {c.configfile} ready to use.")
     else:
