@@ -106,7 +106,7 @@ and call function to poll data.  Here is an example:
     email='email@example.com'
     timezone = "America/Los_Angeles"
  
-    # Connect to Powerwall - auto_select will cause it to try
+    # Connect to Powerwall - auto_select mode (local, fleetapi, cloud)
     pw = pypowerwall.Powerwall(host,password,email,timezone,auto_select=True)
 
     # Some System Info
