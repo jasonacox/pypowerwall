@@ -16,7 +16,7 @@ Step 1 - Sign in to Tesla Developer Portal and make an App Access Request: See [
 * CLIENT_ID - This will be provided to you by Tesla when your request is approved.
 * CLIENT_SECRET - Same as above.
 * DOMAIN - The domain name of a website your own and control.
-* REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed to generate the Bearer auth and Refresh token used to access your Tesla Powerwall energy devices. Place the [index.html](./index.html) file in a folder under this domain and use this as the REDIRECT_URI path in the setup below. Alternatively, you can just copy the URL from the 404 page during the authorzation process (the code is in the URL).
+* REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed to generate the Bearer auth and Refresh token used to access your Tesla Powerwall energy devices. Place the [index.html](./index.html) file in a folder under this domain and use this as the REDIRECT_URI path in the setup below. Alternatively, you can just copy the URL from the 404 page during the authorization process (the code is in the URL).
 
 Step 2 - Run the `create_pem_key.py` script and place the **public** key on your website at the URL: https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem
 

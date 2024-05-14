@@ -33,6 +33,9 @@
     authpath = ""             # Path to cloud auth and site files (default current directory)
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
+    fleetapi = False          # If True, use Tesla Fleet API for data (default is False)
+    configfile = CONFIGFILE   # Path to fleetapi configuration file (default current directory)
+    auto_select = False       # If True, select the best available mode to connect (default is False)
     
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -65,7 +68,6 @@
     set_reserve(level)        # Set Battery Reserve Percentage
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
-
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
 
  Requirements
