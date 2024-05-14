@@ -90,7 +90,7 @@ class FleetAPI:
         self.pwcache = {}  # holds the cached data for api
 
         if debug:
-            logger.setLevel(logging.DEBUG)
+            log.setLevel(logging.DEBUG)
         if configfile:
             self.configfile = configfile
             log.debug(f"Using config file: {self.configfile}")  
@@ -116,16 +116,20 @@ class FleetAPI:
             with open(self.configfile, 'r') as f:
                 config = json.loads(f.read())
             # Set the global variables
-            self.CLIENT_ID = config['CLIENT_ID']
-            self.CLIENT_SECRET = config['CLIENT_SECRET']
-            self.DOMAIN = config['DOMAIN']
-            self.REDIRECT_URI = config['REDIRECT_URI']
-            self.AUDIENCE = config['AUDIENCE']
-            self.partner_token = config['partner_token']
-            self.partner_account = config['partner_account']
-            self.access_token = config['access_token']
-            self.refresh_token = config['refresh_token']
-            self.site_id = config['site_id']
+            self.CLIENT_ID = config.get('CLIENT_ID')
+            self.CLIENT_SECRET = config.get('CLIENT_SECRET')
+            self.DOMAIN = config.get('DOMAIN')
+            self.REDIRECT_URI = config.get('REDIRECT_URI')
+            self.AUDIENCE = config.get('AUDIENCE')
+            self.partner_token = config.get('partner_token')
+            self.partner_account = config.get('partner_account')
+            self.access_token = config.get('access_token')
+            self.refresh_token = config.get('refresh_token')
+            self.site_id = config.get('site_id')
+            # Check for valid site_id
+            if not self.site_id:
+                sites = self.getsites()
+                self.site_id = sites[0]['energy_site_id']
             log.debug(f"Configuration loaded: {self.configfile}")
             return config
         else:
@@ -165,11 +169,11 @@ class FleetAPI:
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers)
         # Extract access_token and refresh_token from this response
-        self.access_token = response.json()['access_token']
-        self.refresh_token = response.json()['refresh_token']
-        logger.info(f"  Response Code: {response.status_code}")
-        logger.info(f"  Access Token: {self.access_token}")
-        logger.info(f"  Refresh Token: {self.refresh_token}")
+        self.access_token = response.json().get('access_token')
+        self.refresh_token = response.json().get('refresh_token')
+        log.info(f"  Response Code: {response.status_code}")
+        log.info(f"  Access Token: {self.access_token}")
+        log.info(f"  Refresh Token: {self.refresh_token}")
         # Update config
         self.save_config()
         
@@ -596,7 +600,7 @@ class FleetAPI:
             response = requests.post('https://auth.tesla.com/oauth2/v3/token', 
                             data=data, headers=headers)
             log.debug(f"Response Code: {response.status_code}")
-            partner_token = response.json()['access_token']
+            partner_token = response.json().get("access_token")
             self.partner_token = partner_token
             print(f"   Got Token: {partner_token[:40]}...\n")
             log.debug(f"Partner Token: {partner_token}")
@@ -673,8 +677,8 @@ class FleetAPI:
                             data=data, headers=headers)
             log.debug(f"Response Code: {response.status_code}")
             # Extract access_token and refresh_token from this response
-            access_token = response.json()['access_token']
-            refresh_token = response.json()['refresh_token']
+            access_token = response.json().get('access_token')
+            refresh_token = response.json().get('refresh_token')
             print("\n  Tokens generated.")
             print(f"   * Access Token: {access_token}")
             print(f"   * Refresh Token: {refresh_token}\n")

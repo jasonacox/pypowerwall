@@ -4,7 +4,7 @@ import os
 import time
 from typing import Optional, Union, List
 
-from pypowerwall.fleetapi.fleetapi import FleetAPI
+from pypowerwall.fleetapi.fleetapi import FleetAPI, CONFIGFILE
 from pypowerwall.fleetapi.decorators import not_implemented_mock_data
 from pypowerwall.fleetapi.exceptions import *
 from pypowerwall.fleetapi.mock_data import *
@@ -16,8 +16,6 @@ log = logging.getLogger(__name__)
 # Defaults
 COUNTER_MAX = 64  # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59  # Site config cache TTL in seconds
-CONFIGFILE = ".pypowerwall.fleetapi"
-SCOPE = "openid offline_access energy_device_data energy_cmds"
 
 fleet_api_urls = {
     "North America, Asia-Pacific": "https://fleet-api.prd.na.vn.cloud.tesla.com",

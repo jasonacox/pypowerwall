@@ -33,7 +33,7 @@
     authpath = ""             # Path to cloud auth and site files (default current directory)
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
-    fleetapi = False          # If True, use Tesla Fleet API for data (default is False)
+    fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
     configfile = CONFIGFILE   # Path to fleetapi configuration file (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
     
@@ -138,7 +138,7 @@ class Powerwall(object):
             authpath     = Path to cloud auth and site cache files (default current directory)
             authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
             cachefile    = Path to cache file (default current directory)
-            fleetapi     = If True, use Tesla Fleet API for data (default is False)
+            fleetapi     = If True, use Tesla FleetAPI for data (default is False)
             configfile   = Path to fleetapi configuration file (default current directory)
             auto_select  = If True, select the best available mode to connect (default is False)
         """

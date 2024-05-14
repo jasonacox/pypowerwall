@@ -185,7 +185,7 @@ except Exception as e:
 if pw.cloudmode or pw.fleetapi:
     if pw.fleetapi:
         proxystats['mode'] = "FleetAPI"
-        log.info("pyPowerwall Proxy Server - Fleet API Mode")
+        log.info("pyPowerwall Proxy Server - FleetAPI Mode")
     else:
         proxystats['mode'] = "Cloud"
         log.info("pyPowerwall Proxy Server - Cloud Mode")

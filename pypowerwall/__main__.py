@@ -97,7 +97,7 @@ elif command == 'fleetapi':
 
     print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
     # Run Setup
-    c = PyPowerwallFleetAPI(None, authpath=authpath)
+    c = PyPowerwallFleetAPI(None)
     if c.setup():
         print(f"Setup Complete. Config file {c.configfile} ready to use.")
     else:
@@ -148,6 +148,7 @@ elif command == 'get':
     pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
     output = {
         'site': pw.site_name(),
+        'site_id': pw.client.fleet.site_id,
         'din': pw.din(),
         'mode': pw.get_mode(),
         'reserve': pw.get_reserve(),

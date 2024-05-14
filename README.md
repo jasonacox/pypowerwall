@@ -167,7 +167,7 @@ and call function to poll data.  Here is an example:
     authpath = ""             # Path to cloud auth and site files (default current directory)
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
-    fleetapi = False          # If True, use Tesla Fleet API for data (default is False)
+    fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
     configfile = CONFIGFILE   # Path to fleetapi configuration file (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
 
