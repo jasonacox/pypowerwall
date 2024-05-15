@@ -177,8 +177,9 @@ class PyPowerwallCloud(PyPowerwallBase):
                 return False
         # Set site
         self.site = sites[self.siteindex]
+        site_name = sites[self.siteindex].get('site_name') or 'Unknown'
         log.debug(f"Connected to Tesla Cloud - Site {self.siteid} "
-                  f"({sites[self.siteindex]['site_name']}) for {self.email}")
+                  f"({site_name}) for {self.email}")
         return True
 
     # Function to map Powerwall API to Tesla Cloud Data
@@ -265,7 +266,8 @@ class PyPowerwallCloud(PyPowerwallBase):
                 self.siteid = siteid
                 self.siteindex = idx
                 self.site = sites[self.siteindex]
-                log.debug(f"Changed site to {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
+                site_name = sites[self.siteindex].get('site_name') or 'Unknown'
+                log.debug(f"Changed site to {self.siteid} ({site_name}) for {self.email}")
                 return True
         log.error("Site %d not found for %s" % (siteid, self.email))
         return False
@@ -973,7 +975,8 @@ class PyPowerwallCloud(PyPowerwallBase):
         # Lookup the site id
         self.siteid = siteids[self.siteindex]
         self.site = sites[self.siteindex]
-        print("\nSelected site %d - %s (%s)" % (self.siteindex + 1, sites[self.siteindex]["site_name"], self.siteid))
+        site_name = sites[self.siteindex].get('site_name') or 'Unknown'
+        print("\nSelected site %d - %s (%s)" % (self.siteindex + 1, site_name, self.siteid))
         # Write the site id to the sitefile
         with open(self.sitefile, "w") as f:
             f.write(str(self.siteid))
