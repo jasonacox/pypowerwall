@@ -54,7 +54,7 @@ from pypowerwall import parse_version
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t55"
+BUILD = "t56"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
