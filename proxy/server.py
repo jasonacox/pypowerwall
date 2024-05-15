@@ -169,7 +169,8 @@ try:
     pw = pypowerwall.Powerwall(host, password, email, timezone, cache_expire,
                                timeout, pool_maxsize, siteid=siteid,
                                authpath=authpath, authmode=authmode,
-                               cachefile=cachefile, auto_select=True)
+                               cachefile=cachefile, auto_select=True, 
+                               retry_modes=True)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -214,7 +215,7 @@ if control_secret:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = ""
     if pw_control:
-        log.info(f"Control Mode Enabled: Cloud Mode ({pw.mode}) Connected")
+        log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = None

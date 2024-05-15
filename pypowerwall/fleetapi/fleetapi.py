@@ -88,15 +88,18 @@ class FleetAPI:
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcache = {}  # holds the cached data for api
+        self.refreshing = False
 
         if debug:
             log.setLevel(logging.DEBUG)
         if configfile:
             self.configfile = configfile
-            log.debug(f"Using config file: {self.configfile}")  
         self.load_config()
         if site_id:
             self.site_id = site_id
+        if not self.site_id:
+            log.error("No site_id set or returned by FleetAPI.")
+            raise Exception("No site_id found - Run Setup.")
 
     # Function to return a random string of characters and numbers
     def random_string(self, length):
@@ -155,6 +158,10 @@ class FleetAPI:
 
     # Refresh Token
     def new_token(self):
+        #  Lock to prevent multiple refreshes
+        if self.refreshing:
+            return
+        self.refreshing = True
         print("Token expired, refreshing token...")
         data = {
             'grant_type': 'refresh_token',
@@ -172,6 +179,7 @@ class FleetAPI:
         # If access or refresh token is None return
         if not access or not refresh or response.status_code > 201:
             print("Unable to refresh token. Response code: {response.status_code}")
+            self.refreshing = False
             return
         self.access_token = access
         self.refresh_token = refresh
@@ -181,6 +189,7 @@ class FleetAPI:
         log.debug(f"  Refresh Token: {self.refresh_token}")
         # Update config
         self.save_config()
+        self.refreshing = False
         
     # Poll FleetAPI
     def poll(self, api="api/1/products", action="GET", data=None, recursive=False, force=False):

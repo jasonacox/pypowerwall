@@ -73,7 +73,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid, pwcacheexpire=pwcacheexpire)
            
         # Load Configuration
-        if not self.fleet.load_config():
+        if not os.path.isfile(self.fleet.configfile):
             log.debug(f" -- fleetapi: Configuration file not found: {self.configfile} - run setup")
 
         # Set siteid
