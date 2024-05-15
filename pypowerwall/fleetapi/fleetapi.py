@@ -106,9 +106,7 @@ class FleetAPI:
 
     # Return key value from data or None
     def keyval(self, data, key):
-        if key in data:
-            return data[key]
-        return None
+        return data.get(key) if data and key else None
     
     # Load Configuration
     def load_config(self):
@@ -169,11 +167,18 @@ class FleetAPI:
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers)
         # Extract access_token and refresh_token from this response
-        self.access_token = response.json().get('access_token')
-        self.refresh_token = response.json().get('refresh_token')
-        log.info(f"  Response Code: {response.status_code}")
-        log.info(f"  Access Token: {self.access_token}")
-        log.info(f"  Refresh Token: {self.refresh_token}")
+        access = response.json().get('access_token')
+        refresh = response.json().get('refresh_token')
+        # If access or refresh token is None return
+        if not access or not refresh or response.status_code != 200:
+            print("Unable to refresh token. Response code: {response.status_code}")
+            return
+        self.access_token = access
+        self.refresh_token = refresh
+        log.info("Token refreshed - saving.")
+        log.debug(f"  Response Code: {response.status_code}")
+        log.debug(f"  Access Token: {self.access_token}")
+        log.debug(f"  Refresh Token: {self.refresh_token}")
         # Update config
         self.save_config()
         

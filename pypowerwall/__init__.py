@@ -84,7 +84,7 @@ from typing import Union, Optional
 # noinspection PyPackageRequirements
 import urllib3
 
-from pypowerwall.aux import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
+from pypowerwall.regex import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
 from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter, InvalidBatteryReserveLevelException
 from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
