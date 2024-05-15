@@ -163,7 +163,7 @@ class Powerwall(object):
         self.vitals_api = True  # vitals api is available for local mode
         self.client: PyPowerwallBase
         self.fleetapi = fleetapi
-        self.mode = "unknown"
+        self.mode = "local"
         self.retry_modes = retry_modes
 
         # Make certain assumptions here
