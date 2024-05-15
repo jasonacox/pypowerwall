@@ -149,8 +149,8 @@ tools/tedapi/app*
 proxy/pypowerwall
 proxy/teslapy
 .fleetapi*
-
 .idea
 **/.cachefile
 .cachefile
 .pypowerwall.fleetapi
+.auth
