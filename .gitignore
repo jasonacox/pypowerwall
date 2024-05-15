@@ -153,3 +153,4 @@ proxy/teslapy
 **/.cachefile
 .cachefile
 .pypowerwall.fleetapi
+.auth
