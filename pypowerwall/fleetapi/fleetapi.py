@@ -170,7 +170,7 @@ class FleetAPI:
         access = response.json().get('access_token')
         refresh = response.json().get('refresh_token')
         # If access or refresh token is None return
-        if not access or not refresh or response.status_code != 200:
+        if not access or not refresh or response.status_code > 201:
             print("Unable to refresh token. Response code: {response.status_code}")
             return
         self.access_token = access
