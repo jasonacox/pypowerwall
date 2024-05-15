@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.8.5 - Solar Only
+
+* Fix bug with setup for certain Solar Only systems where setup process fails. Identified by @hulkster in https://github.com/jasonacox/Powerwall-Dashboard/discussions/475
+
 ## v0.8.4 - Set Reserve
 
 * Updated `set_reserve(level)` logic to handle levels from 0 to 100. Identified by @spoonwzd in #85
