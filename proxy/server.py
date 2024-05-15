@@ -179,6 +179,8 @@ except Exception as e:
             time.sleep(5)  # Infinite loop to keep container running
         except (KeyboardInterrupt, SystemExit):
             sys.exit(0)
+
+site_name = pw.site_name() or "Unknown"
 if pw.cloudmode or pw.fleetapi:
     if pw.fleetapi:
         proxystats['mode'] = "FleetAPI"
@@ -186,7 +188,7 @@ if pw.cloudmode or pw.fleetapi:
     else:
         proxystats['mode'] = "Cloud"
         log.info("pyPowerwall Proxy Server - Cloud Mode")
-    log.info("Connected to Site ID %s (%s)" % (pw.client.siteid, pw.site_name().strip()))
+    log.info("Connected to Site ID %s (%s)" % (pw.client.siteid, site_name.strip()))
     if siteid is not None and siteid != str(pw.client.siteid):
         log.info("Switch to Site ID %s" % siteid)
         if not pw.client.change_site(siteid):
@@ -199,7 +201,7 @@ if pw.cloudmode or pw.fleetapi:
 else:
     proxystats['mode'] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
-    log.info("Connected to Energy Gateway %s (%s)" % (host, pw.site_name().strip()))
+    log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
 
 pw_control = None
 if control_secret:
