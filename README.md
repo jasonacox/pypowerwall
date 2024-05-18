@@ -880,8 +880,9 @@ This is an unofficial list of terms that are seen in Powerwall responses and mes
 * Tesla ([tesla.proto](tesla.proto)) Research and Credit to @brianhealey
 * Status Functions - Thanks to @wcwong for contribution: system_status(), battery_blocks(), grid_status()
 
-## Similar Projects
+## Other Tools and Similar Projects
 
+* NetZero app - iOS and Android App for monitoring your System - https://www.netzeroapp.io/
 * Python Tesla Powerwall API – https://github.com/jrester/tesla_powerwall
 * GoTesla - go based Tesla API - https://github.com/bmah888/gotesla
 
