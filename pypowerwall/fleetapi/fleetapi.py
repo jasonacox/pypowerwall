@@ -72,7 +72,8 @@ fleet_api_urls = {
 log = logging.getLogger(__name__)
 
 class FleetAPI:
-    def __init__(self, configfile=CONFIGFILE, debug=False, site_id=None, pwcacheexpire: int = 5):
+    def __init__(self, configfile=CONFIGFILE, debug=False, site_id=None, 
+                 pwcacheexpire: int = 5, timeout: int = 5):
         self.CLIENT_ID = ""
         self.CLIENT_SECRET = ""
         self.DOMAIN = ""
@@ -89,6 +90,7 @@ class FleetAPI:
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcache = {}  # holds the cached data for api
         self.refreshing = False
+        self.timeout = timeout
 
         if debug:
             log.setLevel(logging.DEBUG)
@@ -172,13 +174,13 @@ class FleetAPI:
             'Content-Type': 'application/x-www-form-urlencoded'
         }
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers)
+                        data=data, headers=headers, timeout=self.timeout)
         # Extract access_token and refresh_token from this response
         access = response.json().get('access_token')
         refresh = response.json().get('refresh_token')
         # If access or refresh token is None return
         if not access or not refresh or response.status_code > 201:
-            print("Unable to refresh token. Response code: {response.status_code}")
+            print(f"Unable to refresh token. Response code: {response.status_code}")
             self.refreshing = False
             return
         self.access_token = access
@@ -201,7 +203,8 @@ class FleetAPI:
         if action == "POST":
             # Post to FleetAPI with json data payload
             log.debug(f"POST: {url} {json.dumps(data)}")
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response = requests.post(url, headers=headers, 
+                                     data=json.dumps(data), timeout=self.timeout)
         else:
             # Check if we have a cached response
             if not force and api in self.pwcachetime:
@@ -209,7 +212,7 @@ class FleetAPI:
                     log.debug(f"Using cached data for {api}")
                     return self.pwcache[api]
             log.debug(f"GET: {url}")
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=self.timeout)
         if response.status_code == 401 and not recursive:
             # Token expired, refresh token and try again
             self.new_token()
@@ -585,7 +588,7 @@ class FleetAPI:
         # Verify that the PEM key file exists
         print("  Verifying PEM Key file...")
         verify_url = f"https://{self.DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem"
-        response = requests.get(verify_url)
+        response = requests.get(verify_url, timeout=self.timeout)
         if response.status_code != 200:
             print(f"ERROR: Could not verify PEM key file at {verify_url}")
             print(f"       Make sure you have created the PEM key file and uploaded it to your website.")
@@ -612,7 +615,7 @@ class FleetAPI:
             }
             log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
             response = requests.post('https://auth.tesla.com/oauth2/v3/token', 
-                            data=data, headers=headers)
+                            data=data, headers=headers, timeout=self.timeout)
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
@@ -638,7 +641,8 @@ class FleetAPI:
                 'domain': self.DOMAIN,
             }
             log.debug(f"POST: {url} {json.dumps(data)}")
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response = requests.post(url, headers=headers, data=json.dumps(data), 
+                                     timeout=self.timeout)
             log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
             log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
@@ -688,7 +692,7 @@ class FleetAPI:
             }
             log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
             response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                            data=data, headers=headers)
+                            data=data, headers=headers, timeout=self.timeout)
             log.debug(f"Response Code: {response.status_code}")
             # Extract access_token and refresh_token from this response
             access_token = response.json().get('access_token')

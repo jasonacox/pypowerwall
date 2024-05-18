@@ -70,7 +70,8 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize FleetAPI
-        self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid, pwcacheexpire=pwcacheexpire)
+        self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid, 
+                              pwcacheexpire=pwcacheexpire, timeout=self.timeout)
            
         # Load Configuration
         if not os.path.isfile(self.fleet.configfile):
