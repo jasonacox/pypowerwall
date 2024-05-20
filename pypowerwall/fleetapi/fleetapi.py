@@ -654,93 +654,91 @@ class FleetAPI:
         # Generate User Token
         print("Step 3C - Generating a one-time authentication token...")
         if self.access_token and self.refresh_token:
-            print(f"  Using cached token...")
-        else:
-            scope = urllib.parse.quote(SCOPE)
-            state = self.random_string(64)
-            url = f"https://auth.tesla.com/oauth2/v3/authorize?&client_id={self.CLIENT_ID}&locale=en-US&prompt=login&redirect_uri={self.REDIRECT_URI}&response_type=code&scope={scope}&state={state}"
-            # Prompt user to login to Tesla account and authorize access
-            print("  Login to your Tesla account to authorize access.")
-            print(f"  Go to this URL: {url}")
-            # If on Mac, automatically open the URL in the default browser
-            if sys.platform == 'darwin':
-                import subprocess
-                subprocess.call(['open', url])
-            print("\nAfter authorizing access, copy the code from the URL and paste it below.")
-            code = input("  Enter the code: ")
-            # Check to see if user pasted URL or just the code
-            if code.startswith("http"):
-                code = code.split("code=")[1].split("&")[0]
-            print()
-            log.debug(f"Code: {code}")
+            print(f"  Replacing cached tokens...")
+        scope = urllib.parse.quote(SCOPE)
+        state = self.random_string(64)
+        url = f"https://auth.tesla.com/oauth2/v3/authorize?&client_id={self.CLIENT_ID}&locale=en-US&prompt=login&redirect_uri={self.REDIRECT_URI}&response_type=code&scope={scope}&state={state}"
+        # Prompt user to login to Tesla account and authorize access
+        print("  Login to your Tesla account to authorize access.")
+        print(f"  Go to this URL: {url}")
+        # If on Mac, automatically open the URL in the default browser
+        if sys.platform == 'darwin':
+            import subprocess
+            subprocess.call(['open', url])
+        print("\nAfter authorizing access, copy the code from the URL and paste it below.")
+        code = input("  Enter the code: ")
+        # Check to see if user pasted URL or just the code
+        if code.startswith("http"):
+            code = code.split("code=")[1].split("&")[0]
+        print()
+        log.debug(f"Code: {code}")
 
-            # Step 3D - Exchange the authorization code for a token
-            #   The access_token will be used as the Bearer token 
-            #   in the Authorization header when making API requests.
-            print("Step 3D - Exchange the authorization code for a token")
-            data = {
-                'grant_type': 'authorization_code',
-                'client_id': self.CLIENT_ID,
-                'client_secret': self.CLIENT_SECRET,
-                'code': code,
-                'audience': self.AUDIENCE,
-                'redirect_uri': self.REDIRECT_URI,
-                'scope': SCOPE
-            }
-            headers = {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
-            response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                            data=data, headers=headers, timeout=self.timeout)
-            log.debug(f"Response Code: {response.status_code}")
-            # Extract access_token and refresh_token from this response
-            access_token = response.json().get('access_token')
-            refresh_token = response.json().get('refresh_token')
-            print("\n  Tokens generated.")
-            print(f"   * Access Token: {access_token}")
-            print(f"   * Refresh Token: {refresh_token}\n")
-            self.access_token = access_token
-            self.refresh_token = refresh_token
-            # Save the configuration
-            self.save_config()
-            print("  Configuration saved")
+        # Step 3D - Exchange the authorization code for a token
+        #   The access_token will be used as the Bearer token 
+        #   in the Authorization header when making API requests.
+        print("Step 3D - Exchange the authorization code for a token")
+        data = {
+            'grant_type': 'authorization_code',
+            'client_id': self.CLIENT_ID,
+            'client_secret': self.CLIENT_SECRET,
+            'code': code,
+            'audience': self.AUDIENCE,
+            'redirect_uri': self.REDIRECT_URI,
+            'scope': SCOPE
+        }
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        }
+        log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+        response = requests.post('https://auth.tesla.com/oauth2/v3/token',
+                        data=data, headers=headers, timeout=self.timeout)
+        log.debug(f"Response Code: {response.status_code}")
+        # Extract access_token and refresh_token from this response
+        access_token = response.json().get('access_token')
+        refresh_token = response.json().get('refresh_token')
+        print("\n  Tokens generated.")
+        print(f"   * Access Token: {access_token}")
+        print(f"   * Refresh Token: {refresh_token}\n")
+        self.access_token = access_token
+        self.refresh_token = refresh_token
+        # Save the configuration
+        self.save_config()
+        print("  Configuration saved")
         print()
 
         # Select Site ID
         print("Step 4 - Select site_id for your Tesla Powerwall...")
         if self.site_id:
-            print(f"  Using cached site_id: {self.site_id}")
-        else:
-            # Get list of sites
-            sites = self.getsites()
-            sel = 0
-            # If not set, pick first site
-            if not self.site_id:
-                self.site_id = sites[0]['energy_site_id']
-                sel = 1
-            log.debug(sites)
-            print("  Sites:")
-            for i, site in enumerate(sites):
-                if self.site_id == site['energy_site_id']:
-                    print(f"   * {i+1}. {site['energy_site_id']} - {site['site_name']} (current)")
-                    sel = i+1
-                else:
-                    print(f"     {i+1}. {site['energy_site_id']} - {site['site_name']}")
-            # If only one site, use it
-            if len(sites) == 1:
-                print(f"  Using site: {sites[0]['energy_site_id']}")
-                self.site_id = sites[0]['energy_site_id']
-                sel = 1
+            print(f"  Previous site_id: {self.site_id}")
+        # Get list of sites
+        sites = self.getsites()
+        sel = 0
+        # If not set, pick first site
+        if not self.site_id:
+            self.site_id = sites[0]['energy_site_id']
+            sel = 1
+        log.debug(sites)
+        print("  Sites:")
+        for i, site in enumerate(sites):
+            if self.site_id == site['energy_site_id']:
+                print(f"   * {i+1}. {site['energy_site_id']} - {site['site_name']} (current)")
+                sel = i+1
             else:
-                site = input(f"  Enter Site ID [{sel}]: ")
-                if site:
-                    self.site_id = sites[int(site)-1]['energy_site_id']
-            print()
-            log.debug(f"Site ID: {self.site_id}")
-            # Save the configuration
-            self.save_config()
-            print("  Configuration saved")
+                print(f"     {i+1}. {site['energy_site_id']} - {site['site_name']}")
+        # If only one site, use it
+        if len(sites) == 1:
+            print(f"  Using site: {sites[0]['energy_site_id']}")
+            self.site_id = sites[0]['energy_site_id']
+            sel = 1
+        else:
+            site = input(f"  Enter Site ID [{sel}]: ")
+            if site:
+                self.site_id = sites[int(site)-1]['energy_site_id']
+        print()
+        log.debug(f"Site ID: {self.site_id}")
+        # Save the configuration
+        self.save_config()
+        print("  Configuration saved")
         print()
 
         # Get Site Info
