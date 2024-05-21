@@ -33,6 +33,9 @@
     authpath = ""             # Path to cloud auth and site files (default current directory)
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
+    fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
+    auth_path = ""            # Path to configfile (default current directory)
+    auto_select = False       # If True, select the best available mode to connect (default is False)
     
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -65,7 +68,6 @@
     set_reserve(level)        # Set Battery Reserve Percentage
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
-
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
 
  Requirements
@@ -78,26 +80,29 @@ import os.path
 import sys
 from json import JSONDecodeError
 from typing import Union, Optional
+import time
 
 # noinspection PyPackageRequirements
 import urllib3
 
-from pypowerwall.aux import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
+from pypowerwall.regex import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
 from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter, InvalidBatteryReserveLevelException
 from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
+from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
+from pypowerwall.fleetapi.fleetapi import CONFIGFILE
+from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 8, 5)
+version_tuple = (0, 9, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
 log = logging.getLogger(__name__)
 log.debug('%s version %s', __name__, __version__)
 log.debug('Python %s on %s', sys.version, sys.platform)
-
 
 def set_debug(toggle=True, color=True):
     """Enable verbose logging"""
@@ -115,7 +120,8 @@ def set_debug(toggle=True, color=True):
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
-                 cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall"):
+                 cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
+                 fleetapi=False, auto_select=False, retry_modes=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -133,6 +139,9 @@ class Powerwall(object):
             authpath     = Path to cloud auth and site cache files (default current directory)
             authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
             cachefile    = Path to cache file (default current directory)
+            fleetapi     = If True, use Tesla FleetAPI for data (default is False)
+            auto_select  = If True, select the best available mode to connect (default is False)
+            retry_modes  = If True, retry connection to Powerwall
         """
 
         # Attributes
@@ -145,8 +154,6 @@ class Powerwall(object):
         self.poolmaxsize = poolmaxsize  # pool max size for http connection re-use
         self.auth = {}  # caches auth cookies
         self.token = None  # caches bearer token
-        self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcache = {}  # holds the cached data for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.cloudmode = cloudmode  # cloud mode or local mode (default)
         self.siteid = siteid  # siteid for cloud mode
@@ -155,23 +162,95 @@ class Powerwall(object):
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
         self.client: PyPowerwallBase
+        self.fleetapi = fleetapi
+        self.retry_modes = retry_modes
 
         # Make certain assumptions here
         if not self.host:
             self.cloudmode = True
+        elif not self.cloudmode and not self.fleetapi:
+            self.mode = "local"
+        else:
+            self.mode = "unknown"
+
+        # Auto select mode if requested
+        if auto_select:
+            if self.host and not self.cloudmode and not self.fleetapi:
+                log.debug("Auto selecting local mode")
+                self.cloudmode = self.fleetapi = False
+                self.mode = "local"
+            elif os.path.exists(os.path.join(self.authpath, CONFIGFILE)):
+                log.debug("Auto selecting FleetAPI Mode")
+                self.cloudmode = self.fleetapi = True
+                self.mode = "fleetapi"
+            elif os.path.exists(os.path.join(self.authpath, AUTHFILE)):
+                if not self.email or self.email == "nobody@nowhere.com":
+                    with open(authpath + AUTHFILE, 'r') as file:
+                        auth = json.load(file)
+                    self.email = list(auth.keys())[0]
+                self.cloudmode = True
+                self.fleetapi = False     
+                self.mode = "cloud"       
+                log.debug("Auto selecting Cloud Mode (email: %s)" % self.email)    
+            else:
+                log.error("Auto Select Failed: Unable to use local, cloud or fleetapi mode.")
 
         # Validate provided parameters
         self._validate_init_configuration()
 
-        # Check for cloud mode
-        if self.cloudmode:
-            self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
-            # Check to see if we can connect to the cloud
-        else:
-            self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
-                                           self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile)
+        # Connect to Powerwall
+        self.connect(self.retry_modes)
+    
+    def connect(self, retry=False):
+        """
+        Connect to Tesla Energy Gateway Powerwall
 
-        self.client.authenticate()
+        Args:
+            retry = If True, retry connection to Powerwall
+        """
+        if self.mode == "unknown":
+            log.error("Unable to determine mode to connect.")
+            return
+        count = 0
+        while count < 3:
+            count += 1
+            if retry and count == 3:
+                log.error("Failed to connect to Powerwall with all modes. Waiting 30s to retry.")
+                time.sleep(30)
+                count = 0
+            if self.mode == "local":
+                try:
+                    self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
+                                               self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile)
+                    self.client.authenticate()
+                    self.cloudmode = self.fleetapi = False
+                    break
+                except Exception as exc:
+                    log.error(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
+                    self.mode = "fleetapi"
+                    continue
+            if self.mode == "fleetapi":
+                try:
+                    self.client = PyPowerwallFleetAPI(self.email, self.pwcacheexpire, self.timeout, self.siteid,
+                                                    self.authpath)
+                    self.client.authenticate()
+                    self.cloudmode = self.fleetapi = True
+                    break
+                except Exception as exc:
+                    log.error(f"Failed to connect using FleetAPI mode: {exc} - trying cloud mode.")
+                    self.mode = "cloud"
+                    continue
+            if self.mode == "cloud":
+                try:
+                    self.client = PyPowerwallCloud(self.email, self.pwcacheexpire, self.timeout, self.siteid, self.authpath)
+                    self.client.authenticate()
+                    self.cloudmode = True
+                    self.fleetapi = False
+                    break
+                except Exception as exc:
+                    log.error(f"Failed to connect using Cloud mode: {exc} - trying fleetapi mode.")
+                    self.mode = "local"
+                    continue
 
     def is_connected(self):
         """
@@ -740,7 +819,7 @@ class Powerwall(object):
                                                            f"form of IP address or a valid form of a hostname or FQDN.")
 
         # If cloud mode requested, check appropriate parameters
-        if self.cloudmode:
+        if self.cloudmode and not self.fleetapi:
             # Ensure email is set and syntactically correct
             if not self.email or not isinstance(self.email, str) or not EMAIL_REGEX.match(self.email):
                 raise PyPowerwallInvalidConfigurationParameter(f"A valid email address is required to run in "
@@ -752,9 +831,15 @@ class Powerwall(object):
                 log.debug("No authpath provided, using current directory.")
                 dirname = '.'
             self._check_if_dir_is_writable(dirname, "authpath")
-        # If local mode, check appropriate parameters, too
+        elif self.fleetapi:
+            # Ensure we can write to the configfile
+            self.configfile = os.path.join(self.authpath, CONFIGFILE)
+            if os.access(self.configfile, os.W_OK):
+                log.debug(f"Config file '{self.configfile}' is writable.")
+            else:
+                raise PyPowerwallInvalidConfigurationParameter(f"Config file '{self.configfile}' is not writable.")
         else:
-            # Ensure we can create a cachefile
+            # If local mode, check appropriate parameters, and ensure we can write to the provided cachefile
             dirname = os.path.dirname(self.cachefile)
             if not dirname:
                 log.debug("No cachefile provided, using current directory.")

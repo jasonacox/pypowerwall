@@ -30,6 +30,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         self.session = None
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
+        self.pwcache = {}  # holds the cached data for api
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
 

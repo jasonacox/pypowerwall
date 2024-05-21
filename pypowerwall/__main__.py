@@ -17,10 +17,11 @@ import sys
 import json
 
 # Modules
-from pypowerwall import version
+from pypowerwall import version, set_debug
+from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
+from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 
 # Global Variables
-AUTHFILE = ".pypowerwall.auth"
 authpath = os.getenv("PW_AUTH_PATH", "")
 
 timeout = 1.0
@@ -37,6 +38,8 @@ subparsers = p.add_subparsers(dest="command", title='commands (run <command> -h 
 
 setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
 setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
+
+setup_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
 scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
 scan_args.add_argument("-timeout", type=float, default=timeout,
@@ -61,6 +64,9 @@ get_mode_args.add_argument("-format", type=str, default="text",
 
 version_args = subparsers.add_parser("version", help='Print version information')
 
+# Add a global debug flag
+p.add_argument("-debug", action="store_true", default=False, help="Enable debug output")
+
 if len(sys.argv) == 1:
     p.print_help(sys.stderr)
     sys.exit(1)
@@ -68,6 +74,10 @@ if len(sys.argv) == 1:
 # parse args
 args = p.parse_args()
 command = args.command
+
+# Set Debug Mode
+if args.debug:
+    set_debug(True)
 
 # Cloud Mode Setup
 if command == 'setup':
@@ -78,9 +88,21 @@ if command == 'setup':
     # Run Setup
     c = PyPowerwallCloud(None, authpath=authpath)
     if c.setup(email):
-        print("Setup Complete. Auth file %s ready to use." % AUTHFILE)
+        print(f"Setup Complete. Auth file {c.authfile} ready to use.")
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
+        exit(1)
+# FleetAPI Mode Setup
+elif command == 'fleetapi':
+    from pypowerwall import PyPowerwallFleetAPI
+
+    print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
+    # Run Setup
+    c = PyPowerwallFleetAPI(None, authpath=authpath)
+    if c.setup():
+        print(f"Setup Complete. Config file {c.configfile} ready to use.")
+    else:
+        print("Setup Aborted.")
         exit(1)
 # Run Scan
 elif command == 'scan':
@@ -94,17 +116,17 @@ elif command == 'scan':
     scan.scan(color, timeout, hosts, ip)
 # Set Powerwall Mode
 elif command == 'set':
+    # If no arguments, print usage
+    if not args.mode and not args.reserve and not args.current:
+        print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]")
+        exit(1)
     import pypowerwall
     print("pyPowerwall [%s] - Set Powerwall Mode and Power Levels\n" % version)
-    # Load email from auth file
-    auth_file = authpath + AUTHFILE
-    if not os.path.exists(auth_file):
-        print("ERROR: Auth file %s not found. Run 'setup' to create." % auth_file)
+    # Determine which cloud mode to use
+    pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
+    if not pw.client:
+        print("ERROR: FleetAPI and Cloud access are not configured. Run 'fleetapi' or 'setup' to create.")
         exit(1)
-    with open(auth_file, 'r') as file:
-        auth = json.load(file)
-    email = list(auth.keys())[0]
-    pw = pypowerwall.Powerwall(email=email, host="", authpath=authpath)
     if args.mode:
         mode = args.mode.lower()
         if mode not in ['self_consumption', 'backup', 'autonomous']:
@@ -124,16 +146,10 @@ elif command == 'set':
 elif command == 'get':
     import pypowerwall
     # Load email from auth file
-    auth_file = authpath + AUTHFILE
-    if not os.path.exists(auth_file):
-        print("ERROR: Auth file %s not found. Run 'setup' to create." % auth_file)
-        exit(1)
-    with open(auth_file, 'r') as file:
-        auth = json.load(file)
-    email = list(auth.keys())[0]
-    pw = pypowerwall.Powerwall(email=email, host="", authpath=authpath)
+    pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
     output = {
         'site': pw.site_name(),
+        'site_id': pw.client.fleet.site_id,
         'din': pw.din(),
         'mode': pw.get_mode(),
         'reserve': pw.get_reserve(),

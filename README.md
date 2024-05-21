@@ -17,15 +17,11 @@ poll API endpoints on the Gateway.
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
 * Works with Tesla Energy Gateways - Powerwall and Powerwall+
-* Simple access through easy to use functions using customer credentials
+* Access provided via Local Gateway API, Tesla FleetAPI (official), and Tesla Owners API (unofficial).
 * Will cache authentication to reduce load on Powerwall Gateway
-* Will cache responses to limit number of calls to Powerwall Gateway (optional/user definable)
+* Will cache responses to limit number of calls to Powerwall Gateway or Cloud (optional/user definable) 
 * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
-* Easy access to decoded binary device vitals (/api/devices/vitals in JSON format)
-* Provides solar string data for Powerwall+ systems
-
-NOTE: This module requires that you (or your installer) have set up *Customer Login* credentials
-on your Powerwall Gateway.
+* Provides solar string data for Powerwall+ systems.
 
 ## Setup
 
@@ -35,12 +31,40 @@ You can clone this repo or install the package with pip.  Once installed, pyPowe
 # Install pyPowerwall
 python3 -m pip install pypowerwall
 
-# Scan Network for Powerwalls
+# Option 1 - LOCAL MODE - Scan Network for Powerwalls
 python3 -m pypowerwall scan
 
-# (optional) Setup to use Tesla Owners cloud API
+# Option 2 - FLEETAPI MODE - Setup to use the official Tesla FleetAPI - See notes below.
+python3 -m pypowerwal fleetapi
+
+# Option 3 - CLOUD MODE -  Setup to use Tesla Owners cloud API
 python3 -m pypowerwall setup
 ```
+
+### Local Setup - Option 1
+
+The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. Unfortunately, Powerwall 3 does not have a local API but you can access it via the cloud (options 2 and 3).
+
+### FleetAPI Setup - Option 2
+
+FleetAPI is the official Tesla API for accessing your Tesla products. This setup has some additional setup requirements that you will be prompted to do:
+
+Step 1 - Tesla Partner Account - Sign in to Tesla Developer Portal and make an App Access Request: See [Tesla App Access Request](https://developer.tesla.com/request) - During this process, you will need to set up and remember the following account settings: 
+
+   * CLIENT_ID - This will be provided to you by Tesla when your request is approved.
+   * CLIENT_SECRET - Same as above.
+   * DOMAIN - The domain name of a website your own and control.
+   * REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed during the pyPowerwall setup. You can use [index.html](./tools/fleetapi/index.html) on your site and update REDIRECT_URI with that url. Alternatively, you can just copy the URL from the 404 page during the authorization process (the code is in the URL).
+
+Step 2 - Run the [create_pem_key.py](./tools/fleetapi/create_pem_key.py) script and place the **public** key on your website at the URL: https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem
+
+Step 3 - Run `python3 -m pypowerwal fleetapi` - The credentials and tokens will be stored in the `.pypowerwall.fleetapi` file.
+
+### Cloud Mode - Option 3
+
+The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
+
+### FreeBSD Install
 
 FreeBSD users can install from ports or pkg [FreshPorts](https://www.freshports.org/net-mgmt/py-pypowerwall):
 
@@ -67,20 +91,23 @@ and call function to poll data.  Here is an example:
     # Optional: Turn on Debug Mode
     # pypowerwall.set_debug(True)
 
-    # Local Mode - Credentials for your Powerwall - Customer Login
-    password='password'
-    email='email@example.com'
+    # Option 1 - LOCAL MODE - Credentials for your Powerwall - Customer Login
+    password="password"
+    email="email@example.com"
     host = "10.0.1.123"               # Address of your Powerwall Gateway
     timezone = "America/Los_Angeles"  # Your local timezone
 
-    # (Optional) Cloud Mode - Requires Setup
-    password = ""
+    # Option 2 - FLEETAPI MODE - Requires Setup
+    host = password = email = ""
+    timezone = "America/Los_Angeles" 
+
+    # Option 3 - CLOUD MODE - Requires Setup
+    host = password = ""
     email='email@example.com'
-    host = ""
-    timezone = "America/Los_Angeles"  # Your local timezone
+    timezone = "America/Los_Angeles"
  
-    # Connect to Powerwall
-    pw = pypowerwall.Powerwall(host,password,email,timezone)
+    # Connect to Powerwall - auto_select mode (local, fleetapi, cloud)
+    pw = pypowerwall.Powerwall(host,password,email,timezone,auto_select=True)
 
     # Some System Info
     print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
@@ -117,12 +144,13 @@ and call function to poll data.  Here is an example:
 ```
 
 ### pyPowerwall Module Class and Functions 
+
 ```
  set_debug(True, color=True)
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-              cloudmode, siteid, authpath, authmode, cachefile)
+               cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -134,10 +162,12 @@ and call function to poll data.  Here is an example:
     poolmaxsize = 10          # Pool max size for http connection re-use (persistent
                                 connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
-    siteid                    # If cloudmode is True, use this siteid (default is None)  
-    authpath                  # Path to cloud auth and site cache files (default is "")
+    siteid = None             # If cloudmode is True, use this siteid (default is None)
+    authpath = ""             # Path to cloud auth and site files (default current directory)
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
+    fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
+    auto_select = False       # If True, select the best available mode to connect (default is False)
 
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -160,21 +190,17 @@ and call function to poll data.  Here is an example:
     temps()                   # Return Powerwall Temperatures
     alerts()                  # Return array of Alerts from devices
     system_status(json)       # Returns the system status
-    battery_blocks(json)      # Returns battery specific information merged from 
-                              # system_status() and vitals()
-    grid_status(type)         # Return the power grid status, type ="string" (default),
-                              # "json", or "numeric":
+    battery_blocks(json)      # Returns battery specific information merged from system_status() and vitals()
+    grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
-    is_connected()            # Returns True if able to connect to Powerwall
+    is_connected()            # Returns True if able to connect and login to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
     get_mode()                # Get Current Battery Operation Mode
-    set_reserve(level)        # Set Battery Reserve Percentage (only cloud mode)
-    set_mode(mode)            # Set Current Battery Operation Mode (only cloud mode)
+    set_reserve(level)        # Set Battery Reserve Percentage
+    set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
-
-    set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
-    
+    set_operation(level, mode, json)  # Set Battery Reserve Percentage and/or Operation Mode
 ```
 
 ## Tools

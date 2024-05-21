@@ -1,5 +1,13 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t57 (15 May 2024)
+
+* Add pypowerwall v0.9.0 capabilities, specifically supporting Tesla FleetAPI for cloud connections (main data and control).
+
+### Proxy t56 (14 May 2024)
+
+* Fix error with site_name on Solar Only systems.
+
 ### Proxy t55 (4 May 2024)
 
 * Fix `/pod` API to add `time_remaining_hours` and `backup_reserve_percent` for cloud mode.
