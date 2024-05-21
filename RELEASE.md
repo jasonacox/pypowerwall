@@ -1,5 +1,35 @@
 # RELEASE NOTES
 
+## v0.9.0 - FleetAPI Support
+
+* v0.9.0 - Tesla (official) FleetAPI cloud mode support by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/91 - This adds the FleetAPI class and mapping for pypowerwall.
+* FleetAPI setup provided by module CLI: `python -m pypowerwall fleetapi`
+* Adds `auto_select` mode for instatiating a Powerwall connection: `local` mode, `fleetapi` mode and `cloud` mode. Provides `pw.mode` class variable as the mode selected.
+
+```python
+    import pypowerwall
+
+    # Option 1 - LOCAL MODE - Credentials for your Powerwall - Customer Login
+    password="password"
+    email="email@example.com"
+    host = "10.0.1.123"               # Address of your Powerwall Gateway
+    timezone = "America/Los_Angeles"  # Your local timezone
+
+    # Option 2 - FLEETAPI MODE - Requires Setup
+    host = password = email = ""
+    timezone = "America/Los_Angeles" 
+
+    # Option 3 - CLOUD MODE - Requires Setup
+    host = password = ""
+    email='email@example.com'
+    timezone = "America/Los_Angeles"
+ 
+    # Connect to Powerwall - auto_select mode (local, fleetapi, cloud)
+    pw = pypowerwall.Powerwall(host,password,email,timezone,auto_select=True)
+
+    print(f"Connected to Powerwall with mode: {pw.mode}")
+```
+
 ## v0.8.5 - Solar Only
 
 * Fix bug with setup for certain Solar Only systems where setup process fails. Identified by @hulkster in https://github.com/jasonacox/Powerwall-Dashboard/discussions/475
