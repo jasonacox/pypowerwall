@@ -163,12 +163,15 @@ class Powerwall(object):
         self.vitals_api = True  # vitals api is available for local mode
         self.client: PyPowerwallBase
         self.fleetapi = fleetapi
-        self.mode = "local"
         self.retry_modes = retry_modes
 
         # Make certain assumptions here
         if not self.host:
             self.cloudmode = True
+        elif not self.cloudmode and not self.fleetapi:
+            self.mode = "local"
+        else:
+            self.mode = "unknown"
 
         # Auto select mode if requested
         if auto_select:
