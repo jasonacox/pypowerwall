@@ -174,7 +174,7 @@ class FleetAPI:
             'Content-Type': 'application/x-www-form-urlencoded'
         }
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers, timeout=self.timeout)
+                        data=data, headers=headers)
         # Extract access_token and refresh_token from this response
         access = response.json().get('access_token')
         refresh = response.json().get('refresh_token')
@@ -203,8 +203,13 @@ class FleetAPI:
         if action == "POST":
             # Post to FleetAPI with json data payload
             log.debug(f"POST: {url} {json.dumps(data)}")
-            response = requests.post(url, headers=headers, 
-                                     data=json.dumps(data), timeout=self.timeout)
+            # Check for timeout exception
+            try: 
+                response = requests.post(url, headers=headers, 
+                                         data=json.dumps(data), timeout=self.timeout)
+            except requests.exceptions.Timeout:
+                log.error(f"Timeout error posting to {url}")
+                return None
         else:
             # Check if we have a cached response
             if not force and api in self.pwcachetime:
@@ -212,7 +217,11 @@ class FleetAPI:
                     log.debug(f"Using cached data for {api}")
                     return self.pwcache[api]
             log.debug(f"GET: {url}")
-            response = requests.get(url, headers=headers, timeout=self.timeout)
+            try:
+                response = requests.get(url, headers=headers, timeout=self.timeout)
+            except requests.exceptions.Timeout:
+                log.error(f"Timeout error polling {url}")
+                return None
         if response.status_code == 401 and not recursive:
             # Token expired, refresh token and try again
             self.new_token()
@@ -588,7 +597,7 @@ class FleetAPI:
         # Verify that the PEM key file exists
         print("  Verifying PEM Key file...")
         verify_url = f"https://{self.DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem"
-        response = requests.get(verify_url, timeout=self.timeout)
+        response = requests.get(verify_url)
         if response.status_code != 200:
             print(f"ERROR: Could not verify PEM key file at {verify_url}")
             print(f"       Make sure you have created the PEM key file and uploaded it to your website.")
@@ -615,7 +624,7 @@ class FleetAPI:
             }
             log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
             response = requests.post('https://auth.tesla.com/oauth2/v3/token', 
-                            data=data, headers=headers, timeout=self.timeout)
+                            data=data, headers=headers)
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
@@ -641,8 +650,7 @@ class FleetAPI:
                 'domain': self.DOMAIN,
             }
             log.debug(f"POST: {url} {json.dumps(data)}")
-            response = requests.post(url, headers=headers, data=json.dumps(data), 
-                                     timeout=self.timeout)
+            response = requests.post(url, headers=headers, data=json.dumps(data))
             log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
             log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
@@ -691,7 +699,7 @@ class FleetAPI:
         }
         log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers, timeout=self.timeout)
+                        data=data, headers=headers)
         log.debug(f"Response Code: {response.status_code}")
         # Extract access_token and refresh_token from this response
         access_token = response.json().get('access_token')
