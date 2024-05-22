@@ -2,7 +2,7 @@
 
 ## v0.9.1 - Misc
 
-* v0.9.1 - Minor Fixes
+* v0.9.1 - Minor Patch - Fix bug in time_remaining_hours() and convert print statements in FleetAPI to log messages.
 
 ## v0.9.0 - FleetAPI Support
 
