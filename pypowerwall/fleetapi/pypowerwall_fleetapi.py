@@ -378,9 +378,13 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
     def get_time_remaining(self, force: bool = False) -> Optional[float]:
         """
         Get backup time remaining from Tesla FleetAPI
-        TODO
         """
-        return self.fleet.get_backup_time_remaining()
+        response = self.fleet.get_backup_time_remaining()
+        if response is None or not isinstance(response, dict):
+            return None
+        if response.get('time_remaining_hours'):
+            return response['time_remaining_hours']
+        return 0.0
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
