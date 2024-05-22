@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.9.1 - Misc
+
+* v0.9.1 - Minor Fixes
+
 ## v0.9.0 - FleetAPI Support
 
 * v0.9.0 - Tesla (official) FleetAPI cloud mode support by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/91 - This adds the FleetAPI class and mapping for pypowerwall.

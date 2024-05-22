@@ -96,7 +96,7 @@ from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 9, 0)
+version_tuple = (0, 9, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 

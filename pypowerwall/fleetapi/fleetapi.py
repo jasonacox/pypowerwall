@@ -164,7 +164,7 @@ class FleetAPI:
         if self.refreshing:
             return
         self.refreshing = True
-        print("Token expired, refreshing token...")
+        log.info("Token expired, refreshing token")
         data = {
             'grant_type': 'refresh_token',
             'client_id': self.CLIENT_ID,
@@ -180,7 +180,7 @@ class FleetAPI:
         refresh = response.json().get('refresh_token')
         # If access or refresh token is None return
         if not access or not refresh or response.status_code > 201:
-            print(f"Unable to refresh token. Response code: {response.status_code}")
+            log.error(f"Unable to refresh token. Response code: {response.status_code}")
             self.refreshing = False
             return
         self.access_token = access
@@ -227,11 +227,10 @@ class FleetAPI:
             self.new_token()
             data = self.poll(api, action, data, True)
         elif response.status_code == 401:
-            print("Token expired, refresh token failed, exiting...")
+            log.error("Token expired, refresh token failed")
             data = None
         elif response.status_code != 200:
-            print(f"Error: {response.status_code}")
-            print(response.text)
+            log.error(f"Code {response.status_code}: {response.text}")
             data = None
         else:
             data = response.json()
