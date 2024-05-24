@@ -139,7 +139,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         # Check for auth file
         if not os.path.exists(self.authfile):
             msg = f"Missing auth file {self.authfile} - run setup"
-            log.warning(msg)
+            log.debug(msg)
             raise PyPowerwallCloudNoTeslaAuthFile(msg)
 
         # Create Tesla instance

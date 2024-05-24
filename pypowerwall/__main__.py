@@ -61,6 +61,10 @@ set_mode_args.add_argument("-current", action="store_true", default=False,
 get_mode_args = subparsers.add_parser("get", help='Get Powerwall Settings and Power Levels')
 get_mode_args.add_argument("-format", type=str, default="text",
                             help="Output format: text, json, csv")
+get_mode_args.add_argument("-host", type=str, default="",
+                            help="IP address of Powerwall Gateway")
+get_mode_args.add_argument("-password", type=str, default="",
+                            help="Password for Powerwall Gateway")
 
 version_args = subparsers.add_parser("version", help='Print version information')
 
@@ -121,11 +125,11 @@ elif command == 'set':
         print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]")
         exit(1)
     import pypowerwall
-    print("pyPowerwall [%s] - Set Powerwall Mode and Power Levels\n" % version)
     # Determine which cloud mode to use
     pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
-    if not pw.client:
-        print("ERROR: FleetAPI and Cloud access are not configured. Run 'fleetapi' or 'setup' to create.")
+    print(f"pyPowerwall [{version}] - Set Powerwall Mode and Power Levels using {pw.mode} mode.\n")
+    if not pw.is_connected():
+        print("ERROR: FleetAPI and Cloud access are not configured. Run 'fleetapi' or 'setup'.")
         exit(1)
     if args.mode:
         mode = args.mode.lower()
@@ -146,10 +150,16 @@ elif command == 'set':
 elif command == 'get':
     import pypowerwall
     # Load email from auth file
-    pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
+    pw = pypowerwall.Powerwall(auto_select=True, authpath=authpath, password=args.password,
+                                host=args.host)
+    if args.format == 'text':
+        print(f"pyPowerwall [{version}] - Get Powerwall Mode and Power Levels using {pw.mode} mode.\n")
+    if not pw.is_connected():
+        print("ERROR: Unable to connect. Set -host and -password or configure FleetAPI or Cloud access.")
+        exit(1)
     output = {
         'site': pw.site_name(),
-        'site_id': pw.client.fleet.site_id,
+        'site_id': pw.siteid or "N/A",
         'din': pw.din(),
         'mode': pw.get_mode(),
         'reserve': pw.get_reserve(),
@@ -168,7 +178,6 @@ elif command == 'get':
         values = ",".join(str(value) for value in output.values())
         print(values)
     else:
-        print("pyPowerwall [%s] - Set Powerwall Mode and Power Levels\n" % version)
         # Table Output
         for item in output:
             name = item.replace("_", " ").title()

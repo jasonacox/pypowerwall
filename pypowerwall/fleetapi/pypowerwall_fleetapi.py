@@ -753,7 +753,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                                                  "'backup_reserve_percent or 'real_mode', or both must present.")
 
         if din:
-            log.warning("FleetAPI mode operates on entire site, not din. Ignoring din parameter.")
+            log.debug("FleetAPI mode operates on entire site, not din. Ignoring din parameter.")
 
         if payload.get('backup_reserve_percent') is not None:
             backup_reserve_percent = payload['backup_reserve_percent']

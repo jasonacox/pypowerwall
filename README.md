@@ -232,6 +232,16 @@ Commands (run <command> -h to see usage information):
     set                 Set Powerwall Mode and Reserve Level
     get                 Get Powerwall Settings and Power Levels
     version             Print version information
+
+   set options:
+      -mode MODE        Powerwall Mode: self_consumption, backup, or autonomous
+      -reserve RESERVE  Set Battery Reserve Level [Default=20]
+      -current          Set Battery Reserve Level to Current Charge
+
+   get options:
+      -format FORMAT      Output format: text, json, csv
+      -host HOST          IP address of Powerwall Gateway
+      -password PASSWORD  Password for Powerwall Gateway
 ```
    
 ```bash

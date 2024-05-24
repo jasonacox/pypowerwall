@@ -1,8 +1,14 @@
 # RELEASE NOTES
 
-## v0.9.1 - Misc
+## v0.9.1 - Bug Fixes
 
-* v0.9.1 - Minor Patch - Fix bug in time_remaining_hours() and convert print statements in FleetAPI to log messages.
+* Fix bug in time_remaining_hours() and convert print statements in FleetAPI to log messages.
+* Fix CLI bug related to `site_id` as raised by @darroni in https://github.com/jasonacox/pypowerwall/issues/93
+* Add CLI option for local mode to get status:
+
+```bash
+python -m pypowerwall get -host 10.1.2.3 -password 'myPassword'
+```
 
 ## v0.9.0 - FleetAPI Support
 

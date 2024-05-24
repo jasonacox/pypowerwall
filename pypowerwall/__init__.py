@@ -164,10 +164,13 @@ class Powerwall(object):
         self.client: PyPowerwallBase
         self.fleetapi = fleetapi
         self.retry_modes = retry_modes
+        self.mode = "unknown"
 
         # Make certain assumptions here
         if not self.host:
             self.cloudmode = True
+        if self.cloudmode and not self.fleetapi:
+            self.mode = "cloud"
         elif not self.cloudmode and not self.fleetapi:
             self.mode = "local"
         else:
@@ -193,15 +196,17 @@ class Powerwall(object):
                 self.mode = "cloud"       
                 log.debug("Auto selecting Cloud Mode (email: %s)" % self.email)    
             else:
-                log.error("Auto Select Failed: Unable to use local, cloud or fleetapi mode.")
+                log.debug("Auto Select Failed: Unable to use local, cloud or fleetapi mode.")
 
         # Validate provided parameters
         self._validate_init_configuration()
 
         # Connect to Powerwall
-        self.connect(self.retry_modes)
+        if not self.connect(self.retry_modes):
+            log.error("Unable to connect to Powerwall.")
+            return
     
-    def connect(self, retry=False):
+    def connect(self, retry=False) -> bool:
         """
         Connect to Tesla Energy Gateway Powerwall
 
@@ -224,9 +229,9 @@ class Powerwall(object):
                                                self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = False
-                    break
+                    return True
                 except Exception as exc:
-                    log.error(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
+                    log.debug(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
                     self.mode = "fleetapi"
                     continue
             if self.mode == "fleetapi":
@@ -235,9 +240,10 @@ class Powerwall(object):
                                                     self.authpath)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = True
-                    break
+                    self.siteid = self.client.siteid
+                    return True
                 except Exception as exc:
-                    log.error(f"Failed to connect using FleetAPI mode: {exc} - trying cloud mode.")
+                    log.debug(f"Failed to connect using FleetAPI mode: {exc} - trying cloud mode.")
                     self.mode = "cloud"
                     continue
             if self.mode == "cloud":
@@ -246,11 +252,13 @@ class Powerwall(object):
                     self.client.authenticate()
                     self.cloudmode = True
                     self.fleetapi = False
-                    break
+                    self.siteid = self.client.siteid
+                    return True
                 except Exception as exc:
-                    log.error(f"Failed to connect using Cloud mode: {exc} - trying fleetapi mode.")
+                    log.debug(f"Failed to connect using Cloud mode: {exc} - trying local mode.")
                     self.mode = "local"
                     continue
+        return False
 
     def is_connected(self):
         """
