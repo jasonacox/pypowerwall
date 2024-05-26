@@ -632,7 +632,7 @@ The following APIs are a result of help from other projects as well as my own in
 
 ### Firmware Version History
 
-Firmware version of the Powerwall can be seen with `pw.version()`.
+Firmware version of the Powerwall can be seen with `pw.version()`. An estimate of Firmware versions in the wild can be seen here: https://www.netzeroapp.io/firmware_versions 
 
 | Powerwall Firmware | Date Seen | Features | pyPowerwall | Tesla App |
 | --- | --- | --- | --- | --- |
@@ -667,6 +667,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`.
 | 23.44.0 eb113390 | 25-Jan-2024 | STSTSM firmware showing Unknown - No vitals available |  .. | .. |
 | 23.44.3-msa | 7-Feb-2024 | No vitals available |  .. | .. |
 | 24.4.0 0fe780c9 | 15-Mar-2024 | No vitals available |  .. | .. |
+| 24.12.3 1feaff3a | May-2024 | No vitals available |  .. | .. |
 
 * Beginning with 23.44.0, Tesla has removed the /api/devices/vitals API endpoint. For discussion about this and future updates, see [Tesla Powerwall Firmware Upgrades - Observations](https://github.com/jasonacox/Powerwall-Dashboard/discussions/109).
 
