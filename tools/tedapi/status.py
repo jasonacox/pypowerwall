@@ -16,31 +16,44 @@ import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 import json
+import sys
 
 # Globals
 GW_IP = "192.168.91.1"
 
 # Print Header
 print("Tesla Powerwall Gateway API Decoder")
-print("")
-print("Connect to your Powerwall Gateway WiFi.")
 
-# Get GW_PWD from User
-gw_pwd = input("Enter Powerwall Gateway Password: ")
+# Test IP Connection to Powerwall Gateway
+print(" - Testing Connection to Powerwall Gateway...")
+url = f'https://{GW_IP}'
+try:
+    r = requests.get(url, verify=False, timeout=5)
+except requests.exceptions.RequestException as e:
+    print("ERROR: Powerwall not Found")
+    print(" Use: sudo route add -host 192.168.91.1 <Powerwall_IP>")
+    exit(1)
+
+# If user specified gw_pwd on command line
+if len(sys.argv) > 1:
+    gw_pwd = sys.argv[1]
+    print(f" - Using Powerwall Gateway Password: {gw_pwd}")
+else:
+    # Get GW_PWD from User
+    gw_pwd = input("\nEnter Powerwall Gateway Password: ")
 
 # Fetch DIN from Powerwall
-print("Fetching DIN from Powerwall...")
+print(" - Fetching DIN from Powerwall...")
 url = f'https://{GW_IP}/tedapi/din'
 r = requests.get(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False)
-print(f"Response: {r.status_code}")
+#print(f"Response: {r.status_code}")
 din = r.text
-print(f"Powerwall Gateway DIN: {din}")
-print("\n\n")
+print(f" - Connected: Powerwall Gateway DIN: {din}")
 
 # Fetch Configuration from Powerwall
-print("Fetching Configuration from Powerwall...")
+print(" - Fetching Configuration from Powerwall...")
 # Build Protobuf to fetch config
-pb = tedapi_pb2.ParentMessage()
+pb = tedapi_pb2.Message()
 pb.message.deliveryChannel = 1
 pb.message.sender.local = 1
 pb.message.recipient.din = din  # DIN of Powerwall
@@ -51,17 +64,22 @@ url = f'https://{GW_IP}/tedapi/v1'
 r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
     headers={'Content-type': 'application/octet-string'},
     data=pb.SerializeToString())
-print(f"Response Code: {r.status_code}")
+#print(f"Response Code: {r.status_code}")
 # Decode response
-tedapi = tedapi_pb2.ParentMessage()
+tedapi = tedapi_pb2.Message()
 tedapi.ParseFromString(r.content)
-print(f"Data: {tedapi}")
-print("\n\n")
+payload = tedapi.message.config.recv.file.text
+data = json.loads(payload)
+#print(f"Data: {tedapi}")
+# Write config to file
+with open("config.json", "w") as f:
+    f.write(json.dumps(data,indent=4))
+print(f" - Config Written to config.json")
 
 # Fetch Current Status from Powerwall
-print("Fetching Current Status from Powerwall...")
+print(" - Fetching Current Status from Powerwall...")
 # Build Protobuf to fetch status
-pb = tedapi_pb2.ParentMessage()
+pb = tedapi_pb2.Message()
 pb.message.deliveryChannel = 1
 pb.message.sender.local = 1
 pb.message.recipient.din = din  # DIN of Powerwall
@@ -75,13 +93,23 @@ url = f'https://{GW_IP}/tedapi/v1'
 r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
     headers={'Content-type': 'application/octet-string'},
     data=pb.SerializeToString())
-print(f"Response Code: {r.status_code}")
+# print(f"Response Code: {r.status_code}")
 # Decode response
-tedapi = tedapi_pb2.ParentMessage()
+tedapi = tedapi_pb2.Message()
 tedapi.ParseFromString(r.content)
-print(f"Raw Data: {tedapi}")
-print("\n\n")
+#print(f"Raw Data: {tedapi}")
+#print("\n\n")
 payload = tedapi.message.payload.recv.text
 data = json.loads(payload)
-print(f"JSON Data:\n{json.dumps(data,indent=4)}")
-print("\n\n")
+# Write status to file in JSON format
+with open("status.json", "w") as f:
+    f.write(json.dumps(data,indent=4))
+print(f" - Status Written to status.json")
+
+# Ask User to view status.json
+ask = input("\nView status.json? (y/N): ")
+if ask.lower() == "y":
+    print("\n\n")
+    with open("status.json", "r") as f:
+        print(f.read())
+    print("\n\n")

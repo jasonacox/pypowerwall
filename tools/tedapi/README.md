@@ -1,10 +1,12 @@
 # Decode /tedapi API Payloads
 
-This tool is to help decode `/tedapi` API payloads (requests and responses) using a Protobuf schema definition file [tedapi.proto](tedapi.proto).
+The Tesla Powerwall Gateway has an installer API accessible via the Gateway WiFi. This endpoint includes an API `/tedapi` that is used to setup and monitor the Powerwall. 
 
-## Tools
+The API includes configuration and status payloads that use a simple Protobuf schema definition file [tedapi.proto](tedapi.proto). Accessing this API requires the Gateway Password (usually found on the QR code inside the Powerwall access panel)
 
-The [test.py](test.py) script will query the user for the Powerwall Gateway password and proceed to fetch the DIN, the configuration of the Powerwall and then the Powerwall status (TODO).
+## Usage
+
+The [tedapi.py](tedapi.py) script includes a TEDAPI class and runtime tool that will fetch and save the configuration settings and current live status in `config.json` and `status.json` files:
 
 ```bash
 # Download 
@@ -14,15 +16,16 @@ cd pypowerwall/tools/tedapi
 # Install required dependencies
 pip install protobuf requests
 
-# Test Script
-python test.py
-```
+# Get configuration and status
+python tedapi.py
 
-The [decode.py](decode.py) scrip will use the tedapi protobuf schema to decode a specified payload. This is useful for troubleshooting and downloading payloads with curl.
+# Simple Test Proxy 
+python web.py <gateway_password>
 
-```bash
-# Decode payload file
-python decode.py <filename>
+# Web API http://localhost:4444
+#    GET /din - Returns the Powerwall Gateway DIN number
+#    GET /config - Returns the Powerwall Gateway configuration
+#    GET /status - Returns the Powerwall Gateway status
 ```
 
 ## Background
@@ -34,6 +37,15 @@ The protobuf python bindings were created using this:
 ```bash
 # Build python bindings for protobuf schema - tedapi_pb2.py
 protoc --python_out=. tedapi.proto
+```
+
+## Research Details
+
+The [decode.py](decode.py) scrip will use the tedapi protobuf schema to decode a specified payload. This is useful for troubleshooting and downloading payloads with curl.
+
+```bash
+# Decode payload file
+python decode.py <filename>
 ```
 
 ## APIs
@@ -188,6 +200,7 @@ tail {
   value: 1
 }
 ```
+
 
 ## Credit
 
