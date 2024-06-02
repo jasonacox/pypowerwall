@@ -334,18 +334,19 @@ class TEDAPI:
         return battery_level
 
     
-    # Mapping Functions
+    # Vitals API Mapping Function
 
     def vitals(self, force=False):
         """
-        Use tedapi data to create a vitals dictionary 
+        Use tedapi data to create a vitals API dictionary 
         """
-        def calculate_rms_power(Vpeak, Ipeak):
+        def calculate_ac_power(Vpeak, Ipeak):
             Vrms = Vpeak / math.sqrt(2)
             Irms = Ipeak / math.sqrt(2)
             power = Vrms * Irms
             return power
-        def calculate_power(V, I):
+        
+        def calculate_dc_power(V, I):
             power = V * I
             return power
 
@@ -408,10 +409,10 @@ class TEDAPI:
             I_B = p['PVAC_Logging']['PVAC_PVCurrent_B']
             I_C = p['PVAC_Logging']['PVAC_PVCurrent_C']
             I_D = p['PVAC_Logging']['PVAC_PVCurrent_D']
-            P_A = calculate_power(V_A, I_A)
-            P_B = calculate_power(V_B, I_B)
-            P_C = calculate_power(V_C, I_C)
-            P_D = calculate_power(V_D, I_D)
+            P_A = calculate_dc_power(V_A, I_A)
+            P_B = calculate_dc_power(V_B, I_B)
+            P_C = calculate_dc_power(V_C, I_C)
+            P_D = calculate_dc_power(V_D, I_D)
             pvac[pvac_name] = {
                 "PVAC_Fout": p['PVAC_Status']['PVAC_Fout'],
                 "PVAC_GridState": None,
@@ -422,10 +423,10 @@ class TEDAPI:
                 "PVAC_PVCurrent_B": I_B,
                 "PVAC_PVCurrent_C": I_C,
                 "PVAC_PVCurrent_D": I_D,
-                "PVAC_PVMeasuredPower_A": P_A,
-                "PVAC_PVMeasuredPower_B": P_B,
-                "PVAC_PVMeasuredPower_C": P_C,
-                "PVAC_PVMeasuredPower_D": P_D,
+                "PVAC_PVMeasuredPower_A": P_A, # computed
+                "PVAC_PVMeasuredPower_B": P_B, # computed
+                "PVAC_PVMeasuredPower_C": P_C, # computed
+                "PVAC_PVMeasuredPower_D": P_D, # computed
                 "PVAC_PVMeasuredVoltage_A": V_A,
                 "PVAC_PVMeasuredVoltage_B": V_B,
                 "PVAC_PVMeasuredVoltage_C": V_C,
@@ -560,6 +561,13 @@ class TEDAPI:
             if not p['packageSerialNumber']:
                 continue
             name = f"TEPOD--{p['packagePartNumber']}--{p['packageSerialNumber']}"
+            pod = lookup(status, ['esCan', 'bus', 'POD'])[i]
+            energy_remaining = lookup(pod, ['POD_EnergyStatus', 'POD_nom_energy_remaining'])
+            full_pack_energy = lookup(pod, ['POD_EnergyStatus', 'POD_nom_full_pack_energy'])
+            if energy_remaining and full_pack_energy:
+                energy_to_be_charged = full_pack_energy - energy_remaining
+            else:
+                energy_to_be_charged = None
             tepod[name] = {
                 "POD_ActiveHeating": None,
                 "POD_CCVhold": None,
@@ -571,9 +579,9 @@ class TEDAPI:
                 "POD_available_charge_power": None,
                 "POD_available_dischg_power": None,
                 "POD_enable_line": None,
-                "POD_nom_energy_remaining": lookup(p, ['POD_EnergyStatus', 'POD_nom_energy_remaining']),
-                "POD_nom_energy_to_be_charged": None,
-                "POD_nom_full_pack_energy": lookup(p, ['POD_EnergyStatus', 'POD_nom_full_pack_energy']),
+                "POD_nom_energy_remaining": energy_remaining,
+                "POD_nom_energy_to_be_charged": energy_to_be_charged, #computed
+                "POD_nom_full_pack_energy": full_pack_energy,
                 "POD_state": None,
                 "alerts": lookup(p, ['alerts', 'active']) or [],
                 "componentParentDin": None,
