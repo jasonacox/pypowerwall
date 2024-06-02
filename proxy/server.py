@@ -55,7 +55,7 @@ from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t57"
+BUILD = "t58"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -94,6 +94,7 @@ if authpath:
     cf = os.path.join(authpath, ".powerwall")
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
+gw_pwd = os.getenv("PW_GW_PWD", None)
 
 # Global Stats
 proxystats = {
@@ -112,6 +113,7 @@ proxystats = {
     'site_name': "",
     'cloudmode': False,
     'fleetapi': False,
+    'tedapi': False,
     'siteid': None,
     'counter': 0
 }
@@ -170,7 +172,7 @@ try:
                                timeout, pool_maxsize, siteid=siteid,
                                authpath=authpath, authmode=authmode,
                                cachefile=cachefile, auto_select=True, 
-                               retry_modes=True)
+                               retry_modes=True, gw_pwd=gw_pwd)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -202,6 +204,8 @@ else:
     proxystats['mode'] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
+    if pw.client.tedapi:
+        proxystats['tedapi'] = True
 
 pw_control = None
 if control_secret:

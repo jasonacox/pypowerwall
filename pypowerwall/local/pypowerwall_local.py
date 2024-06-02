@@ -10,6 +10,7 @@ import pypowerwall.local.tesla_pb2 as tesla_pb2
 
 from pypowerwall.local.exceptions import LoginError
 from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
+from pypowerwall.tedapi import TEDAPI, GW_IP
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ log = logging.getLogger(__name__)
 class PyPowerwallLocal(PyPowerwallBase):
 
     def __init__(self, host: str, password: str, email: str, timezone: str, timeout: Union[int, Tuple[int, int]],
-                 pwcacheexpire: int, poolmaxsize: int, authmode: str, cachefile: str):
+                 pwcacheexpire: int, poolmaxsize: int, authmode: str, cachefile: str, gw_pw: str = None):
         super().__init__(email)
         self.host = host
         self.password = password
@@ -26,13 +27,14 @@ class PyPowerwallLocal(PyPowerwallBase):
         self.authmode = authmode  # cookie or token
         self.timeout = timeout
         self.timezone = timezone
-
         self.session = None
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcache = {}  # holds the cached data for api
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
+        self.gw_pw = gw_pw  # Powerwall Gateway password for TEDAPI
+        self.tedapi = None  # TEDAPI object
 
     def authenticate(self):
         log.debug('Tesla local mode enabled')
@@ -69,6 +71,15 @@ class PyPowerwallLocal(PyPowerwallBase):
         # Create new session
         if self.auth == {}:
             self._get_session()
+        # Check for TEDAPI capability
+        if self.gw_pw and self.host == GW_IP:
+            # TEDAPI is requested now test
+            self.tedapi = TEDAPI(self.gw_pw)
+            if self.tedapi.connect():
+                log.debug('TEDAPI connected - Vitals metrics enabled')
+            else:
+                log.debug('TEDAPI connection failed - continuing')
+                self.tedapi = None
 
     def _get_session(self):
         # Login and create a new session
@@ -341,6 +352,9 @@ class PyPowerwallLocal(PyPowerwallBase):
         # Pull vitals payload - binary protobuf
         stream = self.poll('/api/devices/vitals')
         if not stream:
+            # Check for TEDAPI mode
+            if self.tedapi:
+                return self.tedapi.vitals()
             return None
 
         # Protobuf payload processing
