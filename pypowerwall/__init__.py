@@ -168,6 +168,7 @@ class Powerwall(object):
         self.retry_modes = retry_modes
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
+        self.tedapi = False
 
         # Make certain assumptions here
         if not self.host:
@@ -233,6 +234,7 @@ class Powerwall(object):
                                                self.gw_pwd)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = False
+                    self.tedapi = self.client.tedapi
                     return True
                 except Exception as exc:
                     log.debug(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")

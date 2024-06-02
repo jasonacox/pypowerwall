@@ -349,12 +349,12 @@ class PyPowerwallLocal(PyPowerwallBase):
                 return None
 
     def vitals(self) -> Optional[dict]:
+        # Check for TEDAPI mode
+        if self.tedapi:
+            return self.tedapi.vitals()
         # Pull vitals payload - binary protobuf
         stream = self.poll('/api/devices/vitals')
         if not stream:
-            # Check for TEDAPI mode
-            if self.tedapi:
-                return self.tedapi.vitals()
             return None
 
         # Protobuf payload processing

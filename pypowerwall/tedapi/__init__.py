@@ -14,11 +14,8 @@
     get_config() - Get the Powerwall Gateway Configuration
     get_status() - Get the Powerwall Gateway Status
     connect() - Connect to the Powerwall Gateway
-    get_api_status() - Get the Powerwall Gateway API Status
     backup_time_remaining() - Get the time remaining in hours
     battery_level() - Get the battery level as a percentage
-    version() - Get the Powerwall Gateway Version
-    uptime() - Get the Powerwall Gateway Uptime
     vitals() - Use tedapi data to create a vitals dictionary
 
  Note:
@@ -309,53 +306,7 @@ class TEDAPI:
             return True
         self.din = None
         return False
-    
-    # Non-TEDAPI Functions - Powerwall Gateway API Status - May not work on all Powerwalls
 
-    def get_api_status(self, force=False):
-        """
-        Get the Powerwall Gateway API Status
-
-        Example:
-        '{"din":"1232100-00-E--TG1234567890","start_time":"2024-05-28 05:02:36 +0800",
-        "up_time_seconds":"107h40m17.358237622s","is_new":false,"version":"24.4.0 0fe780c9",
-        "git_hash":"0fe780c991e052023349431b3c539429d1db036c","commission_count":0,
-        "device_type":"teg","teg_type":"unknown","sync_type":"v2.1","cellular_disabled":false,
-        "can_reboot":true}'
-        """
-        # Check Cache
-        if not force and "api_status" in self.pwcachetime:
-            if time.time() - self.pwcachetime["api_status"] < self.pwcacheexpire:
-                log.debug("Using Cached Payload")
-                return self.pwcache["api_status"]
-        if not force and self.pwcooldown > time.perf_counter():
-            # Rate limited - return None
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-        # Fetch API Status from Powerwall
-        log.debug("Get API Status from Powerwall")
-        url = f'https://{GW_IP}/api/status'
-        r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False)
-        log.debug(f"Response Code: {r.status_code}")
-        if r.status_code in BUSY_CODES:
-            # Rate limited - Switch to cooldown mode for 5 minutes
-            self.pwcooldown = time.perf_counter() + 300
-            log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-            return None
-        if r.status_code != 200:
-            log.error(f"Error fetching API Status: {r.status_code}")
-            return None
-        data = r.text
-        log.debug(f"API Status: {data}")
-        self.pwcachetime["api_status"] = time.time()
-        self.pwcache["api_status"] = data
-        try:
-            data = json.loads(data)
-        except json.JSONDecodeError as e:
-            log.error(f"Error Decoding JSON: {e}")
-            data = {}
-        return data
-    
     # Handy Function to access Powerwall Status
 
     def backup_time_remaining(self, force=False):
@@ -381,22 +332,7 @@ class TEDAPI:
             return None
         battery_level = nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100
         return battery_level
-    
-    def version(self, force=False):
-        """
-        Get the Powerwall Gateway Version
-        """
-        status = self.get_api_status(force)
-        version = lookup(status, ['version'])
-        return version
-    
-    def uptime(self, force=False):
-        """
-        Get the Powerwall Gateway Uptime
-        """
-        status = self.get_api_status(force)
-        uptime = lookup(status, ['up_time_seconds'])
-        return uptime
+
     
     # Mapping Functions
 
@@ -422,11 +358,10 @@ class TEDAPI:
         # Create Header
         header = {}
         header["VITALS"] = {
-            "text": "Device vitals from Tesla Powerwall Gateway TEDAPI",
+            "text": "Device vitals generated from Tesla Powerwall Gateway TEDAPI",
             "timestamp": time.time(),
             "gateway": GW_IP,
-            "firmware": self.version(force),
-            "pyPowerWall": __version__,
+            "pyPowerwall": __version__,
         }
             
         # Create NEURIO block
@@ -555,7 +490,7 @@ class TEDAPI:
                     "nameplateRealPowerW": tesla_nameplate,
                 },
                 "serialNumber": p['packageSerialNumber']
-            },
+            }
             i = i + 1
 
         # Create STSTSM block
@@ -666,7 +601,7 @@ class TEDAPI:
                 "teslaEnergyEcuAttributes": {
                     "ecuType": 224
                 }
-            },
+            }
 
         # Create TESLA block
         tesla = {}
@@ -679,8 +614,8 @@ class TEDAPI:
                     "meterLocation": [
                         1
                     ]
-                },
-            },
+                }
+            }
 
         # Create TESYNC block
         tesync = {}
