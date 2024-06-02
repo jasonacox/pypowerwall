@@ -356,6 +356,7 @@ class TEDAPI:
             return None
 
         # Create Header
+        tesla = {}
         header = {}
         header["VITALS"] = {
             "text": "Device vitals generated from Tesla Powerwall Gateway TEDAPI",
@@ -448,7 +449,7 @@ class TEDAPI:
                 "PVAC_VL2Ground": lookup(p, ['PVAC_Logging', 'PVAC_VL2Ground']),
                 "PVAC_Vout": lookup(p, ['PVAC_Status', 'PVAC_Vout']),
                 "PVI-PowerStatusSetpoint": None,
-                "componentParentDin": None,
+                "componentParentDin": None, # TODO: map to TETHC
                 "firmwareVersion": None,
                 "lastCommunicationTime": None,
                 "manufacturer": "TESLA",
@@ -482,7 +483,7 @@ class TEDAPI:
                     "PVS_StringD_Connected": string_d,
                     "PVS_vLL": lookup(pvs_data, ['PVS_Status', 'PVS_vLL']),
                     "alerts": lookup(pvs_data, ['alerts', 'active']) or [],
-                    "componentParentDin": None,
+                    "componentParentDin": pvac_name,
                     "firmwareVersion": None,
                     "lastCommunicationTime": None,
                     "manufacturer": "TESLA",
@@ -507,7 +508,7 @@ class TEDAPI:
                 "pvInverterAttributes": {
                     "nameplateRealPowerW": tesla_nameplate,
                 },
-                "serialNumber": packageSerialNumber,
+                "serialNumber": f"{packagePartNumber}--{packageSerialNumber}",
             }
             i = i + 1
 
@@ -520,58 +521,17 @@ class TEDAPI:
             "firmwareVersion": None,
             "lastCommunicationTime": None,
             "manufacturer": "TESLA",
-            "partNumber": lookup(config, ['vin']).split('--')[1],
+            "partNumber": lookup(config, ['vin']).split('--')[0],
             "serialNumber": lookup(config, ['vin']).split('--')[-1],
             "teslaEnergyEcuAttributes": {
                 "ecuType": 207
             }
         }
         
-        # Create TEPINV block
+        # Create TETHC, TEPINV and TEPOD blocks
+        tethc = {} # parent
         tepinv = {}
-        i = 0
-        bat_name = {}
-        battry_blocks = config.get('battery_blocks', [])
-        for bat in battry_blocks:
-            bat_name[i] = f"TEPINV--{bat.get('vin', str(i))}"
-            i = i + 1
-        i = 0
-        for p in lookup(status, ['esCan', 'bus', 'PINV']) or {}:
-            if i > len(bat_name) - 1:
-                break
-            name = bat_name[i]
-            tepinv[name] = {
-                "PINV_EnergyCharged": None,
-                "PINV_EnergyDischarged": None,
-                "PINV_Fout": lookup(p, ['PINV_Status', 'PINV_Fout']),
-                "PINV_GridState": lookup(p, ['PINV_Status', 'PINV_GridState']),
-                "PINV_HardwareEnableLine": None,
-                "PINV_PllFrequency": None,
-                "PINV_PllLocked": None,
-                "PINV_Pout": lookup(p, ['PINV_Status', 'PINV_Pout']),
-                "PINV_PowerLimiter": None,
-                "PINV_Qout": None,
-                "PINV_ReadyForGridForming": None,
-                "PINV_State": lookup(p, ['PINV_Status', 'PINV_State']),
-                "PINV_VSplit1": lookup(p, ['PINV_AcMeasurements', 'PINV_VSplit1']),
-                "PINV_VSplit2": lookup(p, ['PINV_AcMeasurements', 'PINV_VSplit2']),
-                "PINV_Vout": lookup(p, ['PINV_Status', 'PINV_Vout']),
-                "alerts": lookup(p, ['alerts', 'active']) or [],
-                "componentParentDin": None,
-                "firmwareVersion": None,
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "partNumber": name.split('--')[1],
-                "serialNumber": name.split('--')[-1],
-                "teslaEnergyEcuAttributes": {
-                    "ecuType": 253
-                }
-            }
-            i = i + 1
-
-        # Create TEPOD block
         tepod = {}
-        tethc = {}
         i = 0
         # Loop through each THC device serial number
         for p in lookup(status, ['esCan', 'bus', 'THC']) or {}:
@@ -579,6 +539,23 @@ class TEDAPI:
                 continue
             packagePartNumber = p.get('packagePartNumber', str(i))
             packageSerialNumber = p.get('packageSerialNumber', str(i))
+            # TETHC block
+            parent_name = f"TETHC--{packagePartNumber}--{packageSerialNumber}"
+            tethc[parent_name] = {
+                "THC_AmbientTemp": None,
+                "THC_State": None,
+                "alerts": [],
+                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
+                "firmwareVersion": None,
+                "lastCommunicationTime": None,
+                "manufacturer": "TESLA",
+                "partNumber": packagePartNumber,
+                "serialNumber": packageSerialNumber,
+                "teslaEnergyEcuAttributes": {
+                    "ecuType": 224
+                }
+            }
+            # TEPOD block
             name = f"TEPOD--{packagePartNumber}--{packageSerialNumber}"
             pod = lookup(status, ['esCan', 'bus', 'POD'])[i]
             energy_remaining = lookup(pod, ['POD_EnergyStatus', 'POD_nom_energy_remaining'])
@@ -603,7 +580,7 @@ class TEDAPI:
                 "POD_nom_full_pack_energy": full_pack_energy,
                 "POD_state": None,
                 "alerts": lookup(p, ['alerts', 'active']) or [],
-                "componentParentDin": None,
+                "componentParentDin": parent_name,
                 "firmwareVersion": None,
                 "lastCommunicationTime": None,
                 "manufacturer": "TESLA",
@@ -613,36 +590,37 @@ class TEDAPI:
                     "ecuType": 226
                 }
             }
-            i = i + 1
-            name = f"TETHC--{packagePartNumber}--{packageSerialNumber}"
-            tethc[name] = {
-                "THC_AmbientTemp": None,
-                "THC_State": None,
-                "alerts": [],
-                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
+            # TEPINV block
+            name = f"TEPINV--{packagePartNumber}--{packageSerialNumber}"
+            pinv = lookup(status, ['esCan', 'bus', 'PINV'])[i]
+            tepinv[name] = {
+                "PINV_EnergyCharged": None,
+                "PINV_EnergyDischarged": None,
+                "PINV_Fout": lookup(pinv, ['PINV_Status', 'PINV_Fout']),
+                "PINV_GridState": lookup(p, ['PINV_Status', 'PINV_GridState']),
+                "PINV_HardwareEnableLine": None,
+                "PINV_PllFrequency": None,
+                "PINV_PllLocked": None,
+                "PINV_Pout": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
+                "PINV_PowerLimiter": None,
+                "PINV_Qout": None,
+                "PINV_ReadyForGridForming": None,
+                "PINV_State": lookup(pinv, ['PINV_Status', 'PINV_State']),
+                "PINV_VSplit1": lookup(pinv, ['PINV_AcMeasurements', 'PINV_VSplit1']),
+                "PINV_VSplit2": lookup(pinv, ['PINV_AcMeasurements', 'PINV_VSplit2']),
+                "PINV_Vout": lookup(pinv, ['PINV_Status', 'PINV_Vout']),
+                "alerts": lookup(pinv, ['alerts', 'active']) or [],
+                "componentParentDin": parent_name,
                 "firmwareVersion": None,
                 "lastCommunicationTime": None,
                 "manufacturer": "TESLA",
                 "partNumber": packagePartNumber,
                 "serialNumber": packageSerialNumber,
                 "teslaEnergyEcuAttributes": {
-                    "ecuType": 224
+                    "ecuType": 253
                 }
             }
-
-        # Create TESLA block
-        tesla = {}
-        name = f"TESLA--{lookup(config, ['vin'])}"
-        tesla[name] = {
-                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "meterAttributes": {
-                    "meterLocation": [
-                        1
-                    ]
-                }
-            }
+            i = i + 1
 
         # Create TESYNC block
         tesync = {}
@@ -716,6 +694,20 @@ class TEDAPI:
                 "ecuType": 259
             }
         }
+
+        # Create TESLA block - tied to TESYNC
+        name = f"TESLA--{packageSerialNumber}"
+        tesla[name] = {
+                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
+                "lastCommunicationTime": None,
+                "manufacturer": "TESLA",
+                "meterAttributes": {
+                    "meterLocation": [
+                        1
+                    ]
+                },
+                "serialNumber": packageSerialNumber
+            }
 
         # Create Vitals Dictionary
         vitals = {
