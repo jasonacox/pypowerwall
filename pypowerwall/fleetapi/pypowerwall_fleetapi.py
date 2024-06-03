@@ -362,7 +362,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             'backup_capable': True,
             'battery_power': 4080,
             'load_power': 4080,
-            'grid_status': 'Active',
+            'grid_status': 'Active', # Solar Only will use "Unknown"
             'grid_services_active': False,
             'grid_power': 0,
             'grid_services_power': 0,
@@ -422,7 +422,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         if power is None:
             data = None
         else:
-            if power.get("grid_status") == "Active":
+            if not not power.get("grid_status") or power.get("grid_status") in ["Active", "Unknown"]:
                 grid_status = "SystemGridConnected"
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
@@ -517,7 +517,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                 alert = "UnscheduledIslandContactorOpen"
             else:
                 alert = ""
-                if power.get("grid_status") == "Active":
+                if power.get("grid_status") in ["Active", "Unknown"]:
                     alert = "SystemConnectedToGrid"
             data = {
                 f'STSTSM--{part_number}--{serial_number}': {
@@ -614,7 +614,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
                 # "grid_status": "Active"
-                if power.get("grid_status") == "Active":
+                if power.get("grid_status") in ["Active", "Unknown"]:
                     grid_status = "SystemGridConnected"
             data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
             data.update({

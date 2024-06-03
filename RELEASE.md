@@ -1,5 +1,39 @@
 # RELEASE NOTES
 
+## v0.10.0 - New Device Vitals
+
+* Add support for `/tedapi` API access on Gateway (requires connectivity to 192.168.91.1 GW and Gateway Password) with access to "config" and "status" data.
+* Adds drop-in replacement for depreciated `/vitals` API and payload using the new TEDAPI class. This allows easy access to Powerwall device vitals.
+* Proxy update to t58 to support TEDAPI with environmental variable `PW_GW_PWD` for Gateway Password. Also added FleetAPI, Cloud and TEDAPI specific GET calls, `/fleetapi`, `/cloud`, and `/tedapi` respectively.
+
+```python
+# How to Activate the TEDAPI Mode
+import pypowerwall
+
+gw_pwd = "GW_PASSWORD" # Gateway Passowrd usually on QR code on Gateway
+
+host = "192.168.91.1" # Direct Connect to GW
+pw = pypowerwall.Powerwall(host,password,email,timezone,gw_pwd=gw_pwd)
+print(pw.vitals())
+```
+
+```python
+# New TEDAPI Class
+import pypowerwall.tedapi
+
+tedapi = pypowerwall.tedapi.TEDAPI("GW_PASSWORD")
+
+config = tedapi.get_config()
+status = tedapi.get_status()
+
+meterAggregates = status.get('control', {}).get('meterAggregates', [])
+for meter in meterAggregates:
+    location = meter.get('location', 'Unknown').title()
+    realPowerW = int(meter.get('realPowerW', 0))
+    print(f"   - {location}: {realPowerW}W")
+
+```
+
 ## v0.9.1 - Bug Fixes and Updates
 
 * Fix bug in time_remaining_hours() and convert print statements in FleetAPI to log messages.

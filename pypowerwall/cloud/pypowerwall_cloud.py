@@ -363,7 +363,7 @@ class PyPowerwallCloud(PyPowerwallBase):
                 "backup_capable": true,
                 "battery_power": -220,
                 "load_power": 1070,
-                "grid_status": "Active",
+                "grid_status": "Active", # Solar Only will use "Unknown"
                 "grid_services_active": false,
                 "grid_power": 0,
                 "grid_services_power": 0,
@@ -535,7 +535,10 @@ class PyPowerwallCloud(PyPowerwallBase):
         if power is None:
             data = None
         else:
-            if lookup(power, ("response", "grid_status")) == "Active":
+            if lookup(power, ("response", "grid_status")) in ["Active", "Unknown"]:
+                grid_status = "SystemGridConnected"
+            elif not lookup(power, ("response", "grid_status")):
+                # If no grid_status, assume on_grid
                 grid_status = "SystemGridConnected"
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
@@ -630,7 +633,7 @@ class PyPowerwallCloud(PyPowerwallBase):
                 alert = "UnscheduledIslandContactorOpen"
             else:
                 alert = ""
-                if lookup(power, ("response", "grid_status")) == "Active":
+                if lookup(power, ("response", "grid_status")) in ["Active", "Unknown"]:
                     alert = "SystemConnectedToGrid"
             data = {
                 f'STSTSM--{part_number}--{serial_number}': {
@@ -733,7 +736,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
                 # "grid_status": "Active"
-                if lookup(power, ("response", "grid_status")) == "Active":
+                if lookup(power, ("response", "grid_status")) in ["Active", "Unknown"]:
                     grid_status = "SystemGridConnected"
             data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
             data.update({

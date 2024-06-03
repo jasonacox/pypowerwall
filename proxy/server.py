@@ -55,7 +55,7 @@ from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t57"
+BUILD = "t58"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -94,6 +94,7 @@ if authpath:
     cf = os.path.join(authpath, ".powerwall")
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
+gw_pwd = os.getenv("PW_GW_PWD", None)
 
 # Global Stats
 proxystats = {
@@ -112,6 +113,7 @@ proxystats = {
     'site_name': "",
     'cloudmode': False,
     'fleetapi': False,
+    'tedapi': False,
     'siteid': None,
     'counter': 0
 }
@@ -170,7 +172,7 @@ try:
                                timeout, pool_maxsize, siteid=siteid,
                                authpath=authpath, authmode=authmode,
                                cachefile=cachefile, auto_select=True, 
-                               retry_modes=True)
+                               retry_modes=True, gw_pwd=gw_pwd)
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -202,6 +204,9 @@ else:
     proxystats['mode'] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
+    if pw.tedapi:
+        proxystats['tedapi'] = True
+        log.info("TEDAPI Mode Enabled for Device Vitals")
 
 pw_control = None
 if control_secret:
@@ -461,11 +466,11 @@ class Handler(BaseHTTPRequestHandler):
                     pod["PW%d_i_out" % idx] = get_value(block, "i_out")
                     pod["PW%d_energy_charged" % idx] = get_value(block, "energy_charged")
                     pod["PW%d_energy_discharged" % idx] = get_value(block, "energy_discharged")
-                    pod["PW%d_off_grid" % idx] = int(get_value(block, "off_grid"))
-                    pod["PW%d_vf_mode" % idx] = int(get_value(block, "vf_mode"))
-                    pod["PW%d_wobble_detected" % idx] = int(get_value(block, "wobble_detected"))
-                    pod["PW%d_charge_power_clamped" % idx] = int(get_value(block, "charge_power_clamped"))
-                    pod["PW%d_backup_ready" % idx] = int(get_value(block, "backup_ready"))
+                    pod["PW%d_off_grid" % idx] = int(get_value(block, "off_grid") or 0)
+                    pod["PW%d_vf_mode" % idx] = int(get_value(block, "vf_mode") or 0)
+                    pod["PW%d_wobble_detected" % idx] = int(get_value(block, "wobble_detected") or 0)
+                    pod["PW%d_charge_power_clamped" % idx] = int(get_value(block, "charge_power_clamped") or 0)
+                    pod["PW%d_backup_ready" % idx] = int(get_value(block, "backup_ready") or 0)
                     pod["PW%d_OpSeqState" % idx] = get_value(block, "OpSeqState")
                     pod["PW%d_version" % idx] = get_value(block, "version")
                     idx = idx + 1
@@ -476,13 +481,13 @@ class Handler(BaseHTTPRequestHandler):
                 v = vitals[device]
                 if device.startswith('TEPOD'):
                     pod["PW%d_name" % idx] = device
-                    pod["PW%d_POD_ActiveHeating" % idx] = int(get_value(v, 'POD_ActiveHeating'))
-                    pod["PW%d_POD_ChargeComplete" % idx] = int(get_value(v, 'POD_ChargeComplete'))
-                    pod["PW%d_POD_ChargeRequest" % idx] = int(get_value(v, 'POD_ChargeRequest'))
-                    pod["PW%d_POD_DischargeComplete" % idx] = int(get_value(v, 'POD_DischargeComplete'))
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(get_value(v, 'POD_PermanentlyFaulted'))
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(get_value(v, 'POD_PersistentlyFaulted'))
-                    pod["PW%d_POD_enable_line" % idx] = int(get_value(v, 'POD_enable_line'))
+                    pod["PW%d_POD_ActiveHeating" % idx] = int(get_value(v, 'POD_ActiveHeating') or 0)
+                    pod["PW%d_POD_ChargeComplete" % idx] = int(get_value(v, 'POD_ChargeComplete') or 0)
+                    pod["PW%d_POD_ChargeRequest" % idx] = int(get_value(v, 'POD_ChargeRequest') or 0)
+                    pod["PW%d_POD_DischargeComplete" % idx] = int(get_value(v, 'POD_DischargeComplete') or 0)
+                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(get_value(v, 'POD_PermanentlyFaulted') or 0)
+                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(get_value(v, 'POD_PersistentlyFaulted') or 0)
+                    pod["PW%d_POD_enable_line" % idx] = int(get_value(v, 'POD_enable_line') or 0)
                     pod["PW%d_POD_available_charge_power" % idx] = get_value(v, 'POD_available_charge_power')
                     pod["PW%d_POD_available_dischg_power" % idx] = get_value(v, 'POD_available_dischg_power')
                     pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(v, 'POD_nom_energy_remaining')
@@ -544,6 +549,38 @@ class Handler(BaseHTTPRequestHandler):
             # Simulate old API call and respond with empty list
             message = '{"problems": []}'
             # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
+        elif self.path.startswith('/tedapi'):
+            # TEDAPI Specific Calls
+            if pw.tedapi:
+                message = '{"error": "Use /tedapi/config, /tedapi/status"}'
+                if self.path == '/tedapi/config':
+                    message = json.dumps(pw.tedapi.get_config())
+                if self.path == '/tedapi/status':
+                    message = json.dumps(pw.tedapi.get_status())
+            else:
+                message = '{"error": "TEDAPI not enabled"}'
+        elif self.path.startswith('/cloud'):
+            # Cloud API Specific Calls
+            if pw.cloudmode and not pw.fleetapi:
+                message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
+                if self.path == '/cloud/battery':
+                    message = json.dumps(pw.client.get_battery())
+                if self.path == '/cloud/power':
+                    message = json.dumps(pw.client.get_site_power())
+                if self.path == '/cloud/config':
+                    message = json.dumps(pw.client.get_site_config())
+            else:
+                message = '{"error": "Cloud API not enabled"}'
+        elif self.path.startswith('/fleetapi'):
+            # FleetAPI Specific Calls
+            if pw.fleetapi:
+                message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
+                if self.path == '/fleetapi/info':
+                    message = json.dumps(pw.client.get_site_info())
+                if self.path == '/fleetapi/status':
+                    message = json.dumps(pw.client.get_live_status())
+            else:
+                message = '{"error": "FleetAPI not enabled"}'
         elif self.path in DISABLED:
             # Disabled API Calls
             message = '{"status": "404 Response - API Disabled"}'

@@ -82,6 +82,10 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
+version_tuple = (0, 10, 0)
+version = __version__ = '%d.%d.%d' % version_tuple
+__author__ = 'jasonacox'
+
 # noinspection PyPackageRequirements
 import urllib3
 
@@ -96,9 +100,6 @@ from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
-version_tuple = (0, 9, 1)
-version = __version__ = '%d.%d.%d' % version_tuple
-__author__ = 'jasonacox'
 
 log = logging.getLogger(__name__)
 log.debug('%s version %s', __name__, __version__)
@@ -121,7 +122,7 @@ class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
-                 fleetapi=False, auto_select=False, retry_modes=False):
+                 fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -142,6 +143,7 @@ class Powerwall(object):
             fleetapi     = If True, use Tesla FleetAPI for data (default is False)
             auto_select  = If True, select the best available mode to connect (default is False)
             retry_modes  = If True, retry connection to Powerwall
+            gw_pwd       = TEG Gateway password (used for local mode access to tedapi)
         """
 
         # Attributes
@@ -165,6 +167,8 @@ class Powerwall(object):
         self.fleetapi = fleetapi
         self.retry_modes = retry_modes
         self.mode = "unknown"
+        self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
+        self.tedapi = False
 
         # Make certain assumptions here
         if not self.host:
@@ -226,9 +230,11 @@ class Powerwall(object):
             if self.mode == "local":
                 try:
                     self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
-                                               self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile)
+                                               self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
+                                               self.gw_pwd)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = False
+                    self.tedapi = self.client.tedapi
                     return True
                 except Exception as exc:
                     log.debug(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
