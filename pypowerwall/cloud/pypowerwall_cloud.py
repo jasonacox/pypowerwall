@@ -535,7 +535,10 @@ class PyPowerwallCloud(PyPowerwallBase):
         if power is None:
             data = None
         else:
-            if lookup(power, ("response", "grid_status")) == "Active":
+            if lookup(power, ("response", "grid_status")) in ["Active", "Unknown"]:
+                grid_status = "SystemGridConnected"
+            elif not lookup(power, ("response", "grid_status")):
+                # If no grid_status, assume on_grid
                 grid_status = "SystemGridConnected"
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"

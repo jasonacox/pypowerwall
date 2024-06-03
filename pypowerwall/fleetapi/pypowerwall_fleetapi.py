@@ -422,7 +422,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         if power is None:
             data = None
         else:
-            if power.get("grid_status") == "Active":
+            if not not power.get("grid_status") or power.get("grid_status") in ["Active", "Unknown"]:
                 grid_status = "SystemGridConnected"
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
