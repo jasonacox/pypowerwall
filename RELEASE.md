@@ -4,7 +4,7 @@
 
 * Add support for `/tedapi` API access on Gateway (requires connectivity to 192.168.91.1 GW and Gateway Password) with access to "config" and "status" data.
 * Adds drop-in replacement for depreciated `/vitals` API and payload using the new TEDAPI class. This allows easy access to Powerwall device vitals.
-* Proxy update to t58 to support TEDAPI with environmental variable `PW_GW_PWD` for Gateway Password.
+* Proxy update to t58 to support TEDAPI with environmental variable `PW_GW_PWD` for Gateway Password. Also added FleetAPI, Cloud and TEDAPI specific GET calls, `/fleetapi`, `/cloud`, and `/tedapi` respectively.
 
 ```python
 # How to Activate the TEDAPI Mode

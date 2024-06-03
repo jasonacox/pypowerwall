@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t58 (2 Jun 2024)
+
+* Add support for pypowerwall v0.10.0 and TEDAPI with environmental variable `PW_GW_PWD` for Gateway Password. This unlocks new device vitals metrics (as seen with `/vitals`). It requires the user to have access to the Powerwall Gateway at 192.168.91.1, either via WiFi for by adding a route to their host or network. 
+* Add FleetAPI, Cloud and TEDAPI specific GET calls, `/fleetapi`, `/cloud`, and `/tedapi` respectively.
+
 ### Proxy t57 (15 May 2024)
 
 * Add pypowerwall v0.9.0 capabilities, specifically supporting Tesla FleetAPI for cloud connections (main data and control).
