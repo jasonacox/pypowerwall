@@ -550,15 +550,37 @@ class Handler(BaseHTTPRequestHandler):
             message = '{"problems": []}'
             # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
         elif self.path.startswith('/tedapi'):
+            # TEDAPI Specific Calls
             if pw.tedapi:
-                # Return TED API Configuration
-                message = '{"error": "Invalid TEDAPI Request"}'
+                message = '{"error": "Use /tedapi/config, /tedapi/status"}'
                 if self.path == '/tedapi/config':
                     message = json.dumps(pw.tedapi.get_config())
                 if self.path == '/tedapi/status':
                     message = json.dumps(pw.tedapi.get_status())
             else:
                 message = '{"error": "TEDAPI not enabled"}'
+        elif self.path.startswith('/cloud'):
+            # Cloud API Specific Calls
+            if pw.cloudmode and not pw.fleetapi:
+                message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
+                if self.path == '/cloud/battery':
+                    message = json.dumps(pw.client.get_battery())
+                if self.path == '/cloud/power':
+                    message = json.dumps(pw.client.get_site_power())
+                if self.path == '/cloud/config':
+                    message = json.dumps(pw.client.get_site_config())
+            else:
+                message = '{"error": "Cloud API not enabled"}'
+        elif self.path.startswith('/fleetapi'):
+            # FleetAPI Specific Calls
+            if pw.fleetapi:
+                message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
+                if self.path == '/fleetapi/info':
+                    message = json.dumps(pw.client.get_site_info())
+                if self.path == '/fleetapi/status':
+                    message = json.dumps(pw.client.get_live_status())
+            else:
+                message = '{"error": "FleetAPI not enabled"}'
         elif self.path in DISABLED:
             # Disabled API Calls
             message = '{"status": "404 Response - API Disabled"}'
