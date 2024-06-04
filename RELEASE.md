@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## v0.10.1 - Hotfix
+## v0.10.1 - TEDAPI Vitals Hotfix
 
 * Fix PVAC lookup error logic in TEDAPI class vitals() function.
+* Add alerts and other elements to PVAC TETHC TESYNC vitals.
 
 ## v0.10.0 - New Device Vitals
 
