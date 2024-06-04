@@ -397,9 +397,9 @@ class TEDAPI:
         pvs = {}
         tesla = {}
         i = 0
-        num = len(lookup(status, ['esCan', 'bus', 'PVAC']))
-        if num != len(lookup(status, ['esCan', 'bus', 'PVS'])):
-            log.warning("PVAC and PVS device count mismatch")
+        num = len(lookup(status, ['esCan', 'bus', 'PVAC']) or {})
+        if num != len(lookup(status, ['esCan', 'bus', 'PVS']) or {}):
+            log.debug("PVAC and PVS device count mismatch in TEDAPI")
         # Loop through each device serial number
         for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
             if not p['packageSerialNumber']:

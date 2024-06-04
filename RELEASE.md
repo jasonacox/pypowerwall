@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.10.1 - Hotfix
+
+* Fix PVAC lookup error logic in TEDAPI class vitals() function.
+
 ## v0.10.0 - New Device Vitals
 
 * Add support for `/tedapi` API access on Gateway (requires connectivity to 192.168.91.1 GW and Gateway Password) with access to "config" and "status" data.
