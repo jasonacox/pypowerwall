@@ -53,14 +53,12 @@ log = logging.getLogger(__name__)
 def lookup(data, keylist):
     """
     Lookup a value in a nested dictionary or return None if not found.
-        data - nested dictionary
-        keylist - list of keys to traverse
+    data - nested dictionary
+    keylist - list of keys to traverse
     """
-    if len(keylist) == 1:
-        return data.get(keylist[0])
     for key in keylist:
-        if key in data:
-            data = data[key]
+        if isinstance(data, dict):
+            data = data.get(key)
         else:
             return None
     return data
@@ -68,10 +66,11 @@ def lookup(data, keylist):
 # TEDAPI Class
 
 class TEDAPI:
-    def __init__(self, gw_pwd, debug=False, pwcacheexpire: int = 5, timeout: int = 5):
+    def __init__(self, gw_pwd, debug=False, pwcacheexpire: int = 5, timeout: int = 5, pwconfigexpire: int = 300) -> None:
         self.debug = debug 
         self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
+        self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
+        self.pwconfigexpire = pwconfigexpire  # seconds to expire config cache
         self.pwcache = {}  # holds the cached data for api
         self.timeout = timeout
         self.pwcooldown = 0
@@ -152,7 +151,7 @@ class TEDAPI:
         """
         # Check Cache
         if not force and "config" in self.pwcachetime:
-            if time.time() - self.pwcachetime["config"] < self.pwcacheexpire:
+            if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
                 log.debug("Using Cached Payload")
                 return self.pwcache["config"]
         if not force and self.pwcooldown > time.perf_counter():
@@ -352,7 +351,7 @@ class TEDAPI:
         status = self.get_status(force)
         config = self.get_config(force)
 
-        if not status or not config:
+        if not isinstance(status, dict) or not isinstance(config, dict):
             return None
 
         # Create Header
@@ -377,13 +376,16 @@ class TEDAPI:
             c = c + 1
             for ct in n['dataRead'] or {}:
                 device = f"NEURIO_CT{i}_"
-                cts[device + "InstRealPower"] = ct['realPowerW']
-                cts[device + "Location"] = "solarRGM"
+                cts[device + "InstRealPower"] = lookup(ct, ['realPowerW'])
+                cts[device + "InstReactivePower"] = lookup(ct, ['reactivePowerVAR'])
+                cts[device + "InstVoltage"] = lookup(ct, ['voltageV'])
+                cts[device + "InstCurrent"] = lookup(ct, ['currentA'])
+                cts[device + "Location"] = None
                 i = i + 1
             rest = {
                 "componentParentDin": lookup(config, ['vin']),
                 "firmwareVersion": None,
-                "lastCommunicationTime": n.get('timestamp', None),
+                "lastCommunicationTime": lookup(n, ['timestamp']),
                 "manufacturer": "NEURIO",
                 "meterAttributes": {
                     "meterLocation": []
@@ -626,8 +628,8 @@ class TEDAPI:
 
         # Create TESYNC block
         tesync = {}
-        sync = lookup(status, ['esCan', 'bus', 'SYNC'])
-        islander = lookup(status, ['esCan', 'bus', 'ISLANDER'])
+        sync = lookup(status, ['esCan', 'bus', 'SYNC']) or {}
+        islander = lookup(status, ['esCan', 'bus', 'ISLANDER']) or {}
         packagePartNumber = sync.get('packagePartNumber', None)
         packageSerialNumber = sync.get('packageSerialNumber', None)
         name = f"TESYNC--{packagePartNumber}--{packageSerialNumber}"
