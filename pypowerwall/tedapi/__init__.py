@@ -497,7 +497,7 @@ class TEDAPI:
                     }
                 }
             tesla_name = f"TESLA--{packagePartNumber}--{packageSerialNumber}"
-            if i < len(config.get('solars', [{}])):
+            if "solars" in config and i < len(config.get('solars', [{}])):
                 tesla_nameplate = config['solars'][i].get('power_rating_watts', None)
                 brand = config['solars'][i].get('brand', None)
             else:
