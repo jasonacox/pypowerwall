@@ -4,6 +4,7 @@
 
 * Fix PVAC lookup error logic in TEDAPI class vitals() function.
 * Add alerts and other elements to PVAC TETHC TESYNC vitals.
+* Update vitals Neurio block to include correct location and adjust RealPower based on power scale factor.
 
 ## v0.10.0 - New Device Vitals
 
