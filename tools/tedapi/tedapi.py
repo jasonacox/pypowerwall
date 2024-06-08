@@ -104,6 +104,7 @@ class TEDAPI:
         url = f'https://{GW_IP}'
         try:
             r = requests.get(url, verify=False, timeout=5)
+            r = True # no exception, so the request was successful
         except requests.exceptions.RequestException as e:
             r = False
             log.error("ERROR: Powerwall not Found",
