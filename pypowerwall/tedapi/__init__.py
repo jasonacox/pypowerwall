@@ -53,14 +53,12 @@ log = logging.getLogger(__name__)
 def lookup(data, keylist):
     """
     Lookup a value in a nested dictionary or return None if not found.
-        data - nested dictionary
-        keylist - list of keys to traverse
+    data - nested dictionary
+    keylist - list of keys to traverse
     """
-    if len(keylist) == 1:
-        return data.get(keylist[0])
     for key in keylist:
-        if key in data:
-            data = data[key]
+        if isinstance(data, dict):
+            data = data.get(key)
         else:
             return None
     return data
@@ -68,10 +66,11 @@ def lookup(data, keylist):
 # TEDAPI Class
 
 class TEDAPI:
-    def __init__(self, gw_pwd, debug=False, pwcacheexpire: int = 5, timeout: int = 5):
+    def __init__(self, gw_pwd, debug=False, pwcacheexpire: int = 5, timeout: int = 5, pwconfigexpire: int = 300) -> None:
         self.debug = debug 
         self.pwcachetime = {}  # holds the cached data timestamps for api
-        self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
+        self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
+        self.pwconfigexpire = pwconfigexpire  # seconds to expire config cache
         self.pwcache = {}  # holds the cached data for api
         self.timeout = timeout
         self.pwcooldown = 0
@@ -152,7 +151,7 @@ class TEDAPI:
         """
         # Check Cache
         if not force and "config" in self.pwcachetime:
-            if time.time() - self.pwcachetime["config"] < self.pwcacheexpire:
+            if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
                 log.debug("Using Cached Payload")
                 return self.pwcache["config"]
         if not force and self.pwcooldown > time.perf_counter():
@@ -352,9 +351,26 @@ class TEDAPI:
         status = self.get_status(force)
         config = self.get_config(force)
 
-        if not status or not config:
+        if not isinstance(status, dict) or not isinstance(config, dict):
             return None
 
+        # Build meter Lookup if available
+        meter_config = {}
+        if "meters" in config:
+            # Loop through each meter and use device_serial as the key
+            for meter in config['meters']:
+                if meter['type'] == "neurio_w2_tcp":
+                    device_serial = lookup(meter, ['connection', 'device_serial'])
+                    if device_serial:
+                        meter_config[device_serial] = {
+                            "type": meter.get('type'),
+                            "location": meter.get('location'),
+                            "cts": meter.get('cts'),
+                            "inverted": meter.get('inverted'),
+                            "connection": meter.get('connection'),
+                            "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
+                        }
+                    
         # Create Header
         tesla = {}
         header = {}
@@ -376,15 +392,29 @@ class TEDAPI:
             i = 0
             c = c + 1
             for ct in n['dataRead'] or {}:
+                # Only show if we have a meter configuration and cts[i] is true
+                cts_bool = lookup(meter_config, [sn, 'cts'])
+                if isinstance(cts_bool, list) and i < len(cts_bool):
+                    if not cts_bool[i]:
+                        # Skip this CT
+                        i = i + 1
+                        continue
+                factor = lookup(meter_config, [sn, 'real_power_scale_factor']) or 1
                 device = f"NEURIO_CT{i}_"
-                cts[device + "InstRealPower"] = ct['realPowerW']
-                cts[device + "Location"] = "solarRGM"
+                cts[device + "InstRealPower"] = lookup(ct, ['realPowerW']) * factor
+                cts[device + "InstReactivePower"] = lookup(ct, ['reactivePowerVAR'])
+                cts[device + "InstVoltage"] = lookup(ct, ['voltageV'])
+                cts[device + "InstCurrent"] = lookup(ct, ['currentA'])
+                cts[device + "Location"] = lookup(meter_config, [sn, 'location'])
                 i = i + 1
+            meter_manufacturer = None
+            if lookup(meter_config, [sn, 'type']) == "neurio_w2_tcp":
+                meter_manufacturer = "NEURIO"                
             rest = {
                 "componentParentDin": lookup(config, ['vin']),
                 "firmwareVersion": None,
-                "lastCommunicationTime": n.get('timestamp', None),
-                "manufacturer": "NEURIO",
+                "lastCommunicationTime": lookup(n, ['timestamp']),
+                "manufacturer": meter_manufacturer,
                 "meterAttributes": {
                     "meterLocation": []
                 },
@@ -397,9 +427,9 @@ class TEDAPI:
         pvs = {}
         tesla = {}
         i = 0
-        num = len(lookup(status, ['esCan', 'bus', 'PVAC']))
-        if num != len(lookup(status, ['esCan', 'bus', 'PVS'])):
-            log.warning("PVAC and PVS device count mismatch")
+        num = len(lookup(status, ['esCan', 'bus', 'PVAC']) or {})
+        if num != len(lookup(status, ['esCan', 'bus', 'PVS']) or {}):
+            log.debug("PVAC and PVS device count mismatch in TEDAPI")
         # Loop through each device serial number
         for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
             if not p['packageSerialNumber']:
@@ -448,6 +478,7 @@ class TEDAPI:
                 "PVAC_VL1Ground": lookup(p, ['PVAC_Logging', 'PVAC_VL1Ground']),
                 "PVAC_VL2Ground": lookup(p, ['PVAC_Logging', 'PVAC_VL2Ground']),
                 "PVAC_Vout": lookup(p, ['PVAC_Status', 'PVAC_Vout']),
+                "alerts": lookup(p, ['alerts', 'active']) or [],
                 "PVI-PowerStatusSetpoint": None,
                 "componentParentDin": None, # TODO: map to TETHC
                 "firmwareVersion": None,
@@ -494,7 +525,7 @@ class TEDAPI:
                     }
                 }
             tesla_name = f"TESLA--{packagePartNumber}--{packageSerialNumber}"
-            if i < len(config.get('solars', [{}])):
+            if "solars" in config and i < len(config.get('solars', [{}])):
                 tesla_nameplate = config['solars'][i].get('power_rating_watts', None)
                 brand = config['solars'][i].get('brand', None)
             else:
@@ -544,7 +575,7 @@ class TEDAPI:
             tethc[parent_name] = {
                 "THC_AmbientTemp": None,
                 "THC_State": None,
-                "alerts": [],
+                "alerts": lookup(p, ['alerts', 'active']) or [],
                 "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
                 "firmwareVersion": None,
                 "lastCommunicationTime": None,
@@ -601,6 +632,7 @@ class TEDAPI:
                 "PINV_HardwareEnableLine": None,
                 "PINV_PllFrequency": None,
                 "PINV_PllLocked": None,
+                "PINV_Pnom": lookup(pinv, ['PINV_PowerCapability', 'PINV_Pnom']),
                 "PINV_Pout": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
                 "PINV_PowerLimiter": None,
                 "PINV_Qout": None,
@@ -624,8 +656,8 @@ class TEDAPI:
 
         # Create TESYNC block
         tesync = {}
-        sync = lookup(status, ['esCan', 'bus', 'SYNC'])
-        islander = lookup(status, ['esCan', 'bus', 'ISLANDER'])
+        sync = lookup(status, ['esCan', 'bus', 'SYNC']) or {}
+        islander = lookup(status, ['esCan', 'bus', 'ISLANDER']) or {}
         packagePartNumber = sync.get('packagePartNumber', None)
         packageSerialNumber = sync.get('packageSerialNumber', None)
         name = f"TESYNC--{packagePartNumber}--{packageSerialNumber}"
@@ -638,16 +670,16 @@ class TEDAPI:
             "ISLAND_FreqL3_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL3_Main']),
             "ISLAND_GridConnected": lookup(islander, ['ISLAND_GridConnection', 'ISLAND_GridConnected']),
             "ISLAND_GridState": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_GridState']),
-            "ISLAND_L1L2PhaseDelta": None,
-            "ISLAND_L1L3PhaseDelta": None,
-            "ISLAND_L1MicrogridOk": None,
-            "ISLAND_L2L3PhaseDelta": None,
-            "ISLAND_L2MicrogridOk": None,
-            "ISLAND_L3MicrogridOk": None,
-            "ISLAND_PhaseL1_Main_Load": None,
-            "ISLAND_PhaseL2_Main_Load": None,
-            "ISLAND_PhaseL3_Main_Load": None,
-            "ISLAND_ReadyForSynchronization": None,
+            "ISLAND_L1L2PhaseDelta":lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L1L2PhaseDelta']),
+            "ISLAND_L1L3PhaseDelta": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L1L3PhaseDelta']),
+            "ISLAND_L1MicrogridOk": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L1MicrogridOk']),
+            "ISLAND_L2L3PhaseDelta": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L2L3PhaseDelta']),
+            "ISLAND_L2MicrogridOk": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L2MicrogridOk']),
+            "ISLAND_L3MicrogridOk": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L3MicrogridOk']),
+            "ISLAND_PhaseL1_Main_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_PhaseL1_Main_Load']),
+            "ISLAND_PhaseL2_Main_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_PhaseL2_Main_Load']),
+            "ISLAND_PhaseL3_Main_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_PhaseL3_Main_Load']),
+            "ISLAND_ReadyForSynchronization": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_ReadyForSynchronization']),
             "ISLAND_VL1N_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL1N_Load']),
             "ISLAND_VL1N_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL1N_Main']),
             "ISLAND_VL2N_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL2N_Load']),
@@ -684,8 +716,8 @@ class TEDAPI:
             "METER_Y_VL3N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL3N']),
             "SYNC_ExternallyPowered": None,
             "SYNC_SiteSwitchEnabled": None,
-            "alerts": [],
-            "componentParentDin": None,
+            "alerts": lookup(sync, ['alerts', 'active']) or [],
+            "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
             "firmwareVersion": None,
             "manufacturer": "TESLA",
             "partNumber": packagePartNumber,

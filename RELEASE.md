@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## v0.10.1 - TEDAPI Vitals Hotfix
+
+* Fix PVAC lookup error logic in TEDAPI class vitals() function.
+* Add alerts and other elements to PVAC TETHC TESYNC vitals.
+* Update vitals Neurio block to include correct location and adjust RealPower based on power scale factor.
+
 ## v0.10.0 - New Device Vitals
 
 * Add support for `/tedapi` API access on Gateway (requires connectivity to 192.168.91.1 GW and Gateway Password) with access to "config" and "status" data.
