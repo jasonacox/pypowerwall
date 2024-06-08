@@ -55,7 +55,7 @@ from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t58"
+BUILD = "t59"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -670,7 +670,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 self.wfile.write(fcontent)
             except Exception as exc:
-                log.debug(f"Socket broken sending PROXY response to client [doGET]: {exc}")
+                if "Broken pipe" in str(exc):
+                    log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
+                    return
+                log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
             return
 
         # Count
@@ -695,7 +698,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(message.encode("utf8"))
         except Exception as exc:
-            log.error(f"Socket broken sending API response to client [doGET]: {exc}")
+            log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
 
 # noinspection PyTypeChecker

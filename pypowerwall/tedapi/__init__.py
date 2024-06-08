@@ -354,6 +354,23 @@ class TEDAPI:
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
 
+        # Build meter Lookup if available
+        meter_config = {}
+        if "meters" in config:
+            # Loop through each meter and use device_serial as the key
+            for meter in config['meters']:
+                if meter['type'] == "neurio_w2_tcp":
+                    device_serial = lookup(meter, ['connection', 'device_serial'])
+                    if device_serial:
+                        meter_config[device_serial] = {
+                            "type": meter.get('type'),
+                            "location": meter.get('location'),
+                            "cts": meter.get('cts'),
+                            "inverted": meter.get('inverted'),
+                            "connection": meter.get('connection'),
+                            "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
+                        }
+                    
         # Create Header
         tesla = {}
         header = {}
@@ -375,18 +392,29 @@ class TEDAPI:
             i = 0
             c = c + 1
             for ct in n['dataRead'] or {}:
+                # Only show if we have a meter configuration and cts[i] is true
+                cts_bool = lookup(meter_config, [sn, 'cts'])
+                if isinstance(cts_bool, list) and i < len(cts_bool):
+                    if not cts_bool[i]:
+                        # Skip this CT
+                        i = i + 1
+                        continue
+                factor = lookup(meter_config, [sn, 'real_power_scale_factor']) or 1
                 device = f"NEURIO_CT{i}_"
-                cts[device + "InstRealPower"] = lookup(ct, ['realPowerW'])
+                cts[device + "InstRealPower"] = lookup(ct, ['realPowerW']) * factor
                 cts[device + "InstReactivePower"] = lookup(ct, ['reactivePowerVAR'])
                 cts[device + "InstVoltage"] = lookup(ct, ['voltageV'])
                 cts[device + "InstCurrent"] = lookup(ct, ['currentA'])
-                cts[device + "Location"] = None
+                cts[device + "Location"] = lookup(meter_config, [sn, 'location'])
                 i = i + 1
+            meter_manufacturer = None
+            if lookup(meter_config, [sn, 'type']) == "neurio_w2_tcp":
+                meter_manufacturer = "NEURIO"                
             rest = {
                 "componentParentDin": lookup(config, ['vin']),
                 "firmwareVersion": None,
                 "lastCommunicationTime": lookup(n, ['timestamp']),
-                "manufacturer": "NEURIO",
+                "manufacturer": meter_manufacturer,
                 "meterAttributes": {
                     "meterLocation": []
                 },

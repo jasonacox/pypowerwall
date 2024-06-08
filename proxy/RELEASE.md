@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t59 (8 Jun 2024)
+
+* Minor fix to send less ambiguous debug information during client disconnects.
+* Update Neurio block to include correct location and adjust RealPower based on power scale factor.
+
 ### Proxy t58 (2 Jun 2024)
 
 * Add support for pypowerwall v0.10.0 and TEDAPI with environmental variable `PW_GW_PWD` for Gateway Password. This unlocks new device vitals metrics (as seen with `/vitals`). It requires the user to have access to the Powerwall Gateway at 192.168.91.1, either via WiFi for by adding a route to their host or network. 
