@@ -88,6 +88,7 @@ class TEDAPI:
         self.pwcooldown = 0
         self.gw_ip = host
         self.din = None
+        self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
         if not gw_pwd:
             raise ValueError("Missing gw_pwd")
         if self.debug:
@@ -331,7 +332,11 @@ class TEDAPI:
         url = f'https://{self.gw_ip}'
         self.din = None
         try:
-            _ = requests.get(url, verify=False, timeout=5)
+            resp = requests.get(url, verify=False, timeout=5)
+            if resp.status_code != 200:
+                # Connected but appears to be Powerwall 3
+                log.debug("Detected Powerwall 3 Gateway")
+                self.pw3 = True
             self.din = self.get_din() 
         except Exception as e:
             log.error(f"Unable to connect to Powerwall Gateway {self.gw_ip}")
