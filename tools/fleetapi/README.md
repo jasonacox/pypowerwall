@@ -20,13 +20,55 @@ Step 1 - Sign in to Tesla Developer Portal and make an App Access Request: See [
 
 Step 2 - Run the `create_pem_key.py` script and place the **public** key on your website at the URL: https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem
 
-Step 3 - Run SETUP using the `fleetapi` script. This will ask for all the details above, generate a partner token, register your partner account, generate a user token needed to access your Powerwall. It will also get the site_id and run a query to pull live power data for your Powerwall.
+Step 3 - Run SETUP using the built in pyPowerwall `fleetapi` setup mode. This will ask for all the details above, generate a partner token, register your partner account, generate a user token needed to access your Powerwall. It will also get the site_id and run a query to pull live power data for your Powerwall.
 
 ```bash
-python fleetapi.py setup
+python -m pypowerall fleetapi
 ```
 
+Configuration data will be stored in `.pypowerwall.fleetap`.
+
 ## Command Line Usage
+
+You can use the command line tool of pypowerwall to monitor and manage your Powerwall vit FleetAPI. Here are the commands:
+
+```
+PyPowerwall Module v0.10.2
+
+commands (run <command> -h to see usage information):
+  fleetapi            Setup Tesla FleetAPI for Cloud Mode access
+  scan                Scan local network for Powerwall gateway
+  set                 Set Powerwall Mode and Reserve Level
+  get                 Get Powerwall Settings and Power Levels
+
+  get options:
+    -format FORMAT    Output format: text, json, csv
+
+  set options:
+    -mode MODE        Powerwall Mode: self_consumption, backup, or autonomous
+    -reserve RESERVE  Set Battery Reserve Level [Default=20]
+    -current          Set Battery Reserve Level to Current Charge
+
+```
+
+Examples
+
+```bash
+# Setup
+python3 -m pypowerwall fleetapi
+
+# Get Current Status
+python3 -m pypowerwall get
+
+# Set battery reserve level to 30%
+python3 -m pypowerwall set -reserve 30
+
+# Set Powerwall mode to autonomous TOU
+python3 -m pypowerwall set -mode autonomous
+
+```
+
+## Stand Alone Tools
 
 The `fleetapi.py` script is a command line utility and python class that you can use to monitor and manage your Powerwall. Here are teh command lines:
 

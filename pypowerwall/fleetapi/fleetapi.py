@@ -100,8 +100,7 @@ class FleetAPI:
         if site_id:
             self.site_id = site_id
         if not self.site_id:
-            log.error("No site_id set or returned by FleetAPI.")
-            raise Exception("No site_id found - Run Setup.")
+            log.debug("No site_id set or returned by FleetAPI - Run Setup.")
 
     # Function to return a random string of characters and numbers
     def random_string(self, length):
