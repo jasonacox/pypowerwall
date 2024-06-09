@@ -1,14 +1,16 @@
 # TEDAPI Metrics
 
-The Tesla Powerwall Gateway has an API accessible via the Gateway WiFi used for installation, monitoring and troubleshooting. This endpoint includes an API `/tedapi` that is used to setup and monitor the Powerwall. 
+The Tesla Powerwall Gateway has an API accessible via the Gateway WiFi used for installation, monitoring and troubleshooting. This API is located at `/tedapi`. 
 
 The API includes configuration and status payloads that can be seen with a simple Protobuf schema definition file [tedapi.proto](tedapi.proto). Accessing this API requires a connection to the endpoint (192.168.91.1) and the Gateway Password (usually found on the QR code inside the Powerwall access panel).
 
-Note: This library and tool will help you read extended data metrics from your system. It is read-only. If you are looking for a way to configure or control your Powerwall, please see the official [FleetAPI](https://github.com/jasonacox/pypowerwall/tree/main/tools/fleetapi#tesla-developer---fleetapi-for-powerwall) options.
+Note: This API will help you read extended data metrics from your system. It is likely capable of changing the configuraiton of the system so please use at your own risk and with caution. 
+
+If you are looking for a way to configure or control your Powerwall, please see the official [FleetAPI](https://github.com/jasonacox/pypowerwall/tree/main/tools/fleetapi#tesla-developer---fleetapi-for-powerwall).
 
 ## Command Line Tools
 
-Starting with pyPowerwall v0.10.0, you can now run the TEDAPI tool via the  command line:
+Starting with pyPowerwall v0.10.0, you can now access the TEDAPI API via the  command line:
 
 ```
 # First, install or upgrade if you haven't
@@ -18,7 +20,7 @@ pip install -U pypowerwall
 python3 -m pypowerwall.tedapi
 ```
 
-It will prompt you for the Powerwall Gateway password (usually printed on the QR code on the gateway), and will then query the Powerwall for config and curren site data. It will display some and write entire payloads to `config.json` and `status.json` in the current directory. Example:
+You will be prompted for the Powerwall Gateway password (usually printed on the QR code on the gateway). It will then query the Powerwall for config and curren site data. The payloads will be written to `config.json` and `status.json` in the current directory. Example:
 
 ```
 Tesla Powerwall Gateway TEDAPI Reader
@@ -48,7 +50,7 @@ Connecting to Powerwall Gateway 192.168.91.1
 
 ## Web Proxy Example
 
-The [web.py](web.py) script is a simple prototype web proxy that will access the TEDAPI data for you.
+The [web.py](web.py) script is a simple prototype web proxy that will access and display the TEDAPI data.
 
 ```python
 # Run imple Test Proxy 
@@ -62,7 +64,7 @@ Go to http://localhost:4444
 
 ## Using the Library
 
-The following python script will connect to the gateway and display power data (see also [test_tedapi.py](test_tedapi.py)):
+The following example will connect to the gateway and display power data (see also [test_tedapi.py](test_tedapi.py)):
 
 ```python
 # Import Class
