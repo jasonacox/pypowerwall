@@ -43,7 +43,23 @@ python3 -m pypowerwall setup
 
 ### Local Setup - Option 1
 
-The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. Unfortunately, Powerwall 3 does not have a local API but you can access it via the cloud (options 2 and 3).
+The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. Unfortunately, the Powerwall 3 does not have a local API but you can access it via the cloud (see options 2 and 3).
+
+Extended Device Vitals Metrics: With version v0.10.0+, pypowerwall can be set to access the TEDAPI on the Gateway to pull additional metrics. However, you will need the Gateway Password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway IP (192.168.91.1). You can have your computer join the Gateway local WiFi or you can add a route:
+
+```bash
+# Example - Change 192.168.0.100 to the IP address of Powerwall Gateway on your LAN
+
+# Linux Ubuntu and RPi - Can add to /etc/rc.local for persistence 
+sudo ip route add 192.168.91.1 via 192.168.0.100
+
+# MacOS 
+sudo route add -host 192.168.91.1 192.168.0.100 # Temporary 
+networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.100 # Persistent
+
+# Windows - Using persistence flag - Administrator Shell
+route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
+```
 
 ### FleetAPI Setup - Option 2
 

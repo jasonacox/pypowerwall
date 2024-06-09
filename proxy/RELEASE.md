@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t60 (9 Jun 2024)
+
+* Add error handling for `/csv` API to accommodate `None` data points.
+
 ### Proxy t59 (8 Jun 2024)
 
 * Minor fix to send less ambiguous debug information during client disconnects.

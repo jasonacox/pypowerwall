@@ -17,7 +17,7 @@
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-        cloudmode, siteid, authpath, authmode)
+        cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -36,6 +36,8 @@
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
     auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
+    retry_modes = False       # If True, retry connection to Powerwall
+    gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
     
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
@@ -82,7 +84,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 10, 2)
+version_tuple = (0, 10, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
