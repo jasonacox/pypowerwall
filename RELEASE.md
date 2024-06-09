@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.10.2 - FleetAPI Hotfix
+
+* Fix FleetAPI setup script as raised in https://github.com/jasonacox/pypowerwall/issues/98.
+* Update FleetAPI documentation and CLI usage.
+
 ## v0.10.1 - TEDAPI Vitals Hotfix
 
 * Fix PVAC lookup error logic in TEDAPI class vitals() function.
