@@ -20,7 +20,7 @@ pip install -U pypowerwall
 python3 -m pypowerwall.tedapi
 ```
 
-You will be prompted for the Powerwall Gateway password (usually printed on the QR code on the gateway). It will then query the Powerwall for config and curren site data. The payloads will be written to `config.json` and `status.json` in the current directory. Example:
+You will be prompted for the Powerwall Gateway password (usually printed on the QR code on the gateway). It will then query the Powerwall for config and current site data. The payloads will be written to `config.json` and `status.json` in the current directory. Example:
 
 ```
 Tesla Powerwall Gateway TEDAPI Reader
@@ -53,7 +53,7 @@ Connecting to Powerwall Gateway 192.168.91.1
 The [web.py](web.py) script is a simple prototype web proxy that will access and display the TEDAPI data.
 
 ```python
-# Run imple Test Proxy 
+# Run Simple Test Proxy 
 python3 web.py <gateway_password>
 ```
 
