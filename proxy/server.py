@@ -55,7 +55,7 @@ from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t59"
+BUILD = "t60"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -330,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/csv':
             # Grid,Home,Solar,Battery,Level - CSV
             contenttype = 'text/plain; charset=utf-8'
-            batterylevel = pw.level()
+            batterylevel = pw.level() or 0
             grid = pw.grid() or 0
             solar = pw.solar() or 0
             battery = pw.battery() or 0

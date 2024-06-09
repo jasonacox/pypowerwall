@@ -41,6 +41,8 @@ setup_args.add_argument("-email", type=str, default=email, help="Email address f
 
 setup_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
+setup_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
+
 scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
 scan_args.add_argument("-timeout", type=float, default=timeout,
                        help=f"Seconds to wait per host [Default={timeout:.1f}]")
@@ -96,6 +98,7 @@ if command == 'setup':
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
         exit(1)
+
 # FleetAPI Mode Setup
 elif command == 'fleetapi':
     from pypowerwall import PyPowerwallFleetAPI
@@ -108,6 +111,12 @@ elif command == 'fleetapi':
     else:
         print("Setup Aborted.")
         exit(1)
+
+# TEDAPI Test
+elif command == 'tedapi':
+    from pypowerwall.tedapi.__main__ import run_tedapi_test
+    run_tedapi_test(auto=True, debug=args.debug)
+
 # Run Scan
 elif command == 'scan':
     from pypowerwall import scan
@@ -118,6 +127,7 @@ elif command == 'scan':
     hosts = args.hosts
     timeout = args.timeout
     scan.scan(color, timeout, hosts, ip)
+
 # Set Powerwall Mode
 elif command == 'set':
     # If no arguments, print usage
@@ -146,6 +156,7 @@ elif command == 'set':
         current = float(pw.level())
         print("Setting Powerwall Reserve to Current Charge Level %s" % current)
         pw.set_reserve(current)
+
 # Get Powerwall Mode
 elif command == 'get':
     import pypowerwall

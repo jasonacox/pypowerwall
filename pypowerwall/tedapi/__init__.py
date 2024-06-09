@@ -39,6 +39,7 @@ import json
 import time
 from pypowerwall import __version__
 import math
+import sys
 
 # TEDAPI Fixed Gateway IP Address
 GW_IP = "192.168.91.1"
@@ -48,6 +49,8 @@ BUSY_CODES = [429, 503]
 
 # Setup Logging
 log = logging.getLogger(__name__)
+log.debug('%s version %s', __name__, __version__)
+log.debug('Python %s on %s', sys.version, sys.platform)
 
 # Utility Functions
 def lookup(data, keylist):
@@ -64,7 +67,6 @@ def lookup(data, keylist):
     return data
 
 # TEDAPI Class
-
 class TEDAPI:
     def __init__(self, gw_pwd, debug=False, pwcacheexpire: int = 5, timeout: int = 5, pwconfigexpire: int = 300) -> None:
         self.debug = debug 
@@ -78,15 +80,26 @@ class TEDAPI:
         if not gw_pwd:
             raise ValueError("Missing gw_pwd")
         if self.debug:
-            log.setLevel(logging.DEBUG)
+            self.set_debug(True)
         self.gw_pwd = gw_pwd
         # Connect to Powerwall Gateway
         if not self.connect():
             log.error("Failed to connect to Powerwall Gateway")
-            raise ValueError("Failed to connect to Powerwall Gateway")
-
+            
     # TEDAPI Functions
 
+    def set_debug(toggle=True, color=True):
+        """Enable verbose logging"""
+        if toggle:
+            if color:
+                logging.basicConfig(format='\x1b[31;1m%(levelname)s:%(message)s\x1b[0m', level=logging.DEBUG)
+            else:
+                logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)
+            log.setLevel(logging.DEBUG)
+            log.debug("%s [%s]\n" % (__name__, __version__))
+        else:
+            log.setLevel(logging.NOTSET)
+            
     def get_din(self, force=False):
         """
         Get the DIN from the Powerwall Gateway
@@ -108,6 +121,9 @@ class TEDAPI:
             # Rate limited - Switch to cooldown mode for 5 minutes
             self.pwcooldown = time.perf_counter() + 300
             log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+            return None
+        if r.status_code == 403:
+            log.error("Access Denied: Check your Gateway Password")
             return None
         if r.status_code != 200:
             log.error(f"Error fetching DIN: {r.status_code}")
@@ -157,6 +173,11 @@ class TEDAPI:
         if not force and self.pwcooldown > time.perf_counter():
                 # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
+                return None
+        # Check Connection
+        if not self.din:
+            if not self.connect():
+                log.error("Not Connected - Unable to get configuration")
                 return None
         # Fetch Configuration from Powerwall
         log.debug("Get Configuration from Powerwall")
@@ -245,6 +266,11 @@ class TEDAPI:
                 # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
+        # Check Connection
+        if not self.din:
+            if not self.connect():
+                log.error("Not Connected - Unable to get status")
+                return None
         # Fetch Current Status from Powerwall
         log.debug("Get Status from Powerwall")
         # Build Protobuf to fetch status
@@ -292,18 +318,15 @@ class TEDAPI:
         # Test IP Connection to Powerwall Gateway
         log.debug(f"Testing Connection to Powerwall Gateway: {GW_IP}")
         url = f'https://{GW_IP}'
-        try:
-            r = requests.get(url, verify=False, timeout=5)
-        except requests.exceptions.RequestException as e:
-            r = False
-            log.error("ERROR: Powerwall not Found",
-                      f"Try: sudo route add -host <Powerwall_IP> {GW_IP}")
-        if r:
-            # Attempt to fetch DIN from Powerwall
-            self.din = self.get_din()
-            return True
         self.din = None
-        return False
+        try:
+            _ = requests.get(url, verify=False, timeout=5)
+            self.din = self.get_din() 
+        except Exception as e:
+            log.error(f"Unable to connect to Powerwall Gateway {GW_IP}")
+            log.error("Please verify your your host has a route to the Gateway.")
+            log.error(f"Error Details: {e}")
+        return self.din
 
     # Handy Function to access Powerwall Status
 

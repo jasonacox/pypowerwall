@@ -17,7 +17,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'requests',      
-        'protobuf',        
+        'protobuf>=3.20.0',        
         'teslapy',     
     ],
     classifiers=[
