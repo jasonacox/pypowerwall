@@ -7,7 +7,16 @@
  TEDAPI on 192.168.91.1 as used by the Tesla One app.
 
  Class:
-    TEDAPI - Tesla TEDAPI Class
+    TEDAPI(gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
+              pwconfigexpire: int = 300, host: str = GW_IP) - Initialize TEDAPI
+    
+ Parameters:
+    gw_pwd - Powerwall Gateway Password
+    debug - Enable Debug Output
+    pwcacheexpire - Cache Expiration in seconds
+    timeout - API Timeout in seconds
+    pwconfigexpire - Configuration Cache Expiration in seconds
+    host - Powerwall Gateway IP Address (default: 192.168.91.1)
 
  Functions:
     get_din() - Get the DIN from the Powerwall Gateway
@@ -68,7 +77,8 @@ def lookup(data, keylist):
 
 # TEDAPI Class
 class TEDAPI:
-    def __init__(self, gw_pwd, debug=False, pwcacheexpire: int = 5, timeout: int = 5, pwconfigexpire: int = 300) -> None:
+    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5, 
+                 pwconfigexpire: int = 300, host: str = GW_IP) -> None:
         self.debug = debug 
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
@@ -76,6 +86,7 @@ class TEDAPI:
         self.pwcache = {}  # holds the cached data for api
         self.timeout = timeout
         self.pwcooldown = 0
+        self.gw_ip = host
         self.din = None
         if not gw_pwd:
             raise ValueError("Missing gw_pwd")
@@ -115,7 +126,7 @@ class TEDAPI:
             return None
         # Fetch DIN from Powerwall
         log.debug("Fetching DIN from Powerwall...")
-        url = f'https://{GW_IP}/tedapi/din'
+        url = f'https://{self.gw_ip}/tedapi/din'
         r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False)
         if r.status_code in BUSY_CODES:
             # Rate limited - Switch to cooldown mode for 5 minutes
@@ -189,7 +200,7 @@ class TEDAPI:
         pb.message.config.send.num = 1
         pb.message.config.send.file = "config.json"
         pb.tail.value = 1
-        url = f'https://{GW_IP}/tedapi/v1'
+        url = f'https://{self.gw_ip}/tedapi/v1'
         r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
             headers={'Content-type': 'application/octet-string'},
             data=pb.SerializeToString())
@@ -284,7 +295,7 @@ class TEDAPI:
         pb.message.payload.send.code = b'0\201\206\002A\024\261\227\245\177\255\265\272\321r\032\250\275j\305\030\2300\266\022B\242\264pO\262\024vd\267\316\032\f\376\322V\001\f\177*\366\345\333g_/`\v\026\225_qc\023$\323\216y\276~\335A1\022x\002Ap\a_\264\037]\304>\362\356\005\245V\301\177*\b\307\016\246]\037\202\242\353I~\332\317\021\336\006\033q\317\311\264\315\374\036\365s\272\225\215#o!\315z\353\345z\226\365\341\f\265\256r\373\313/\027\037'
         pb.message.payload.send.b.value = "{}"
         pb.tail.value = 1
-        url = f'https://{GW_IP}/tedapi/v1'
+        url = f'https://{self.gw_ip}/tedapi/v1'
         r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
             headers={'Content-type': 'application/octet-string'},
             data=pb.SerializeToString())
@@ -316,14 +327,14 @@ class TEDAPI:
         Connect to the Powerwall Gateway
         """
         # Test IP Connection to Powerwall Gateway
-        log.debug(f"Testing Connection to Powerwall Gateway: {GW_IP}")
-        url = f'https://{GW_IP}'
+        log.debug(f"Testing Connection to Powerwall Gateway: {self.gw_ip}")
+        url = f'https://{self.gw_ip}'
         self.din = None
         try:
             _ = requests.get(url, verify=False, timeout=5)
             self.din = self.get_din() 
         except Exception as e:
-            log.error(f"Unable to connect to Powerwall Gateway {GW_IP}")
+            log.error(f"Unable to connect to Powerwall Gateway {self.gw_ip}")
             log.error("Please verify your your host has a route to the Gateway.")
             log.error(f"Error Details: {e}")
         return self.din
@@ -400,7 +411,7 @@ class TEDAPI:
         header["VITALS"] = {
             "text": "Device vitals generated from Tesla Powerwall Gateway TEDAPI",
             "timestamp": time.time(),
-            "gateway": GW_IP,
+            "gateway": self.gw_ip,
             "pyPowerwall": __version__,
         }
             

@@ -45,7 +45,7 @@ def run_tedapi_test(auto=False, debug=False):
     # Check for arguments using argparse
     parser = argparse.ArgumentParser(description='Tesla Powerwall Gateway TEDAPI Reader')
     parser.add_argument('gw_pwd', nargs='?', help='Powerwall Gateway Password')
-    # Add debug
+    parser.add_argument('--gw_ip', default=GW_IP, help='Powerwall Gateway IP Address')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     # Parse arguments
     args = parser.parse_args()
@@ -55,6 +55,7 @@ def run_tedapi_test(auto=False, debug=False):
         gw_pwd = None
     if args.debug:
         set_debug(True)
+    GW_IP = args.gw_ip
 
     # Check that GW_IP is listening to port 443
     url = f'https://{GW_IP}'
@@ -89,7 +90,7 @@ def run_tedapi_test(auto=False, debug=False):
     # Create TEDAPI Object and get Configuration and Status
     print()
     print(f"Connecting to Powerwall Gateway {GW_IP}")
-    ted = TEDAPI(gw_pwd)
+    ted = TEDAPI(gw_pwd, host=GW_IP)
     if ted.din is None:
         print("\nERROR: Unable to connect to Powerwall Gateway. Check your password and try again")
         sys.exit(1)
