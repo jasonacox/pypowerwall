@@ -1,12 +1,96 @@
-# Decode /tedapi API Payloads
+# TEDAPI Metrics
 
-The Tesla Powerwall Gateway has an installer API accessible via the Gateway WiFi. This endpoint includes an API `/tedapi` that is used to setup and monitor the Powerwall. 
+The Tesla Powerwall Gateway has an API accessible via the Gateway WiFi used for installation, monitoring and troubleshooting. This endpoint includes an API `/tedapi` that is used to setup and monitor the Powerwall. 
 
-The API includes configuration and status payloads that use a simple Protobuf schema definition file [tedapi.proto](tedapi.proto). Accessing this API requires the Gateway Password (usually found on the QR code inside the Powerwall access panel)
+The API includes configuration and status payloads that can be seen with a simple Protobuf schema definition file [tedapi.proto](tedapi.proto). Accessing this API requires a connection to the endpoint (192.168.91.1) and the Gateway Password (usually found on the QR code inside the Powerwall access panel).
 
-## Usage
+Note: This library and tool will help you read extended data metrics from your system. It is read-only. If you are looking for a way to configure or control your Powerwall, please see the official [FleetAPI](https://github.com/jasonacox/pypowerwall/tree/main/tools/fleetapi#tesla-developer---fleetapi-for-powerwall) options.
 
-The [tedapi.py](tedapi.py) script includes a TEDAPI class and runtime tool that will fetch and save the configuration settings and current live status in `config.json` and `status.json` files:
+## Command Line Tools
+
+Starting with pyPowerwall v0.10.0, you can now run the TEDAPI tool via the  command line:
+
+```
+# First, install or upgrade if you haven't
+pip install -U pypowerwall
+
+# Run the tool
+python3 -m pypowerwall.tedapi
+```
+
+It will prompt you for the Powerwall Gateway password (usually printed on the QR code on the gateway), and will then query the Powerwall for config and curren site data. It will display some and write entire payloads to `config.json` and `status.json` in the current directory. Example:
+
+```
+Tesla Powerwall Gateway TEDAPI Reader
+
+Enter Powerwall Gateway Password: **********
+
+Connecting to Powerwall Gateway 192.168.91.1
+
+ - Configuration:
+   - Site Name: Energy Gateway
+   - Battery Commission Date: 2022-09-25T12:01:00-07:00
+   - VIN:  1232100-00-E--TG123456789012
+   - Number of Powerwalls: 2
+
+ - Power Data:
+   - Battery Charge: 100.0% (25772Wh of 25772Wh)
+   - Battery: -10W
+   - Site: -337W
+   - Load: 1108W
+   - Solar: 1460W
+   - Solar_Rgm: 1447W
+   - Generator: 0W
+   - Conductor: 0W
+
+ - Configuration and Status saved to config.json and status.json
+ ```
+
+## Web Proxy Example
+
+The [web.py](web.py) script is a simple prototype web proxy that will access the TEDAPI data for you.
+
+```python
+# Run imple Test Proxy 
+python3 web.py <gateway_password>
+```
+
+Go to http://localhost:4444
+- GET /din - Returns the Powerwall Gateway DIN number
+- GET /config - Returns the Powerwall Gateway configuration
+- GET /status - Returns the Powerwall Gateway status
+
+## Using the Library
+
+The following python script will connect to the gateway and display power data (see also [test_tedapi.py](test_tedapi.py)):
+
+```python
+# Import Class
+from pypowerwall.tedapi import TEDAPI
+
+gw_pwd = "THEGWPASS"
+
+# Connect to Gateway
+gw = TEDAPI(gw_pwd)
+
+# Grab the Config and Live Status
+config = gw.get_config()
+status = gw.get_status()
+
+# Print
+site_info = config.get('site_info', {})
+site_name = site_info.get('site_name', 'Unknown')
+print(f"My Site: {site_name}")
+meterAggregates = status.get('control', {}).get('meterAggregates', [])
+for meter in meterAggregates:
+    location = meter.get('location', 'Unknown').title()
+    realPowerW = int(meter.get('realPowerW', 0))
+    print(f"   - {location}: {realPowerW}W")
+```
+
+## Additional Research
+
+The [tedapi_orig.py](tetedapi_origdapi.py) script includes the original TEDAPI class and runtime tool that will fetch and save the configuration settings and current live status in `config.json` and `status.json` files:
 
 ```bash
 # Download 
@@ -17,15 +101,7 @@ cd pypowerwall/tools/tedapi
 pip install protobuf requests
 
 # Get configuration and status
-python tedapi.py
-
-# Simple Test Proxy 
-python web.py <gateway_password>
-
-# Web API http://localhost:4444
-#    GET /din - Returns the Powerwall Gateway DIN number
-#    GET /config - Returns the Powerwall Gateway configuration
-#    GET /status - Returns the Powerwall Gateway status
+python tedapi_orig.py
 ```
 
 ## Background
@@ -39,8 +115,6 @@ The protobuf python bindings were created using this:
 protoc --python_out=. tedapi.proto
 ```
 
-## Research Details
-
 The [decode.py](decode.py) scrip will use the tedapi protobuf schema to decode a specified payload. This is useful for troubleshooting and downloading payloads with curl.
 
 ```bash
@@ -48,7 +122,7 @@ The [decode.py](decode.py) scrip will use the tedapi protobuf schema to decode a
 python decode.py <filename>
 ```
 
-## APIs
+## The TEDAPI APIs
 
 ### GET /tedapi/din
 

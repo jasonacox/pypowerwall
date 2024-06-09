@@ -154,6 +154,6 @@ proxy/teslapy
 .cachefile
 .pypowerwall.fleetapi
 .auth
-tools/tedapi/status.json
-tools/tedapi/config.json
 j
+config.json
+status.json

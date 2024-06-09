@@ -23,8 +23,8 @@
  For more information see https://github.com/jasonacox/pypowerwall
 """
 
-from flask import Flask, request, jsonify
-from tedapi import TEDAPI
+from flask import Flask, jsonify
+from pypowerwall.tedapi import TEDAPI
 
 app = Flask(__name__)
 
@@ -42,6 +42,17 @@ if not tedapi.din:
     print('Failed to connect to Powerwall')
     sys.exit(1)
 print(f"Connected to Powerwall: {tedapi.din}")
+
+# Landing Page - links to both APIs
+@app.route('/', methods=['GET'])
+def home():
+    return '''<h1>pyPowerWall - TEDAPI Web Server</h1>
+        <p>A prototype API for accessing the Tesla Powerwall Gateway TEDAPI.</p>
+        <p>Use the following links:</p>
+        <p><a href="/din">/din</a> - Returns the Powerwall Gateway DIN number</p>
+        <p><a href="/config">/config</a> - Returns the Powerwall Gateway configuration</p>
+        <p><a href="/status">/status</a> - Returns the Powerwall Gateway status</p>
+    '''
 
 @app.route('/din', methods=['GET'])
 def din():
