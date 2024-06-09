@@ -1,11 +1,13 @@
 # RELEASE NOTES
 
-## v0.10.3 - TEDAPI Connect
+## v0.10.3 - TEDAPI Connect Update
 
 * Update `setup.py` to include dependencies on `protobuf>=3.20.0`.
 * Add TEDAPI `connect()` logic to better validate Gateway endpoint access.
 * Add documentation for TEDAPI setup.
 * Update CLI to support TEDAPI calls.
+* Proxy t60 - Fix edge case where `/csv` API will error due to NoneType inputs.
+* Add TEDAPI argument to set custom GW IP address.
 
 ```bash
 # Connect to TEDAPI and pull data
@@ -14,6 +16,7 @@ python3 -m pypowerwall tedapi
 # Direct call to TEDAPI class test function (optional password)
 python3 -m pypowerwall.tedapi GWPASSWORD
 python3 -m pypowerwall.tedapi --debug
+python3 -m pypowerwall.tedapi --gw_ip 192.168.91.1 --debug
 ```
 
 ## v0.10.2 - FleetAPI Hotfix
