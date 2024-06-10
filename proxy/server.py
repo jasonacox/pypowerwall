@@ -208,7 +208,7 @@ else:
     if pw.tedapi:
         proxystats['tedapi'] = True
         proxystats['tedapi_mode'] = pw.tedapi_mode
-        log.info("TEDAPI Mode Enabled for Device Vitals")
+        log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
 pw_control = None
 if control_secret:
