@@ -7,9 +7,6 @@
 """
 
 def run_tedapi_test(auto=False, debug=False):
-    # Print header
-    print("pyPowerwall - Powerwall Gateway TEDAPI Reader")
-
     # Imports
     from pypowerwall.tedapi import TEDAPI, GW_IP
     from pypowerwall import __version__
@@ -18,6 +15,9 @@ def run_tedapi_test(auto=False, debug=False):
     import argparse
     import requests
     import logging
+
+    # Print header
+    print(f"pyPowerwall - Powerwall Gateway TEDAPI Reader [v{__version__}]")
 
     # Setup Logging
     log = logging.getLogger(__name__)

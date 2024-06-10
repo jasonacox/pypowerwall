@@ -55,7 +55,7 @@ from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t60"
+BUILD = "t61"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -74,7 +74,7 @@ web_root = os.path.join(os.path.dirname(__file__), "web")
 # Configuration for Proxy - Check for environmental variables 
 #    and always use those if available (required for Docker)
 bind_address = os.getenv("PW_BIND_ADDRESS", "")
-password = os.getenv("PW_PASSWORD", "password")
+password = os.getenv("PW_PASSWORD", "")
 email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
@@ -114,6 +114,7 @@ proxystats = {
     'cloudmode': False,
     'fleetapi': False,
     'tedapi': False,
+    'tedapi_mode': "off",
     'siteid': None,
     'counter': 0
 }
@@ -206,6 +207,7 @@ else:
     log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
     if pw.tedapi:
         proxystats['tedapi'] = True
+        proxystats['tedapi_mode'] = pw.tedapi_mode
         log.info("TEDAPI Mode Enabled for Device Vitals")
 
 pw_control = None
@@ -635,24 +637,30 @@ class Handler(BaseHTTPRequestHandler):
                     proxy_path = proxy_path[1:]
                 pw_url = "https://{}/{}".format(pw.host, proxy_path)
                 log.debug("Proxy request to: {}".format(pw_url))
-                if pw.authmode == "token":
-                    r = pw.client.session.get(
-                        url=pw_url,
-                        headers=pw.auth,
-                        verify=False,
-                        stream=True,
-                        timeout=pw.timeout
-                    )
-                else:
-                    r = pw.client.session.get(
-                        url=pw_url,
-                        cookies=pw.auth,
-                        verify=False,
-                        stream=True,
-                        timeout=pw.timeout
-                    )
-                fcontent = r.content
-                ftype = r.headers['content-type']
+                try:
+                    if pw.authmode == "token":
+                        r = pw.client.session.get(
+                            url=pw_url,
+                            headers=pw.auth,
+                            verify=False,
+                            stream=True,
+                            timeout=pw.timeout
+                        )
+                    else:
+                        r = pw.client.session.get(
+                            url=pw_url,
+                            cookies=pw.auth,
+                            verify=False,
+                            stream=True,
+                            timeout=pw.timeout
+                        )
+                    fcontent = r.content
+                    ftype = r.headers['content-type']
+                except AttributeError as e:
+                    # Display 404
+                    log.debug("File not found: {}".format(self.path))
+                    fcontent = bytes("Not Found", 'utf-8')
+                    ftype = "text/plain"
 
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):

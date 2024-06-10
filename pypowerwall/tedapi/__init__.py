@@ -346,17 +346,39 @@ class TEDAPI:
 
     # Handy Function to access Powerwall Status
 
+    def current_power(self, location=None, force=False):
+        """
+        Get the current power in watts for a location: 
+            BATTERY, SITE, LOAD, SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR
+        """
+        status = self.get_status(force)
+        power = lookup(status, ['control', 'meterAggregates'])
+        if not isinstance(power, list):
+            return None
+        if location:
+            for p in power:
+                if p.get('location') == location.upper():
+                    return p.get('realPowerW')
+        else:
+            # Build a dictionary of all locations
+            power = {}
+            for p in power:
+                power[p.get('location')] = p.get('realPowerW')
+        return power
+    
+
     def backup_time_remaining(self, force=False):
         """
         Get the time remaining in hours
         """
         status = self.get_status(force)
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
-        power = lookup(status, ['control', 'meterAggregates', 0, 'realPowerW'])
-        if not nominalEnergyRemainingWh or not power:
+        load = self.current_power('LOAD', force)
+        if not nominalEnergyRemainingWh or not load:
             return None
-        time_remaining = nominalEnergyRemainingWh / power 
+        time_remaining = nominalEnergyRemainingWh / load
         return time_remaining
+
     
     def battery_level(self, force=False):
         """
@@ -794,5 +816,69 @@ class TEDAPI:
             **tethc,
         }
         return vitals
+    
+
+    def get_blocks(self, force=False):
+        """
+        Get the list of battery blocks from the Powerwall Gateway
+        """
+        status = self.get_status(force)
+        config = self.get_config(force)
+
+        if not isinstance(status, dict) or not isinstance(config, dict):
+            return None
+        block = {} 
+        i = 0
+        # Loop through each THC device serial number
+        for p in lookup(status, ['esCan', 'bus', 'THC']) or {}:
+            if not p['packageSerialNumber']:
+                continue
+            packagePartNumber = p.get('packagePartNumber', str(i))
+            packageSerialNumber = p.get('packageSerialNumber', str(i))
+            # THC block
+            name = f"{packagePartNumber}--{packageSerialNumber}"
+            block[name] = {
+                "Type": "",
+                "PackagePartNumber": packagePartNumber,
+                "PackageSerialNumber": packageSerialNumber,
+                "disabled_reasons": [],
+                "pinv_state": None,
+                "pinv_grid_state": None,
+                "nominal_energy_remaining": None,
+                "nominal_full_pack_energy": None,
+                "p_out": None,
+                "q_out": None,
+                "v_out": None,
+                "f_out": None,
+                "i_out": None,
+                "energy_charged": None,
+                "energy_discharged": None,
+                "off_grid": None,
+                "vf_mode": None,
+                "wobble_detected": None,
+                "charge_power_clamped": None,
+                "backup_ready": None,
+                "OpSeqState": None,
+                "version": None
+            }
+            # POD block
+            pod = lookup(status, ['esCan', 'bus', 'POD'])[i]
+            energy_remaining = lookup(pod, ['POD_EnergyStatus', 'POD_nom_energy_remaining'])
+            full_pack_energy = lookup(pod, ['POD_EnergyStatus', 'POD_nom_full_pack_energy'])
+            block[name].update({
+                "nominal_energy_remaining": energy_remaining,
+                "nominal_full_pack_energy": full_pack_energy,
+            })
+            # INV block
+            pinv = lookup(status, ['esCan', 'bus', 'PINV'])[i]
+            block[name].update({
+                "f_out": lookup(pinv, ['PINV_Status', 'PINV_Fout']),
+                "pinv_state": lookup(p, ['PINV_Status', 'PINV_State']),
+                "pinv_grid_state": lookup(p, ['PINV_Status', 'PINV_GridState']),
+                "p_out": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
+                "v_out": lookup(pinv, ['PINV_Status', 'PINV_Vout']),
+            })
+            i = i + 1
+        return block
     
     # End of TEDAPI Class

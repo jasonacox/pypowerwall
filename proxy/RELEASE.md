@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t61 (9 Jun 2024)
+
+* Fix 404 bug that would throw error when user requested non-supported URI.
+* Add TEDAPI mode to stats.
+
 ### Proxy t60 (9 Jun 2024)
 
 * Add error handling for `/csv` API to accommodate `None` data points.

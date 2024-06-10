@@ -1,5 +1,21 @@
 # RELEASE NOTES
 
+## v0.10.4 - Powerwall 3 Support
+
+* Add local support for Powerwall 3 using TEDAPI. 
+* TEDAPI will activate in `hybrid` (using TEDAPI for vitals and existing local APIs for other metrics) or `full` (all data from TEDAPI) mode to provide better Powerwall 3 support.
+* The `full` mode will automatically activate when the customer `password` is blank and `gw_pwd` is set.
+
+```python
+import pypowerwall
+
+# Activate HYBRID mode (for Powerwall / 2 / + systems)
+pw = pypowerwall.Powerwall("192.168.91.1", password=PASSWORD, email=EMAIL, gw_pwd=PW_GW_PWD)
+
+# Activate FULL mode (for Powerwall 3 systems)
+pw = pypowerwall.Powerwall("192.168.91.1", gw_pwd=PW_GW_PWD)
+```
+
 ## v0.10.3 - TEDAPI Connect Update
 
 * Update `setup.py` to include dependencies on `protobuf>=3.20.0`.

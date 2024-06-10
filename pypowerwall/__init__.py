@@ -84,7 +84,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 10, 3)
+version_tuple = (0, 10, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -97,6 +97,7 @@ from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
 from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
+from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
 from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
 
@@ -171,6 +172,7 @@ class Powerwall(object):
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.tedapi = False
+        self.tedapi_mode = "off"  # off, full, hybrid
 
         # Make certain assumptions here
         if not self.host:
@@ -230,16 +232,28 @@ class Powerwall(object):
                 time.sleep(30)
                 count = 0
             if self.mode == "local":
+                log.debug(f"password = {self.password}, gw_pwd = {self.gw_pwd}")
                 try:
-                    self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
+                    if not self.password and self.gw_pwd:  # Use full TEDAPI mode
+                        log.debug("TEDAPI ** full **")
+                        self.tedapi_mode = "full"
+                        self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire, 
+                                                        timeout=self.timeout, host=self.host)
+                    else:   
+                        self.tedapi_mode = "hybrid"                           
+                        self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
                                                self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
                                                self.gw_pwd)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = False
                     self.tedapi = self.client.tedapi
+                    if not self.tedapi:
+                        self.tedapi_mode = "off"
                     return True
                 except Exception as exc:
                     log.debug(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
+                    self.tedapi = False
+                    self.tedapi_mode = "off"
                     self.mode = "fleetapi"
                     continue
             if self.mode == "fleetapi":
