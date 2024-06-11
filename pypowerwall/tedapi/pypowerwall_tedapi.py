@@ -347,7 +347,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
         status = self.tedapi.get_status(force=force)
-        alerts = lookup(status, ["control", "alerts", "active"])
+        alerts = lookup(status, ["control", "alerts", "active"]) or []
         if "SystemConnectedToGrid" in alerts:
             grid_status = "SystemGridConnected"
         else:

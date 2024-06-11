@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.10.5 - Minor Fixes
+
+* Placeholder
+
 ## v0.10.4 - Powerwall 3 Local API Support
 
 * Add local support for Powerwall 3 using TEDAPI. 
