@@ -35,6 +35,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         self.vitals_api = True  # vitals api is available for local mode
         self.gw_pw = gw_pw  # Powerwall Gateway password for TEDAPI
         self.tedapi = None  # TEDAPI object
+        self.pw3 = False  # Powerwall 3 detected
 
     def authenticate(self):
         log.debug('Tesla local mode enabled')
@@ -77,6 +78,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             self.tedapi = TEDAPI(self.gw_pw)
             if self.tedapi.connect():
                 log.debug('TEDAPI connected - Vitals metrics enabled')
+                self.pw3 = self.tedapi.pw3
             else:
                 log.debug('TEDAPI connection failed - continuing')
                 self.tedapi = None
