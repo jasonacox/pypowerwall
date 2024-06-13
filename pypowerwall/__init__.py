@@ -606,7 +606,7 @@ class Powerwall(object):
             alert = grid_status.get('grid_status')
             if alert == 'SystemGridConnected' and 'SystemConnectedToGrid' not in alerts:
                 alerts.append('SystemConnectedToGrid')
-            else:
+            elif alert:
                 alerts.append(alert)
             if grid_status.get('grid_services_active'):
                 alerts.append('GridServicesActive')
