@@ -126,10 +126,14 @@ if (( $H >= 16 )) && (( $H < 21 )); then
     fi
 fi
 
-# Evening 9pm to Midnight - Stop using battery if 24h max temp was above 25C
+# Evening 9pm to Midnight - Non-peak grid usage
+# Stop using battery if 24h max temp was above 25C - Heavy A/C Use 
 if (( $H >= 21 )) && (( $MAXTEMP > 25 )); then
-    if (( $(echo "$CUR > $MIN" |bc -l) )); then
-        change "current"
+    # Make sure CUR is >= LEVEL and not below MIN
+    if (( $(echo "$CUR < $LEVEL" |bc -l) )); then
+        if (( $(echo "$LEVEL > $MIN" |bc -l) )); then
+            change $LEVEL
+        fi
     fi
 fi
 
