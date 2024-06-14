@@ -55,7 +55,7 @@ from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t61"
+BUILD = "t62"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -497,10 +497,8 @@ class Handler(BaseHTTPRequestHandler):
                     pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(v, 'POD_nom_full_pack_energy')
                     idx = idx + 1
             # Aggregate data
-            if pod:
-                # Only poll if we have battery data
-                pod["nominal_full_pack_energy"] = get_value(d, 'nominal_full_pack_energy')
-                pod["nominal_energy_remaining"] = get_value(d, 'nominal_energy_remaining')
+            pod["nominal_full_pack_energy"] = get_value(d, 'nominal_full_pack_energy')
+            pod["nominal_energy_remaining"] = get_value(d, 'nominal_energy_remaining')
             pod["time_remaining_hours"] = pw.get_time_remaining()
             pod["backup_reserve_percent"] = pw.get_reserve()
             message: str = json.dumps(pod)
