@@ -84,7 +84,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 10, 4)
+version_tuple = (0, 10, 5)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -606,7 +606,7 @@ class Powerwall(object):
             alert = grid_status.get('grid_status')
             if alert == 'SystemGridConnected' and 'SystemConnectedToGrid' not in alerts:
                 alerts.append('SystemConnectedToGrid')
-            else:
+            elif alert:
                 alerts.append(alert)
             if grid_status.get('grid_services_active'):
                 alerts.append('GridServicesActive')

@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## v0.10.5 - Minor Fixes
+
+* Fix for TEDAPI "full" (e.g. Powerwall 3) mode, including `grid_status` bug resulting in false reports of grid status, `level()` bug where data gap resulted in 0% state of charge and `alerts()` where data gap from tedapi resulted in a `null` alert.
+* Add TEDAPI API call locking to limit load caused by concurrent polling.
+* Proxy - Add battery full_pack and remaining energy data to `/pod` API call for all cases.
+
 ## v0.10.4 - Powerwall 3 Local API Support
 
 * Add local support for Powerwall 3 using TEDAPI. 
