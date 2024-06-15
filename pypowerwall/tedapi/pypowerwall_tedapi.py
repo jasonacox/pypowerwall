@@ -172,7 +172,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        percentage_charged = self.tedapi.battery_level(force=force) or 0
+        percentage_charged = self.tedapi.battery_level(force=force)
+        if not percentage_charged:
+            return None
         data = {
             "percentage": percentage_charged
         }
@@ -203,8 +205,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def get_api_system_status_grid_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
         status = self.tedapi.get_status(force=force)
-        alerts = lookup(status, ["control", "alerts", "active"]) or []
-        if "SystemConnectedToGrid" in alerts:
+        grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])
+        if not grid_state:
+            return None
+        if grid_state == "ISLAND_GridConnected_Connected":
             grid_status = "SystemGridConnected"
         else:
             grid_status = "SystemIslandedActive"
@@ -347,8 +351,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
         status = self.tedapi.get_status(force=force)
-        alerts = lookup(status, ["control", "alerts", "active"])
-        if "SystemConnectedToGrid" in alerts:
+        grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])
+        if not grid_state:
+            grid_status = None
+        elif grid_state == "ISLAND_GridConnected_Connected":
             grid_status = "SystemGridConnected"
         else:
             grid_status = "SystemIslandedActive"

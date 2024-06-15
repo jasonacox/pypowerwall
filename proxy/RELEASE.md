@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t62 (13 Jun 2024)
+
+* Add battery full_pack and remaining energy data to `/pod` API call for all cases.
+
 ### Proxy t61 (9 Jun 2024)
 
 * Fix 404 bug that would throw error when user requested non-supported URI.
