@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.10.6 - pyLint Cleanup
+
+* Minor Bug Fixes - TEDAPI get_reserve() fix to address unscaled results.
+* pyLint Cleanup of Code
+
 ## v0.10.5 - Minor Fixes
 
 * Fix for TEDAPI "full" (e.g. Powerwall 3) mode, including `grid_status` bug resulting in false reports of grid status, `level()` bug where data gap resulted in 0% state of charge and `alerts()` where data gap from tedapi resulted in a `null` alert.

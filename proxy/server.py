@@ -48,14 +48,13 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from typing import Optional
-
-import pypowerwall
-from pypowerwall import parse_version
-from pypowerwall.fleetapi.fleetapi import CONFIGFILE
-from transform import get_static, inject_js
 from urllib.parse import urlparse, parse_qs
 
-BUILD = "t62"
+from transform import get_static, inject_js
+import pypowerwall
+from pypowerwall import parse_version
+
+BUILD = "t63"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -71,7 +70,7 @@ DISABLED = [
 ]
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
-# Configuration for Proxy - Check for environmental variables 
+# Configuration for Proxy - Check for environmental variables
 #    and always use those if available (required for Docker)
 bind_address = os.getenv("PW_BIND_ADDRESS", "")
 password = os.getenv("PW_PASSWORD", "")
@@ -172,7 +171,7 @@ try:
     pw = pypowerwall.Powerwall(host, password, email, timezone, cache_expire,
                                timeout, pool_maxsize, siteid=siteid,
                                authpath=authpath, authmode=authmode,
-                               cachefile=cachefile, auto_select=True, 
+                               cachefile=cachefile, auto_select=True,
                                retry_modes=True, gw_pwd=gw_pwd)
 except Exception as e:
     log.error(e)
@@ -231,9 +230,9 @@ if control_secret:
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
-    pass
 
 
+# pylint: disable=arguments-differ,global-variable-not-assigned
 # noinspection PyPep8Naming
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, log_format, *args):
@@ -246,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
         # replace function to avoid lookup delays
         hostaddr, hostport = self.client_address[:2]
         return hostaddr
-    
+
     def do_POST(self):
         global proxystats
         contenttype = 'application/json'
@@ -264,9 +263,9 @@ class Handler(BaseHTTPRequestHandler):
                     query_params = parse_qs(post_data.decode('utf-8'))
                     value = query_params.get('value', [''])[0]
                     token = query_params.get('token', [''])[0]
-                except Exception as e:
+                except Exception as er:
                     message = '{"error": "Control Command Error: Invalid Request"}'
-                    log.error(f"Control Command Error: {e}")
+                    log.error(f"Control Command Error: {er}")
                 if not message:
                     # Check if unable to connect to cloud
                     if pw_control.client is None:
@@ -368,7 +367,7 @@ class Handler(BaseHTTPRequestHandler):
             proxystats['clear'] = int(time.time())
             message: str = json.dumps(proxystats)
         elif self.path == '/temps':
-            # Temps of Powerwalls 
+            # Temps of Powerwalls
             message: str = pw.temps(jsonformat=True) or json.dumps({})
         elif self.path == '/temps/pw':
             # Temps of Powerwalls with Simple Keys
@@ -605,6 +604,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Set-Cookie", f"UserRecord={pw.client.auth['UserRecord']};{cookiesuffix}")
 
             # Serve static assets from web root first, if found.
+            # pylint: disable=attribute-defined-outside-init
             if self.path == "/" or self.path == "":
                 self.path = "/index.html"
                 fcontent, ftype = get_static(web_root, self.path)
@@ -654,7 +654,7 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     fcontent = r.content
                     ftype = r.headers['content-type']
-                except AttributeError as e:
+                except AttributeError:
                     # Display 404
                     log.debug("File not found: {}".format(self.path))
                     fcontent = bytes("Not Found", 'utf-8')
@@ -712,6 +712,7 @@ with ThreadingHTTPServer((bind_address, port), Handler) as server:
     if https_mode == "yes":
         # Activate HTTPS
         log.debug("Activating HTTPS")
+        # pylint: disable=deprecated-method
         server.socket = ssl.wrap_socket(server.socket,
                                         certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'),
                                         server_side=True, ssl_version=ssl.PROTOCOL_TLSv1_2, ca_certs=None,
@@ -719,7 +720,7 @@ with ThreadingHTTPServer((bind_address, port), Handler) as server:
 
     # noinspection PyBroadException
     try:
-        server.serve_forever()        
+        server.serve_forever()
     except (Exception, KeyboardInterrupt, SystemExit):
         print(' CANCEL \n')
 

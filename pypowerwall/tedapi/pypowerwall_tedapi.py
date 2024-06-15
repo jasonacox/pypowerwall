@@ -1,11 +1,11 @@
 import json
 import logging
-from typing import Optional, Union, List
+from typing import Optional, Union
 
 from pypowerwall.tedapi import TEDAPI, GW_IP, lookup
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
-from pypowerwall.tedapi.exceptions import *
-from pypowerwall.tedapi.mock_data import *
+from pypowerwall.tedapi.exceptions import * # pylint: disable=unused-wildcard-import
+from pypowerwall.tedapi.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.tedapi.stubs import *
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 from pypowerwall import __version__
@@ -25,9 +25,10 @@ def set_debug(debug=False, quiet=False, color=True):
         log.setLevel(logging.NOTSET)
 
 
+# pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
 class PyPowerwallTEDAPI(PyPowerwallBase):
-    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5, 
+    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 300, host: str = GW_IP) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
@@ -47,12 +48,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
-        else:
-            log.debug(f" -- tedapi: Connected to {self.host}")
+        log.debug(f" -- tedapi: Connected to {self.host}")
 
     def init_post_api_map(self) -> dict:
-        log.debug("No support for TEDAPI POST APIs.")
-        return None
+        return {
+            "/api/operation": self.post_api_operation,
+        }
 
     def init_poll_api_map(self) -> dict:
         # API map for local to cloud call conversion
@@ -152,6 +153,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return None
 
     def change_site(self, siteid):
+        log.debug(f"TEDAPI does not support sites - ignoring siteid: {siteid}")
         return False
 
     # TEDAPI Functions
@@ -160,13 +162,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         Get the site config from the TEDAPI
         """
         return self.tedapi.get_config()
-    
+
     def get_live_status(self):
         """
         Get the live status from the TEDAPI
         """
         return self.tedapi.get_status()
-    
+
     def get_time_remaining(self, force: bool = False) -> Optional[float]:
         return self.tedapi.backup_time_remaining(force=force)
 
@@ -277,14 +279,14 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return data
 
     # noinspection PyUnusedLocal
-    def get_api_devices_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+    def get_api_devices_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]: # pylint: disable=unused-argument
         # Protobuf payload - not implemented - use /vitals instead
         data = None
         log.warning("Protobuf payload - not implemented for /api/devices/vitals - use /vitals instead")
         return data
 
-    def get_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
-        return self.tedapi.vitals()
+    def get_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]: # pylint: disable=unused-argument
+        return self.tedapi.vitals(force=kwargs.get('force', False))
 
     def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
@@ -336,8 +338,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             return None
         else:
             default_real_mode = config.get("default_real_mode")
-            backup_reserve_percent = lookup(config, ["site_info", "backup_reserve_percent"]) or 0
-            backup = (backup_reserve_percent + (5 / 0.95)) * 0.95
+            backup = lookup(config, ["site_info", "backup_reserve_percent"]) or 0
             data = {
                 "real_mode": default_real_mode,
                 "backup_reserve_percent": backup
@@ -365,8 +366,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force)
         b = []
-        for i in blocks:
-            b.append(blocks[i])
+        for bk in blocks:
+            b.append(blocks[bk])
         data.update({
             "nominal_full_pack_energy": total_pack_energy,
             "nominal_energy_remaining": energy_left,
@@ -382,6 +383,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         })
         return data
 
+    # pylint: disable=unused-argument
     # noinspection PyUnusedLocal
     @not_implemented_mock_data
     def api_logout(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
@@ -494,18 +496,27 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return self.tedapi.vitals()
 
     def post_api_operation(self, **kwargs):
-        log.debug("No support for TEDAPI POST APIs.")
-        return None
+        log.error("No support for TEDAPI POST APIs.")
 
 
 if __name__ == "__main__":
+    import sys
+    # Command Line Debugging Mode
+    print(f"pyPowerwall - Powerwall Gateway TEDAPI Test [v{__version__}]")
     set_debug(quiet=False, debug=True, color=True)
 
-    tedapi = PyPowerwallTEDAPI()
+    # Get the Gateway Password from the command line
+    if len(sys.argv) < 2:
+        log.error("Usage: python -m pypowerwall.tedapi.pypowerwall_tedapi <gateway_password>")
+        sys.exit(1)
+    password = sys.argv[1]
+
+    # Create TEDAPI Object and get Configuration and Status
+    tedapi = PyPowerwallTEDAPI(password, debug=True)
 
     if not tedapi.connect():
         log.info("Failed to connect to Tesla TEDAPI")
-        exit(1)
+        sys.exit(1)
 
     log.info("Connected to Tesla TEDAPI")
 

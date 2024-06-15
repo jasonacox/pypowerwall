@@ -38,17 +38,17 @@
 """
 
 # Imports
-import requests
+
 import logging
-from . import tedapi_pb2
-import requests
-from requests.packages.urllib3.exceptions import InsecureRequestWarning
-requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
-import json
-import time
-from pypowerwall import __version__
 import math
 import sys
+import time
+import json
+import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from pypowerwall import __version__
+from . import tedapi_pb2
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # TEDAPI Fixed Gateway IP Address
 GW_IP = "192.168.91.1"
@@ -77,9 +77,9 @@ def lookup(data, keylist):
 
 # TEDAPI Class
 class TEDAPI:
-    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5, 
+    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 300, host: str = GW_IP) -> None:
-        self.debug = debug 
+        self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
         self.pwconfigexpire = pwconfigexpire  # seconds to expire config cache
@@ -98,10 +98,10 @@ class TEDAPI:
         # Connect to Powerwall Gateway
         if not self.connect():
             log.error("Failed to connect to Powerwall Gateway")
-            
+
     # TEDAPI Functions
 
-    def set_debug(toggle=True, color=True):
+    def set_debug(self, toggle=True, color=True):
         """Enable verbose logging"""
         if toggle:
             if color:
@@ -112,16 +112,16 @@ class TEDAPI:
             log.debug("%s [%s]\n" % (__name__, __version__))
         else:
             log.setLevel(logging.NOTSET)
-            
+
     def get_din(self, force=False):
         """
         Get the DIN from the Powerwall Gateway
         """
         # Check Cache
         if not force and "din" in self.pwcachetime:
-                if time.time() - self.pwcachetime["din"] < self.pwcacheexpire:
-                    log.debug("Using Cached DIN")
-                    return self.pwcache["din"]
+            if time.time() - self.pwcachetime["din"] < self.pwcacheexpire:
+                log.debug("Using Cached DIN")
+                return self.pwcache["din"]
         if not force and self.pwcooldown > time.perf_counter():
             # Rate limited - return None
             log.debug('Rate limit cooldown period - Pausing API calls')
@@ -129,7 +129,7 @@ class TEDAPI:
         # Fetch DIN from Powerwall
         log.debug("Fetching DIN from Powerwall...")
         url = f'https://{self.gw_ip}/tedapi/din'
-        r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False)
+        r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False, timeout=self.timeout)
         if r.status_code in BUSY_CODES:
             # Rate limited - Switch to cooldown mode for 5 minutes
             self.pwcooldown = time.perf_counter() + 300
@@ -146,7 +146,7 @@ class TEDAPI:
         self.pwcachetime["din"] = time.time()
         self.pwcache["din"] = din
         return din
-    
+
     def get_config(self,force=False):
         """
         Get the Powerwall Gateway Configuration
@@ -184,7 +184,7 @@ class TEDAPI:
             while self.apilock['config']:
                 time.sleep(0.2)
                 if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- tedapi: Timeout waiting for config (unable to acquire lock)")
+                    log.debug(" -- tedapi: Timeout waiting for config (unable to acquire lock)")
                     return None
         # Check Cache
         if not force and "config" in self.pwcachetime:
@@ -192,9 +192,9 @@ class TEDAPI:
                 log.debug("Using Cached Payload")
                 return self.pwcache["config"]
         if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
+            # Rate limited - return None
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
         # Check Connection
         if not self.din:
             if not self.connect():
@@ -216,7 +216,7 @@ class TEDAPI:
             self.apilock['config'] = True
             r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
                                           headers={'Content-type': 'application/octet-string'},
-                                          data=pb.SerializeToString())
+                                          data=pb.SerializeToString(), timeout=self.timeout)
             log.debug(f"Response Code: {r.status_code}")
             if r.status_code in BUSY_CODES:
                 # Rate limited - Switch to cooldown mode for 5 minutes
@@ -295,7 +295,7 @@ class TEDAPI:
             while self.apilock['status']:
                 time.sleep(0.2)
                 if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- tedapi: Timeout waiting for status (unable to acquire lock)")
+                    log.debug(" -- tedapi: Timeout waiting for status (unable to acquire lock)")
                     return None
         # Check Cache
         if not force and "status" in self.pwcachetime:
@@ -303,9 +303,9 @@ class TEDAPI:
                 log.debug("Using Cached Payload")
                 return self.pwcache["status"]
         if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
+            # Rate limited - return None
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
         # Check Connection
         if not self.din:
             if not self.connect():
@@ -330,7 +330,7 @@ class TEDAPI:
             self.apilock['status'] = True
             r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
                                           headers={'Content-type': 'application/octet-string'},
-                                          data=pb.SerializeToString())
+                                          data=pb.SerializeToString(), timeout=self.timeout)
             log.debug(f"Response Code: {r.status_code}")
             if r.status_code in BUSY_CODES:
                 # Rate limited - Switch to cooldown mode for 5 minutes
@@ -376,7 +376,7 @@ class TEDAPI:
                 # Connected but appears to be Powerwall 3
                 log.debug("Detected Powerwall 3 Gateway")
                 self.pw3 = True
-            self.din = self.get_din() 
+            self.din = self.get_din()
         except Exception as e:
             log.error(f"Unable to connect to Powerwall Gateway {self.gw_ip}")
             log.error("Please verify your your host has a route to the Gateway.")
@@ -404,7 +404,7 @@ class TEDAPI:
             for p in power:
                 power[p.get('location')] = p.get('realPowerW')
         return power
-    
+
 
     def backup_time_remaining(self, force=False):
         """
@@ -418,7 +418,7 @@ class TEDAPI:
         time_remaining = nominalEnergyRemainingWh / load
         return time_remaining
 
-    
+
     def battery_level(self, force=False):
         """
         Get the battery level as a percentage
@@ -431,7 +431,7 @@ class TEDAPI:
         battery_level = nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100
         return battery_level
 
-    
+
     # Vitals API Mapping Function
 
     def vitals(self, force=False):
@@ -443,7 +443,7 @@ class TEDAPI:
             Irms = Ipeak / math.sqrt(2)
             power = Vrms * Irms
             return power
-        
+
         def calculate_dc_power(V, I):
             power = V * I
             return power
@@ -470,7 +470,7 @@ class TEDAPI:
                             "connection": meter.get('connection'),
                             "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
                         }
-                    
+
         # Create Header
         tesla = {}
         header = {}
@@ -480,7 +480,7 @@ class TEDAPI:
             "gateway": self.gw_ip,
             "pyPowerwall": __version__,
         }
-            
+
         # Create NEURIO block
         neurio = {}
         c = 1000
@@ -509,7 +509,7 @@ class TEDAPI:
                 i = i + 1
             meter_manufacturer = None
             if lookup(meter_config, [sn, 'type']) == "neurio_w2_tcp":
-                meter_manufacturer = "NEURIO"                
+                meter_manufacturer = "NEURIO"
             rest = {
                 "componentParentDin": lookup(config, ['vin']),
                 "firmwareVersion": None,
@@ -521,7 +521,7 @@ class TEDAPI:
                 "serialNumber": sn
             }
             neurio[f"NEURIO--{sn}"] = {**cts, **rest}
-            
+
         # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
         pvac = {}
         pvs = {}
@@ -658,7 +658,7 @@ class TEDAPI:
                 "ecuType": 207
             }
         }
-        
+
         # Create TETHC, TEPINV and TEPOD blocks
         tethc = {} # parent
         tepinv = {}
@@ -855,7 +855,7 @@ class TEDAPI:
             **tethc,
         }
         return vitals
-    
+
 
     def get_blocks(self, force=False):
         """
@@ -866,7 +866,7 @@ class TEDAPI:
 
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
-        block = {} 
+        block = {}
         i = 0
         # Loop through each THC device serial number
         for p in lookup(status, ['esCan', 'bus', 'THC']) or {}:
@@ -919,5 +919,5 @@ class TEDAPI:
             })
             i = i + 1
         return block
-    
+
     # End of TEDAPI Class

@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t63 (15 Jun 2024)
+
+* pyLint Code Cleaning
+
 ### Proxy t62 (13 Jun 2024)
 
 * Add battery full_pack and remaining energy data to `/pod` API call for all cases.

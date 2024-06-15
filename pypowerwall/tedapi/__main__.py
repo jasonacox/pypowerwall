@@ -64,7 +64,7 @@ def run_tedapi_test(auto=False, debug=False):
     try:
         resp = requests.get(url, verify=False, timeout=5)
         log.debug(f"Connection to Powerwall Gateway successful, code {resp.status_code}.")
-        print(f" SUCCESS")
+        print(" SUCCESS")
     except Exception as e:
         print(" FAILED")
         print()

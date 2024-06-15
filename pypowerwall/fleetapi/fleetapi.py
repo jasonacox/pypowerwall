@@ -51,16 +51,19 @@
 # FleetAPI Class
 
 import os
-import json 
-import requests
+import json
 import logging
 import sys
-import urllib.parse
 import time
+import urllib.parse
+import requests
 
 # Defaults
 CONFIGFILE = ".pypowerwall.fleetapi"
 SCOPE = "openid offline_access energy_device_data energy_cmds"
+SETUP_TIMEOUT = 15   # Time in seconds to wait for setup related API response
+REFRESH_TIMEOUT = 60 # Time in seconds to wait for refresh token response
+API_TIMEOUT = 10     # Time in seconds to wait for FleetAPI response
 
 fleet_api_urls = {
     "North America, Asia-Pacific": "https://fleet-api.prd.na.vn.cloud.tesla.com",
@@ -71,9 +74,10 @@ fleet_api_urls = {
 # Set up logging
 log = logging.getLogger(__name__)
 
+# pylint: disable=too-many-public-methods
 class FleetAPI:
-    def __init__(self, configfile=CONFIGFILE, debug=False, site_id=None, 
-                 pwcacheexpire: int = 5, timeout: int = 5):
+    def __init__(self, configfile=CONFIGFILE, debug=False, site_id=None,
+                 pwcacheexpire: int = 5, timeout: int = API_TIMEOUT):
         self.CLIENT_ID = ""
         self.CLIENT_SECRET = ""
         self.DOMAIN = ""
@@ -84,7 +88,7 @@ class FleetAPI:
         self.access_token = ""
         self.refresh_token = ""
         self.site_id = ""
-        self.debug = debug 
+        self.debug = debug
         self.configfile = configfile
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
@@ -111,7 +115,7 @@ class FleetAPI:
     # Return key value from data or None
     def keyval(self, data, key):
         return data.get(key) if data and key else None
-    
+
     # Load Configuration
     def load_config(self):
         if os.path.isfile(self.configfile):
@@ -173,7 +177,7 @@ class FleetAPI:
             'Content-Type': 'application/x-www-form-urlencoded'
         }
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers)
+                        data=data, headers=headers, timeout=REFRESH_TIMEOUT)
         # Extract access_token and refresh_token from this response
         access = response.json().get('access_token')
         refresh = response.json().get('refresh_token')
@@ -191,7 +195,7 @@ class FleetAPI:
         # Update config
         self.save_config()
         self.refreshing = False
-        
+
     # Poll FleetAPI
     def poll(self, api="api/1/products", action="GET", data=None, recursive=False, force=False):
         url = f"{self.AUDIENCE}/{api}"
@@ -203,8 +207,8 @@ class FleetAPI:
             # Post to FleetAPI with json data payload
             log.debug(f"POST: {url} {json.dumps(data)}")
             # Check for timeout exception
-            try: 
-                response = requests.post(url, headers=headers, 
+            try:
+                response = requests.post(url, headers=headers,
                                          data=json.dumps(data), timeout=self.timeout)
             except requests.exceptions.Timeout:
                 log.error(f"Timeout error posting to {url}")
@@ -238,7 +242,7 @@ class FleetAPI:
             self.pwcachetime[api] = time.time()
             self.pwcache[api] = data
         return data
-    
+
     def get_live_status(self, force=False):
         # Get the current power information for the site.
         """
@@ -261,7 +265,7 @@ class FleetAPI:
             }
         }
         """
-        payload = self.poll(f"api/1/energy_sites/{self.site_id}/live_status", force=force)    
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/live_status", force=force)
         log.debug(f"get_live_status: {payload}")
         return self.keyval(payload, "response")
 
@@ -372,7 +376,7 @@ class FleetAPI:
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_info", force=force)
         log.debug(f"get_site_info: {payload}")
         return self.keyval(payload, "response")
-    
+
     def get_site_status(self, force=False):
         # Get site status
         """
@@ -407,7 +411,7 @@ class FleetAPI:
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/backup_time_remaining", force=force)
         log.debug(f"get_backup_time_remaining: {payload}")
         return self.keyval(payload, "response")
-    
+
     def get_products(self, force=False):
         # Get list of Tesla products assigned to user
         """
@@ -454,16 +458,16 @@ class FleetAPI:
             "count": 2
             }
         """
-        payload = self.poll(f"api/1/products", force=force)
+        payload = self.poll("api/1/products", force=force)
         log.debug(f"get_products: {payload}")
         return self.keyval(payload, "response")
-    
+
     def set_battery_reserve(self, reserve: int):
         if reserve < 0 or reserve > 100:
             log.debug(f"Invalid reserve level: {reserve}")
             return False
         data = {"backup_reserve_percent": reserve}
-        # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/backup' 
+        # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/backup'
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/backup", "POST", data)
         # Invalidate cache
         self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
@@ -474,12 +478,12 @@ class FleetAPI:
         if mode not in ["self_consumption", "autonomous"]:
             log.debug(f"Invalid mode: {mode}")
             return False
-        # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/operation' 
+        # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/operation'
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/operation", "POST", data)
         # Invalidate cache
         self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
         return payload
-            
+
     def get_operating_mode(self, force=False):
         return self.keyval(self.get_site_info(force=force), "default_real_mode")
 
@@ -489,7 +493,7 @@ class FleetAPI:
     def getsites(self, force=False):
         payload = self.poll("api/1/products", force=force)
         return self.keyval(payload, "response")
-    
+
     # Macros for common data
     def solar_power(self):
         return self.keyval(self.get_live_status(), "solar_power")
@@ -533,6 +537,7 @@ class FleetAPI:
         print("         generate a user token, and get the site_id and live data for your Tesla Powerwall.")
         print()
 
+        current_audience = 0
         # Display current configuration if we have it
         config = self.load_config()
         if config:
@@ -595,10 +600,10 @@ class FleetAPI:
         # Verify that the PEM key file exists
         print("  Verifying PEM Key file...")
         verify_url = f"https://{self.DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem"
-        response = requests.get(verify_url)
+        response = requests.get(verify_url, timeout=SETUP_TIMEOUT)
         if response.status_code != 200:
             print(f"ERROR: Could not verify PEM key file at {verify_url}")
-            print(f"       Make sure you have created the PEM key file and uploaded it to your website.")
+            print("       Make sure you have created the PEM key file and uploaded it to your website.")
             print()
             print("Run create_pem_key.py to create a PEM key file for your website.")
             return False
@@ -621,8 +626,8 @@ class FleetAPI:
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
             log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
-            response = requests.post('https://auth.tesla.com/oauth2/v3/token', 
-                            data=data, headers=headers)
+            response = requests.post('https://auth.tesla.com/oauth2/v3/token',
+                            data=data, headers=headers, timeout=SETUP_TIMEOUT)
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
@@ -636,7 +641,7 @@ class FleetAPI:
         # Register Partner Account
         print("Step 3B - Registering your partner account...")
         if self.partner_account:
-            print(f"  Already registered. Skipping...")
+            print("  Already registered. Skipping...")
         else:
             # If not registered, register
             url = f"{self.AUDIENCE}/api/1/partner_accounts"
@@ -648,7 +653,7 @@ class FleetAPI:
                 'domain': self.DOMAIN,
             }
             log.debug(f"POST: {url} {json.dumps(data)}")
-            response = requests.post(url, headers=headers, data=json.dumps(data))
+            response = requests.post(url, headers=headers, data=json.dumps(data), timeout=SETUP_TIMEOUT)
             log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
             log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
@@ -660,7 +665,7 @@ class FleetAPI:
         # Generate User Token
         print("Step 3C - Generating a one-time authentication token...")
         if self.access_token and self.refresh_token:
-            print(f"  Replacing cached tokens...")
+            print("  Replacing cached tokens...")
         scope = urllib.parse.quote(SCOPE)
         state = self.random_string(64)
         url = f"https://auth.tesla.com/oauth2/v3/authorize?&client_id={self.CLIENT_ID}&locale=en-US&prompt=login&redirect_uri={self.REDIRECT_URI}&response_type=code&scope={scope}&state={state}"
@@ -680,7 +685,7 @@ class FleetAPI:
         log.debug(f"Code: {code}")
 
         # Step 3D - Exchange the authorization code for a token
-        #   The access_token will be used as the Bearer token 
+        #   The access_token will be used as the Bearer token
         #   in the Authorization header when making API requests.
         print("Step 3D - Exchange the authorization code for a token")
         data = {
@@ -697,7 +702,7 @@ class FleetAPI:
         }
         log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
         response = requests.post('https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers)
+                        data=data, headers=headers, timeout=SETUP_TIMEOUT)
         log.debug(f"Response Code: {response.status_code}")
         # Extract access_token and refresh_token from this response
         access_token = response.json().get('access_token')

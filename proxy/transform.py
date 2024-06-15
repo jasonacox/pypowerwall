@@ -1,8 +1,8 @@
 import os
+import logging
 
 from bs4 import BeautifulSoup as Soup
 
-import logging
 logging.basicConfig(
     format='%(asctime)s [%(name)s] [%(levelname)s] %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
 logger = logging.getLogger(os.path.basename(__file__))
@@ -43,7 +43,7 @@ def get_static(web_root, fpath):
             ftype = "application/json"
         elif freq.lower().endswith(".xml"):
             ftype = "application/xml"
-        else:   
+        else:
             ftype = "text/plain"
 
         with open(freq, 'rb') as f:

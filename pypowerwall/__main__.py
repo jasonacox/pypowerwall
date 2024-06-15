@@ -18,8 +18,6 @@ import json
 
 # Modules
 from pypowerwall import version, set_debug
-from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
-from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 
 # Global Variables
 authpath = os.getenv("PW_AUTH_PATH", "")
@@ -97,7 +95,7 @@ if command == 'setup':
         print(f"Setup Complete. Auth file {c.authfile} ready to use.")
     else:
         print("ERROR: Failed to setup Tesla Cloud Mode")
-        exit(1)
+        sys.exit(1)
 
 # FleetAPI Mode Setup
 elif command == 'fleetapi':
@@ -110,7 +108,7 @@ elif command == 'fleetapi':
         print(f"Setup Complete. Config file {c.configfile} ready to use.")
     else:
         print("Setup Aborted.")
-        exit(1)
+        sys.exit(1)
 
 # TEDAPI Test
 elif command == 'tedapi':
@@ -133,19 +131,19 @@ elif command == 'set':
     # If no arguments, print usage
     if not args.mode and not args.reserve and not args.current:
         print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]")
-        exit(1)
+        sys.exit(1)
     import pypowerwall
     # Determine which cloud mode to use
     pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
     print(f"pyPowerwall [{version}] - Set Powerwall Mode and Power Levels using {pw.mode} mode.\n")
     if not pw.is_connected():
         print("ERROR: FleetAPI and Cloud access are not configured. Run 'fleetapi' or 'setup'.")
-        exit(1)
+        sys.exit(1)
     if args.mode:
         mode = args.mode.lower()
         if mode not in ['self_consumption', 'backup', 'autonomous']:
             print("ERROR: Invalid Mode [%s] - must be one of self_consumption, backup, or autonomous" % mode)
-            exit(1)
+            sys.exit(1)
         print("Setting Powerwall Mode to %s" % mode)
         pw.set_mode(mode)
     if args.reserve:
@@ -167,7 +165,7 @@ elif command == 'get':
         print(f"pyPowerwall [{version}] - Get Powerwall Mode and Power Levels using {pw.mode} mode.\n")
     if not pw.is_connected():
         print("ERROR: Unable to connect. Set -host and -password or configure FleetAPI or Cloud access.")
-        exit(1)
+        sys.exit(1)
     output = {
         'site': pw.site_name(),
         'site_id': pw.siteid or "N/A",
