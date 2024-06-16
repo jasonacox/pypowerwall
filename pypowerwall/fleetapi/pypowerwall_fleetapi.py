@@ -2,14 +2,15 @@ import json
 import logging
 import os
 import time
-from typing import Optional, Union, List
+from typing import Optional, Union
 
 from pypowerwall.fleetapi.fleetapi import FleetAPI, CONFIGFILE
 from pypowerwall.fleetapi.decorators import not_implemented_mock_data
-from pypowerwall.fleetapi.exceptions import *
-from pypowerwall.fleetapi.mock_data import *
+from pypowerwall.fleetapi.exceptions import * # pylint: disable=unused-wildcard-import
+from pypowerwall.fleetapi.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.fleetapi.stubs import *
 from pypowerwall.pypowerwall_base import PyPowerwallBase
+from pypowerwall import __version__
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def lookup(data, keylist):
     return data
 
 
+# pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
 class PyPowerwallFleetAPI(PyPowerwallBase):
     def __init__(self, email: Optional[str], pwcacheexpire: int = 5, timeout: int = 5, siteid: Optional[int] = None,
@@ -70,9 +72,9 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize FleetAPI
-        self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid, 
+        self.fleet = FleetAPI(configfile=self.configfile, site_id=self.siteid,
                               pwcacheexpire=pwcacheexpire, timeout=self.timeout)
-           
+
         # Load Configuration
         if not os.path.isfile(self.fleet.configfile):
             log.debug(f" -- fleetapi: Configuration file not found: {self.configfile} - run setup")
@@ -353,7 +355,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         }
         """
         return self.fleet.get_site_info()
-    
+
     def get_live_status(self):
         """
         {
@@ -374,12 +376,12 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         }
         """
         return self.fleet.get_live_status()
-    
+
     def get_time_remaining(self, force: bool = False) -> Optional[float]:
         """
         Get backup time remaining from Tesla FleetAPI
         """
-        response = self.fleet.get_backup_time_remaining()
+        response = self.fleet.get_backup_time_remaining(force=force)
         if response is None or not isinstance(response, dict):
             return None
         if response.get('time_remaining_hours'):
@@ -422,7 +424,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         if power is None:
             data = None
         else:
-            if not not power.get("grid_status") or power.get("grid_status") in ["Active", "Unknown"]:
+            if not power.get("grid_status") or power.get("grid_status") in ["Active", "Unknown"]:
                 grid_status = "SystemGridConnected"
             else:  # off_grid or off_grid_unintentional
                 grid_status = "SystemIslandedActive"
@@ -482,6 +484,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             }
         return data
 
+    # pylint: disable=unused-argument
     # noinspection PyUnusedLocal
     def get_api_devices_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         # Protobuf payload - not implemented - use /vitals instead
@@ -551,7 +554,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             grid_power = power.get("grid_power")
             battery_count = config.get("battery_count")
             inverters = lookup(config, ("components", "inverters"))
-            
+
             if inverters is not None:
                 solar_inverters = len(inverters)
             elif lookup(config, ("components", "solar")):
@@ -608,7 +611,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             total_pack_energy = self.fleet.total_pack_energy(force=force)
             energy_left = self.fleet.energy_left(force=force)
             nameplate_power = config.get("nameplate_power")
-            
+
             if power.get("island_status") == "on_grid":
                 grid_status = "SystemGridConnected"
             else:  # off_grid or off_grid_unintentional
@@ -632,6 +635,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
         return data
 
+    # pylint: disable=unused-argument
     # noinspection PyUnusedLocal
     @not_implemented_mock_data
     def api_logout(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
@@ -757,7 +761,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
         if payload.get('backup_reserve_percent') is not None:
             backup_reserve_percent = payload['backup_reserve_percent']
-            if backup_reserve_percent == False:
+            if backup_reserve_percent is False:
                 backup_reserve_percent = 0
             op_level = self.fleet.set_battery_reserve(backup_reserve_percent)
             resp['set_backup_reserve_percent'] = {
@@ -775,16 +779,19 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
 
 if __name__ == "__main__":
+    import sys
+    # Command Line Debugging Mode
+    print(f"pyPowerwall - Powerwall Gateway FleetAPI Test [v{__version__}]")
     set_debug(quiet=False, debug=True, color=True)
 
-    fleet = PyPowerwallFleetAPI()
+    fleet = PyPowerwallFleetAPI(email="")
 
     if not fleet.connect():
         log.info("Failed to connect to Tesla FleetAPI")
         fleet.setup()
         if not fleet.connect():
             log.critical("Failed to connect to Tesla FleetAPI")
-            exit(1)
+            sys.exit(1)
 
     log.info("Connected to Tesla FleetAPI")
 
@@ -792,25 +799,6 @@ if __name__ == "__main__":
     tsites = fleet.getsites()
     log.info(tsites)
 
-    # print("\Battery")
-    # r = fleet.get_battery()
-    # print(r)
-
-    # print("\Site Power")
-    # r = fleet.get_site_power()
-    # print(r)
-
-    # print("\Site Config")
-    # r = fleet.get_site_config()
-    # print(r)
-
-    # Test Poll
-    # '/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar',
-    # '/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration',
-    # '/api/system/update/status','/api/site_info','/api/system_status/grid_faults',
-    # '/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer',
-    # '/api/meters','/api/installer','/api/networks','/api/system/networks',
-    # '/api/meters/readings','/api/synchrometer/ct_voltage_references']
     items = ['/api/status', '/api/system_status/grid_status', '/api/site_info/site_name',
              '/api/devices/vitals', '/api/system_status/soe', '/api/meters/aggregates',
              '/api/operation', '/api/system_status', '/api/synchrometer/ct_voltage_references',

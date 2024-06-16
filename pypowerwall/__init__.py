@@ -84,7 +84,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 10, 5)
+version_tuple = (0, 10, 6)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -121,6 +121,7 @@ def set_debug(toggle=True, color=True):
         log.setLevel(logging.NOTSET)
 
 
+# pylint: disable=too-many-public-methods
 class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
@@ -179,6 +180,8 @@ class Powerwall(object):
             self.cloudmode = True
         if self.cloudmode and not self.fleetapi:
             self.mode = "cloud"
+        elif self.cloudmode and self.fleetapi:
+            self.mode = "fleetapi"
         elif not self.cloudmode and not self.fleetapi:
             self.mode = "local"
         else:
@@ -200,9 +203,9 @@ class Powerwall(object):
                         auth = json.load(file)
                     self.email = list(auth.keys())[0]
                 self.cloudmode = True
-                self.fleetapi = False     
-                self.mode = "cloud"       
-                log.debug("Auto selecting Cloud Mode (email: %s)" % self.email)    
+                self.fleetapi = False
+                self.mode = "cloud"
+                log.debug("Auto selecting Cloud Mode (email: %s)" % self.email)
             else:
                 log.debug("Auto Select Failed: Unable to use local, cloud or fleetapi mode.")
 
@@ -212,8 +215,7 @@ class Powerwall(object):
         # Connect to Powerwall
         if not self.connect(self.retry_modes):
             log.error("Unable to connect to Powerwall.")
-            return
-    
+
     def connect(self, retry=False) -> bool:
         """
         Connect to Tesla Energy Gateway Powerwall
@@ -223,7 +225,7 @@ class Powerwall(object):
         """
         if self.mode == "unknown":
             log.error("Unable to determine mode to connect.")
-            return
+            return False
         count = 0
         while count < 3:
             count += 1
@@ -237,10 +239,10 @@ class Powerwall(object):
                     if not self.password and self.gw_pwd:  # Use full TEDAPI mode
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
-                        self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire, 
+                        self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host)
-                    else:   
-                        self.tedapi_mode = "hybrid"                           
+                    else:
+                        self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
                                                self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
                                                self.gw_pwd)
@@ -296,6 +298,7 @@ class Powerwall(object):
         except Exception:
             return False
 
+    # pylint: disable=inconsistent-return-statements
     def poll(self, api='/api/site_info/site_name', jsonformat=False, raw=False, recursive=False,
              force=False) -> Optional[Union[dict, list, str, bytes]]:
         """
@@ -339,7 +342,7 @@ class Powerwall(object):
             return response
 
     def level(self, scale=False):
-        """ 
+        """
         Battery Level Percentage 
             Note: Tesla App reserves 5% of battery => ( (batterylevel / 0.95) - (5 / 0.95) )
         Args:
@@ -429,7 +432,7 @@ class Powerwall(object):
                                 result[name] = {}
                             result[name][idxname] = v[device][e]
                         # if
-                    # for   
+                    # for
                     deviceidx += 1
                 # else
         # If no devices found pull from /api/solar_powerwall
@@ -485,7 +488,7 @@ class Powerwall(object):
         """ Home Power Usage """
         return self.load(verbose)
 
-    # Shortcut Functions 
+    # Shortcut Functions
     def site_name(self) -> Optional[str]:
         """ System Site Name """
         payload = self.poll('/api/site_info/site_name')
@@ -575,11 +578,6 @@ class Powerwall(object):
         """
         alerts = []
         devices: dict = self.vitals() or {}
-        """
-        The vitals API is not present in firmware versions > 23.44, this 
-        is a workaround to get alerts from the /api/solar_powerwall endpoint
-        for newer firmware versions
-        """
         if devices:
             for device in devices:
                 if 'alerts' in devices[device]:
@@ -590,6 +588,8 @@ class Powerwall(object):
                             item = {device: i}
                             alerts.append(item)
         elif not devices and alertsonly is True:
+            # Vitals API is not present in firmware versions > 23.44 for local mode.
+            # This is a workaround to get alerts from the /api/solar_powerwall endpoint
             data: dict = self.poll('/api/solar_powerwall') or {}
             pvac_alerts = data.get('pvac_alerts') or {}
             for alert, value in pvac_alerts.items():
@@ -680,7 +680,7 @@ class Powerwall(object):
             Dictionary with operation results, if jsonformat is False, else a JSON string
         """
         if level and (level < 0 or level > 100):
-            log.error(f"Level can be in range of 0 to 100 only.")
+            log.error("Level can be in range of 0 to 100 only.")
             return None
 
         if level is None:
@@ -715,7 +715,7 @@ class Powerwall(object):
         payload: dict = self.poll('/api/system_status/grid_status')
 
         if payload is None:
-            log.error(f"Failed to get /api/system_status/grid_status")
+            log.error("Failed to get /api/system_status/grid_status")
             return None
 
         if type == "json":
@@ -884,7 +884,7 @@ class Powerwall(object):
                 os.makedirs(dirpath, exist_ok=True)
             except Exception as exc:
                 raise PyPowerwallInvalidConfigurationParameter(f"Unable to create {name} directory at "
-                                                               f"'{dirpath}': {exc}")
+                                                               f"'{dirpath}': {exc}") from exc
         elif not os.path.isdir(dirpath):
             raise PyPowerwallInvalidConfigurationParameter(f"'{dirpath}' must be a directory ({name}).")
         else:

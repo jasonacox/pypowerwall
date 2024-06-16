@@ -59,6 +59,7 @@ class PyPowerwallBase:
     def get_time_remaining(self) -> Optional[float]:
         raise NotImplementedError
 
+    # pylint: disable=inconsistent-return-statements
     def fetchpower(self, sensor, verbose=False) -> Any:
         if verbose:
             payload: dict = self.poll('/api/meters/aggregates')

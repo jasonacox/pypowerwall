@@ -18,6 +18,7 @@ import json
 import socket
 import threading
 import time
+import sys
 
 import requests
 
@@ -46,6 +47,15 @@ def getmy_ip():
 
 
 def scan_ip(color, timeout, addr):
+    """
+    Thread Worker: Scan IP Address for Powerwall Gateway
+
+    Parameter:
+        color = True or False, print output in color [Default: True]
+        timeout = Seconds to wait per host [Default: 1.0]
+        addr = IP address to scan
+    """
+    # pylint: disable=global-statement,global-variable-not-assigned
     global discovered, firmware
     global bold, subbold, normal, dim, alert, alertdim
 
@@ -111,6 +121,7 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
             and Powerwall.  It tries to use your local IP address as a default.
 
     """
+    # pylint: disable=global-statement,global-variable-not-assigned
     global discovered, firmware
     global bold, subbold, normal, dim, alert, alertdim
 
@@ -151,10 +162,10 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
     except Exception:
         # Assume user aborted
         print(alert + '  Cancel\n\n' + normal)
-        exit()
+        sys.exit()
 
     if response != '':
-        # Verify we have a valid network 
+        # Verify we have a valid network
         # noinspection PyBroadException
         try:
             network = ipaddress.IPv4Network(u'' + response)
@@ -190,7 +201,7 @@ def scan(color=True, timeout=1.0, hosts=30, ip=None):
         print('')
 
     print(normal + 'Discovered %d Powerwall Gateway' % len(discovered))
-    for ip in discovered:
-        print(dim + '     %s [%s] Firmware %s' % (ip, discovered[ip], firmware[ip]))
+    for pw_ip in discovered:
+        print(dim + '     %s [%s] Firmware %s' % (pw_ip, discovered[pw_ip], firmware[pw_ip]))
 
     print(normal + ' ')

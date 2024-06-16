@@ -16,8 +16,8 @@
 # Import Libraries
 import sys
 import json
-from .fleetapi import FleetAPI, CONFIGFILE
 import argparse
+from .fleetapi import FleetAPI, CONFIGFILE
 
 # Display help if no arguments
 if len(sys.argv) == 1:
@@ -37,7 +37,7 @@ if len(sys.argv) == 1:
     print("  --config CONFIG       Specify alternate config file (default: .fleetapi.config)")
     print("  --site SITE           Specify site_id")
     print("  --json                Output in JSON format")
-    exit(0)
+    sys.exit(0)
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Tesla FleetAPI - Command Line Interface')
@@ -67,25 +67,25 @@ if args.site:
     settings_site = args.site
 
 # Create FleetAPI object
-fleet = FleetAPI(configfile=settings_file, debug=settings_debug, site_id=settings_site)   
+fleet = FleetAPI(configfile=settings_file, debug=settings_debug, site_id=settings_site)
 
 # Load Configuration
 if not fleet.load_config():
     print(f"  Configuration file not found: {settings_file}")
     if args.command != "setup":
         print("  Run setup to access Tesla FleetAPI.")
-        exit(1)
+        sys.exit(1)
     else:
         fleet.setup()
         if not fleet.load_config():
             print("  Setup failed, exiting...")
-            exit(1)
-    exit(0)
+            sys.exit(1)
+    sys.exit(0)
 
 # Command: Run Setup
 if args.command == "setup":
     fleet.setup()
-    exit(0)
+    sys.exit(0)
 
 # Command: List Sites
 if args.command == "sites":
@@ -95,7 +95,7 @@ if args.command == "sites":
     else:
         for site in sites:
             print(f"  {site['energy_site_id']} - {site['site_name']}")
-    exit(0)
+    sys.exit(0)
 
 # Command: Status
 if args.command == "status":
@@ -105,7 +105,7 @@ if args.command == "status":
     else:
         for key in status:
             print(f"  {key}: {status[key]}")
-    exit(0)
+    sys.exit(0)
 
 # Command: Site Info
 if args.command == "info":
@@ -115,7 +115,7 @@ if args.command == "info":
     else:
         for key in info:
             print(f"  {key}: {info[key]}")
-    exit(0)
+    sys.exit(0)
 
 # Command: Get Operating Mode
 if args.command == "getmode":
@@ -124,7 +124,7 @@ if args.command == "getmode":
         print(json.dumps({"mode": mode}, indent=4))
     else:
         print(f"{mode}")
-    exit(0)
+    sys.exit(0)
 
 # Command: Get Battery Reserve
 if args.command == "getreserve":
@@ -133,7 +133,7 @@ if args.command == "getreserve":
         print(json.dumps({"reserve": reserve}, indent=4))
     else:
         print(f"{reserve}")
-    exit(0)
+    sys.exit(0)
 
 # Command: Set Operating Mode
 if args.command == "setmode":
@@ -145,10 +145,10 @@ if args.command == "setmode":
             print(fleet.set_operating_mode("autonomous"))
         else:
             print("Invalid mode, must be 'self' or 'auto'")
-            exit(1)
+            sys.exit(1)
     else:
         print("No mode specified, exiting...")
-    exit(0)
+    sys.exit(0)
 
 # Command: Set Battery Reserve
 if args.command == "setreserve":
@@ -157,19 +157,16 @@ if args.command == "setreserve":
             val = int(args.argument)
             if val < 0 or val > 100:
                 print(f"Invalid reserve level {val}, must be 0-100")
-                exit(1)
+                sys.exit(1)
         elif args.argument == "current":
             val = fleet.battery_level()
         else:
             print("Invalid reserve level, must be 0-100 or 'current' to set to current level.")
-            exit(1)
+            sys.exit(1)
         print(fleet.set_battery_reserve(int(val)))
     else:
         print("No reserve level specified, exiting...")
-    exit(0)
+    sys.exit(0)
 
 print("No command specified, exiting...")
-exit(1)
-
-
-
+sys.exit(1)

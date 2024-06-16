@@ -7,10 +7,11 @@ from typing import Optional, Union, List
 from teslapy import Tesla, Battery, SolarPanel
 
 from pypowerwall.cloud.decorators import not_implemented_mock_data
-from pypowerwall.cloud.exceptions import *
-from pypowerwall.cloud.mock_data import *
+from pypowerwall.cloud.exceptions import * # pylint: disable=unused-wildcard-import
+from pypowerwall.cloud.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.cloud.stubs import *
 from pypowerwall.pypowerwall_base import PyPowerwallBase
+from pypowerwall import __version__
 
 log = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def lookup(data, keylist):
             return None
     return data
 
-
+# pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
 class PyPowerwallCloud(PyPowerwallBase):
     def __init__(self, email: Optional[str], pwcacheexpire: int = 5, timeout: int = 5, siteid: Optional[int] = None,
@@ -292,7 +293,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             cached - True if cached data was returned
         """
         if self.tesla is None:
-            log.debug(f" -- cloud: No connection to Tesla Cloud")
+            log.debug(" -- cloud: No connection to Tesla Cloud")
             return None, False
         # Check for lock and wait if api request already sent
         if name in self.apilock:
@@ -322,7 +323,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         finally:
             # Release lock
             self.apilock[name] = False
-            return response, False
+        return response, False
 
     def get_battery(self, force: bool = False):
         """
@@ -598,6 +599,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             }
         return data
 
+    # pylint: disable=unused-argument
     # noinspection PyUnusedLocal
     def get_api_devices_vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         # Protobuf payload - not implemented - use /vitals instead
@@ -990,7 +992,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         if self.tesla:
             self.tesla.logout()
         else:
-            log.error(f"Tesla cloud not connected")
+            log.error("Tesla cloud not connected")
         self.auth = {}
 
     def vitals(self) -> Optional[dict]:
@@ -1046,8 +1048,11 @@ class PyPowerwallCloud(PyPowerwallBase):
 
 
 if __name__ == "__main__":
-    # Test code
+    import sys
+    # Command Line Debugging Mode
+    print(f"pyPowerwall - Powerwall Gateway Cloud Test [v{__version__}]")
     set_debug(quiet=False, debug=True, color=True)
+
     tesla_user = None
     # Check for .pypowerwall.auth file
     AUTHPATH = os.environ.get('PW_AUTH_PATH', "")
@@ -1078,7 +1083,7 @@ if __name__ == "__main__":
         cloud.setup()
         if not cloud.connect():
             log.critical("Failed to connect to Tesla Cloud")
-            exit(1)
+            sys.exit(1)
 
     log.info("Connected to Tesla Cloud")
 
@@ -1086,25 +1091,6 @@ if __name__ == "__main__":
     tsites = cloud.getsites()
     log.info(tsites)
 
-    # print("\Battery")
-    # r = cloud.get_battery()
-    # print(r)
-
-    # print("\Site Power")
-    # r = cloud.get_site_power()
-    # print(r)
-
-    # print("\Site Config")
-    # r = cloud.get_site_config()
-    # print(r)
-
-    # Test Poll
-    # '/api/logout','/api/login/Basic','/vitals','/api/meters/site','/api/meters/solar',
-    # '/api/sitemaster','/api/powerwalls','/api/installer','/api/customer/registration',
-    # '/api/system/update/status','/api/site_info','/api/system_status/grid_faults',
-    # '/api/site_info/grid_codes','/api/solars','/api/solars/brands','/api/customer',
-    # '/api/meters','/api/installer','/api/networks','/api/system/networks',
-    # '/api/meters/readings','/api/synchrometer/ct_voltage_references']
     items = ['/api/status', '/api/system_status/grid_status', '/api/site_info/site_name',
              '/api/devices/vitals', '/api/system_status/soe', '/api/meters/aggregates',
              '/api/operation', '/api/system_status', '/api/synchrometer/ct_voltage_references',
