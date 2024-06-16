@@ -588,10 +588,16 @@ class Handler(BaseHTTPRequestHandler):
             message: str = pw.poll(self.path, jsonformat=True)
         elif self.path.startswith('/control/reserve'):
             # Current battery reserve level
-            message = '{"reserve": %s}' % pw_control.get_reserve()
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                message = '{"reserve": %s}' % pw_control.get_reserve()
         elif self.path.startswith('/control/mode'):
             # Current operating mode
-            message = '{"mode": "%s"}' % pw_control.get_mode()
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                message = '{"mode": "%s"}' % pw_control.get_mode()
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1
