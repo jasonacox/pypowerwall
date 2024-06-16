@@ -22,3 +22,4 @@ jobs:
     - name: Analyzing the code with pylint
       run: |
         pylint -E pypowerwall/*.py
+        pylint -E proxy/*.py
