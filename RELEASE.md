@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## v0.10.7 - Energy History
+
+* FleetAPI - Add `get_history()` and `get_calendar_history()` to return energy, power, soe, and other history data.
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(host=PW_HOST, email=PW_EMAIL, fleetapi=True)
+pw.client.fleet.get_calendar_history(kind="soe")
+pw.client.fleet.get_history(kind="power")
+```
+
 ## v0.10.6 - pyLint Cleanup
 
 * Minor Bug Fixes - TEDAPI get_reserve() fix to address unscaled results.
