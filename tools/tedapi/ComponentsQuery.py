@@ -79,6 +79,30 @@ for battery in battery_blocks:
     battery_type = battery['type']
     print(f"   - Battery Block: {vin} ({battery_type})")
 
+# Fetch Firmware from Powerwall
+print(f" - Fetching /tedapi/v1 PW3 Firmware from Powerwall ({din})...")
+# Build Protobuf to fetch firmware
+pb = tedapi_pb2.Message()
+pb.message.deliveryChannel = 1
+pb.message.sender.local = 1
+pb.message.recipient.din = din  # DIN of Powerwall
+pb.message.firmware.request = ""
+pb.tail.value = 1
+url = f'https://{GW_IP}/tedapi/v1'
+r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
+    headers={'Content-type': 'application/octet-string'},
+    data=pb.SerializeToString(), timeout=5)
+print(f"Response Code: {r.status_code}")
+# write raw response to file
+with open("firmware.raw", "wb") as f:
+    f.write(r.content)
+print(" - Firmware Written to firmware.raw")
+# Decode response
+tedapi = tedapi_pb2.Message()
+tedapi.ParseFromString(r.content)
+firmware_version = tedapi.message.firmware.system.version.text
+print(f"Firmware version (len={len(firmware_version)}): {firmware_version}")
+
 # Fetch ComponentsQuery from Powerwall
 print(f" - Fetching /tedapi/v1 PW3 ComponentsQuery from Powerwall ({din})...")
 # Build Protobuf to fetch config

@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0ctedapi.proto\x12\x06tedapi\"O\n\x07Message\x12(\n\x07message\x18\x01 \x01(\x0b\x32\x17.tedapi.MessageEnvelope\x12\x1a\n\x04tail\x18\x02 \x01(\x0b\x32\x0c.tedapi.Tail\"\xe0\x01\n\x0fMessageEnvelope\x12\x17\n\x0f\x64\x65liveryChannel\x18\x01 \x01(\x05\x12#\n\x06sender\x18\x02 \x01(\x0b\x32\x13.tedapi.Participant\x12&\n\trecipient\x18\x03 \x01(\x0b\x32\x13.tedapi.Participant\x12\'\n\x06\x63onfig\x18\x0f \x01(\x0b\x32\x12.tedapi.ConfigTypeH\x00\x88\x01\x01\x12\'\n\x07payload\x18\x10 \x01(\x0b\x32\x11.tedapi.QueryTypeH\x01\x88\x01\x01\x42\t\n\x07_configB\n\n\x08_payload\"g\n\x0bParticipant\x12\r\n\x03\x64in\x18\x01 \x01(\tH\x00\x12\x16\n\x0cteslaService\x18\x02 \x01(\x05H\x00\x12\x0f\n\x05local\x18\x03 \x01(\x05H\x00\x12\x1a\n\x10\x61uthorizedClient\x18\x04 \x01(\x05H\x00\x42\x04\n\x02id\"\x15\n\x04Tail\x12\r\n\x05value\x18\x01 \x01(\x05\"t\n\tQueryType\x12+\n\x04send\x18\x01 \x01(\x0b\x32\x18.tedapi.PayloadQuerySendH\x00\x88\x01\x01\x12(\n\x04recv\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"\xac\x01\n\x10PayloadQuerySend\x12\x10\n\x03num\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12+\n\x07payload\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x12\x11\n\x04\x63ode\x18\x03 \x01(\x0cH\x02\x88\x01\x01\x12#\n\x01\x62\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValueH\x03\x88\x01\x01\x42\x06\n\x04_numB\n\n\x08_payloadB\x07\n\x05_codeB\x04\n\x02_b\"l\n\nConfigType\x12)\n\x04send\x18\x01 \x01(\x0b\x32\x19.tedapi.PayloadConfigSendH\x00\x12)\n\x04recv\x18\x02 \x01(\x0b\x32\x19.tedapi.PayloadConfigRecvH\x00\x42\x08\n\x06\x63onfig\".\n\x11PayloadConfigSend\x12\x0b\n\x03num\x18\x01 \x01(\x05\x12\x0c\n\x04\x66ile\x18\x02 \x01(\t\"E\n\x11PayloadConfigRecv\x12\"\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x14.tedapi.ConfigString\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"*\n\x0c\x43onfigString\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x64 \x01(\t\",\n\rPayloadString\x12\r\n\x05value\x18\x01 \x01(\x05\x12\x0c\n\x04text\x18\x02 \x01(\t\"\x1c\n\x0bStringValue\x12\r\n\x05value\x18\x01 \x01(\tb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0ctedapi.proto\x12\x06tedapi\"O\n\x07Message\x12(\n\x07message\x18\x01 \x01(\x0b\x32\x17.tedapi.MessageEnvelope\x12\x1a\n\x04tail\x18\x02 \x01(\x0b\x32\x0c.tedapi.Tail\"\x88\x02\n\x0fMessageEnvelope\x12\x17\n\x0f\x64\x65liveryChannel\x18\x01 \x01(\x05\x12#\n\x06sender\x18\x02 \x01(\x0b\x32\x13.tedapi.Participant\x12&\n\trecipient\x18\x03 \x01(\x0b\x32\x13.tedapi.Participant\x12&\n\x08\x66irmware\x18\x04 \x01(\x0b\x32\x14.tedapi.FirmwareType\x12\'\n\x06\x63onfig\x18\x0f \x01(\x0b\x32\x12.tedapi.ConfigTypeH\x00\x88\x01\x01\x12\'\n\x07payload\x18\x10 \x01(\x0b\x32\x11.tedapi.QueryTypeH\x01\x88\x01\x01\x42\t\n\x07_configB\n\n\x08_payload\"g\n\x0bParticipant\x12\r\n\x03\x64in\x18\x01 \x01(\tH\x00\x12\x16\n\x0cteslaService\x18\x02 \x01(\x05H\x00\x12\x0f\n\x05local\x18\x03 \x01(\x05H\x00\x12\x1a\n\x10\x61uthorizedClient\x18\x04 \x01(\x05H\x00\x42\x04\n\x02id\"\x15\n\x04Tail\x12\r\n\x05value\x18\x01 \x01(\x05\"R\n\x0c\x46irmwareType\x12\x11\n\x07request\x18\x02 \x01(\tH\x00\x12)\n\x06system\x18\x03 \x01(\x0b\x32\x17.tedapi.FirmwarePayloadH\x00\x42\x04\n\x02id\"\xe3\x01\n\x0f\x46irmwarePayload\x12!\n\x04part\x18\x01 \x01(\x0b\x32\x13.tedapi.FirmwareDIN\x12\x0b\n\x03\x64in\x18\x02 \x01(\t\x12(\n\x07version\x18\x03 \x01(\x0b\x32\x17.tedapi.FirmwareVersion\x12\"\n\x04\x66ive\x18\x05 \x01(\x0b\x32\x14.tedapi.FirmwareFive\x12\x0b\n\x03six\x18\x06 \x01(\x05\x12%\n\x08wireless\x18\x07 \x01(\x0b\x32\x13.tedapi.DeviceArray\x12\x0e\n\x06\x66ield8\x18\x08 \x01(\x0c\x12\x0e\n\x06\x66ield9\x18\t \x01(\x0c\"-\n\x0b\x46irmwareDIN\x12\x0e\n\x06number\x18\x01 \x01(\t\x12\x0e\n\x06serial\x18\x02 \x01(\t\"-\n\x0f\x46irmwareVersion\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"\x19\n\x0c\x46irmwareFive\x12\t\n\x01\x64\x18\x02 \x01(\x05\"1\n\x0b\x44\x65viceArray\x12\"\n\x06\x64\x65vice\x18\x01 \x03(\x0b\x32\x12.tedapi.DeviceInfo\"\x9d\x01\n\nDeviceInfo\x12$\n\x07\x63ompany\x18\x01 \x01(\x0b\x32\x13.tedapi.StringValue\x12!\n\x04\x63hip\x18\x02 \x01(\x0b\x32\x13.tedapi.StringValue\x12\"\n\x05\x64\x61ta1\x18\x03 \x01(\x0b\x32\x13.tedapi.StringValue\x12\"\n\x05\x64\x61ta2\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValue\"t\n\tQueryType\x12+\n\x04send\x18\x01 \x01(\x0b\x32\x18.tedapi.PayloadQuerySendH\x00\x88\x01\x01\x12(\n\x04recv\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x42\x07\n\x05_sendB\x07\n\x05_recv\"\xac\x01\n\x10PayloadQuerySend\x12\x10\n\x03num\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12+\n\x07payload\x18\x02 \x01(\x0b\x32\x15.tedapi.PayloadStringH\x01\x88\x01\x01\x12\x11\n\x04\x63ode\x18\x03 \x01(\x0cH\x02\x88\x01\x01\x12#\n\x01\x62\x18\x04 \x01(\x0b\x32\x13.tedapi.StringValueH\x03\x88\x01\x01\x42\x06\n\x04_numB\n\n\x08_payloadB\x07\n\x05_codeB\x04\n\x02_b\"l\n\nConfigType\x12)\n\x04send\x18\x01 \x01(\x0b\x32\x19.tedapi.PayloadConfigSendH\x00\x12)\n\x04recv\x18\x02 \x01(\x0b\x32\x19.tedapi.PayloadConfigRecvH\x00\x42\x08\n\x06\x63onfig\".\n\x11PayloadConfigSend\x12\x0b\n\x03num\x18\x01 \x01(\x05\x12\x0c\n\x04\x66ile\x18\x02 \x01(\t\"E\n\x11PayloadConfigRecv\x12\"\n\x04\x66ile\x18\x01 \x01(\x0b\x32\x14.tedapi.ConfigString\x12\x0c\n\x04\x63ode\x18\x02 \x01(\x0c\"*\n\x0c\x43onfigString\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x64 \x01(\t\",\n\rPayloadString\x12\r\n\x05value\x18\x01 \x01(\x05\x12\x0c\n\x04text\x18\x02 \x01(\t\"\x1c\n\x0bStringValue\x12\r\n\x05value\x18\x01 \x01(\tb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -24,25 +24,39 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _globals['_MESSAGE']._serialized_start=24
   _globals['_MESSAGE']._serialized_end=103
   _globals['_MESSAGEENVELOPE']._serialized_start=106
-  _globals['_MESSAGEENVELOPE']._serialized_end=330
-  _globals['_PARTICIPANT']._serialized_start=332
-  _globals['_PARTICIPANT']._serialized_end=435
-  _globals['_TAIL']._serialized_start=437
-  _globals['_TAIL']._serialized_end=458
-  _globals['_QUERYTYPE']._serialized_start=460
-  _globals['_QUERYTYPE']._serialized_end=576
-  _globals['_PAYLOADQUERYSEND']._serialized_start=579
-  _globals['_PAYLOADQUERYSEND']._serialized_end=751
-  _globals['_CONFIGTYPE']._serialized_start=753
-  _globals['_CONFIGTYPE']._serialized_end=861
-  _globals['_PAYLOADCONFIGSEND']._serialized_start=863
-  _globals['_PAYLOADCONFIGSEND']._serialized_end=909
-  _globals['_PAYLOADCONFIGRECV']._serialized_start=911
-  _globals['_PAYLOADCONFIGRECV']._serialized_end=980
-  _globals['_CONFIGSTRING']._serialized_start=982
-  _globals['_CONFIGSTRING']._serialized_end=1024
-  _globals['_PAYLOADSTRING']._serialized_start=1026
-  _globals['_PAYLOADSTRING']._serialized_end=1070
-  _globals['_STRINGVALUE']._serialized_start=1072
-  _globals['_STRINGVALUE']._serialized_end=1100
+  _globals['_MESSAGEENVELOPE']._serialized_end=370
+  _globals['_PARTICIPANT']._serialized_start=372
+  _globals['_PARTICIPANT']._serialized_end=475
+  _globals['_TAIL']._serialized_start=477
+  _globals['_TAIL']._serialized_end=498
+  _globals['_FIRMWARETYPE']._serialized_start=500
+  _globals['_FIRMWARETYPE']._serialized_end=582
+  _globals['_FIRMWAREPAYLOAD']._serialized_start=585
+  _globals['_FIRMWAREPAYLOAD']._serialized_end=812
+  _globals['_FIRMWAREDIN']._serialized_start=814
+  _globals['_FIRMWAREDIN']._serialized_end=859
+  _globals['_FIRMWAREVERSION']._serialized_start=861
+  _globals['_FIRMWAREVERSION']._serialized_end=906
+  _globals['_FIRMWAREFIVE']._serialized_start=908
+  _globals['_FIRMWAREFIVE']._serialized_end=933
+  _globals['_DEVICEARRAY']._serialized_start=935
+  _globals['_DEVICEARRAY']._serialized_end=984
+  _globals['_DEVICEINFO']._serialized_start=987
+  _globals['_DEVICEINFO']._serialized_end=1144
+  _globals['_QUERYTYPE']._serialized_start=1146
+  _globals['_QUERYTYPE']._serialized_end=1262
+  _globals['_PAYLOADQUERYSEND']._serialized_start=1265
+  _globals['_PAYLOADQUERYSEND']._serialized_end=1437
+  _globals['_CONFIGTYPE']._serialized_start=1439
+  _globals['_CONFIGTYPE']._serialized_end=1547
+  _globals['_PAYLOADCONFIGSEND']._serialized_start=1549
+  _globals['_PAYLOADCONFIGSEND']._serialized_end=1595
+  _globals['_PAYLOADCONFIGRECV']._serialized_start=1597
+  _globals['_PAYLOADCONFIGRECV']._serialized_end=1666
+  _globals['_CONFIGSTRING']._serialized_start=1668
+  _globals['_CONFIGSTRING']._serialized_end=1710
+  _globals['_PAYLOADSTRING']._serialized_start=1712
+  _globals['_PAYLOADSTRING']._serialized_end=1756
+  _globals['_STRINGVALUE']._serialized_start=1758
+  _globals['_STRINGVALUE']._serialized_end=1786
 # @@protoc_insertion_point(module_scope)

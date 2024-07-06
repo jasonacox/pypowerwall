@@ -157,3 +157,4 @@ proxy/teslapy
 j
 config.json
 status.json
+tools/tedapi/firmware.raw
