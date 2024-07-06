@@ -50,7 +50,7 @@ message FirmwareType {
 }
 
 message FirmwarePayload {
-  FirmwareDIN part = 1;
+  EcuId gateway = 1;
   string din = 2;
   FirmwareVersion version = 3;
   FirmwareFive five = 5;
@@ -60,14 +60,14 @@ message FirmwarePayload {
   bytes field9 = 9;
 }
 
-message FirmwareDIN {
-  string number = 1;
-  string serial = 2;
+message EcuId {
+    string partNumber = 1;
+    string serialNumber = 2;
 }
 
 message FirmwareVersion {
   string text = 1;
-  bytes code = 2;
+  bytes githash = 2;
 }
 
 message FirmwareFive {
@@ -80,9 +80,9 @@ message DeviceArray {
 
 message DeviceInfo {
   StringValue company = 1;
-  StringValue chip = 2;
-  StringValue data1 = 3;
-  StringValue data2 = 4;
+  StringValue model = 2;
+  StringValue fcc_id = 3;
+  StringValue ic = 4;
 }
 
 // ***** Query = 16 *****
@@ -243,7 +243,7 @@ message StringValue {
 // 2 {
 //   1: 1
 // }
-
+//
 // RESPONSE - firmware
 // 1 {
 //   1: 1
