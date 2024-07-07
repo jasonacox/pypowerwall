@@ -22,6 +22,7 @@ message MessageEnvelope {
   int32 deliveryChannel = 1;
   Participant sender = 2;
   Participant recipient = 3;
+  FirmwareType firmware = 4;
   optional ConfigType config = 15;
   optional QueryType payload = 16;
 }
@@ -37,6 +38,51 @@ message Participant {
 
 message Tail {
   int32 value = 1;
+}
+
+// ***** Query = 4 ****
+
+message FirmwareType {
+  oneof id {
+    string request = 2;
+    FirmwarePayload system = 3;
+  }
+}
+
+message FirmwarePayload {
+  EcuId gateway = 1;
+  string din = 2;
+  FirmwareVersion version = 3;
+  FirmwareFive five = 5;
+  int32 six = 6;
+  DeviceArray wireless = 7;
+  bytes field8 = 8;
+  bytes field9 = 9;
+}
+
+message EcuId {
+    string partNumber = 1;
+    string serialNumber = 2;
+}
+
+message FirmwareVersion {
+  string text = 1;
+  bytes githash = 2;
+}
+
+message FirmwareFive {
+  int32 d = 2;
+}
+
+message DeviceArray {
+  repeated DeviceInfo device = 1;
+}
+
+message DeviceInfo {
+  StringValue company = 1;
+  StringValue model = 2;
+  StringValue fcc_id = 3;
+  StringValue ic = 4;
 }
 
 // ***** Query = 16 *****
@@ -174,6 +220,86 @@ message StringValue {
 //     2 {
 //       1: 1
 //       2: "{...}"
+//     }
+//   }
+// }
+// 2 {
+//   1: 1
+// }
+//
+// REQUEST - firmware
+// 1 {
+//   1: 1
+//   2 {
+//     3: 1
+//   }
+//   3 {
+//     1: "1707000-00-J--TG9999999999XP"
+//   }
+//   4 {
+//     2: ""
+//   }
+// }
+// 2 {
+//   1: 1
+// }
+//
+// RESPONSE - firmware
+// 1 {
+//   1: 1
+//   2 {
+//     1: "1707000-00-J--TG9999999999XP"
+//   }
+//   3 {
+//     3: 1
+//   }
+//   4 {
+//     3 {
+//       1 {
+//         1: "1707000-00-J"
+//         2: "TG9999999999XP"
+//       }
+//       2: "1707000-00-J--TG9999999999XP"
+//       3 {
+//         1: "24.12.6-PW3-AFCI 008bf6ff"    <--- PW3 firmware version
+//         2: "\000\213\366\...Redacted..."
+//       }
+//       5 {
+//         2: 1
+//       }
+//       6: 4
+//       7 {
+//         1 {
+//           1 {
+//             1: "Quectel"
+//           }
+//           2 {
+//             1: "BG95-M2"
+//           }
+//           3 {
+//             1: "XMR2020BG95M2"
+//           }
+//           4 {
+//             1: "10224A-2020BG95M2"
+//           }
+//         }
+//         1 {
+//           1 {
+//             1: "Texas Instruments"
+//           }
+//           2 {
+//             1: "WL18MODGI"
+//           }
+//           3 {
+//             1: "Z64-WL18DBMOD"
+//           }
+//           4 {
+//             1: "451I-WL18DBMOD"
+//           }
+//         }
+//       }
+//       8: "\370!s\306\212...Redacted..."
+//       9: "\373U\353\322...Redacted..."
 //     }
 //   }
 // }

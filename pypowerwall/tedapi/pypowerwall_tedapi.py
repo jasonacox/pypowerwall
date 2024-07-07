@@ -185,6 +185,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def get_api_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
+        firmware_version = self.tedapi.get_firmware_version(force=force)
         if config is None:
             data = None
         else:
@@ -193,7 +194,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 "start_time": lookup(config,["site_info", "battery_commission_date"]),
                 "up_time_seconds": None,
                 "is_new": False,
-                "version": __version__, # TODO
+                "version": firmware_version,
                 "git_hash": None,
                 "commission_count": 0,
                 "device_type": None, 

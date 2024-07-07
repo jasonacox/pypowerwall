@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.10.8 - TEDAPI Firmware Version
+
+* Add TEDAPI `get_firmware_version()` to poll Powerwall for firmware version. Discovered by @geptto in https://github.com/jasonacox/pypowerwall/issues/97. This function has been integrated into pypowerwall existing APIs (e.g. `pw.version()`)
+* Add TEDAPI `get_components()` and `get_battery_block()` functions which providing additional Powerwall 3 related device vital information for Powerwall 3 owners. Discovered by @lignumaqua in https://github.com/jasonacox/Powerwall-Dashboard/discussions/392#discussioncomment-9864364. The plan it to integrate this data into the other device vitals payloads (TODO).
+
 ## v0.10.7 - Energy History
 
 * FleetAPI - Add `get_history()` and `get_calendar_history()` to return energy, power, soe, and other history data.
