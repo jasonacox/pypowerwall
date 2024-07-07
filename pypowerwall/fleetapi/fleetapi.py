@@ -19,6 +19,8 @@
     get_site_info() - get site info
     get_battery_reserve() - get battery reserve level
     get_operating_mode() - get operating mode
+    get_history() - get energy history
+    get_calendar_history() - get calendar history
     solar_power() - get solar power
     grid_power() - get grid power
     battery_power() - get battery power
@@ -461,6 +463,38 @@ class FleetAPI:
         payload = self.poll("api/1/products", force=force)
         log.debug(f"get_products: {payload}")
         return self.keyval(payload, "response")
+
+    def get_calendar_history(self, kind=None, duration=None, time_zone=None, 
+                             start=None, end=None):
+        """ Get energy history 
+        kind: power, soe, energy, backup, self_consumption, 
+              time_of_use_energy, savings
+        duration: day, week, month, year, lifetime
+        time_zone: America/Los_Angeles
+        start: 2024-05-01T00:00:00-07:00 (RFC3339 format)
+        end: 2024-05-01T23:59:59-07:00
+        """
+        return self.get_history(kind, duration, time_zone, 
+                                start, end, "calendar_history")
+    
+    def get_history(self, kind=None, duration=None, time_zone=None, 
+                    start=None, end=None, history="history"):
+        """ Get energy history 
+        kind: power, energy, backup, self_consumption
+        duration: day, week, month, year, lifetime
+        time_zone: America/Los_Angeles
+        start: 2024-05-01T00:00:00-07:00 (RFC3339 format)
+        end: 2024-05-01T23:59:59-07:00
+        """
+        if not self.site_id:
+            return None
+        arg_kind = f"kind={kind}&" if kind else ""
+        arg_duration = f"period={duration}&" if duration else ""
+        arg_time_zone = f"time_zone={time_zone}" if time_zone else ""
+        arg_start = f"start={start}&" if start else ""
+        arg_end = f"end={end}&" if end else ""
+        h = self.poll(f"api/1/energy_sites/{self.site_id}/{history}?{arg_kind}{arg_duration}{arg_time_zone}{arg_start}{arg_end}")
+        return self.keyval(h, "response")
 
     def set_battery_reserve(self, reserve: int):
         if reserve < 0 or reserve > 100:
