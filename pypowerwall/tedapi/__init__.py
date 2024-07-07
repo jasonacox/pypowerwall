@@ -26,6 +26,9 @@
     backup_time_remaining() - Get the time remaining in hours
     battery_level() - Get the battery level as a percentage
     vitals() - Use tedapi data to create a vitals dictionary
+    get_firmware_version() - Get the Powerwall Firmware Version
+    get_components() - Get the Powerwall 3 Device Information
+    get_battery_block() - Get the Powerwall 3 Battery Blocks
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -360,6 +363,257 @@ class TEDAPI:
         finally:
             # Release lock
             self.apilock['status'] = False
+        return data
+
+    def get_firmware_version(self, force=False, details=False):
+        """
+        Get the Powerwall Firmware Version
+
+        Args:
+            force (bool): Force a refresh of the firmware version
+            details (bool): Return additional system information including
+                            gateway part number, serial number, and wireless devices
+        """
+        payload = None
+        # Check Connection
+        if not self.din:
+            if not self.connect():
+                log.error("Not Connected - Unable to get firmware version")
+                return None
+        # Check Cache
+        if not force and "firmware" in self.pwcachetime:
+            if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
+                log.debug("Using Cached Firmware")
+                return self.pwcache["firmware"]
+        if not force and self.pwcooldown > time.perf_counter():
+            # Rate limited - return None
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        # Fetch Current Status from Powerwall
+        log.debug("Get Firmware Version from Powerwall")
+        # Build Protobuf to fetch status
+        pb = tedapi_pb2.Message()
+        pb.message.deliveryChannel = 1
+        pb.message.sender.local = 1
+        pb.message.recipient.din = self.din  # DIN of Powerwall
+        pb.message.firmware.request = ""
+        pb.tail.value = 1
+        url = f'https://{GW_IP}/tedapi/v1'
+        try:
+            # Set lock
+            self.apilock['firmware'] = True
+            r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
+                                          headers={'Content-type': 'application/octet-string'},
+                                          data=pb.SerializeToString(), timeout=self.timeout)
+            log.debug(f"Response Code: {r.status_code}")
+            if r.status_code in BUSY_CODES:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                self.apilock['firmware'] = False
+                return None
+            if r.status_code != 200:
+                log.error(f"Error fetching firmware version: {r.status_code}")
+                self.apilock['firmware'] = False
+                return None
+            # Decode response
+            tedapi = tedapi_pb2.Message()
+            tedapi.ParseFromString(r.content)
+            firmware_version = tedapi.message.firmware.system.version.text
+            if details:
+                payload = {
+                    "system": {
+                        "gateway": {
+                            "partNumber": tedapi.message.firmware.system.gateway.partNumber,
+                            "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
+                        },
+                        "din": tedapi.message.firmware.system.din,
+                        "version": {
+                            "text": tedapi.message.firmware.system.version.text,
+                            "githash": tedapi.message.firmware.system.version.githash
+                        },
+                        "five": tedapi.message.firmware.system.five,
+                        "six": tedapi.message.firmware.system.six,
+                        "wireless": {
+                            "device": []
+                        }
+                    }
+                }
+                try:
+                    for device in tedapi.message.firmware.system.wireless.device:
+                        payload["system"]["wireless"]["device"].append({
+                            "company": device.company.value,
+                            "model": device.model.value,
+                            "fcc_id": device.fcc_id.value,
+                            "ic": device.ic.value
+                        })
+                except Exception as e:
+                    log.debug(f"Error parsing wireless devices: {e}")
+                log.debug(f"Firmware Version: {payload}")
+            else:
+                payload = firmware_version
+            log.debug(f"Firmware Version: {firmware_version}")
+            self.pwcachetime["firmware"] = time.time()
+            self.pwcache["firmware"] = firmware_version
+        except Exception as e:
+            log.error(f"Error fetching firmware version: {e}")
+            payload = None
+        finally:
+            # Release lock
+            self.apilock['firmware'] = False
+        return payload
+
+    def get_components(self, force=False):
+        """
+        Get the Powerwall 3 Device Information
+
+        Note: Provides empty response for previous Powerwall versions
+        """
+        components = None
+        # Check Connection
+        if not self.din:
+            if not self.connect():
+                log.error("Not Connected - Unable to get configuration")
+                return None
+        # Check Cache
+        if not force and "components" in self.pwcachetime:
+            if time.time() - self.pwcachetime["components"] < self.pwconfigexpire:
+                log.debug("Using Cached Components")
+                return self.pwcache["components"]
+        if not force and self.pwcooldown > time.perf_counter():
+            # Rate limited - return None
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        # Fetch Configuration from Powerwall
+        log.debug("Get PW3 Components from Powerwall")
+        # Build Protobuf to fetch config
+        pb = tedapi_pb2.Message()
+        pb.message.deliveryChannel = 1
+        pb.message.sender.local = 1
+        pb.message.recipient.din = self.din  # DIN of Powerwall
+        pb.message.payload.send.num = 2
+        pb.message.payload.send.payload.value = 1
+        pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
+        pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
+        pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
+        pb.tail.value = 1
+        url = f'https://{GW_IP}/tedapi/v1'
+        try:
+            # Set lock
+            self.apilock['components'] = True
+            r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
+                                          headers={'Content-type': 'application/octet-string'},
+                                          data=pb.SerializeToString(), timeout=self.timeout)
+            log.debug(f"Response Code: {r.status_code}")
+            if r.status_code in BUSY_CODES:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                self.apilock['components'] = False
+                return None
+            if r.status_code != 200:
+                log.error(f"Error fetching components: {r.status_code}")
+                self.apilock['components'] = False
+                return None
+            # Decode response
+            tedapi = tedapi_pb2.Message()
+            tedapi.ParseFromString(r.content)
+            payload = tedapi.message.payload.recv.text
+            log.debug(f"Payload (len={len(payload)}): {payload}")
+            # Append payload to components
+            components = json.loads(payload)
+            log.debug(f"Components: {components}")
+            self.pwcachetime["components"] = time.time()
+            self.pwcache["components"] = components
+        except Exception as e:
+            log.error(f"Error fetching components: {e}")
+            components = None
+        finally:
+            # Release lock
+            self.apilock['components'] = False
+        return components
+
+
+    def get_battery_block(self, din=None, force=False):
+        """
+        Get the Powerwall 3 Battery Block Information
+
+        Args:
+            din (str): DIN of Powerwall 3 to query
+            force (bool): Force a refresh of the battery block
+
+        Note: Provides 404 response for previous Powerwall versions
+        """
+        data = None
+        # Make sure we have a DIN
+        if not din:
+            din = self.get_din()
+        if not din:
+            log.error("No DIN specified - Unable to get battery block")
+            return None
+        # Check Cache
+        if not force and din in self.pwcachetime:
+            if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
+                log.debug("Using Cached Battery Block")
+                return self.pwcache[din]
+        if not force and self.pwcooldown > time.perf_counter():
+            # Rate limited - return None
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        # Fetch Battery Block from Powerwall
+        log.debug(f"Get Battery Block from Powerwall ({din})")
+        # Build Protobuf to fetch config
+        pb = tedapi_pb2.Message()
+        pb.message.deliveryChannel = 1
+        pb.message.sender.local = 1
+        pb.message.sender.din = self.din  # DIN of Primary Powerwall 3 / System
+        pb.message.recipient.din = din  # DIN of Powerwall of Interest
+        pb.message.payload.send.num = 2
+        pb.message.payload.send.payload.value = 1
+        pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
+        pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
+        pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
+        pb.tail.value = 2   
+        url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
+        try:
+            # Set lock
+            self.apilock[din] = True
+            r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
+                                        headers={'Content-type': 'application/octet-string'},
+                                        data=pb.SerializeToString(), timeout=self.timeout)
+            log.debug(f"Response Code: {r.status_code}")
+            if r.status_code in BUSY_CODES:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                self.apilock[din] = False
+                return None
+            if r.status_code == 404:
+                log.debug(f"Device not found: {din}")
+                self.apilock[din] = False
+                return None
+            if r.status_code != 200:
+                log.error(f"Error fetching config: {r.status_code}")
+                self.apilock[din] = False
+                return None
+            # Decode response
+            tedapi = tedapi_pb2.Message()
+            tedapi.ParseFromString(r.content)
+            payload = tedapi.message.config.recv.file.text
+            try:
+                data = json.loads(payload)
+            except json.JSONDecodeError as e:
+                log.error(f"Error Decoding JSON: {e}")
+                data = {}
+            log.debug(f"Configuration: {data}")
+            self.pwcachetime[din] = time.time()
+            self.pwcache[din] = data
+        except Exception as e:
+            log.error(f"Error fetching device: {e}")
+            data = None
+        finally:
+            # Release lock
+            self.apilock[din] = False
         return data
 
     def connect(self):
