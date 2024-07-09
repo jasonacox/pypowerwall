@@ -23,7 +23,7 @@ Step 2 - Run the `create_pem_key.py` script and place the **public** key on your
 Step 3 - Run SETUP using the built in pyPowerwall `fleetapi` setup mode. This will ask for all the details above, generate a partner token, register your partner account, generate a user token needed to access your Powerwall. It will also get the site_id and run a query to pull live power data for your Powerwall.
 
 ```bash
-python -m pypowerall fleetapi
+python -m pypowerwall fleetapi
 ```
 
 Configuration data will be stored in `.pypowerwall.fleetap`.
