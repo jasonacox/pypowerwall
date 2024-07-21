@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## v0.10.8 - TEDAPI Voltage & Current
+## v0.10.9 - TEDAPI Voltage & Current
 
-* Add computed voltage and current to `/api/meters/aggregates` from TEDAPI status data. 
+* Add computed voltage and current to `/api/meters/aggregates` from TEDAPI status data.
+* Fix error in `num_meters_aggregated` calculation in aggregates.
 
 ## v0.10.8 - TEDAPI Firmware Version
 
