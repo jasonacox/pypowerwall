@@ -37,7 +37,7 @@ API_METERS_AGGREGATES_STUB = {
         "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
         "timeout": 1500000000,
         "num_meters_aggregated": None,
-        "instant_total_current": 0
+        "instant_total_current": None
     },
     "load": {
         "last_communication_time": None,
@@ -56,7 +56,7 @@ API_METERS_AGGREGATES_STUB = {
         "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
         "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
         "timeout": 1500000000,
-        "instant_total_current": 0
+        "instant_total_current": None
     },
     "solar": {
         "last_communication_time": None,
@@ -76,7 +76,7 @@ API_METERS_AGGREGATES_STUB = {
         "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
         "timeout": 1000000000,
         "num_meters_aggregated": None,
-        "instant_total_current": 0
+        "instant_total_current": None
     }
 }
 
