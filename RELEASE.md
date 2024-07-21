@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.10.9 - TEDAPI Voltage & Current
+
+* Add computed voltage and current to `/api/meters/aggregates` from TEDAPI status data.
+* Fix error in `num_meters_aggregated` calculation in aggregates.
+
 ## v0.10.8 - TEDAPI Firmware Version
 
 * Add TEDAPI `get_firmware_version()` to poll Powerwall for firmware version. Discovered by @geptto in https://github.com/jasonacox/pypowerwall/issues/97. This function has been integrated into pypowerwall existing APIs (e.g. `pw.version()`)

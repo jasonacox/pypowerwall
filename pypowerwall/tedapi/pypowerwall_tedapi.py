@@ -1,6 +1,7 @@
 import json
 import logging
 from typing import Optional, Union
+import math
 
 from pypowerwall.tedapi import TEDAPI, GW_IP, lookup
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
@@ -24,6 +25,22 @@ def set_debug(debug=False, quiet=False, color=True):
     else:
         log.setLevel(logging.NOTSET)
 
+# Compute the line-to-line voltage of two and three phase legs
+def compute_LL_voltage(v1n, v2n, v3n=None):
+    """
+    Compute the line-to-line voltage of two and three phase legs
+    Args: v1n, v2n, v3n - line-to-neutral voltages
+    """
+    if not v3n:
+        # single phase voltage - 180 degrees out of phase
+        return v1n + v2n
+    else:
+        # three phase voltage - 120 degrees out of phase
+        v12 = math.sqrt(v1n**2 + v2n**2 + v1n * v2n)
+        v23 = math.sqrt(v2n**2 + v3n**2 + v2n * v3n)
+        v31 = math.sqrt(v3n**2 + v1n**2 + v3n * v1n)
+        avg_ll_voltage = (v12 + v23 + v31) / 3
+        return avg_ll_voltage
 
 # pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
@@ -301,34 +318,72 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         battery_power = self.tedapi.current_power(force=force, location="battery")
         load_power = self.tedapi.current_power(force=force, location="load")
         grid_power = self.tedapi.current_power(force=force, location="site")
-        batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
-        battery_count = len(batteryBlocks) or 0
-        inverters = lookup(config, ("control", "pvInverters"))
-        if inverters is not None:
-            solar_inverters = len(inverters)
-        elif lookup(config, ("components", "solar")):
-            solar_inverters = 1
-        else:
-            solar_inverters = 0
+        # Compute load (home) voltages and current
+        v_load = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
+        v1n = v_load.get("ISLAND_VL1N_Main", 0)
+        v2n = v_load.get("ISLAND_VL2N_Main", 0)
+        v3n = v_load.get("ISLAND_VL3N_Main", 0)
+        vll_load = compute_LL_voltage(v1n, v2n, v3n)
+        # Compute site (grid) voltages
+        v_site = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
+        v1n = v_site.get("ISLAND_VL1N_Main", 0)
+        v2n = v_site.get("ISLAND_VL2N_Main", 0)
+        v3n = v_site.get("ISLAND_VL3N_Main", 0)
+        vll_site = compute_LL_voltage(v1n, v2n, v3n)
+        meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
+        i1 = meter_x.get("METER_X_CTA_I", 0)
+        i2 = meter_x.get("METER_X_CTB_I", 0)
+        i3 = meter_x.get("METER_X_CTC_I", 0)
+        i_site = i1 + i2 + i3
+        # Compute solar (pv) voltages
+        v_solar = lookup(status, ("esCan","bus","PVS")) or []
+        sum_vll_solar = 0
+        count_solar = 0
+        for i in range(len(v_solar)):
+            v = lookup(v_solar[i], ("PVS_Status", "PVS_vLL")) or 0
+            if v:
+                sum_vll_solar += v
+                count_solar += 1
+        vll_solar = sum_vll_solar / count_solar if count_solar else 0
+        # Compute battery voltages
+        v_battery = lookup(status, ("esCan","bus","PINV")) or []
+        sum_vll_battery = 0
+        count_battery = 0
+        for i in range(len(v_battery)):
+            v = lookup(v_battery[i], ("PINV_Status", "PINV_Vout")) or 0
+            if v:
+                sum_vll_battery += v
+                count_battery += 1
+        vll_battery = sum_vll_battery / count_battery if count_battery else 0
+        # Load payload template
         data = API_METERS_AGGREGATES_STUB
         data['site'].update({
             "last_communication_time": timestamp,
             "instant_power": grid_power,
+            "instant_average_voltage": vll_site,
+            "instant_average_current": i_site,
+            "instant_total_current": i_site,
+            "num_meters_aggregated": 1,
+            "disclaimer": "voltage and current calculated from tedapi data",
         })
         data['battery'].update({
             "last_communication_time": timestamp,
             "instant_power": battery_power,
-            "num_meters_aggregated": battery_count,
+            "num_meters_aggregated": count_battery,
+            "instant_average_voltage": vll_battery,
         })
         data['load'].update({
             "last_communication_time": timestamp,
             "instant_power": load_power,
-
+            "instant_average_voltage": vll_load,
+            "disclaimer": "voltage calculated from tedapi data",
         })
         data['solar'].update({
             "last_communication_time": timestamp,
             "instant_power": solar_power,
-            "num_meters_aggregated": solar_inverters,
+            "num_meters_aggregated": count_solar,
+            "instant_average_voltage": vll_solar,
+            "disclaimer": "voltage calculated from tedapi data",
         })
         return data
 
