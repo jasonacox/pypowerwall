@@ -88,7 +88,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 10, 9)
+version_tuple = (0, 10, 10)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -844,7 +844,7 @@ class Powerwall(object):
         Enable or disable grid charging
 
         Args:
-            enabled:    Set to True to enable grid charging, False to disable it
+            mode: Set to True to enable grid charging, False to disable it
 
         Returns:
             Dictionary with operation results.
@@ -865,7 +865,7 @@ class Powerwall(object):
         Set grid export mode
 
         Args:
-            mode:    Set grid export mode (battery_ok, pv_only, or never)
+            mode: Set grid export mode (battery_ok, pv_only, or never)
 
         Returns:
             Dictionary with operation results.
