@@ -21,6 +21,8 @@
     get_operating_mode() - get operating mode
     get_history() - get energy history
     get_calendar_history() - get calendar history
+    get_grid_charging() - get allow grid charging mode
+    get_grid_export() - get grid export mode
     solar_power() - get solar power
     grid_power() - get grid power
     battery_power() - get battery power
@@ -34,6 +36,8 @@
     ... Set
     set_battery_reserve(reserve) - set battery reserve level (percent)
     set_operating_mode(mode) - set operating mode (self_consumption or autonomous)
+    set_grid_charging(mode) - set grid charging mode (on or off)
+    set_grid_export(mode) - set grid export mode (battery_ok, pv_only, or never)
 
  Author: Jason A. Cox
  Date: 18 Feb 2024
@@ -496,7 +500,23 @@ class FleetAPI:
         h = self.poll(f"api/1/energy_sites/{self.site_id}/{history}?{arg_kind}{arg_duration}{arg_time_zone}{arg_start}{arg_end}")
         return self.keyval(h, "response")
 
+    def get_grid_charging(self, force=False):
+        """ Get allow grid charging allowed mode (True or False) """
+        components = self.get_site_info(force=force).get("components") or {}
+        state = self.keyval(components, "disallow_charge_from_grid_with_solar_installed") or False
+        return not state
+
+    def get_grid_export(self, force=False):
+        """ Get grid export mode (battery_ok, pv_only, or never) """
+        components = self.get_site_info(force=force).get("components") or {}
+        # Check to see if non_export_configured - pre-PTO setting
+        if self.keyval(components, "non_export_configured"):
+            return "never"
+        mode = self.keyval(components, "customer_preferred_export_rule") or "battery_ok"
+        return mode
+
     def set_battery_reserve(self, reserve: int):
+        """ Set battery reserve level (percent) """
         if reserve < 0 or reserve > 100:
             log.debug(f"Invalid reserve level: {reserve}")
             return False
@@ -508,12 +528,59 @@ class FleetAPI:
         return payload
 
     def set_operating_mode(self, mode: str):
+        """ Set operating mode (self_consumption or autonomous) """
         data = {"default_real_mode": mode}
         if mode not in ["self_consumption", "autonomous"]:
             log.debug(f"Invalid mode: {mode}")
             return False
         # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/operation'
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/operation", "POST", data)
+        # Invalidate cache
+        self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
+        return payload
+
+    def set_grid_charging(self, mode: str):
+        """ Set allow grid charging mode (True or False)
+
+        Mode will show up in get_site_info() under components:
+         * False
+            "disallow_charge_from_grid_with_solar_installed": true,
+         * True
+            No entry
+        """
+        if mode in ["on", "yes"] or mode is True:
+            mode = False
+        elif mode in ["off", "no"] or mode is False:
+            mode = True
+        else:
+            log.debug(f"Invalid mode: {mode}")
+            return False
+        data = {"disallow_charge_from_grid_with_solar_installed": mode}
+        # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/grid_import_export'
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/grid_import_export", "POST", data)
+        # Invalidate cache
+        self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
+        return payload
+
+    def set_grid_export(self, mode: str):
+        """ Set grid export mode (battery_ok, pv_only, or never) 
+        
+        Mode will show up in get_site_info() under components:
+         * never
+            "non_export_configured": true,
+            "customer_preferred_export_rule": "never",
+         * pv_only
+            "customer_preferred_export_rule": "pv_only"
+         * battery_ok
+            "customer_preferred_export_rule": "battery_ok"
+            or not set
+        """
+        if mode not in ["battery_ok", "pv_only", "never"]:
+            log.debug(f"Invalid mode: {mode} - must be battery_ok, pv_only, or never")
+            return False
+        data = {"customer_preferred_export_rule": mode}
+        # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/grid_import_export'
+        payload = self.poll(f"api/1/energy_sites/{self.site_id}/grid_import_export", "POST", data)
         # Invalidate cache
         self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
         return payload

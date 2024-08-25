@@ -777,6 +777,17 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             }
         return resp
 
+    def set_grid_charging(self, mode) -> bool:
+        return self.fleet.set_grid_charging(mode)
+
+    def set_grid_export(self, mode:str) -> bool:
+        return self.fleet.set_grid_export(mode)
+
+    def get_grid_export(self, force=False) -> str:
+        return self.fleet.get_grid_export(force=force)
+
+    def get_grid_charging(self, force=False) -> bool:
+        return self.fleet.get_grid_charging(force=force)
 
 if __name__ == "__main__":
     import sys

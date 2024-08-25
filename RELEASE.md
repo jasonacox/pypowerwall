@@ -1,5 +1,54 @@
 # RELEASE NOTES
 
+## v0.10.10 - Add Grid Control
+
+* Add a function and command line options to allow user to get and set grid charging and exporting modes (see https://github.com/jasonacox/pypowerwall/issues/108).
+* Supports FleetAPI and Cloud modes only (not Local mode)
+
+#### Command Line Examples
+
+```bash
+# Connect to Cloud
+python3 -m pypowerwall setup # or fleetapi
+
+# Get Current Settings
+python3 -m pypowerwall get
+
+# Turn on Grid charging
+python3 -m pypowerwall set -gridcharging on
+
+# Turn off Grid charging
+python3 -m pypowerwall  set -gridcharging off
+
+# Set Grid Export to Solar (PV) energy only
+python3 -m pypowerwall set -gridexport pv_only
+
+# Set Grid Export to Battery and Solar energy
+python3 -m pypowerwall set -gridexport battery_ok
+
+# Disable export of all energy to grid
+python3 -m pypowerwall set -gridexport never
+```
+
+#### Programming Examples
+
+```python
+import pypowerwall
+
+# FleetAPI Mode
+PW_HOST=""
+PW_EMAIL="my@example.com"
+pw = pypowerwall.Powerwall(host=PW_HOST, email=PW_EMAIL, fleetapi=True)
+
+# Get modes
+pw.get_grid_charging()
+pw.get_grid_export()
+
+# Set modes
+pw.set_grid_charging("on") # set grid charging mode (on or off)
+pw.set_grid_export("pv_only")   # set grid export mode (battery_ok, pv_only, or never)
+```
+
 ## v0.10.9 - TEDAPI Voltage & Current
 
 * Add computed voltage and current to `/api/meters/aggregates` from TEDAPI status data.
