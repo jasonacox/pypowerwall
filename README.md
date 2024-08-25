@@ -217,6 +217,10 @@ and call function to poll data.  Here is an example:
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)  # Set Battery Reserve Percentage and/or Operation Mode
+    set_grid_charging(mode)   # Enable or disable grid charging (mode = True or False)
+    set_grid_export(mode)     # Set grid export mode (mode = battery_ok, pv_only, never)
+    get_grid_charging()       # Get the current grid charging mode
+    get_grid_export()         # Get the current grid export mode
 ```
 
 ## Tools
@@ -243,16 +247,18 @@ Options:
 
 Commands (run <command> -h to see usage information):
   {setup,scan,set,get,version}
-    setup               Setup Tesla Login for Cloud Mode access
-    scan                Scan local network for Powerwall gateway
-    set                 Set Powerwall Mode and Reserve Level
-    get                 Get Powerwall Settings and Power Levels
-    version             Print version information
+    setup                 Setup Tesla Login for Cloud Mode access
+    scan                  Scan local network for Powerwall gateway
+    set                   Set Powerwall Mode and Reserve Level
+    get                   Get Powerwall Settings and Power Levels
+    version               Print version information
 
    set options:
-      -mode MODE        Powerwall Mode: self_consumption, backup, or autonomous
-      -reserve RESERVE  Set Battery Reserve Level [Default=20]
-      -current          Set Battery Reserve Level to Current Charge
+      -mode MODE          Powerwall Mode: self_consumption, backup, or autonomous
+      -reserve RESERVE    Set Battery Reserve Level [Default=20]
+      -current            Set Battery Reserve Level to Current Charge
+      -gridcharging MODE  Set Grid Charging (allow) Mode ("on" or "off")
+      -gridexport MODE    Set Export to Grid Mode ("battery_ok", "pv_only", or "never")
 
    get options:
       -format FORMAT      Output format: text, json, csv

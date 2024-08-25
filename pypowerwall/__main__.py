@@ -57,6 +57,10 @@ set_mode_args.add_argument("-reserve", type=int, default=None,
                             help="Set Battery Reserve Level [Default=20]")
 set_mode_args.add_argument("-current", action="store_true", default=False,
                             help="Set Battery Reserve Level to Current Charge")
+set_mode_args.add_argument("-gridcharging", type=str, default=None,
+                            help="Enable Grid Charging Mode: on or off")
+set_mode_args.add_argument("-gridexport", type=str, default=None,
+                            help="Grid Export Mode: battery_ok, pv_only, or never")
 
 get_mode_args = subparsers.add_parser("get", help='Get Powerwall Settings and Power Levels')
 get_mode_args.add_argument("-format", type=str, default="text",
@@ -129,8 +133,8 @@ elif command == 'scan':
 # Set Powerwall Mode
 elif command == 'set':
     # If no arguments, print usage
-    if not args.mode and not args.reserve and not args.current:
-        print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]")
+    if not args.mode and not args.reserve and not args.current and not args.gridcharging and not args.gridexport:
+        print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current] [-gridcharging MODE] [-gridexport MODE]")
         sys.exit(1)
     import pypowerwall
     # Determine which cloud mode to use
@@ -154,6 +158,20 @@ elif command == 'set':
         current = float(pw.level())
         print("Setting Powerwall Reserve to Current Charge Level %s" % current)
         pw.set_reserve(current)
+    if args.gridcharging:
+        gridcharging = args.gridcharging.lower()
+        if gridcharging not in ['on', 'off']:
+            print("ERROR: Invalid Grid Charging Mode [%s] - must be on or off" % gridcharging)
+            sys.exit(1)
+        print("Setting Grid Charging Mode to %s" % gridcharging)
+        pw.set_grid_charging(gridcharging)
+    if args.gridexport:
+        gridexport = args.gridexport.lower()
+        if gridexport not in ['battery_ok', 'pv_only', 'never']:
+            print("ERROR: Invalid Grid Export Mode [%s] - must be battery_ok, pv_only, or never" % gridexport)
+            sys.exit(1)
+        print("Setting Grid Export Mode to %s" % gridexport)
+        pw.set_grid_export(gridexport)
 
 # Get Powerwall Mode
 elif command == 'get':
@@ -177,6 +195,8 @@ elif command == 'get':
         'home': pw.home(),
         'battery': pw.battery(),
         'solar': pw.solar(),
+        'grid_charging': pw.get_grid_charging(),
+        'grid_export_mode': pw.get_grid_export(),
     }
     if args.format == 'json':
         print(json.dumps(output, indent=2))
@@ -190,7 +210,8 @@ elif command == 'get':
         # Table Output
         for item in output:
             name = item.replace("_", " ").title()
-            print("  {:<15}{}".format(name, output[item]))
+            print("  {:<18}{}".format(name, output[item]))
+        print("")
 
 # Print Version
 elif command == 'version':

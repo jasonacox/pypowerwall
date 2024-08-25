@@ -452,3 +452,17 @@ class PyPowerwallLocal(PyPowerwallBase):
                 return d['nominal_energy_remaining'] / load
         # Default
         return None
+
+    # Functions not available in local mode
+
+    def set_grid_charging(self, mode: str) -> None:
+        log.error('Function set_grid_charging not available in local mode')
+
+    def set_grid_export(self, mode: str) -> None:
+        log.error('Function set_grid_export not available in local mode')
+
+    def get_grid_charging(self, force=False) -> None:
+        log.error('Function get_grid_charging not available in local mode')
+
+    def get_grid_export(self, force=False) -> None:
+        log.error('Function get_grid_export not available in local mode')

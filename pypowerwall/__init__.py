@@ -71,6 +71,10 @@
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
+    set_grid_charging(mode)   # Enable or disable grid charging (mode = True or False)
+    set_grid_export(mode)     # Set grid export mode (mode = battery_ok, pv_only, never)
+    get_grid_charging()       # Get the current grid charging mode
+    get_grid_export()         # Get the current grid export mode
 
  Requirements
     This module requires the following modules: requests, protobuf, teslapy
@@ -84,7 +88,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 10, 9)
+version_tuple = (0, 10, 10)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -834,6 +838,51 @@ class Powerwall(object):
             The time remaining in hours
         """
         return self.client.get_time_remaining()
+
+    def set_grid_charging(self, mode) -> Optional[dict]:
+        """
+        Enable or disable grid charging
+
+        Args:
+            mode: Set to True to enable grid charging, False to disable it
+
+        Returns:
+            Dictionary with operation results.
+        """
+        return self.client.set_grid_charging(mode)
+
+    def get_grid_charging(self) -> Optional[bool]:
+        """
+        Get the current grid charging mode
+
+        Returns:
+            True if grid charging is enabled, False if it is disabled
+        """
+        return self.client.get_grid_charging()
+
+    def set_grid_export(self, mode: str) -> Optional[dict]:
+        """
+        Set grid export mode
+
+        Args:
+            mode: Set grid export mode (battery_ok, pv_only, or never)
+
+        Returns:
+            Dictionary with operation results.
+        """
+        # Check for valid mode
+        if mode not in ['battery_ok', 'pv_only', 'never']:
+            raise ValueError(f"Invalid value for parameter 'mode': {mode}")
+        return self.client.set_grid_export(mode)
+
+    def get_grid_export(self) -> Optional[str]:
+        """
+        Get the current grid export mode
+
+        Returns:
+            The current grid export mode
+        """
+        return self.client.get_grid_export()
 
     def _validate_init_configuration(self):
 

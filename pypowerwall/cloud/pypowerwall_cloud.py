@@ -469,7 +469,6 @@ class PyPowerwallCloud(PyPowerwallBase):
             "vpp_backup_reserve_percent": 80
         }
     }
-
         """
         # GET api/1/energy_sites/{site_id}/site_info
         (response, _) = self._site_api("SITE_CONFIG", SITE_CONFIG_TTL, language="en", force=force)
@@ -755,6 +754,63 @@ class PyPowerwallCloud(PyPowerwallBase):
             })
 
         return data
+
+    def set_grid_charging(self, mode: str) -> bool:
+        """
+        Enable/Disable grid charging mode (mode: "on" or "off")
+        """
+        if mode in ["on", "yes"] or mode is True:
+            mode = False
+        elif mode in ["off", "no"] or mode is False:
+            mode = True
+        else:
+            log.debug(f"Invalid mode: {mode}")
+            return False
+        response = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
+                                   disallow_charge_from_grid_with_solar_installed = mode)
+        # invalidate cache
+        super()._invalidate_cache("SITE_CONFIG")
+        self.pwcachetime["SITE_CONFIG"] = 0
+        return response
+
+    def set_grid_export(self, mode: str) -> bool:
+        """
+        Set grid export mode (battery_ok, pv_only, or never) 
+        
+        Mode will show up in get_site_info() under components:
+         * never
+            "non_export_configured": true,
+            "customer_preferred_export_rule": "never",
+         * pv_only
+            "customer_preferred_export_rule": "pv_only"
+         * battery_ok
+            "customer_preferred_export_rule": "battery_ok"
+            or not set
+        """
+        if mode not in ["battery_ok", "pv_only", "never"]:
+            log.debug(f"Invalid mode: {mode} - must be battery_ok, pv_only, or never")
+        # POST api/1/energy_sites/{site_id}/grid_import_export
+        response = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
+                                    customer_preferred_export_rule = mode)
+        # invalidate cache
+        super()._invalidate_cache("SITE_CONFIG")
+        self.pwcachetime["SITE_CONFIG"] = 0
+        return response
+
+    def get_grid_charging(self, force=False):
+        """ Get allow grid charging allowed mode (True or False) """
+        components = self.get_site_config(force=force).get("response").get("components") or {}
+        state = components.get("disallow_charge_from_grid_with_solar_installed")
+        return not state
+
+    def get_grid_export(self, force=False):
+        """ Get grid export mode (battery_ok, pv_only, or never) """
+        components = self.get_site_config(force=force).get("response").get("components") or {}
+        # Check to see if non_export_configured - pre-PTO setting
+        if components.get("non_export_configured"):
+            return "never"
+        mode = components.get("customer_preferred_export_rule") or "battery_ok"
+        return mode
 
     # noinspection PyUnusedLocal
     @not_implemented_mock_data
