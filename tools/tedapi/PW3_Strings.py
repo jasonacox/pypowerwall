@@ -138,7 +138,7 @@ else:
 # Assemble String and Alert Components
 strings = {}
 string_suffix = ["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"]
-string_i = 0
+battery_i = 0
 alerts = {}
 
 # Need to loop through all the battery blocks (Powerwalls)
@@ -149,7 +149,7 @@ for battery in battery_blocks:
         print(f" - Skipping non PW3 {pw_din} ({battery_type})")
         continue
     # Fetch Device ComponentsQuery from Powerwall
-    print(f" - Fetching ComponentsQuery from Powerwall ({pw_din} {battery_type})...")
+    print(f" + Fetching ComponentsQuery from Powerwall ({pw_din} {battery_type})...")
     # Build Protobuf to fetch config
     pb = tedapi_pb2.Message()
     pb.message.deliveryChannel = 1
@@ -180,28 +180,41 @@ for battery in battery_blocks:
             PCH_PvCurrentA through F - value
             compute power = voltage * current
             """
+            pch_components = data['components']['pch']
+            # Loop through the strings
             for n in ["A", "B", "C", "D", "E", "F"]:
-                pv_state = data['components']['pch']['signals'][f'PCH_PvState_{n}']['textValue']
-                pv_voltage = data['components']['pch']['signals'][f'PCH_PvVoltage{n}']['value']
-                pv_current = data['components']['pch']['signals'][f'PCH_PvCurrent{n}']['value']
+                pv_state = "Unknown"
+                pv_voltage = 0
+                pv_current = 0
+                for component in pch_components:
+                    signals = component['signals']
+                    for signal in signals:
+                        if f'PCH_PvState_{n}' == signal['name']:
+                            pv_state = signal['textValue']
+                        elif f'PCH_PvVoltage{n}' == signal['name']:
+                            pv_voltage = signal['value']
+                        elif f'PCH_PvCurrent{n}' == signal['name']:
+                            pv_current = signal['value']
                 pv_power = pv_voltage * pv_current
-                print(f" - Pv{n} State: {pv_state} Voltage: {pv_voltage} Current: {pv_current} Power: {pv_power}")
-                i = n + string_suffix[string_i]
-                # Store the data
-                strings[i] = {}
-                strings[i]['Connected'] = True if "PV_Active" in pv_state else False
-                strings[i]['State'] = pv_state
-                strings[i]['Voltage'] = pv_voltage
-                strings[i]['Current'] = pv_current
-                strings[i]['Power'] = pv_power
-                strings[i]['din'] = pw_din # Store the DIN for the Powerwall for debugging
-            string_i += 1
+                i = n + string_suffix[battery_i]
+                # Print and record the strings data
+                print(f"    - String {i} = State: {pv_state} Voltage: {pv_voltage} Current: {pv_current} Power: {pv_power}")
+                strings[i] = {
+                    'Connected': True if "Pv_Active" in pv_state else False,
+                    'State': pv_state,
+                    'Voltage': pv_voltage,
+                    'Current': pv_current,
+                    'Power': pv_power,
+                    'din': pw_din  # Store the DIN for the Powerwall for debugging
+                }
         else:
             print(" - No Components Found")
     else:
         print(" - No Components Found")
-    # Print String as JSON with indent
-    print("")
-    print("Strings Data:")
-    print(json.dumps(strings,indent=4))
+    # Increment the battery index
+    battery_i += 1
 
+# Print String as JSON with indent
+print("")
+print("Strings Data:")
+print(json.dumps(strings,indent=4))
