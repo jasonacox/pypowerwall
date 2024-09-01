@@ -215,9 +215,9 @@ def get_pw3_vitals(components=None, config=None, din=None, gw_pwd=None):
                 nom_full_pack_energy = 0
                 for signal in signals:
                     if "BMS_nominalEnergyRemaining" == signal['name']:
-                        nom_energy_remaining = signal['value']
+                        nom_energy_remaining = signal['value'] * 1000
                     elif "BMS_nominalFullPackEnergy" == signal['name']:
-                        nom_full_pack_energy = signal['value']
+                        nom_full_pack_energy = signal['value'] * 1000
                 response[f"TEPOD--{pw_din}"] = {
                     "alerts": alerts,
                     "POD_nom_energy_remaining": nom_energy_remaining,
