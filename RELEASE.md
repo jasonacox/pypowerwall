@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.11.0 - Add PW3 Vitals
+
+* Add polling of Powerwall 3 Devices to pull in PW3 specific string data, capacity, voltages, frequencies, and alerts. This creates mock TEPOD, PVAC and PVS capatible payloads available in vitals().
+
 ## v0.10.10 - Add Grid Control
 
 * Add a function and command line options to allow user to get and set grid charging and exporting modes (see https://github.com/jasonacox/pypowerwall/issues/108).
