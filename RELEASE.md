@@ -2,7 +2,14 @@
 
 ## v0.11.0 - Add PW3 Vitals
 
-* Add polling of Powerwall 3 Devices to pull in PW3 specific string data, capacity, voltages, frequencies, and alerts. This creates mock TEPOD, PVAC and PVS capatible payloads available in vitals().
+* Add polling of Powerwall 3 Devices to pull in PW3 specific string data, capacity, voltages, frequencies, and alerts. 
+* This creates mock TEPOD, PVAC and PVS compatible payloads available in vitals().
+
+Proxy URLs updated for PW3:
+* http://localhost:8675/vitals 
+* http://localhost:8675/help (verify pw3 shows True) 
+* http://localhost:8675/tedapi/components
+* http://localhost:8675/tedapi/battery  
 
 ## v0.10.10 - Add Grid Control
 
