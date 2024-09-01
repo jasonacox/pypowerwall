@@ -696,6 +696,15 @@ class TEDAPI:
         return response
 
 
+    def get_battery_blocks(self, force=False):
+        """
+        Get Powerwall 3 Battery Block Information
+        """
+        config = self.get_config(force)
+        battery_blocks = config.get('battery_blocks') or []
+        return battery_blocks
+
+
     def get_battery_block(self, din=None, force=False):
         """
         Get the Powerwall 3 Battery Block Information
@@ -708,8 +717,6 @@ class TEDAPI:
         """
         data = None
         # Make sure we have a DIN
-        if not din:
-            din = self.get_din()
         if not din:
             log.error("No DIN specified - Unable to get battery block")
             return None

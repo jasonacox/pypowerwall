@@ -561,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.path == '/tedapi/components':
                     message = json.dumps(pw.tedapi.get_components())
                 if self.path == '/tedapi/battery':
-                    message = json.dumps(pw.tedapi.get_battery_block())
+                    message = json.dumps(pw.tedapi.get_battery_blocks())
             else:
                 message = '{"error": "TEDAPI not enabled"}'
         elif self.path.startswith('/cloud'):
