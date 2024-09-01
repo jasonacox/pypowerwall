@@ -646,9 +646,10 @@ class TEDAPI:
                         "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
                         "POD_nom_full_pack_energy": nom_full_pack_energy,
                     }
-                    # PVAC and PVS
+                    # PVAC, PVS and TEPINV
                     response[f"PVAC--{pw_din}"] = {}
                     response[f"PVS--{pw_din}"] = {}
+                    response[f"TEPINV--{pw_din}"] = {}
                     pch_components = data['components']['pch']
                     # pch_components contain:
                     #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
@@ -668,18 +669,24 @@ class TEDAPI:
                                     pv_voltage = signal['value'] if signal['value'] > 0 else 0
                                 elif f'PCH_PvCurrent{n}' == signal['name']:
                                     pv_current = signal['value'] if signal['value'] > 0 else 0
-                                elif f'PCH_AcFrequency' == signal['name']:
-                                    response[f"PVAC--{pw_din}"][f"PVAC_Fout"] = signal['value']
-                                elif f'PCH_AcVoltageAN' == signal['name']:
-                                    response[f"PVAC--{pw_din}"][f"PVAC_VL1Ground"] = signal['value']
-                                elif f'PCH_AcVoltageBN' == signal['name']:
-                                    response[f"PVAC--{pw_din}"][f"PVAC_VL2Ground"] = signal['value']
-                                elif f'PCH_AcVoltageAB' == signal['name']:
-                                    response[f"PVAC--{pw_din}"][f"PVAC_Vout"] = signal['value']
-                                elif f'PCH_AcRealPowerAB' == signal['name']:
-                                    response[f"PVAC--{pw_din}"][f"PVAC_Pout"] = signal['value']
-                                elif f'PCH_AcMode' == signal['name']:
-                                    response[f"PVAC--{pw_din}"][f"PVAC_State"] = signal['textValue']
+                                elif 'PCH_AcFrequency' == signal['name']:
+                                    response[f"PVAC--{pw_din}"]["PVAC_Fout"] = signal['value']
+                                    response[f"TEPINV--{pw_din}"]["PINV_Fout"] = signal['value']
+                                elif 'PCH_AcVoltageAN' == signal['name']:
+                                    response[f"PVAC--{pw_din}"]["PVAC_VL1Ground"] = signal['value']
+                                    response[f"TEPINV--{pw_din}"]["PINV_VSplit1"] = signal['value']
+                                elif 'PCH_AcVoltageBN' == signal['name']:
+                                    response[f"PVAC--{pw_din}"]["PVAC_VL2Ground"] = signal['value']
+                                    response[f"TEPINV--{pw_din}"]["PINV_VSplit2"] = signal['value']
+                                elif 'PCH_AcVoltageAB' == signal['name']:
+                                    response[f"PVAC--{pw_din}"]["PVAC_Vout"] = signal['value']
+                                    response[f"TEPINV--{pw_din}"]["PINV_Vout"] = signal['value']
+                                elif 'PCH_AcRealPowerAB' == signal['name']:
+                                    response[f"PVAC--{pw_din}"]["PVAC_Pout"] = signal['value']
+                                    response[f"TEPINV--{pw_din}"]["PINV_Pout"] = (signal['value'] or 0) / 1000
+                                elif 'PCH_AcMode' == signal['name']:
+                                    response[f"PVAC--{pw_din}"]["PVAC_State"] = signal['textValue']
+                                    response[f"TEPINV--{pw_din}"]["PINV_State"] = signal['textValue']
                         pv_power = pv_voltage * pv_current # Calculate power
                         response[f"PVAC--{pw_din}"][f"PVAC_PvState_{n}"] = pv_state
                         response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredVoltage_{n}"] = pv_voltage
@@ -688,7 +695,7 @@ class TEDAPI:
                         response[f"PVAC--{pw_din}"]["manufacturer"] = "TESLA"
                         response[f"PVAC--{pw_din}"]["partNumber"] = pw_part
                         response[f"PVAC--{pw_din}"]["serialNumber"] = pw_serial
-                        response[f"PVS--{pw_din}"][f"PVS_String{n}_Connected"] = True if "Pv_Active" in pv_state else False
+                        response[f"PVS--{pw_din}"][f"PVS_String{n}_Connected"] = ("Pv_Active" in pv_state)
                 else:
                     log.debug(f"No payload for {pw_din}")
             else:
@@ -698,7 +705,7 @@ class TEDAPI:
 
     def get_battery_blocks(self, force=False):
         """
-        Get Powerwall 3 Battery Block Information
+        Return Powerwall Battery Blocks
         """
         config = self.get_config(force)
         battery_blocks = config.get('battery_blocks') or []
