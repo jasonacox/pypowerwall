@@ -27,8 +27,10 @@
     battery_level() - Get the battery level as a percentage
     vitals() - Use tedapi data to create a vitals dictionary
     get_firmware_version() - Get the Powerwall Firmware Version
+    get_battery_blocks() - Get list of Powerwall Battery Blocks
     get_components() - Get the Powerwall 3 Device Information
-    get_battery_block() - Get the Powerwall 3 Battery Blocks
+    get_battery_block(din) - Get the Powerwall 3 Battery Block Information
+    get_pw3_vitals() - Get the Powerwall 3 Vitals Information
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
