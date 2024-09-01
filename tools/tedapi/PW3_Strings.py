@@ -139,11 +139,13 @@ else:
 strings = {}
 string_suffix = ["", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"]
 battery_i = 0
-alerts = {}
+alerts = []
+pod = {}
 
 # Need to loop through all the battery blocks (Powerwalls)
 for battery in battery_blocks:
     pw_din = battery['vin']
+    pw_label = f"PW{battery_i+1}"
     battery_type = battery['type']
     if "Powerwall3" not in battery_type:
         print(f" - Skipping non PW3 {pw_din} ({battery_type})")
@@ -173,6 +175,36 @@ for battery in battery_blocks:
         payload = tedapi.message.payload.recv.text
         if payload:
             data = json.loads(payload)
+            # Pull out alerts but ignore duplicates
+            print(f"    - Alerts:")
+            components = data['components']
+            for component in components:
+                for alert in components[component][0]['activeAlerts']:
+                    if alert['name'] not in alerts:
+                        alerts.append(alert['name'])
+                        print(f"       - Alert: {alert['name']}")
+
+            # Pull out nominal full pack energy and energy remaining
+            """
+            "PW1_POD_nom_energy_remaining": 9700,
+            "PW1_POD_nom_energy_to_be_charged": 3641,
+            "PW1_POD_nom_full_pack_energy": 13341,
+            """
+            bms_component = data['components']['bms'][0] # Only first BMS component
+            signals = bms_component['signals']
+            nom_energy_remaining = 0
+            nom_full_pack_energy = 0
+            for signal in signals:
+                if "BMS_nominalEnergyRemaining" == signal['name']:
+                    nom_energy_remaining = signal['value']
+                    pod[f"{pw_label}_POD_nom_energy_remaining"] = nom_energy_remaining
+                elif "BMS_nominalFullPackEnergy" == signal['name']:
+                    nom_full_pack_energy = signal['value']
+                    pod[f"{pw_label}_POD_nom_full_pack_energy"] = nom_full_pack_energy
+            # Compute the energy to be charged
+            pod[f"{pw_label}_POD_nom_energy_to_be_charged"] = nom_full_pack_energy - nom_energy_remaining
+            print(f"    - {pw_label} Nominal Energy Remaining: {nom_energy_remaining} Nominal Full Pack Energy: {nom_full_pack_energy} Energy to be Charged: {pod[f'{pw_label}_POD_nom_energy_to_be_charged']}")
+
             # Pull out the components
             """
             PCH_PvState_A through F - textValue - Pv_Active or Pv_Active_Parallel
@@ -207,6 +239,7 @@ for battery in battery_blocks:
                     'Power': pv_power,
                     'din': pw_din  # Store the DIN for the Powerwall for debugging
                 }
+
         else:
             print(" - No Components Found")
     else:
@@ -214,7 +247,15 @@ for battery in battery_blocks:
     # Increment the battery index
     battery_i += 1
 
-# Print String as JSON with indent
+# Print the data
 print("")
 print("Strings Data:")
 print(json.dumps(strings,indent=4))
+
+print("")
+print("Alerts:")
+print(json.dumps(alerts,indent=4))
+
+print("")
+print("POD Data:")
+print(json.dumps(pod,indent=4))
