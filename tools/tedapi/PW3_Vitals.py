@@ -173,7 +173,8 @@ def get_pw3_vitals(components=None, config=None, din=None, gw_pwd=None):
 
     # Loop through all the battery blocks (Powerwalls)
     for battery in battery_blocks:
-        pw_din = battery['vin']
+        pw_din = battery['vin'] # 1707000-11-J--TG12xxxxxx3A8Z
+        pw_part, pw_serial = pw_din.split('--')
         battery_type = battery['type']
         if "Powerwall3" not in battery_type:
             print(f"Skipping {pw_din} - Not a Powerwall 3")
@@ -246,11 +247,26 @@ def get_pw3_vitals(components=None, config=None, din=None, gw_pwd=None):
                                 pv_voltage = signal['value'] if signal['value'] > 0 else 0
                             elif f'PCH_PvCurrent{n}' == signal['name']:
                                 pv_current = signal['value'] if signal['value'] > 0 else 0
+                            elif f'PCH_AcFrequency' == signal['name']:
+                                response[f"PVAC--{pw_din}"][f"PVAC_Fout"] = signal['value']
+                            elif f'PCH_AcVoltageAN' == signal['name']:
+                                response[f"PVAC--{pw_din}"][f"PVAC_VL1Ground"] = signal['value']
+                            elif f'PCH_AcVoltageBN' == signal['name']:
+                                response[f"PVAC--{pw_din}"][f"PVAC_VL2Ground"] = signal['value']
+                            elif f'PCH_AcVoltageAB' == signal['name']:
+                                response[f"PVAC--{pw_din}"][f"PVAC_Vout"] = signal['value']
+                            elif f'PCH_AcRealPowerAB' == signal['name']:
+                                response[f"PVAC--{pw_din}"][f"PVAC_Pout"] = signal['value']
+                            elif f'PCH_AcMode' == signal['name']:
+                                response[f"PVAC--{pw_din}"][f"PVAC_State"] = signal['textValue']
                     pv_power = pv_voltage * pv_current # Calculate power
                     response[f"PVAC--{pw_din}"][f"PVAC_PvState_{n}"] = pv_state
                     response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredVoltage_{n}"] = pv_voltage
                     response[f"PVAC--{pw_din}"][f"PVAC_PVCurrent_{n}"] = pv_current
                     response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredPower_{n}"] = pv_power
+                    response[f"PVAC--{pw_din}"]["manufacturer"] = "TESLA"
+                    response[f"PVAC--{pw_din}"]["partNumber"] = pw_part
+                    response[f"PVAC--{pw_din}"]["serialNumber"] = pw_serial
                     response[f"PVS--{pw_din}"][f"PVS_String{n}_Connected"] = True if "Pv_Active" in pv_state else False
             else:
                 print(f"No payload for {pw_din}")
