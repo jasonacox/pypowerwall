@@ -1,5 +1,15 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t64 (1 Sep 2024)
+
+* Add PW3 features for pypowerwall v0.11.0
+
+Updated APIs with PW3 payloads: 
+* http://localhost:8675/vitals
+* http://localhost:8675/help (pw3 flag True/False) 
+* http://localhost:8675/tedapi/components
+* http://localhost:8675/tedapi/battery  
+
 ### Proxy t63 (15 Jun 2024)
 
 * Address pyLint code cleanup and minor command mode fixes.
