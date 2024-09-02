@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t63"
+BUILD = "t64"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -113,6 +113,7 @@ proxystats = {
     'cloudmode': False,
     'fleetapi': False,
     'tedapi': False,
+    'pw3': False,
     'tedapi_mode': "off",
     'siteid': None,
     'counter': 0
@@ -207,6 +208,7 @@ else:
     if pw.tedapi:
         proxystats['tedapi'] = True
         proxystats['tedapi_mode'] = pw.tedapi_mode
+        proxystats['pw3'] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
 pw_control = None
@@ -551,11 +553,15 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith('/tedapi'):
             # TEDAPI Specific Calls
             if pw.tedapi:
-                message = '{"error": "Use /tedapi/config, /tedapi/status"}'
+                message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery"}'
                 if self.path == '/tedapi/config':
                     message = json.dumps(pw.tedapi.get_config())
                 if self.path == '/tedapi/status':
                     message = json.dumps(pw.tedapi.get_status())
+                if self.path == '/tedapi/components':
+                    message = json.dumps(pw.tedapi.get_components())
+                if self.path == '/tedapi/battery':
+                    message = json.dumps(pw.tedapi.get_battery_blocks())
             else:
                 message = '{"error": "TEDAPI not enabled"}'
         elif self.path.startswith('/cloud'):
