@@ -179,10 +179,11 @@ for battery in battery_blocks:
             print(f"    - Alerts:")
             components = data['components']
             for component in components:
-                for alert in components[component][0]['activeAlerts']:
-                    if alert['name'] not in alerts:
-                        alerts.append(alert['name'])
-                        print(f"       - Alert: {alert['name']}")
+                if components[component]:
+                    for alert in components[component][0]['activeAlerts']:
+                        if alert['name'] not in alerts:
+                            alerts.append(alert['name'])
+                            print(f"       - Alert: {alert['name']}")
 
             # Pull out nominal full pack energy and energy remaining
             """
