@@ -154,10 +154,11 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         else:
             found = False
             for idx, site in enumerate(sites):
-                if site['energy_site_id'] == self.siteid:
-                    self.siteindex = idx
-                    found = True
-                    break
+                if 'energy_site_id' in site:
+                    if site['energy_site_id'] == self.siteid:
+                        self.siteindex = idx
+                        found = True
+                        break
             if not found:
                 log.error("Site %r not found for %s" % (self.siteid, self.email))
                 return False

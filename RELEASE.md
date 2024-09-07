@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## v0.11.1 - PW3 and FleetAPI Bugfix
+
+* TEDAPI: Fix bug with activeAlerts logic causing errors on systems with multiple Powerwall 3's. Identified by @rmotapar in https://github.com/jasonacox/Powerwall-Dashboard/issues/387#issuecomment-2336431741 
+* FleetAPI: Fix connect() to handle non-energy products in the getsites response. Identified by @gregrahn in https://github.com/jasonacox/pypowerwall/issues/111
+
 ## v0.11.0 - Add PW3 Vitals
 
 * Add polling of Powerwall 3 Devices to pull in PW3 specific string data, capacity, voltages, frequencies, and alerts. 

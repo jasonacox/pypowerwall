@@ -630,9 +630,10 @@ class TEDAPI:
                     alerts = []
                     components = data['components']
                     for component in components:
-                        for alert in components[component][0]['activeAlerts']:
-                            if alert['name'] not in alerts:
-                                alerts.append(alert['name'])
+                        if components[component]:
+                            for alert in components[component][0]['activeAlerts']:
+                                if alert['name'] not in alerts:
+                                    alerts.append(alert['name'])
                     bms_component = data['components']['bms'][0] # TODO: Process all BMS components
                     signals = bms_component['signals']
                     nom_energy_remaining = 0
