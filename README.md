@@ -7,17 +7,16 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting local access to Powerwall, Powerwall 2 and Powerwall+ systems and Tesla Owner cloud API for all systems including Solar Only and Powerwall 3 systems.
+Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems.
 
 ## Description
 
-This python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and
-poll API endpoints on the Gateway.  
+This python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  
 
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
 * Works with Tesla Energy Gateways - Powerwall and Powerwall+
-* Access provided via Local Gateway API, Tesla FleetAPI (official), and Tesla Owners API (unofficial).
+* Access provided via Local Gateway APIs, Tesla FleetAPI (official), and Tesla Owners API (unofficial).
 * Will cache authentication to reduce load on Powerwall Gateway
 * Will cache responses to limit number of calls to Powerwall Gateway or Cloud (optional/user definable) 
 * Will re-use http connections to Powerwall Gateway for reduced load and faster response times
@@ -37,29 +36,20 @@ python3 -m pypowerwall scan
 # Option 2 - FLEETAPI MODE - Setup to use the official Tesla FleetAPI - See notes below.
 python3 -m pypowerwal fleetapi
 
-# Option 3 - CLOUD MODE -  Setup to use Tesla Owners cloud API
+# Option 3 - CLOUD MODE - Setup to use Tesla Owners cloud API
 python3 -m pypowerwall setup
+
+# Option 4 - TEDAPI MODE - Test this mode (requires extended setup - see below)
+python3 -m pypowerwall tedapi
 ```
 
 ### Local Setup - Option 1
 
-The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. Unfortunately, the Powerwall 3 does not have a local API but you can access it via the cloud (see options 2 and 3).
+The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based Web Portal and API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. 
 
-Extended Device Vitals Metrics: With version v0.10.0+, pypowerwall can be set to access the TEDAPI on the Gateway to pull additional metrics. However, you will need the Gateway Password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway IP (192.168.91.1). You can have your computer join the Gateway local WiFi or you can add a route:
+The Powerwall 3 does not have a Web Portal or API but you can access it via the cloud (see options 2 and 3) and via the TEDAPI access point (option 4).
 
-```bash
-# Example - Change 192.168.0.100 to the IP address of Powerwall Gateway on your LAN
-
-# Linux Ubuntu and RPi - Can add to /etc/rc.local for persistence 
-sudo ip route add 192.168.91.1 via 192.168.0.100
-
-# MacOS 
-sudo route add -host 192.168.91.1 192.168.0.100 # Temporary 
-networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.100 # Persistent
-
-# Windows - Using persistence flag - Administrator Shell
-route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
-```
+Locally accessible extended device vitals metrics are available using the TEDAPI method (see option 4 below).
 
 ### FleetAPI Setup - Option 2
 
@@ -79,6 +69,27 @@ Step 3 - Run `python3 -m pypowerwal fleetapi` - The credentials and tokens will 
 ### Cloud Mode - Option 3
 
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
+
+### TEDAPI Mode - Option 4
+
+With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway. This API offers up additional metrics related to string data, voltages and alerts. However, you will need the Gateway/WiFi Password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway IP (192.168.91.1). You can have your computer join the Gateway local WiFi or you can add a route:
+
+```bash
+# Example - Change 192.168.0.100 to the IP address of Powerwall Gateway on your LAN
+
+# Linux Ubuntu and RPi - Can add to /etc/rc.local for persistence 
+sudo ip route add 192.168.91.1 via 192.168.0.100
+
+# MacOS 
+sudo route add -host 192.168.91.1 192.168.0.100 # Temporary 
+networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.100 # Persistent
+
+# Windows - Using persistence flag - Administrator Shell
+route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
+
+# Test
+python3 -m pypowerwall tedapi
+```
 
 ### FreeBSD Install
 
@@ -107,23 +118,30 @@ and call function to poll data.  Here is an example:
     # Optional: Turn on Debug Mode
     # pypowerwall.set_debug(True)
 
-    # Option 1 - LOCAL MODE - Credentials for your Powerwall - Customer Login
+    # Option 1 - LOCAL MODE - Customer Login (Powerwall 2 and + only)
     password="password"
     email="email@example.com"
     host = "10.0.1.123"               # Address of your Powerwall Gateway
     timezone = "America/Los_Angeles"  # Your local timezone
 
-    # Option 2 - FLEETAPI MODE - Requires Setup
+    # Option 2 - FLEETAPI MODE - Requires Setup (Powerwall & Solar-Only)
     host = password = email = ""
     timezone = "America/Los_Angeles" 
 
-    # Option 3 - CLOUD MODE - Requires Setup
+    # Option 3 - CLOUD MODE - Requires Setup (Powerwall & Solar-Only)
     host = password = ""
     email='email@example.com'
     timezone = "America/Los_Angeles"
- 
-    # Connect to Powerwall - auto_select mode (local, fleetapi, cloud)
-    pw = pypowerwall.Powerwall(host,password,email,timezone,auto_select=True)
+
+    # Option 4 - TEDAPI MODE - Requires access to Gateway (Powerwall 2, + and 3)
+    host = "192.168.91.1"
+    gw_pw = "ABCDEFGHIJ"
+    # Uncomment the following for hybrid mode (Powerwall 2 and +)
+    #password="password"
+    #email="email@example.com"
+
+    # Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
+    pw = pypowerwall.Powerwall(host,password,email,timezone,gw_pw=gw_pw,auto_select=True)
 
     # Some System Info
     print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
@@ -166,7 +184,7 @@ and call function to poll data.  Here is an example:
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-               cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select)
+        cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway
@@ -183,8 +201,11 @@ and call function to poll data.  Here is an example:
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
+    auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
-
+    retry_modes = False       # If True, retry connection to Powerwall
+    gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
+    
  Functions 
     poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
     post(api, payload, json)  # Send payload to Powerwall api (dict if json=True)
@@ -216,7 +237,7 @@ and call function to poll data.  Here is an example:
     set_reserve(level)        # Set Battery Reserve Percentage
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
-    set_operation(level, mode, json)  # Set Battery Reserve Percentage and/or Operation Mode
+    set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
     set_grid_charging(mode)   # Enable or disable grid charging (mode = True or False)
     set_grid_export(mode)     # Set grid export mode (mode = battery_ok, pv_only, never)
     get_grid_charging()       # Get the current grid charging mode
@@ -246,8 +267,10 @@ Options:
   -h, --help            Show this help message and exit
 
 Commands (run <command> -h to see usage information):
-  {setup,scan,set,get,version}
+  {setup,fleetapi,tedapi,scan,set,get,version}
     setup                 Setup Tesla Login for Cloud Mode access
+    fleetapi              Setup Tesla FleetAPI for Cloud Mode access
+    tedapi                Test TEDAPI connection to Powerwall Gateway
     scan                  Scan local network for Powerwall gateway
     set                   Set Powerwall Mode and Reserve Level
     get                   Get Powerwall Settings and Power Levels
@@ -701,7 +724,7 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
     import pypowerwall
 
     # Connect to Powerwall
-    pw = pypowerwall.Powerwall(host,password,email,timezone)
+    pw = pypowerwall.Powerwall(host,password,email,timezone,gw_pw=gw_pw,auto_select=True)
 
     # Display Device Vitals
     print("Device Vitals:\n %s\n" % pw.vitals(True))
