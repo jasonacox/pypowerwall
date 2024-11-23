@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t64"
+BUILD = "t65"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -77,7 +77,7 @@ password = os.getenv("PW_PASSWORD", "")
 email = os.getenv("PW_EMAIL", "email@example.com")
 host = os.getenv("PW_HOST", "")
 timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
-debugmode = os.getenv("PW_DEBUG", "no")
+debugmode = os.getenv("PW_DEBUG", "no").lower() == "yes"
 cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
 browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
 timeout = int(os.getenv("PW_TIMEOUT", "5"))
@@ -94,6 +94,7 @@ if authpath:
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
+neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 
 # Global Stats
 proxystats = {
@@ -116,7 +117,30 @@ proxystats = {
     'pw3': False,
     'tedapi_mode': "off",
     'siteid': None,
-    'counter': 0
+    'counter': 0,
+    'cf': cachefile,
+    'config': {
+        'PW_BIND_ADDRESS': bind_address,
+        'PW_PASSWORD': '*' * len(password) if password else None,
+        'PW_EMAIL': email,
+        'PW_HOST': host,
+        'PW_TIMEZONE': timezone,
+        'PW_DEBUG': debugmode,
+        'PW_CACHE_EXPIRE': cache_expire,
+        'PW_BROWSER_CACHE': browser_cache,
+        'PW_TIMEOUT': timeout,
+        'PW_POOL_MAXSIZE': pool_maxsize,
+        'PW_HTTPS': https_mode,
+        'PW_PORT': port,
+        'PW_STYLE': style,
+        'PW_SITEID': siteid,
+        'PW_AUTH_PATH': authpath,
+        'PW_AUTH_MODE': authmode,
+        'PW_CACHE_FILE': cachefile,
+        'PW_CONTROL_SECRET': '*' * len(control_secret) if control_secret else None,
+        'PW_GW_PWD': '*' * len(gw_pwd) if gw_pwd else None,
+        'PW_NEG_SOLAR': neg_solar
+    }
 }
 
 if https_mode == "yes":
@@ -137,7 +161,7 @@ log = logging.getLogger("proxy")
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 log.setLevel(logging.INFO)
 
-if debugmode == "yes":
+if debugmode:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" %
              (pypowerwall.version, BUILD, httptype, port))
     pypowerwall.set_debug(True)
@@ -238,7 +262,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 # noinspection PyPep8Naming
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, log_format, *args):
-        if debugmode == "yes":
+        if debugmode:
             log.debug("%s %s" % (self.address_string(), log_format % args))
         else:
             pass
@@ -319,7 +343,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
-            message: str = pw.poll('/api/meters/aggregates', jsonformat=True)
+            aggregates = pw.poll('/api/meters/aggregates')
+            if not neg_solar and aggregates and 'solar' in aggregates:
+                solar = aggregates['solar']
+                if solar and 'instant_power' in solar and solar['instant_power'] < 0:
+                    solar['instant_power'] = 0
+                    # Shift energy from solar to load
+                    if 'load' in aggregates and 'instant_power' in aggregates['load']:
+                        aggregates['load']['instant_power'] -= solar['instant_power']
+            try:
+                message = json.dumps(aggregates)
+            except:
+                log.error(f"JSON encoding error in payload: {aggregates}")
+                message = None
         elif self.path == '/soe':
             # Battery Level - JSON
             message: str = pw.poll('/api/system_status/soe', jsonformat=True)
@@ -338,6 +374,10 @@ class Handler(BaseHTTPRequestHandler):
             solar = pw.solar() or 0
             battery = pw.battery() or 0
             home = pw.home() or 0
+            if not neg_solar and solar < 0:
+                solar = 0
+                # Shift energy from solar to load
+                home -= solar
             message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
                       % (grid, home, solar, battery, batterylevel)
         elif self.path == '/vitals':
@@ -358,7 +398,6 @@ class Handler(BaseHTTPRequestHandler):
             if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
                 proxystats['siteid'] = pw.client.siteid
                 proxystats['counter'] = pw.client.counter
-            proxystats['authmode'] = pw.authmode
             message: str = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
@@ -540,10 +579,37 @@ class Handler(BaseHTTPRequestHandler):
             """
             message = message.replace('%VER%', pypowerwall.version).replace('%BUILD%', BUILD)
             for i in proxystats:
-                if i != 'uri':
+                if i != 'uri' and i != 'config':
                     message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
             for i in proxystats['uri']:
                 message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats["uri"][i]}</td></tr>\n'
+            message += """
+            <tr>
+                <td align="left">Config:</td>
+                <td align="left">
+                    <details id="config-details">
+                        <summary>Click to view</summary>
+                        <table>
+            """
+            for i in proxystats['config']:
+                message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats["config"][i]}</td></tr>\n'
+            message += """
+                        </table>
+                    </details>
+                </td>
+            </tr>
+            <script>
+                document.addEventListener("DOMContentLoaded", function() {
+                    var details = document.getElementById("config-details");
+                    if (localStorage.getItem("config-details-open") === "true") {
+                        details.setAttribute("open", "open");
+                    }
+                    details.addEventListener("toggle", function() {
+                        localStorage.setItem("config-details-open", details.open);
+                    });
+                });
+            </script>
+            """
             message += "</table>\n"
             message += f'\n<p>Page refresh: {str(datetime.datetime.fromtimestamp(time.time()))}</p>\n</body>\n</html>'
         elif self.path == '/api/troubleshooting/problems':
