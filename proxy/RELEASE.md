@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t65 (22 Nov 2024)
+
+* Add `PW_NEG_SOLAR` config option and logic to remove negative solar values for /aggregates and /csv APIs
+* Update http://pypowerwall:8675/stats and http://pypowerwall:8675/help to show config data.
+* PR https://github.com/jasonacox/pypowerwall/pull/113
+
 ### Proxy t64 (1 Sep 2024)
 
 * Add PW3 features for pypowerwall v0.11.0
