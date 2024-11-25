@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t65"
+BUILD = "t66"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -619,7 +619,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith('/tedapi'):
             # TEDAPI Specific Calls
             if pw.tedapi:
-                message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery"}'
+                message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"}'
                 if self.path == '/tedapi/config':
                     message = json.dumps(pw.tedapi.get_config())
                 if self.path == '/tedapi/status':
@@ -628,6 +628,8 @@ class Handler(BaseHTTPRequestHandler):
                     message = json.dumps(pw.tedapi.get_components())
                 if self.path == '/tedapi/battery':
                     message = json.dumps(pw.tedapi.get_battery_blocks())
+                if self.path == '/tedapi/controller':
+                    message = json.dumps(pw.tedapi.get_device_controller())
             else:
                 message = '{"error": "TEDAPI not enabled"}'
         elif self.path.startswith('/cloud'):
