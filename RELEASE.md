@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## v0.11.2 - Add Controller Data
+
+* TEDAPI: Add `get_device_controller()` to get device data which includes Powerwall THC_AmbientTemp data. Credit to @ygelfand for discovery and reported in https://github.com/jasonacox/Powerwall-Dashboard/discussions/392#discussioncomment-11360474
+* Updated `vitals()` to include Powerwall temperature data. 
+* Proxy Updated to t66 to include API response for /tedapi/controller.
+
 ## v0.11.1 - PW3 and FleetAPI Bugfix
 
 * TEDAPI: Fix bug with activeAlerts logic causing errors on systems with multiple Powerwall 3's. Identified by @rmotapar in https://github.com/jasonacox/Powerwall-Dashboard/issues/387#issuecomment-2336431741 
