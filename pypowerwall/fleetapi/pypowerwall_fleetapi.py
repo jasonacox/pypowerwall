@@ -163,9 +163,11 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                 log.error("Site %r not found for %s" % (self.siteid, self.email))
                 return False
         # Set site
-        self.siteid = sites[self.siteindex].get('energy_site_id')
+        siteref = sites[self.siteindex]
+        self.siteid = siteref.get('energy_site_id')
+        site_name = siteref.get('site_name', 'Unknown')
         log.debug(f"Connected to Tesla FleetAPI - Site {self.siteid} "
-                  f"({sites[self.siteindex]['site_name']}) for {self.email}")
+                  f"({site_name}) for {self.email}")
         return True
 
     # Function to map Powerwall API to Tesla FleetAPI Data
@@ -242,12 +244,14 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             return False
         # Set siteindex - Find siteid in sites
         for idx, site in enumerate(sites):
-            if site['energy_site_id'] == siteid:
-                self.siteid = siteid
-                self.siteindex = idx
-                self.siteid = sites[self.siteindex]
-                log.debug(f"Changed site to {self.siteid} ({sites[self.siteindex]['site_name']}) for {self.email}")
-                return True
+            if site.get('energy_site_id') != siteid:
+                continue
+            self.siteid = siteid
+            self.siteindex = idx
+            self.site = site
+            site_name = site.get('site_name', 'Unknown')
+            log.debug(f"Changed site to {self.siteid} ({site_name}) for {self.email}")
+            return True
         log.error("Site %d not found for %s" % (siteid, self.email))
         return False
 

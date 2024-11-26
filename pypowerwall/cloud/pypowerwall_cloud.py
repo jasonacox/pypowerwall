@@ -263,13 +263,14 @@ class PyPowerwallCloud(PyPowerwallBase):
             return False
         # Set siteindex - Find siteid in sites
         for idx, site in enumerate(sites):
-            if site['energy_site_id'] == siteid:
-                self.siteid = siteid
-                self.siteindex = idx
-                self.site = sites[self.siteindex]
-                site_name = sites[self.siteindex].get('site_name') or 'Unknown'
-                log.debug(f"Changed site to {self.siteid} ({site_name}) for {self.email}")
-                return True
+            if site.get('energy_site_id') != siteid:
+                continue
+            self.siteid = siteid
+            self.siteindex = idx
+            self.site = site
+            site_name = site.get('site_name', 'Unknown')
+            log.debug(f"Changed site to {self.siteid} ({site_name}) for {self.email}")
+            return True
         log.error("Site %d not found for %s" % (siteid, self.email))
         return False
 
