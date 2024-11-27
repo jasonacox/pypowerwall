@@ -1,10 +1,12 @@
 # RELEASE NOTES
 
-## v0.11.2 - Add Controller Data
+## v0.12.0 - Add Controller Data
 
 * TEDAPI: Add `get_device_controller()` to get device data which includes Powerwall THC_AmbientTemp data. Credit to @ygelfand for discovery and reported in https://github.com/jasonacox/Powerwall-Dashboard/discussions/392#discussioncomment-11360474
 * Updated `vitals()` to include Powerwall temperature data. 
 * Proxy Updated to t66 to include API response for /tedapi/controller.
+* Remove Negative Solar Values [Option] by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/113
+* Solar-Only Cloud Access - Fix errors with site references by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/115
 
 ## v0.11.1 - PW3 and FleetAPI Bugfix
 
