@@ -1189,10 +1189,9 @@ class TEDAPI:
         # Get Dictionary of Powerwall Temperatures
         temp_sensors = {}
         for i in lookup(status, ['components', 'msa']) or []:
-            i_keys = i.keys()
-            if "signals" in i_keys and "serialNumber" in i_keys and i["serialNumber"]:
+            if "signals" in i and "serialNumber" in i and i["serialNumber"]:
                 for s in i["signals"]:
-                    if "name" in s and s["name"] == "THC_AmbientTemp" and "serialNumber" in i and "value" in s:
+                    if "name" in s and s["name"] == "THC_AmbientTemp" and "value" in s:
                         temp_sensors[i["serialNumber"]] = s["value"]
 
         # Create TETHC, TEPINV and TEPOD blocks
