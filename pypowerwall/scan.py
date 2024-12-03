@@ -17,6 +17,7 @@ import socket
 import sys
 import threading
 import time
+import unicodedata
 from http import HTTPStatus
 from ipaddress import IPv4Address
 from queue import Queue
@@ -27,6 +28,7 @@ import requests
 import pypowerwall
 
 UNKNOWN: Final[str] = "Unknown"
+POWERWALL: Final[str] = "Powerwall"
 
 class ScanContext:
     """Handles terminal formatting, interactive output, and other broad spectrum settings."""
@@ -67,6 +69,12 @@ class ScanContext:
 
     def alertdim(self):
         return self.colors[self._ALERTDIM]
+
+def normalize_caseless(text: str) -> str:
+    return unicodedata.normalize("NFKD", text.casefold())
+
+def caseless_equal(left: str, right: str) -> bool:
+    return normalize_caseless(left) == normalize_caseless(right)
 
 def get_my_ip() -> str:
     """Get the local IP address of the machine.
@@ -113,7 +121,7 @@ def check_connection(addr: IPv4Address, context: ScanContext, port: int = 443, m
 
 # Example Tesla Inverter response to https://{addr}/api/status
 # {
-#      "din": "1538000-45-C--GF2240650002N1",
+#      "din": "1538000-45-C--XXXXXXXXXXXXXX",
 #      "start_time": "2024-11-29 17:01:30 +0800",
 #      "up_time_seconds": "23h48m59.321804629s",
 #      "is_new": false,
@@ -148,15 +156,18 @@ def scan_ip(addr: IPv4Address, context: ScanContext, result_queue: Queue) -> Non
         # Check to see if it is a Powerwall
         response = requests.get(f'https://{addr}/api/status', verify=False, timeout=5)
         if response.status_code != HTTPStatus.NOT_FOUND:
-            data = response.json()
-            din = data.get('din', UNKNOWN)
-            version = data.get('version', UNKNOWN)
-            up_time = data.get('up_time_seconds', UNKNOWN)
-            teg_type = data.get('teg_type', 'Powerwall')
+            data: Final[str] = response.json()
+            din: Final[str] = data.get('din', UNKNOWN)
+            version: Final[str] = data.get('version', UNKNOWN)
             if din == UNKNOWN and version == UNKNOWN:
                 return
+
+            up_time: Final[str] = data.get('up_time_seconds', UNKNOWN)
+            type_selector = lambda type: type if not caseless_equal(type, UNKNOWN) else POWERWALL
+            teg_type: Final[str] = type_selector(data.get('teg_type', POWERWALL))
+
             if context.interactive:
-                print(f"{context.dim()} OPEN - {context.subbold()}Found {teg_type} {din}{context.subbold()}\n\t\t\t\t\t\t\t\t\t [Firmware {version}]{context.normal()}")
+                print(f"{host} OPEN{context.dim()} - {context.subbold()}Found {teg_type} {din}{context.subbold()}\n\t\t\t\t\t\t\t\t\t [Firmware {version}]{context.normal()}")
             result_queue.put({
                 'ip': addr,
                 'din': din,
@@ -245,8 +256,8 @@ def scan(
             try:
                 network = ipaddress.IPv4Network(response, strict=False)
             except Exception:
-                print(f'\n{context.alert()}    ERROR: {response} is not a valid network.{context.normal()}')
-                print(f'{context.dim()}           Proceeding with {network} instead.')
+                print(f'\n{context.alert()}\tERROR: {response} is not a valid network.{context.normal()}')
+                print(f'{context.dim()}\t\t   Proceeding with {network} instead.')
 
         print(f"\n{context.bold()}\tRunning Scan...{context.dim()}")
 
@@ -283,8 +294,8 @@ def scan(
         discovered_devices.append(device_info)
 
     if context.interactive:
-        print(f"{context.normal()}Discovered {len(discovered_devices)} Tesla Energy (Powerwall) Gateway(s)")
+        print(f"{context.normal()}Discovered {len(discovered_devices)} Powerwall Gateway(s)")
         for device in discovered_devices:
-            print(f"{context.dim()}     {device['ip']} [{device['din']}] Firmware {device['firmware']}")
+            print(f"{context.dim()}\t {device['ip']} [{device['din']}] Firmware {device['firmware']}")
         print(f"{context.normal()} ")
     return discovered_devices
