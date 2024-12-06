@@ -1,5 +1,21 @@
 # RELEASE NOTES
 
+
+## v0.12.1 - Scanner Update
+
+* Large-scale refactor of scan function by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/117
+     - Function `scan()` returns a list of the discovered devices for use as a utility function.
+     - Ability to silence output for use as a utility.
+     - Improve performance of multi-threaded scan by using a Queue.
+     - General code flow improvements and encapsulation.
+     - Add ability to work with standalone inverters.
+
+```python
+from pypowerwall.scan import scan
+found_devices = scan(interactive = False)
+```
+
+
 ## v0.12.0 - Add Controller Data
 
 * TEDAPI: Add `get_device_controller()` to get device data which includes Powerwall THC_AmbientTemp data. Credit to @ygelfand for discovery and reported in https://github.com/jasonacox/Powerwall-Dashboard/discussions/392#discussioncomment-11360474
