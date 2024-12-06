@@ -88,7 +88,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 12, 0)
+version_tuple = (0, 12, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
