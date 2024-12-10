@@ -124,11 +124,13 @@ elif command == 'scan':
     from pypowerwall import scan
 
     print("pyPowerwall [%s] - Scanner\n" % version)
-    color = not args.nocolor
-    ip = args.ip
-    hosts = args.hosts
-    timeout = args.timeout
-    scan.scan(color, timeout, hosts, ip)
+    scan.scan(
+        ip=args.ip,
+        max_threads=args.hosts,
+        timeout=args.timeout,
+        color=not args.nocolor,
+        interactive=True
+    )
 
 # Set Powerwall Mode
 elif command == 'set':
