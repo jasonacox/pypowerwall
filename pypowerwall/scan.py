@@ -167,7 +167,7 @@ def scan_ip(addr: IPv4Address, context: ScanContext, result_queue: Queue) -> Non
             teg_type: Final[str] = type_selector(data.get('teg_type', POWERWALL))
 
             if context.interactive:
-                print(f"{host} OPEN{context.dim()} - {context.subbold()}Found {teg_type} {din}{context.subbold()}\n\t\t\t\t\t\t\t\t\t [Firmware {version}]{context.normal()}")
+                print(f"{host} OPEN{context.dim()} - {context.subbold()}Found {teg_type} {din}{context.subbold()}\n\t\t\t\t\t [Firmware {version}]{context.normal()}")
             result_queue.put({
                 'ip': addr,
                 'din': din,
