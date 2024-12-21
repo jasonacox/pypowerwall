@@ -141,7 +141,7 @@ and call function to poll data.  Here is an example:
     #email="email@example.com"
 
     # Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
-    pw = pypowerwall.Powerwall(host,password,email,timezone,gw_pw=gw_pw,auto_select=True)
+    pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd, auto_select=True)
 
     # Some System Info
     print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
