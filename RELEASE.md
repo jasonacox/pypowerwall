@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.2 - Cache Expiration Fix
+
+* Fix bug in cache expiration timeout code that was not honring pwcacheexpire setting. Raised by @erikgiesele in https://github.com/jasonacox/pypowerwall/issues/122 - PW_CACHE_EXPIRE=0 not possible? (Proxy)
+* Add WARNING log in proxy for settings below 5s.
 
 ## v0.12.1 - Scanner Update
 

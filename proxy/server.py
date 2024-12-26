@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t66"
+BUILD = "t67"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -171,13 +171,16 @@ else:
              (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
 
+# Check for cache expire time limit below 5s
+if cache_expire < 5:
+    log.warning("Cache expiration set below 5s (PW_CACHE_EXPIRE=%d)" % cache_expire)
 
 # Signal handler - Exit on SIGTERM
 # noinspection PyUnusedLocal
 def sig_term_handle(signum, frame):
     raise SystemExit
 
-
+# Register signal handler
 signal.signal(signal.SIGTERM, sig_term_handle)
 
 

@@ -61,7 +61,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize TEDAPI
-        self.tedapi = TEDAPI(self.gw_pwd, debug=self.debug, host=self.host, timeout=self.timeout)
+        self.tedapi = TEDAPI(self.gw_pwd, debug=self.debug, host=self.host, timeout=self.timeout,
+                             pwcacheexpire=self.pwcacheexpire, pwconfigexpire=self.pwconfigexpire)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
