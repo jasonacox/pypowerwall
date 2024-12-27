@@ -244,6 +244,7 @@ class Powerwall(object):
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
+                                                        pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host)
                     else:
                         self.tedapi_mode = "hybrid"
