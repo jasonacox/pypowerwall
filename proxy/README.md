@@ -12,29 +12,46 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
 
 ## Quick Start
 
-1. Run the Docker Container to listen on port 8675. Update the `-e` values for your Powerwall (see [Environmental Settings](https://github.com/jasonacox/pypowerwall/tree/main/proxy#environmental-settings) for options):
+1. Run the Docker Container to listen on port 8675. Update the `-e` values for your Powerwall (see [Environmental Settings](https://github.com/jasonacox/pypowerwall/tree/main/proxy#environmental-settings) for options). Below are multiple examples depending on your desired access. The TEDAPI "full mode" is recommended and works for all Powerwall systems (2, +, 3) where the "cloud" mode is required for Solar Only systems.
 
     ```bash
-    docker run \
-        -d \
-        -p 8675:8675 \
-        -e PW_PORT='8675' \
-        -e PW_PASSWORD='password' \
-        -e PW_EMAIL='email@example.com' \
-        -e PW_HOST='IP_of_Powerwall_Gateway' \
-        -e PW_TIMEZONE='America/Los_Angeles' \
-        -e TZ='America/Los_Angeles' \
-        -e PW_CACHE_EXPIRE='5' \
-        -e PW_DEBUG='no' \
-        -e PW_HTTPS='no' \
-        -e PW_STYLE='clear' \
-        --name pypowerwall \
-        --restart unless-stopped \
-        jasonacox/pypowerwall
+    # Local Access - TEDAPI "full mode"
+        docker run \
+            -d \
+            -p 8675:8675 \
+            -e PW_PORT='8675' \
+            -e PW_HOST='192.168.91.1' \
+            -e PW_GW_PWD='Gateway_Password' \
+            -e PW_TIMEZONE='America/Chicago' \
+            -e TZ='America/Chicago' \
+            -e PW_CACHE_EXPIRE='5' \
+            -e PW_DEBUG='no' \
+            -e PW_HTTPS='no' \
+            -e PW_STYLE='clear' \
+            --name pypowerwall \
+            --restart unless-stopped \
+            jasonacox/pypowerwall
 
     # Cloud Mode Setup - Optional
-    docker exec -it pypowerwall python3 -m pypowerwall setup -email=email@example.com
-    docker restart pypowerwall
+        docker run \
+            -d \
+            -p 8675:8675 \
+            -e PW_PORT='8675' \
+            -e PW_EMAIL='email@example.com' \
+            -e PW_HOST='' \
+            -e PW_TIMEZONE='America/Los_Angeles' \
+            -e TZ='America/Los_Angeles' \
+            -e PW_CACHE_EXPIRE='5' \
+            -e PW_DEBUG='no' \
+            -e PW_HTTPS='no' \
+            -e PW_STYLE='clear' \
+            --name pypowerwall \
+            --restart unless-stopped \
+            jasonacox/pypowerwall
+        
+        # Required login process for Cloud Mode
+        docker exec -it pypowerwall python3 -m pypowerwall setup -email=email@example.com
+        docker restart pypowerwall
     ```
 
 2. Test the Proxy
@@ -148,10 +165,12 @@ The pyPowerwall Proxy will react to the following environmental variables with (
 
 Powerwall Settings
 
-* PW_PASSWORD - Powerwall customer password ("password") [required]
+
+* PW_GW_PWD - Powerwall gateway (or PW3) password [required for TEDAPI extended metrics mode]
 * PW_EMAIL - Powerwall customer email ("email@example.com") [required for cloudmode]
-* PW_HOST - Powerwall hostname or IP address ("hostname") [required for local mode]
+* PW_HOST - Powerwall hostname or IP address ("hostname") [required for local mode, e.g. 192.168.91.1]
 * PW_TIMEZONE - Local timezone ("America/Los_Angeles") [optional]
+* PW_PASSWORD - Powerwall customer password ("password") [optional PW2 local access mode]
 
 Proxy Settings
 
@@ -177,21 +196,21 @@ Proxy Settings
 
 ## Control Mode
 
-If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will attempt to connect ot the cloud in addition to local mode setup (if you are using local mode). The `PW_EMAIL` must match your Tesla account and you need to run **cloud setup** before using this mode.
+If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will attempt to connect to the cloud in addition to local mode setup (if you are using local mode). The `PW_EMAIL` must match your Tesla account and you need to run **cloud setup** before using this mode.
 
 _WARNING_: Activating control mode means that the proxy can make changes to your system. This will be available to anyone who can access the proxy. For safety reasons, this mode is disabled by default and should be used with caution.
 
 ```bash
-# Run Proxy 
+# Run Proxy - Example using local TEDAPI full mode
 docker run \
     -d \
     -p 8675:8675 \
     -e PW_PORT='8675' \
-    -e PW_PASSWORD='password' \
-    -e PW_EMAIL='email@example.com' \
-    -e PW_HOST='IP_of_Powerwall_Gateway' \
+    -e PW_GW_PWD='Gateway_Password' \
+    -e PW_HOST='192.168.91.1' \
     -e PW_TIMEZONE='America/Los_Angeles' \
     -e TZ='America/Los_Angeles' \
+    -e PW_EMAIL='email@example.com' \
     -e PW_CONTROL_SECRET='YourSecretToken' \
     --name pypowerwall \
     --restart unless-stopped \
@@ -213,7 +232,7 @@ Examples
 ```bash
 export MODE=self_consumption
 export RESERVE=20
-export PW_CONTROL_SECRET=mySecretKey
+export PW_CONTROL_SECRET=YourSecretToken
 
 # Set Mode
 curl -X POST -d "value=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
