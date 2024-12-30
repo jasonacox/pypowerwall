@@ -12,10 +12,10 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
 
 ## Quick Start
 
-1. Run the Docker Container to listen on port 8675. Update the `-e` values for your Powerwall (see [Environmental Settings](https://github.com/jasonacox/pypowerwall/tree/main/proxy#environmental-settings) for options). Below are multiple examples depending on your desired access. The TEDAPI "full mode" is recommended and works for all Powerwall systems (2, +, 3) where the "cloud" mode is required for Solar Only systems.
+1. Run the Docker Container to listen on port 8675. Update the `-e` values for your Powerwall (see [Environmental Settings](https://github.com/jasonacox/pypowerwall/tree/main/proxy#environmental-settings) for options). Below are multiple examples depending on your desired access method. The local TEDAPI "full mode" access is recommended and works for all Powerwall systems (2, +, 3) but requires access to the Powerwall 192.168.91.1 (see [here](https://github.com/jasonacox/pypowerwall?tab=readme-ov-file#tedapi-mode---option-4)). The "cloud" mode example works for all systems and is required for Solar Only systems. 
 
     ```bash
-    # Local Access - TEDAPI "full mode"
+    # Local Access - TEDAPI "full mode" - Requires route to Powerwall 192.168.91.1 endpoint
         docker run \
             -d \
             -p 8675:8675 \
@@ -32,7 +32,25 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
             --restart unless-stopped \
             jasonacox/pypowerwall
 
-    # Cloud Mode Setup - Optional
+    # Local Access (Depreciated) - Basic Metrics for PW2 and Pw+ systems (does not work for PW3)
+        docker run \
+            -d \
+            -p 8675:8675 \
+            -e PW_PORT='8675' \
+            -e PW_PASSWORD='password' \
+            -e PW_EMAIL='email@example.com' \
+            -e PW_HOST='LAN_IP_of_Powerwall_Gateway' \
+            -e PW_TIMEZONE='America/Los_Angeles' \
+            -e TZ='America/Los_Angeles' \
+            -e PW_CACHE_EXPIRE='5' \
+            -e PW_DEBUG='no' \
+            -e PW_HTTPS='no' \
+            -e PW_STYLE='clear' \
+            --name pypowerwall \
+            --restart unless-stopped \
+            jasonacox/pypowerwall
+
+    # Cloud Mode Setup - Basic Metrics for all Powerwall and Solar Only Systems
         docker run \
             -d \
             -p 8675:8675 \
