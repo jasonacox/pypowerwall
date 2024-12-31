@@ -88,7 +88,7 @@ from json import JSONDecodeError
 from typing import Union, Optional
 import time
 
-version_tuple = (0, 12, 1)
+version_tuple = (0, 12, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -244,6 +244,7 @@ class Powerwall(object):
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
+                                                        pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host)
                     else:
                         self.tedapi_mode = "hybrid"

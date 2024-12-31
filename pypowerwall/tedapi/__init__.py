@@ -8,7 +8,7 @@
 
  Class:
     TEDAPI(gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-              pwconfigexpire: int = 300, host: str = GW_IP) - Initialize TEDAPI
+              pwconfigexpire: int = 5, host: str = GW_IP) - Initialize TEDAPI
     
  Parameters:
     gw_pwd - Powerwall Gateway Password
@@ -84,7 +84,7 @@ def lookup(data, keylist):
 # TEDAPI Class
 class TEDAPI:
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-                 pwconfigexpire: int = 300, host: str = GW_IP) -> None:
+                 pwconfigexpire: int = 5, host: str = GW_IP) -> None:
         self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache

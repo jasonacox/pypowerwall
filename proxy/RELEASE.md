@@ -1,5 +1,14 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t67 (26 Dec 2024)
+
+* pyPowerwall v0.12.2 - Fix bug in cache timeout code that was not honoring pwcacheexpire setting. Raised by @erikgiesele in https://github.com/jasonacox/pypowerwall/issues/122 - PW_CACHE_EXPIRE=0 not possible? (Proxy)
+* Add WARNING log in proxy for settings below 5s.
+
+### Proxy t66
+
+* pyPowerwall v0.12.0
+
 ### Proxy t65 (22 Nov 2024)
 
 * Add `PW_NEG_SOLAR` config option and logic to remove negative solar values for /aggregates and /csv APIs
