@@ -32,7 +32,7 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
             --restart unless-stopped \
             jasonacox/pypowerwall
 
-    # Local Access (Depreciated) - Basic Metrics for PW2 and Pw+ systems (does not work for PW3)
+    # Local Access (Legacy) - Basic Metrics for PW2 and Pw+ systems (does not work for PW3)
         docker run \
             -d \
             -p 8675:8675 \
@@ -40,6 +40,7 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
             -e PW_PASSWORD='password' \
             -e PW_EMAIL='email@example.com' \
             -e PW_HOST='LAN_IP_of_Powerwall_Gateway' \
+            -e PW_GW_PWD='Optional_GW_Password_for_TEDAPI_hybrid_mode' \
             -e PW_TIMEZONE='America/Los_Angeles' \
             -e TZ='America/Los_Angeles' \
             -e PW_CACHE_EXPIRE='5' \
@@ -49,6 +50,8 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
             --name pypowerwall \
             --restart unless-stopped \
             jasonacox/pypowerwall
+
+        # Note for TEDAPI hybrid mode PW_HOST must be set to 192.168.91.1
 
     # Cloud Mode Setup - Basic Metrics for all Powerwall and Solar Only Systems
         docker run \
