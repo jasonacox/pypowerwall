@@ -902,6 +902,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * PVAC_a030_fan_faulted - Inverter fan failure (abnormal)
     * PVAC_a035_VFCheck_RoCoF - Unknown
     * PVAC_a041_excess_PV_clamp_triggered
+    * PVAC_a041_virtual_clamper_triggered
     * PVAC_a043_fan_speed_mismatch_detected
 
 #### PVS - Photovoltaic Strings
