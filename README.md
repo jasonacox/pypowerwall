@@ -954,14 +954,29 @@ This is an unofficial list of terms that are seen in Powerwall responses and mes
 * energy_imported = kWh pulled from grid over a duration of time (since Powerwall commissioning it seems)
 * energy_exported = kWh pushed to grid
 
-## Credits and References
+### Support
+
+There are several ways you can support this project.
+
+* Submit ideas, issues, discussions and code! Thanks to our active community, the project continues to grow and improve. Your engagement and help is needed and appreciated.
+* Tell others. If you find this useful, please share with others to help build our community.
+* Help test the code. We need help testing the project on different platforms and systems. Report your finding and any suggestions to make it easier to better.
+* Some of you have asked how you can contribute to help fund the project. This is work of love and a hobby. I'm not looking for financial help. However, if you are considering purchasing a Tesla Solar and/or Powerwall system, please take advantage of this code for a discount and I'll get a referral credit as well: https://www.tesla.com/referral/jason50054
+
+## References
 
 * Tesla Powerwall 2 – Local Gateway API documentation – https://github.com/vloschiavo/powerwall2
 * TESLA PowerWall 2 Security Shenanigans – https://github.com/hackerschoice/thc-tesla-powerwall2-hack
 * Powerwall Monitoring – https://github.com/mihailescu2m/powerwall_monitor
 * Protocol Buffers (protobuf) Basics - https://developers.google.com/protocol-buffers/docs/pythontutorial
+* Powerwall Dashboard - The project that started pypowerwall - https://github.com/jasonacox/Powerwall-Dashboard
+
+# Acknowledgements
+
+* [Tesla Energy](https://www.tesla.com/energy/design?referral=jason50054&redirect=no) - Tesla is not affiliated with this project but we thank to the brilliant minds at Tesla for creating such a great system for solar home energy generation. Tesla and Powerwall are trademarks of Tesla, Inc.
 * Tesla ([tesla.proto](tesla.proto)) Research and Credit to @brianhealey
 * Status Functions - Thanks to @wcwong for contribution: system_status(), battery_blocks(), grid_status()
+* Special thanks to the entire pypowerwall community for the great engagement, contributions and encouragement! See [RELEASE notes](https://github.com/jasonacox/pypowerwall/releases) for the ever growing list of improvements and contributors making this project possible.
 
 ## Other Tools and Similar Projects
 
