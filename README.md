@@ -973,7 +973,7 @@ There are several ways you can support this project.
 
 # Acknowledgements
 
-* [Tesla Energy](https://www.tesla.com/energy/design?referral=jason50054&redirect=no) - Tesla is not affiliated with this project but we thank to the brilliant minds at Tesla for creating such a great system for solar home energy generation. Tesla and Powerwall are trademarks of Tesla, Inc.
+* [Tesla Energy](https://www.tesla.com/energy/design?referral=jason50054&redirect=no) - Tesla is not affiliated with this project but we want to thank the brilliant minds at Tesla for creating such a great system for solar home energy generation. Tesla and Powerwall are trademarks of Tesla, Inc.
 * Tesla ([tesla.proto](tesla.proto)) Research and Credit to @brianhealey
 * Status Functions - Thanks to @wcwong for contribution: system_status(), battery_blocks(), grid_status()
 * Special thanks to the entire pypowerwall community for the great engagement, contributions and encouragement! See [RELEASE notes](https://github.com/jasonacox/pypowerwall/releases) for the ever growing list of improvements and contributors making this project possible.
