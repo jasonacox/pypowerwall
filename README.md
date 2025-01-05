@@ -74,18 +74,33 @@ The unofficial Tesla Owners API allows FleetAPI access (option 2) without having
 
 With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway. This API offers up additional metrics related to string data, voltages and alerts. However, you will need the Gateway/WiFi Password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway IP (192.168.91.1). You can have your computer join the Gateway local WiFi or you can add a route:
 
+In the examples below, change **192.168.0.100** to the IP address of Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
+
+#### Linux Ubuntu and RPi
 ```bash
-# Example - Change 192.168.0.100 to the IP address of Powerwall Gateway on your LAN
+# Can add to /etc/rc.local for persistence
+sudo ip route add 192.168.91.1 via 192.168.0.100 [onlink]
+```
 
-# Linux Ubuntu and RPi - Can add to /etc/rc.local for persistence 
-sudo ip route add 192.168.91.1 via 192.168.0.100
+See `examples/network_route.py` for two different approaches to do this programmatically in Python.
 
-# MacOS 
+#### MacOS
+```
 sudo route add -host 192.168.91.1 192.168.0.100 # Temporary 
 networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.100 # Persistent
+```
 
-# Windows - Using persistence flag - Administrator Shell
+#### Windows - Using persistence flag - Administrator Shell
+```
 route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
+```
+
+#### Windows Subsystem For Linux (Version 2 specific)
+Follow the instructions for Linux, but you must edit (From the host Windows OS) `%USERPROFILE%\.wslconfig` and add the following settings:
+```
+[wsl2]
+networkingMode=mirrored
+```
 
 # Test
 python3 -m pypowerwall tedapi
