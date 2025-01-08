@@ -58,6 +58,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
         self.siteid = None
+        self.session = None
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize TEDAPI
