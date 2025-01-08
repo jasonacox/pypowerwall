@@ -45,60 +45,168 @@ import signal
 import ssl
 import sys
 import time
+from enum import StrEnum, auto
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from typing import Dict, Final, Optional, Set, Union
+from urllib.parse import parse_qs, urlparse
 
 from transform import get_static, inject_js
+
 import pypowerwall
 from pypowerwall import parse_version
 
 BUILD = "t67"
-ALLOWLIST = [
-    '/api/status', '/api/site_info/site_name', '/api/meters/site',
-    '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
-    '/api/customer/registration', '/api/system_status', '/api/system_status/grid_status',
-    '/api/system/update/status', '/api/site_info', '/api/system_status/grid_faults',
-    '/api/operation', '/api/site_info/grid_codes', '/api/solars', '/api/solars/brands',
-    '/api/customer', '/api/meters', '/api/installer', '/api/networks',
-    '/api/system/networks', '/api/meters/readings', '/api/synchrometer/ct_voltage_references',
-    '/api/troubleshooting/problems', '/api/auth/toggle/supported', '/api/solar_powerwall',
-]
-DISABLED = [
+
+ALLOWLIST = Set[str] = set([
+    '/api/status',
+    '/api/site_info/site_name',
+    '/api/meters/site',
+    '/api/meters/solar',
+    '/api/sitemaster',
+    '/api/powerwalls',
     '/api/customer/registration',
-]
-web_root = os.path.join(os.path.dirname(__file__), "web")
+    '/api/system_status',
+    '/api/system_status/grid_status',
+    '/api/system/update/status',
+    '/api/site_info',
+    '/api/system_status/grid_faults',
+    '/api/operation',
+    '/api/site_info/grid_codes',
+    '/api/solars',
+    '/api/solars/brands',
+    '/api/customer',
+    '/api/meters',
+    '/api/installer',
+    '/api/networks',
+    '/api/system/networks',
+    '/api/meters/readings',
+    '/api/synchrometer/ct_voltage_references',
+    '/api/troubleshooting/problems',
+    '/api/auth/toggle/supported',
+    '/api/solar_powerwall',
+])
+
+DISABLED = Set[str] = set([
+    '/api/customer/registration',
+])
+WEB_ROOT: Final[str] = os.path.join(os.path.dirname(__file__), "web")
+
+
+
+    # bind_address = os.getenv("PW_BIND_ADDRESS", "")
+    # password = os.getenv("PW_PASSWORD", "")
+    # email = os.getenv("PW_EMAIL", "email@example.com")
+    # host = os.getenv("PW_HOST", "")
+    # timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
+    # debugmode = os.getenv("PW_DEBUG", "no").lower() == "yes"
+    # cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
+    # browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
+    # timeout = int(os.getenv("PW_TIMEOUT", "5"))
+    # pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
+    # https_mode = os.getenv("PW_HTTPS", "no")
+    # port = int(os.getenv("PW_PORT", "8675"))
+    # style = os.getenv("PW_STYLE", "clear") + ".js"
+    # siteid = os.getenv("PW_SITEID", None)
+    # authpath = os.getenv("PW_AUTH_PATH", "")
+    # authmode = os.getenv("PW_AUTH_MODE", "cookie")
+    # cf = ".powerwall"
+    # if authpath:
+    #     cf = os.path.join(authpath, ".powerwall")
+    # cachefile = os.getenv("PW_CACHE_FILE", cf)
+    # control_secret = os.getenv("PW_CONTROL_SECRET", "")
+    # gw_pwd = os.getenv("PW_GW_PWD", None)
+    # neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
+    
+class CONFIG_TYPE(StrEnum):
+    """_summary_
+
+    Args:
+        StrEnum (_type_): _description_
+    """
+    PW_BIND_ADDRESS = auto()
+    PW_PASSWORD = auto()
+    PW_EMAIL = auto()
+    PW_HOST = auto()
+    PW_TIMEZONE = auto()
+    PW_DEBUG = auto()
+    PW_CACHE_EXPIRE = auto()
+    PW_BROWSER_CACHE = auto()
+    PW_TIMEOUT = auto()
+    PW_POOL_MAXSIZE = auto()
+    PW_HTTPS = auto()
+    PW_HTTP_TYPE = auto()
+    PW_PORT = auto()
+    PW_STYLE = auto()
+    PW_SITEID = auto()
+    PW_AUTH_PATH = auto()
+    PW_AUTH_MODE = auto()
+    PW_CONTROL_SECRET = auto()
+    PW_GW_PWD = auto()
+    PW_NEG_SOLAR = auto()
+    PW_CACHE_FILE = auto()
+    PW_AUTH_PATH = auto()
 
 # Configuration for Proxy - Check for environmental variables
 #    and always use those if available (required for Docker)
-bind_address = os.getenv("PW_BIND_ADDRESS", "")
-password = os.getenv("PW_PASSWORD", "")
-email = os.getenv("PW_EMAIL", "email@example.com")
-host = os.getenv("PW_HOST", "")
-timezone = os.getenv("PW_TIMEZONE", "America/Los_Angeles")
-debugmode = os.getenv("PW_DEBUG", "no").lower() == "yes"
-cache_expire = int(os.getenv("PW_CACHE_EXPIRE", "5"))
-browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
-timeout = int(os.getenv("PW_TIMEOUT", "5"))
-pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
-https_mode = os.getenv("PW_HTTPS", "no")
-port = int(os.getenv("PW_PORT", "8675"))
-style = os.getenv("PW_STYLE", "clear") + ".js"
-siteid = os.getenv("PW_SITEID", None)
-authpath = os.getenv("PW_AUTH_PATH", "")
-authmode = os.getenv("PW_AUTH_MODE", "cookie")
-cf = ".powerwall"
-if authpath:
-    cf = os.path.join(authpath, ".powerwall")
-cachefile = os.getenv("PW_CACHE_FILE", cf)
-control_secret = os.getenv("PW_CONTROL_SECRET", "")
-gw_pwd = os.getenv("PW_GW_PWD", None)
-neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
+# Configuration - Environment variables
+CONFIG: Dict[CONFIG_TYPE, str | int | bool | None] = {
+    CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
+    CONFIG_TYPE.PW_PASSWORD: os.getenv(CONFIG_TYPE.PW_PASSWORD, ""),
+    CONFIG_TYPE.PW_HOST: os.getenv(CONFIG_TYPE.PW_HOST, ""),
+    CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
+    CONFIG_TYPE.PW_EMAIL: os.getenv(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
+    CONFIG_TYPE.PW_TIMEZONE: os.getenv(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles"),
+    CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(CONFIG_TYPE.PW_CACHE_EXPIRE, "5")),
+    CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
+    CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(CONFIG_TYPE.PW_TIMEOUT, "5")),
+    CONFIG_TYPE.PW_POOL_MAXSIZE: int(os.getenv(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
+    CONFIG_TYPE.PW_HTTPS: os.getenv(CONFIG_TYPE.PW_HTTPS, "no"),
+    CONFIG_TYPE.PW_PORT: int(os.getenv(CONFIG_TYPE.PW_PORT, "8675")),
+    CONFIG_TYPE.PW_STYLE: os.getenv(CONFIG_TYPE.PW_STYLE, "clear") + ".js",
+    CONFIG_TYPE.PW_SITEID: os.getenv(CONFIG_TYPE.PW_SITEID, None),
+    CONFIG_TYPE.PW_AUTH_PATH: os.getenv(CONFIG_TYPE.PW_AUTH_PATH, ""),
+    CONFIG_TYPE.PW_AUTH_MODE: os.getenv(CONFIG_TYPE.PW_AUTH_MODE, "cookie"),
+    CONFIG_TYPE.PW_GW_PWD: os.getenv(CONFIG_TYPE.PW_GW_PWD, None),
+    CONFIG_TYPE.PW_DEBUG: bool(os.getenv(CONFIG_TYPE.PW_DEBUG, "no").lower() == "yes"),
+    CONFIG_TYPE.PW_NEG_SOLAR: bool(os.getenv(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes")
+}
+
+# Cache file
+CONFIG[CONFIG_TYPE.PW_CACHE_FILE] = os.getenv(
+    CONFIG_TYPE.PW_CACHE_FILE,
+    os.path.join(CONFIG[CONFIG_TYPE.PW_AUTH_PATH], ".powerwall") if CONFIG[CONFIG_TYPE.PW_AUTH_PATH] else ".powerwall"
+)
+
+# HTTP/S configuration
+if CONFIG[CONFIG_TYPE.PW_HTTPS].lower() == "yes":
+    COOKIE_SUFFIX = "path=/;SameSite=None;Secure;"
+    CONFIG[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTPS"
+elif CONFIG[CONFIG_TYPE.PW_HTTPS].lower() == "http":
+    COOKIE_SUFFIX = "path=/;SameSite=None;Secure;"
+    CONFIG[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTP"
+else:
+    COOKIE_SUFFIX = "path=/;"
+    CONFIG[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTP"
+
+# Logging configuration
+log = logging.getLogger("proxy")
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
+log.setLevel(logging.DEBUG if CONFIG[CONFIG_TYPE.PW_DEBUG] else logging.INFO)
+
+if CONFIG[CONFIG_TYPE.PW_DEBUG]:
+    pypowerwall.set_debug(True)
+
+# Signal handler - Exit on SIGTERM
+# noinspection PyUnusedLocal
+def sig_term_handle(signum, frame):
+    raise SystemExit
+
+signal.signal(signal.SIGTERM, sig_term_handle)
 
 # Global Stats
 proxystats = {
-    'pypowerwall': "%s Proxy %s" % (pypowerwall.version, BUILD),
+    'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
     'mode': "Unknown",
     'gets': 0,
     'posts': 0,
@@ -118,78 +226,25 @@ proxystats = {
     'tedapi_mode': "off",
     'siteid': None,
     'counter': 0,
-    'cf': cachefile,
-    'config': {
-        'PW_BIND_ADDRESS': bind_address,
-        'PW_PASSWORD': '*' * len(password) if password else None,
-        'PW_EMAIL': email,
-        'PW_HOST': host,
-        'PW_TIMEZONE': timezone,
-        'PW_DEBUG': debugmode,
-        'PW_CACHE_EXPIRE': cache_expire,
-        'PW_BROWSER_CACHE': browser_cache,
-        'PW_TIMEOUT': timeout,
-        'PW_POOL_MAXSIZE': pool_maxsize,
-        'PW_HTTPS': https_mode,
-        'PW_PORT': port,
-        'PW_STYLE': style,
-        'PW_SITEID': siteid,
-        'PW_AUTH_PATH': authpath,
-        'PW_AUTH_MODE': authmode,
-        'PW_CACHE_FILE': cachefile,
-        'PW_CONTROL_SECRET': '*' * len(control_secret) if control_secret else None,
-        'PW_GW_PWD': '*' * len(gw_pwd) if gw_pwd else None,
-        'PW_NEG_SOLAR': neg_solar
-    }
+    'cf': CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
+    'config': CONFIG.copy()
 }
 
-if https_mode == "yes":
-    # run https mode with self-signed cert
-    cookiesuffix = "path=/;SameSite=None;Secure;"
-    httptype = "HTTPS"
-elif https_mode == "http":
-    # run http mode but simulate https for proxy behind https proxy
-    cookiesuffix = "path=/;SameSite=None;Secure;"
-    httptype = "HTTP"
-else:
-    # run in http mode
-    cookiesuffix = "path=/;"
-    httptype = "HTTP"
-
-# Logging
-log = logging.getLogger("proxy")
-logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
-log.setLevel(logging.INFO)
-
-if debugmode:
-    log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" %
-             (pypowerwall.version, BUILD, httptype, port))
-    pypowerwall.set_debug(True)
-    log.setLevel(logging.DEBUG)
-else:
-    log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d" %
-             (pypowerwall.version, BUILD, httptype, port))
+log.info(
+    f"pyPowerwall [{pypowerwall.version}] Proxy Server [{BUILD}] - {CONFIG[CONFIG_TYPE.PW_HTTP_TYPE]} Port {CONFIG['PW_PORT']}{' - DEBUG' if CONFIG[CONFIG_TYPE.PW_DEBUG] else ''}"
+)
 log.info("pyPowerwall Proxy Started")
 
 # Check for cache expire time limit below 5s
-if cache_expire < 5:
-    log.warning("Cache expiration set below 5s (PW_CACHE_EXPIRE=%d)" % cache_expire)
-
-# Signal handler - Exit on SIGTERM
-# noinspection PyUnusedLocal
-def sig_term_handle(signum, frame):
-    raise SystemExit
-
-# Register signal handler
-signal.signal(signal.SIGTERM, sig_term_handle)
-
+if CONFIG['PW_CACHE_EXPIRE'] < 5:
+    log.warning(f"Cache expiration set below 5s (PW_CACHE_EXPIRE={CONFIG['PW_CACHE_EXPIRE']})")
 
 # Get Value Function - Key to Value or Return Null
 def get_value(a, key):
     if key in a:
         return a[key]
     else:
-        log.debug("Missing key in payload [%s]" % key)
+        log.debug(f"Missing key in payload [{key}]")
         return None
 
 
@@ -481,64 +536,61 @@ class Handler(BaseHTTPRequestHandler):
             # Get Individual Powerwall Battery Data
             d = pw.system_status() or {}
             if "battery_blocks" in d:
-                idx = 1
-                for block in d["battery_blocks"]:
+                for idx, block in enumerate(d["battery_blocks"], start=1):
                     # Vital Placeholders
-                    pod["PW%d_name" % idx] = None
-                    pod["PW%d_POD_ActiveHeating" % idx] = None
-                    pod["PW%d_POD_ChargeComplete" % idx] = None
-                    pod["PW%d_POD_ChargeRequest" % idx] = None
-                    pod["PW%d_POD_DischargeComplete" % idx] = None
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = None
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = None
-                    pod["PW%d_POD_enable_line" % idx] = None
-                    pod["PW%d_POD_available_charge_power" % idx] = None
-                    pod["PW%d_POD_available_dischg_power" % idx] = None
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = None
-                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = None
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = None
+                    pod[f"PW{idx}_name" % idx] = None
+                    pod[f"PW{idx}_POD_ActiveHeating"] = None
+                    pod[f"PW{idx}_POD_ChargeComplete"] = None
+                    pod[f"PW{idx}_POD_ChargeRequest"] = None
+                    pod[f"PW{idx}_POD_DischargeComplete"] = None
+                    pod[f"PW{idx}_POD_PermanentlyFaulted"] = None
+                    pod[f"PW{idx}_POD_PersistentlyFaulted"] = None
+                    pod[f"PW{idx}_POD_enable_line"] = None
+                    pod[f"PW{idx}_POD_available_charge_power"] = None
+                    pod[f"PW{idx}_POD_available_dischg_power"] = None
+                    pod[f"PW{idx}_POD_nom_energy_remaining"] = None
+                    pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = None
+                    pod[f"PW{idx}_POD_nom_full_pack_energy"] = None
                     # Additional System Status Data
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(block, "nominal_energy_remaining")  # map
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(block, "nominal_full_pack_energy")  # map
-                    pod["PW%d_PackagePartNumber" % idx] = get_value(block, "PackagePartNumber")
-                    pod["PW%d_PackageSerialNumber" % idx] = get_value(block, "PackageSerialNumber")
-                    pod["PW%d_pinv_state" % idx] = get_value(block, "pinv_state")
-                    pod["PW%d_pinv_grid_state" % idx] = get_value(block, "pinv_grid_state")
-                    pod["PW%d_p_out" % idx] = get_value(block, "p_out")
-                    pod["PW%d_q_out" % idx] = get_value(block, "q_out")
-                    pod["PW%d_v_out" % idx] = get_value(block, "v_out")
-                    pod["PW%d_f_out" % idx] = get_value(block, "f_out")
-                    pod["PW%d_i_out" % idx] = get_value(block, "i_out")
-                    pod["PW%d_energy_charged" % idx] = get_value(block, "energy_charged")
-                    pod["PW%d_energy_discharged" % idx] = get_value(block, "energy_discharged")
-                    pod["PW%d_off_grid" % idx] = int(get_value(block, "off_grid") or 0)
-                    pod["PW%d_vf_mode" % idx] = int(get_value(block, "vf_mode") or 0)
-                    pod["PW%d_wobble_detected" % idx] = int(get_value(block, "wobble_detected") or 0)
-                    pod["PW%d_charge_power_clamped" % idx] = int(get_value(block, "charge_power_clamped") or 0)
-                    pod["PW%d_backup_ready" % idx] = int(get_value(block, "backup_ready") or 0)
-                    pod["PW%d_OpSeqState" % idx] = get_value(block, "OpSeqState")
-                    pod["PW%d_version" % idx] = get_value(block, "version")
-                    idx = idx + 1
+                    pod[f"PW{idx}_POD_nom_energy_remaining"] = get_value(block, "nominal_energy_remaining")  # map
+                    pod[f"PW{idx}_POD_nom_full_pack_energy"] = get_value(block, "nominal_full_pack_energy")  # map
+                    pod[f"PW{idx}_PackagePartNumber"] = get_value(block, "PackagePartNumber")
+                    pod[f"PW{idx}_PackageSerialNumber"] = get_value(block, "PackageSerialNumber")
+                    pod[f"PW{idx}_pinv_state"] = get_value(block, "pinv_state")
+                    pod[f"PW{idx}_pinv_grid_state"] = get_value(block, "pinv_grid_state")
+                    pod[f"PW{idx}_p_out"] = get_value(block, "p_out")
+                    pod[f"PW{idx}_q_out"] = get_value(block, "q_out")
+                    pod[f"PW{idx}_v_out"] = get_value(block, "v_out")
+                    pod[f"PW{idx}_f_out"] = get_value(block, "f_out")
+                    pod[f"PW{idx}_i_out"] = get_value(block, "i_out")
+                    pod[f"PW{idx}_energy_charged"] = get_value(block, "energy_charged")
+                    pod[f"PW{idx}_energy_discharged"] = get_value(block, "energy_discharged")
+                    pod[f"PW{idx}_off_grid"] = int(get_value(block, "off_grid") or 0)
+                    pod[f"PW{idx}_vf_mode"] = int(get_value(block, "vf_mode") or 0)
+                    pod[f"PW{idx}_wobble_detected"] = int(get_value(block, "wobble_detected") or 0)
+                    pod[f"PW{idx}_charge_power_clamped"] = int(get_value(block, "charge_power_clamped") or 0)
+                    pod[f"PW{idx}_backup_ready"] = int(get_value(block, "backup_ready") or 0)
+                    pod[f"PW{idx}_OpSeqState"] = get_value(block, "OpSeqState")
+                    pod[f"PW{idx}_version"] = get_value(block, "version")
             # Augment with Vitals Data if available
             vitals = pw.vitals() or {}
-            idx = 1
-            for device in vitals:
-                v = vitals[device]
-                if device.startswith('TEPOD'):
-                    pod["PW%d_name" % idx] = device
-                    pod["PW%d_POD_ActiveHeating" % idx] = int(get_value(v, 'POD_ActiveHeating') or 0)
-                    pod["PW%d_POD_ChargeComplete" % idx] = int(get_value(v, 'POD_ChargeComplete') or 0)
-                    pod["PW%d_POD_ChargeRequest" % idx] = int(get_value(v, 'POD_ChargeRequest') or 0)
-                    pod["PW%d_POD_DischargeComplete" % idx] = int(get_value(v, 'POD_DischargeComplete') or 0)
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(get_value(v, 'POD_PermanentlyFaulted') or 0)
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(get_value(v, 'POD_PersistentlyFaulted') or 0)
-                    pod["PW%d_POD_enable_line" % idx] = int(get_value(v, 'POD_enable_line') or 0)
-                    pod["PW%d_POD_available_charge_power" % idx] = get_value(v, 'POD_available_charge_power')
-                    pod["PW%d_POD_available_dischg_power" % idx] = get_value(v, 'POD_available_dischg_power')
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(v, 'POD_nom_energy_remaining')
-                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(v, 'POD_nom_energy_to_be_charged')
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(v, 'POD_nom_full_pack_energy')
-                    idx = idx + 1
+            for idx, device in enumerate(vitals, start=1):
+                if not device.startswith('TEPOD'):
+                    continue
+                v = vitals[device]                
+                pod[f"PW{idx}_name"] = device
+                pod[f"PW{idx}_POD_ActiveHeating"] = int(get_value(v, 'POD_ActiveHeating') or 0)
+                pod[f"PW{idx}_POD_ChargeComplete"] = int(get_value(v, 'POD_ChargeComplete') or 0)
+                pod[f"PW{idx}_POD_ChargeRequest"] = int(get_value(v, 'POD_ChargeRequest') or 0)
+                pod[f"PW{idx}_POD_DischargeComplete"] = int(get_value(v, 'POD_DischargeComplete') or 0)
+                pod[f"PW{idx}_POD_PermanentlyFaulted"] = int(get_value(v, 'POD_PermanentlyFaulted') or 0)
+                pod[f"PW{idx}_POD_PersistentlyFaulted"] = int(get_value(v, 'POD_PersistentlyFaulted') or 0)
+                pod[f"PW{idx}_POD_enable_line"] = int(get_value(v, 'POD_enable_line') or 0)
+                pod[f"PW{idx}_POD_available_charge_power"] = get_value(v, 'POD_available_charge_power')
+                pod[f"PW{idx}_POD_available_dischg_power"] = get_value(v, 'POD_available_dischg_power')
+                pod[f"PW{idx}_POD_nom_energy_remaining"] = get_value(v, 'POD_nom_energy_remaining')
+                pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = get_value(v, 'POD_nom_energy_to_be_charged')
+                pod[f"PW{idx}_POD_nom_full_pack_energy"] = get_value(v, 'POD_nom_full_pack_energy')
             # Aggregate data
             pod["nominal_full_pack_energy"] = get_value(d, 'nominal_full_pack_energy')
             pod["nominal_energy_remaining"] = get_value(d, 'nominal_energy_remaining')
@@ -690,7 +742,7 @@ class Handler(BaseHTTPRequestHandler):
             # pylint: disable=attribute-defined-outside-init
             if self.path == "/" or self.path == "":
                 self.path = "/index.html"
-                fcontent, ftype = get_static(web_root, self.path)
+                fcontent, ftype = get_static(WEB_ROOT, self.path)
                 # Replace {VARS} with current data
                 status = pw.status()
                 # convert fcontent to string
@@ -703,7 +755,7 @@ class Handler(BaseHTTPRequestHandler):
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
-                fcontent, ftype = get_static(web_root, self.path)
+                fcontent, ftype = get_static(WEB_ROOT, self.path)
             if fcontent:
                 log.debug("Served from local web root: {} type {}".format(self.path, ftype))
             # If not found, serve from Powerwall web server
@@ -716,8 +768,8 @@ class Handler(BaseHTTPRequestHandler):
                 proxy_path = self.path
                 if proxy_path.startswith("/"):
                     proxy_path = proxy_path[1:]
-                pw_url = "https://{}/{}".format(pw.host, proxy_path)
-                log.debug("Proxy request to: {}".format(pw_url))
+                pw_url = f"https://{pw.host}/{proxy_path}"
+                log.debug(f"Proxy request to: {pw_url}")
                 try:
                     if pw.authmode == "token":
                         r = pw.client.session.get(
@@ -751,7 +803,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 # Inject transformations
             if self.path.split('?')[0] == "/":
-                if os.path.exists(os.path.join(web_root, style)):
+                if os.path.exists(os.path.join(WEB_ROOT, style)):
                     fcontent = bytes(inject_js(fcontent, style), 'utf-8')
 
             self.send_header('Content-type', '{}'.format(ftype))
