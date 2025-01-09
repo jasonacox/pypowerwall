@@ -46,12 +46,11 @@ import ssl
 import sys
 import time
 from enum import StrEnum, auto
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Dict, Final, Optional, Set
+from typing import Dict, Final, Optional, Set, Any
 from urllib.parse import parse_qs, urlparse
-from http import HTTPStatus
-
 
 from transform import get_static, inject_js
 
@@ -153,7 +152,8 @@ class CONFIG_TYPE(StrEnum):
 # Configuration for Proxy - Check for environmental variables
 #    and always use those if available (required for Docker)
 # Configuration - Environment variables
-CONFIG: Dict[CONFIG_TYPE, str | int | bool | None] = {
+type PROXY_CONFIG = Dict[CONFIG_TYPE, str | int | bool | None]
+CONFIG: PROXY_CONFIG = {
     CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
     CONFIG_TYPE.PW_PASSWORD: os.getenv(CONFIG_TYPE.PW_PASSWORD, ""),
     CONFIG_TYPE.PW_HOST: os.getenv(CONFIG_TYPE.PW_HOST, ""),
@@ -207,8 +207,40 @@ def sig_term_handle(signum, frame):
 
 signal.signal(signal.SIGTERM, sig_term_handle)
 
+
+class PROXY_STATS_TYPE(StrEnum):
+    """_summary_
+
+    Args:
+        StrEnum (_type_): _description_
+    """
+    
+    'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
+    'mode': "Unknown",
+    'gets': 0,
+    'posts': 0,
+    'errors': 0,
+    'timeout': 0,
+    'uri': {},
+    'ts': int(time.time()),
+    'start': int(time.time()),
+    'clear': int(time.time()),
+    'uptime': "",
+    'mem': 0,
+    'site_name': "",
+    'cloudmode': False,
+    'fleetapi': False,
+    'tedapi': False,
+    'pw3': False,
+    'tedapi_mode': "off",
+    'siteid': None,
+    'counter': 0,
+    'cf': CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
+    'config': CONFIG.copy()
+
+
 # Global Stats
-proxystats = {
+proxystats: Dict[PROXY_STATS_TYPE, str | int | bool | None | Dict[Any, Any]] = {
     'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
     'mode': "Unknown",
     'gets': 0,
