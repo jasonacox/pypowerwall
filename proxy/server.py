@@ -48,8 +48,10 @@ import time
 from enum import StrEnum, auto
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Dict, Final, Optional, Set, Union
+from typing import Dict, Final, Optional, Set
 from urllib.parse import parse_qs, urlparse
+from http import HTTPStatus
+
 
 from transform import get_static, inject_js
 
@@ -146,6 +148,7 @@ class CONFIG_TYPE(StrEnum):
     PW_NEG_SOLAR = auto()
     PW_CACHE_FILE = auto()
     PW_AUTH_PATH = auto()
+    PW_COOKIE_SUFFIX = auto()
 
 # Configuration for Proxy - Check for environmental variables
 #    and always use those if available (required for Docker)
@@ -180,13 +183,13 @@ CONFIG[CONFIG_TYPE.PW_CACHE_FILE] = os.getenv(
 
 # HTTP/S configuration
 if CONFIG[CONFIG_TYPE.PW_HTTPS].lower() == "yes":
-    COOKIE_SUFFIX = "path=/;SameSite=None;Secure;"
+    CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX] = "path=/;SameSite=None;Secure;"
     CONFIG[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTPS"
 elif CONFIG[CONFIG_TYPE.PW_HTTPS].lower() == "http":
-    COOKIE_SUFFIX = "path=/;SameSite=None;Secure;"
+    CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX] = "path=/;SameSite=None;Secure;"
     CONFIG[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTP"
 else:
-    COOKIE_SUFFIX = "path=/;"
+    CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX] = "path=/;"
     CONFIG[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTP"
 
 # Logging configuration
@@ -241,21 +244,30 @@ if CONFIG['PW_CACHE_EXPIRE'] < 5:
 
 # Get Value Function - Key to Value or Return Null
 def get_value(a, key):
-    if key in a:
-        return a[key]
-    else:
+    value = a.get(key)
+    if value is None:
         log.debug(f"Missing key in payload [{key}]")
-        return None
-
+    return value
 
 # Connect to Powerwall
 # TODO: Add support for multiple Powerwalls
 try:
-    pw = pypowerwall.Powerwall(host, password, email, timezone, cache_expire,
-                               timeout, pool_maxsize, siteid=siteid,
-                               authpath=authpath, authmode=authmode,
-                               cachefile=cachefile, auto_select=True,
-                               retry_modes=True, gw_pwd=gw_pwd)
+    pw = pypowerwall.Powerwall(
+        host=CONFIG[CONFIG_TYPE.PW_HOST],
+        password=CONFIG[CONFIG_TYPE.PW_PASSWORD],
+        email=CONFIG[CONFIG_TYPE.PW_EMAIL],
+        timezone=CONFIG[CONFIG_TYPE.PW_TIMEZONE],
+        cache_expire=CONFIG[CONFIG_TYPE.PW_CACHE_EXPIRE],
+        timeout=CONFIG[CONFIG_TYPE.PW_TIMEOUT],
+        pool_maxsize=CONFIG[CONFIG_TYPE.PW_POOL_MAXSIZE],
+        siteid=CONFIG[CONFIG_TYPE.PW_SITEID],
+        authpath=CONFIG[CONFIG_TYPE.PW_AUTH_PATH],
+        authmode=CONFIG[CONFIG_TYPE.PW_AUTH_MODE],
+        cachefile=CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
+        auto_select=True,
+        retry_modes=True,
+        gw_pwd=CONFIG[CONFIG_TYPE.PW_GW_PWD]
+    )
 except Exception as e:
     log.error(e)
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -273,10 +285,10 @@ if pw.cloudmode or pw.fleetapi:
     else:
         proxystats['mode'] = "Cloud"
         log.info("pyPowerwall Proxy Server - Cloud Mode")
-    log.info("Connected to Site ID %s (%s)" % (pw.client.siteid, site_name.strip()))
-    if siteid is not None and siteid != str(pw.client.siteid):
-        log.info("Switch to Site ID %s" % siteid)
-        if not pw.client.change_site(siteid):
+    log.info(f"Connected to Site ID {pw.client.siteid} ({site_name.strip()})")
+    if CONFIG[CONFIG_TYPE.PW_SITEID] is not None and CONFIG[CONFIG_TYPE.PW_SITEID] != str(pw.client.siteid):
+        log.info("Switch to Site ID %s" % CONFIG[CONFIG_TYPE.PW_SITEID])
+        if not pw.client.change_site(CONFIG[CONFIG_TYPE.PW_SITEID]):
             log.error("Fatal Error: Unable to connect. Please fix config and restart.")
             while True:
                 try:
@@ -286,7 +298,7 @@ if pw.cloudmode or pw.fleetapi:
 else:
     proxystats['mode'] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
-    log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
+    log.info(f"Connected to Energy Gateway {CONFIG[CONFIG_TYPE.PW_HOST]} ({site_name.strip()})")
     if pw.tedapi:
         proxystats['tedapi'] = True
         proxystats['tedapi_mode'] = pw.tedapi_mode
@@ -294,7 +306,7 @@ else:
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
 pw_control = None
-if control_secret:
+if CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
     log.info("Control Commands Activating - WARNING: Use with caution!")
     try:
         if pw.cloudmode or pw.fleetapi:
@@ -305,12 +317,12 @@ if control_secret:
                                                cachefile=cachefile, auto_select=True)
     except Exception as e:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
-        control_secret = ""
+        CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET] = ""
     if pw_control:
         log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
-        control_secret = None
+        CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET] = None
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -320,7 +332,7 @@ class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
 # noinspection PyPep8Naming
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, log_format, *args):
-        if debugmode:
+        if CONFIG[CONFIG_TYPE.PW_DEBUG]:
             log.debug("%s %s" % (self.address_string(), log_format % args))
         else:
             pass
@@ -338,7 +350,7 @@ class Handler(BaseHTTPRequestHandler):
             # curl -X POST -d "value=20&token=1234" http://localhost:8675/control/reserve
             # curl -X POST -d "value=backup&token=1234" http://localhost:8675/control/mode
             message = None
-            if not control_secret:
+            if not CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 try:
@@ -356,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
                         message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
                         log.error("Control Command Error: Unable to connect to cloud mode - Run Setup")
                     else:
-                        if token == control_secret:
+                        if token == CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
                             if action == 'reserve':
                                 # ensure value is an integer
                                 if not value:
@@ -381,12 +393,12 @@ class Handler(BaseHTTPRequestHandler):
                         else:
                             message = '{"unauthorized": "Control Command Token Invalid"}'
         if "error" in message:
-            self.send_response(400)
+            self.send_response(HTTPStatus.BAD_REQUEST)
             proxystats['errors'] = proxystats['errors'] + 1
         elif "unauthorized" in message:
-            self.send_response(401)
+            self.send_response(HTTPStatus.UNAUTHORIZED)
         else:
-            self.send_response(200)
+            self.send_response(HTTPStatus.OK)
             proxystats['posts'] = proxystats['posts'] + 1
         self.send_header('Content-type', contenttype)
         self.send_header('Content-Length', str(len(message)))
@@ -402,7 +414,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
             # Meters - JSON
             aggregates = pw.poll('/api/meters/aggregates')
-            if not neg_solar and aggregates and 'solar' in aggregates:
+            if not CONFIG[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
                 solar = aggregates['solar']
                 if solar and 'instant_power' in solar and solar['instant_power'] < 0:
                     solar['instant_power'] = 0
@@ -432,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
             solar = pw.solar() or 0
             battery = pw.battery() or 0
             home = pw.home() or 0
-            if not neg_solar and solar < 0:
+            if not CONFIG[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
                 solar = 0
                 # Shift energy from solar to load
                 home -= solar
@@ -494,35 +506,31 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/freq':
             # Frequency, Current, Voltage and Grid Status
             fcv = {}
-            idx = 1
             # Pull freq, current, voltage of each Powerwall via system_status
             d = pw.system_status() or {}
             if "battery_blocks" in d:
-                for block in d["battery_blocks"]:
-                    fcv["PW%d_name" % idx] = None  # Placeholder for vitals
-                    fcv["PW%d_PINV_Fout" % idx] = get_value(block, "f_out")
-                    fcv["PW%d_PINV_VSplit1" % idx] = None  # Placeholder for vitals
-                    fcv["PW%d_PINV_VSplit2" % idx] = None  # Placeholder for vitals
-                    fcv["PW%d_PackagePartNumber" % idx] = get_value(block, "PackagePartNumber")
-                    fcv["PW%d_PackageSerialNumber" % idx] = get_value(block, "PackageSerialNumber")
-                    fcv["PW%d_p_out" % idx] = get_value(block, "p_out")
-                    fcv["PW%d_q_out" % idx] = get_value(block, "q_out")
-                    fcv["PW%d_v_out" % idx] = get_value(block, "v_out")
-                    fcv["PW%d_f_out" % idx] = get_value(block, "f_out")
-                    fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
-                    idx = idx + 1
+                for idx, block in enumerate(d["battery_blocks"], start=1):
+                    fcv[f"PW{idx}_name"] = None  # Placeholder for vitals
+                    fcv[f"PW{idx}_PINV_Fout"] = get_value(block, "f_out")
+                    fcv[f"PW{idx}_PINV_VSplit1"] = None  # Placeholder for vitals
+                    fcv[f"PW{idx}_PINV_VSplit2"] = None  # Placeholder for vitals
+                    fcv[f"PW{idx}_PackagePartNumber"] = get_value(block, "PackagePartNumber")
+                    fcv[f"PW{idx}_PackageSerialNumber"] = get_value(block, "PackageSerialNumber")
+                    fcv[f"PW{idx}_p_out"] = get_value(block, "p_out")
+                    fcv[f"PW{idx}_q_out"] = get_value(block, "q_out")
+                    fcv[f"PW{idx}_v_out"] = get_value(block, "v_out")
+                    fcv[f"PW{idx}_f_out"] = get_value(block, "f_out")
+                    fcv[f"PW{idx}_i_out"] = get_value(block, "i_out")
             # Pull freq, current, voltage of each Powerwall via vitals if available
             vitals = pw.vitals() or {}
-            idx = 1
-            for device in vitals:
+            for idx, device in enumerate(vitals, start=1):
                 d = vitals[device]
                 if device.startswith('TEPINV'):
                     # PW freq
-                    fcv["PW%d_name" % idx] = device
-                    fcv["PW%d_PINV_Fout" % idx] = get_value(d, 'PINV_Fout')
-                    fcv["PW%d_PINV_VSplit1" % idx] = get_value(d, 'PINV_VSplit1')
-                    fcv["PW%d_PINV_VSplit2" % idx] = get_value(d, 'PINV_VSplit2')
-                    idx = idx + 1
+                    fcv[f"PW{idx}_name"] = device
+                    fcv[f"PW{idx}_PINV_Fout"] = get_value(d, 'PINV_Fout')
+                    fcv[f"PW{idx}_PINV_VSplit1"] = get_value(d, 'PINV_VSplit1')
+                    fcv[f"PW{idx}_PINV_VSplit2"] = get_value(d, 'PINV_VSplit2')
                 if device.startswith('TESYNC') or device.startswith('TEMSA'):
                     # Island and Meter Metrics from Backup Gateway or Backup Switch
                     for i in d:
@@ -538,7 +546,7 @@ class Handler(BaseHTTPRequestHandler):
             if "battery_blocks" in d:
                 for idx, block in enumerate(d["battery_blocks"], start=1):
                     # Vital Placeholders
-                    pod[f"PW{idx}_name" % idx] = None
+                    pod[f"PW{idx}_name"] = None
                     pod[f"PW{idx}_POD_ActiveHeating"] = None
                     pod[f"PW{idx}_POD_ChargeComplete"] = None
                     pod[f"PW{idx}_POD_ChargeRequest"] = None
@@ -732,11 +740,11 @@ class Handler(BaseHTTPRequestHandler):
             proxystats['gets'] = proxystats['gets'] + 1
             if pw.authmode == "token":
                 # Create bogus cookies
-                self.send_header("Set-Cookie", f"AuthCookie=1234567890;{cookiesuffix}")
-                self.send_header("Set-Cookie", f"UserRecord=1234567890;{cookiesuffix}")
+                self.send_header("Set-Cookie", f"AuthCookie=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+                self.send_header("Set-Cookie", f"UserRecord=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             else:
-                self.send_header("Set-Cookie", f"AuthCookie={pw.client.auth['AuthCookie']};{cookiesuffix}")
-                self.send_header("Set-Cookie", f"UserRecord={pw.client.auth['UserRecord']};{cookiesuffix}")
+                self.send_header("Set-Cookie", f"AuthCookie={pw.client.auth['AuthCookie']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+                self.send_header("Set-Cookie", f"UserRecord={pw.client.auth['UserRecord']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
 
             # Serve static assets from web root first, if found.
             # pylint: disable=attribute-defined-outside-init
@@ -750,8 +758,8 @@ class Handler(BaseHTTPRequestHandler):
                 # fix the following variables that if they are None, return ""
                 fcontent = fcontent.replace("{VERSION}", status["version"] or "")
                 fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
-                fcontent = fcontent.replace("{EMAIL}", email)
-                fcontent = fcontent.replace("{STYLE}", style)
+                fcontent = fcontent.replace("{EMAIL}", CONFIG[CONFIG_TYPE.PW_EMAIL])
+                fcontent = fcontent.replace("{STYLE}", CONFIG[CONFIG_TYPE.PW_STYLE])
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
@@ -796,15 +804,15 @@ class Handler(BaseHTTPRequestHandler):
                     ftype = "text/plain"
 
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
-            if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
-                self.send_header("Cache-Control", "max-age={}".format(browser_cache))
+            if CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE] > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
+                self.send_header("Cache-Control", "max-age={}".format(CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE]))
             else:
                 self.send_header("Cache-Control", "no-cache, no-store")
 
                 # Inject transformations
             if self.path.split('?')[0] == "/":
-                if os.path.exists(os.path.join(WEB_ROOT, style)):
-                    fcontent = bytes(inject_js(fcontent, style), 'utf-8')
+                if os.path.exists(os.path.join(WEB_ROOT, CONFIG[CONFIG_TYPE.PW_STYLE])):
+                    fcontent = bytes(inject_js(fcontent, CONFIG[CONFIG_TYPE.PW_STYLE]), 'utf-8')
 
             self.send_header('Content-type', '{}'.format(ftype))
             self.end_headers()
@@ -844,7 +852,7 @@ class Handler(BaseHTTPRequestHandler):
 
 # noinspection PyTypeChecker
 with ThreadingHTTPServer((bind_address, port), Handler) as server:
-    if https_mode == "yes":
+    if CONFIG[CONFIG_TYPE.PW_HTTPS] == "yes":
         # Activate HTTPS
         log.debug("Activating HTTPS")
         # pylint: disable=deprecated-method
