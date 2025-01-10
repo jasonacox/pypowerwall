@@ -281,34 +281,6 @@ def get_value(a, key):
         log.debug(f"Missing key in payload [{key}]")
     return value
 
-# Connect to Powerwall
-# TODO: Add support for multiple Powerwalls
-try:
-    pw = pypowerwall.Powerwall(
-        host=CONFIG[CONFIG_TYPE.PW_HOST],
-        password=CONFIG[CONFIG_TYPE.PW_PASSWORD],
-        email=CONFIG[CONFIG_TYPE.PW_EMAIL],
-        timezone=CONFIG[CONFIG_TYPE.PW_TIMEZONE],
-        cache_expire=CONFIG[CONFIG_TYPE.PW_CACHE_EXPIRE],
-        timeout=CONFIG[CONFIG_TYPE.PW_TIMEOUT],
-        pool_maxsize=CONFIG[CONFIG_TYPE.PW_POOL_MAXSIZE],
-        siteid=CONFIG[CONFIG_TYPE.PW_SITEID],
-        authpath=CONFIG[CONFIG_TYPE.PW_AUTH_PATH],
-        authmode=CONFIG[CONFIG_TYPE.PW_AUTH_MODE],
-        cachefile=CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
-        auto_select=True,
-        retry_modes=True,
-        gw_pwd=CONFIG[CONFIG_TYPE.PW_GW_PWD]
-    )
-except Exception as e:
-    log.error(e)
-    log.error("Fatal Error: Unable to connect. Please fix config and restart.")
-    while True:
-        try:
-            time.sleep(5)  # Infinite loop to keep container running
-        except (KeyboardInterrupt, SystemExit):
-            sys.exit(0)
-
 site_name = pw.site_name() or "Unknown"
 if pw.cloudmode or pw.fleetapi:
     if pw.fleetapi:
@@ -373,7 +345,6 @@ def configure_pw_control(pw):
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
-
 # pylint: disable=arguments-differ,global-variable-not-assigned
 # noinspection PyPep8Naming
 class Handler(BaseHTTPRequestHandler):
@@ -385,6 +356,18 @@ class Handler(BaseHTTPRequestHandler):
         # replace function to avoid lookup delays
         hostaddr, hostport = self.client_address[:2]
         return hostaddr
+    
+    def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json'):
+        response = json.dumps(data)
+        try:
+            self.send_response(status_code)
+            self.send_header('Content-type', content_type)
+            self.send_header('Content-Length', str(len(response)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(response.encode("utf8"))
+        except Exception as exc:
+            log.debug("Error sending response: %s", exc)
 
     def do_POST(self):
         global proxystats
@@ -451,214 +434,254 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(message.encode("utf8"))
 
     def do_GET(self):
-        global proxystats
-        self.send_response(HTTPStatus.OK)
-        contenttype = 'application/json'
+        """Handle GET requests."""
+        proxystats[PROXY_STATS_TYPE.GETS] += 1
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+        
+        # Map paths to handler functions
+        path_handlers = {
+            '/aggregates': self.handle_aggregates,
+            '/api/meters/aggregates': self.handle_aggregates,
+            '/soe': self.handle_soe,
+            '/api/system_status/soe': self.handle_soe_scaled,
+            '/api/system_status/grid_status': self.handle_grid_status,
+            '/csv': self.handle_csv,
+            '/vitals': self.handle_vitals,
+            '/strings': self.handle_strings,
+            '/stats': self.handle_stats,
+            '/stats/clear': self.handle_stats_clear,
+            '/temps': self.handle_temps,
+            '/temps/pw': self.handle_temps_pw,
+            '/alerts': self.handle_alerts,
+            '/alerts/pw': self.handle_alerts_pw,
+            '/freq': self.handle_freq,
+            '/pod': self.handle_pod,
+            '/version': self.handle_version,
+            '/help': self.handle_help,
+            '/api/troubleshooting/problems': self.handle_problems,
+        }
+        
+        if path in path_handlers:
+            path_handlers[path]()
+        elif path in DISABLED:
+            self.send_json_response(
+                {"status": "404 Response - API Disabled"},
+                status_code=HTTPStatus.NOT_FOUND
+            )
+        elif path in ALLOWLIST:
+            self.handle_allowlist(path)
+        elif path.startswith('/tedapi'):
+            self.handle_tedapi(path)
+        elif path.startswith('/cloud'):
+            self.handle_cloud(path)
+        elif path.startswith('/fleetapi'):
+            self.handle_fleetapi(path)
+        else:
+            self.handle_static_content()
 
-        if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
-            # Meters - JSON
-            aggregates = pw.poll('/api/meters/aggregates')
-            if not CONFIG[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
-                solar = aggregates['solar']
-                if solar and 'instant_power' in solar and solar['instant_power'] < 0:
-                    solar['instant_power'] = 0
-                    # Shift energy from solar to load
-                    if 'load' in aggregates and 'instant_power' in aggregates['load']:
-                        aggregates['load']['instant_power'] -= solar['instant_power']
-            try:
-                message = json.dumps(aggregates)
-            except:
-                log.error(f"JSON encoding error in payload: {aggregates}")
-                message = None
-        elif self.path == '/soe':
-            # Battery Level - JSON
-            message: str = pw.poll('/api/system_status/soe', jsonformat=True)
-        elif self.path == '/api/system_status/soe':
-            # Force 95% Scale
-            level = pw.level(scale=True)
-            message: str = json.dumps({"percentage": level})
-        elif self.path == '/api/system_status/grid_status':
-            # Grid Status - JSON
-            message: str = pw.poll('/api/system_status/grid_status', jsonformat=True)
-        elif self.path == '/csv':
-            # Grid,Home,Solar,Battery,Level - CSV
-            contenttype = 'text/plain; charset=utf-8'
-            batterylevel = pw.level() or 0
-            grid = pw.grid() or 0
-            solar = pw.solar() or 0
-            battery = pw.battery() or 0
-            home = pw.home() or 0
-            if not CONFIG[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
-                solar = 0
+    def handle_aggregates(self):
+        # Meters - JSON
+        aggregates = pw.poll('/api/meters/aggregates')
+        if not CONFIG[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
+            solar = aggregates['solar']
+            if solar and 'instant_power' in solar and solar['instant_power'] < 0:
+                solar['instant_power'] = 0
                 # Shift energy from solar to load
-                home -= solar
-            message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
-                      % (grid, home, solar, battery, batterylevel)
-        elif self.path == '/vitals':
-            # Vitals Data - JSON
-            message: str = pw.vitals(jsonformat=True) or json.dumps({})
-        elif self.path == '/strings':
-            # Strings Data - JSON
-            message: str = pw.strings(jsonformat=True) or json.dumps({})
-        elif self.path == '/stats':
-            # Give Internal Stats
-            proxystats[PROXY_STATS_TYPE.TS] = int(time.time())
-            delta = proxystats[PROXY_STATS_TYPE.TS] - proxystats['start']
-            proxystats[PROXY_STATS_TYPE.UPTIME] = str(datetime.timedelta(seconds=delta))
-            proxystats[PROXY_STATS_TYPE.MEM] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats[PROXY_STATS_TYPE.SITE_NAME] = pw.site_name()
-            proxystats[PROXY_STATS_TYPE.CLOUDMODE] = pw.cloudmode
-            proxystats[PROXY_STATS_TYPE.FLEETAPI] = pw.fleetapi
-            if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
-                proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
-            message: str = json.dumps(proxystats)
-        elif self.path == '/stats/clear':
-            # Clear Internal Stats
-            log.debug("Clear internal stats")
-            proxystats[PROXY_STATS_TYPE.GETS] = 0
-            proxystats[PROXY_STATS_TYPE.ERRORS] = 0
-            proxystats[PROXY_STATS_TYPE.URI] = {}
-            proxystats[PROXY_STATS_TYPE.CLEAR] = int(time.time())
-            message: str = json.dumps(proxystats)
-        elif self.path == '/temps':
-            # Temps of Powerwalls
-            message: str = pw.temps(jsonformat=True) or json.dumps({})
-        elif self.path == '/temps/pw':
-            # Temps of Powerwalls with Simple Keys
-            pwtemp = {}
-            temps = pw.temps()
-            for idx, i in enumerate(temps, start=1):
-                key = f"PW{idx}_temp"
-                pwtemp[key] = temps[i]
-            message: str = json.dumps(pwtemp)
-        elif self.path == '/alerts':
-            # Alerts
-            message: str = pw.alerts(jsonformat=True) or json.dumps([])
-        elif self.path == '/alerts/pw':
-            # Alerts in dictionary/object format
-            pwalerts = {}
-            alerts = pw.alerts()
-            if alerts is None:
-                message: Optional[str] = None
-            else:
-                for alert in alerts:
-                    pwalerts[alert] = 1
-                message: str = json.dumps(pwalerts) or json.dumps({})
-        elif self.path == '/freq':
-            # Frequency, Current, Voltage and Grid Status
-            fcv = {}
-            # Pull freq, current, voltage of each Powerwall via system_status
-            d = pw.system_status() or {}
-            if "battery_blocks" in d:
-                for idx, block in enumerate(d["battery_blocks"], start=1):
-                    fcv[f"PW{idx}_name"] = None  # Placeholder for vitals
-                    fcv[f"PW{idx}_PINV_Fout"] = get_value(block, "f_out")
-                    fcv[f"PW{idx}_PINV_VSplit1"] = None  # Placeholder for vitals
-                    fcv[f"PW{idx}_PINV_VSplit2"] = None  # Placeholder for vitals
-                    fcv[f"PW{idx}_PackagePartNumber"] = get_value(block, "PackagePartNumber")
-                    fcv[f"PW{idx}_PackageSerialNumber"] = get_value(block, "PackageSerialNumber")
-                    fcv[f"PW{idx}_p_out"] = get_value(block, "p_out")
-                    fcv[f"PW{idx}_q_out"] = get_value(block, "q_out")
-                    fcv[f"PW{idx}_v_out"] = get_value(block, "v_out")
-                    fcv[f"PW{idx}_f_out"] = get_value(block, "f_out")
-                    fcv[f"PW{idx}_i_out"] = get_value(block, "i_out")
-            # Pull freq, current, voltage of each Powerwall via vitals if available
-            vitals = pw.vitals() or {}
-            for idx, device in enumerate(vitals, start=1):
-                d = vitals[device]
-                if device.startswith('TEPINV'):
-                    # PW freq
-                    fcv[f"PW{idx}_name"] = device
-                    fcv[f"PW{idx}_PINV_Fout"] = get_value(d, 'PINV_Fout')
-                    fcv[f"PW{idx}_PINV_VSplit1"] = get_value(d, 'PINV_VSplit1')
-                    fcv[f"PW{idx}_PINV_VSplit2"] = get_value(d, 'PINV_VSplit2')
-                if device.startswith('TESYNC') or device.startswith('TEMSA'):
-                    # Island and Meter Metrics from Backup Gateway or Backup Switch
-                    for i in d:
-                        if i.startswith('ISLAND') or i.startswith('METER'):
-                            fcv[i] = d[i]
-            fcv["grid_status"] = pw.grid_status(type="numeric")
-            message: str = json.dumps(fcv)
-        elif self.path == '/pod':
-            # Powerwall Battery Data
-            pod = {}
-            # Get Individual Powerwall Battery Data
-            d = pw.system_status() or {}
-            if "battery_blocks" in d:
-                for idx, block in enumerate(d["battery_blocks"], start=1):
-                    # Vital Placeholders
-                    pod[f"PW{idx}_name"] = None
-                    pod[f"PW{idx}_POD_ActiveHeating"] = None
-                    pod[f"PW{idx}_POD_ChargeComplete"] = None
-                    pod[f"PW{idx}_POD_ChargeRequest"] = None
-                    pod[f"PW{idx}_POD_DischargeComplete"] = None
-                    pod[f"PW{idx}_POD_PermanentlyFaulted"] = None
-                    pod[f"PW{idx}_POD_PersistentlyFaulted"] = None
-                    pod[f"PW{idx}_POD_enable_line"] = None
-                    pod[f"PW{idx}_POD_available_charge_power"] = None
-                    pod[f"PW{idx}_POD_available_dischg_power"] = None
-                    pod[f"PW{idx}_POD_nom_energy_remaining"] = None
-                    pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = None
-                    pod[f"PW{idx}_POD_nom_full_pack_energy"] = None
-                    # Additional System Status Data
-                    pod[f"PW{idx}_POD_nom_energy_remaining"] = get_value(block, "nominal_energy_remaining")  # map
-                    pod[f"PW{idx}_POD_nom_full_pack_energy"] = get_value(block, "nominal_full_pack_energy")  # map
-                    pod[f"PW{idx}_PackagePartNumber"] = get_value(block, "PackagePartNumber")
-                    pod[f"PW{idx}_PackageSerialNumber"] = get_value(block, "PackageSerialNumber")
-                    pod[f"PW{idx}_pinv_state"] = get_value(block, "pinv_state")
-                    pod[f"PW{idx}_pinv_grid_state"] = get_value(block, "pinv_grid_state")
-                    pod[f"PW{idx}_p_out"] = get_value(block, "p_out")
-                    pod[f"PW{idx}_q_out"] = get_value(block, "q_out")
-                    pod[f"PW{idx}_v_out"] = get_value(block, "v_out")
-                    pod[f"PW{idx}_f_out"] = get_value(block, "f_out")
-                    pod[f"PW{idx}_i_out"] = get_value(block, "i_out")
-                    pod[f"PW{idx}_energy_charged"] = get_value(block, "energy_charged")
-                    pod[f"PW{idx}_energy_discharged"] = get_value(block, "energy_discharged")
-                    pod[f"PW{idx}_off_grid"] = int(get_value(block, "off_grid") or 0)
-                    pod[f"PW{idx}_vf_mode"] = int(get_value(block, "vf_mode") or 0)
-                    pod[f"PW{idx}_wobble_detected"] = int(get_value(block, "wobble_detected") or 0)
-                    pod[f"PW{idx}_charge_power_clamped"] = int(get_value(block, "charge_power_clamped") or 0)
-                    pod[f"PW{idx}_backup_ready"] = int(get_value(block, "backup_ready") or 0)
-                    pod[f"PW{idx}_OpSeqState"] = get_value(block, "OpSeqState")
-                    pod[f"PW{idx}_version"] = get_value(block, "version")
-            # Augment with Vitals Data if available
-            vitals = pw.vitals() or {}
-            for idx, device in enumerate(vitals, start=1):
-                if not device.startswith('TEPOD'):
-                    continue
-                v = vitals[device]                
-                pod[f"PW{idx}_name"] = device
-                pod[f"PW{idx}_POD_ActiveHeating"] = int(get_value(v, 'POD_ActiveHeating') or 0)
-                pod[f"PW{idx}_POD_ChargeComplete"] = int(get_value(v, 'POD_ChargeComplete') or 0)
-                pod[f"PW{idx}_POD_ChargeRequest"] = int(get_value(v, 'POD_ChargeRequest') or 0)
-                pod[f"PW{idx}_POD_DischargeComplete"] = int(get_value(v, 'POD_DischargeComplete') or 0)
-                pod[f"PW{idx}_POD_PermanentlyFaulted"] = int(get_value(v, 'POD_PermanentlyFaulted') or 0)
-                pod[f"PW{idx}_POD_PersistentlyFaulted"] = int(get_value(v, 'POD_PersistentlyFaulted') or 0)
-                pod[f"PW{idx}_POD_enable_line"] = int(get_value(v, 'POD_enable_line') or 0)
-                pod[f"PW{idx}_POD_available_charge_power"] = get_value(v, 'POD_available_charge_power')
-                pod[f"PW{idx}_POD_available_dischg_power"] = get_value(v, 'POD_available_dischg_power')
-                pod[f"PW{idx}_POD_nom_energy_remaining"] = get_value(v, 'POD_nom_energy_remaining')
-                pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = get_value(v, 'POD_nom_energy_to_be_charged')
-                pod[f"PW{idx}_POD_nom_full_pack_energy"] = get_value(v, 'POD_nom_full_pack_energy')
-            # Aggregate data
-            pod["nominal_full_pack_energy"] = get_value(d, 'nominal_full_pack_energy')
-            pod["nominal_energy_remaining"] = get_value(d, 'nominal_energy_remaining')
-            pod["time_remaining_hours"] = pw.get_time_remaining()
-            pod["backup_reserve_percent"] = pw.get_reserve()
-            message: str = json.dumps(pod)
-        elif self.path == '/version':
-            # Firmware Version
-            version = pw.version()
-            v = {}
-            if version is None:
-                v["version"] = "SolarOnly"
-                v["vint"] = 0
-                message: str = json.dumps(v)
-            else:
-                v["version"] = version
-                v["vint"] = parse_version(version)
-                message: str = json.dumps(v)
+                if 'load' in aggregates and 'instant_power' in aggregates['load']:
+                    aggregates['load']['instant_power'] -= solar['instant_power']
+        self.send_json_response(aggregates)
+
+    
+    def handle_soe(self):
+        soe = pw.poll('/api/system_status/soe', jsonformat=True)
+        self.send_json_response(json.loads(soe))
+        
+    def handle_soe(self):
+        soe = pw.poll('/api/system_status/soe', jsonformat=True)
+        self.send_json_response(json.loads(soe))
+
+    def handle_grid_status(self):
+        grid_status = pw.poll('/api/system_status/grid_status', jsonformat=True)
+        self.send_json_response(json.loads(grid_status))
+
+    def handle_csv(self):
+        # Grid,Home,Solar,Battery,Level - CSV
+        contenttype = 'text/plain; charset=utf-8'
+        batterylevel = pw.level() or 0
+        grid = pw.grid() or 0
+        solar = pw.solar() or 0
+        battery = pw.battery() or 0
+        home = pw.home() or 0
+        if not CONFIG[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
+            solar = 0
+            # Shift energy from solar to load
+            home -= solar
+        message = f"{grid:.2f},{home:.2f},{solar:.2f},{battery:.2f},{batterylevel:.2f}\n"
+        self.send_json_response(message)
+        
+    def handle_vitals(self):
+        vitals = pw.vitals(jsonformat=True) or {}
+        self.send_json_response(json.loads(vitals))
+
+    def handle_strings(self):
+        strings = pw.strings(jsonformat=True) or {}
+        self.send_json_response(json.loads(strings))
+        
+    def handle_stats(self):
+        proxystats.update({
+            PROXY_STATS_TYPE.TS: int(time.time()),
+            PROXY_STATS_TYPE.UPTIME: str(datetime.timedelta(seconds=(proxystats[PROXY_STATS_TYPE.TS] - proxystats[PROXY_STATS_TYPE.START]))),
+            PROXY_STATS_TYPE.MEM: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+            PROXY_STATS_TYPE.SITE_NAME: pw.site_name(),
+            PROXY_STATS_TYPE.CLOUDMODE: pw.cloudmode,
+            PROXY_STATS_TYPE.FLEETAPI: pw.fleetapi,
+            PROXY_STATS_TYPE.AUTH_MODE: pw.authmode
+        })
+        if (pw.cloudmode or pw.fleetapi) and pw.client:
+            proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
+            proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
+        self.send_json_response(proxystats)
+
+    def handle_stats_clear(self):
+        # Clear Internal Stats
+        log.debug("Clear internal stats")
+        proxystats.update({
+            PROXY_STATS_TYPE.GETS: 0,
+            PROXY_STATS_TYPE.ERRORS: 0,
+            PROXY_STATS_TYPE.URI: {},
+            PROXY_STATS_TYPE.CLEAR: int(time.time()),
+        })
+        self.send_json_response(proxystats)
+
+    def handle_temps(self):
+        temps = pw.temps(jsonformat=True) or {}
+        self.send_json_response(json.loads(temps))
+        
+    def handle_temps_pw(self):
+        temps = pw.temps() or {}
+        pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
+        self.send_json_response(pw_temp)
+        
+    def handle_alerts(self):
+        alerts = pw.alerts(jsonformat=True) or []
+        self.send_json_response(alerts)
+
+    def handle_alerts_pw(self):
+        alerts = pw.alerts() or []
+        pw_alerts = {alert: 1 for alert in alerts}
+        self.send_json_response(pw_alerts)
+        
+    def handle_freq(self):
+        fcv = {}
+        system_status = pw.system_status() or {}
+        blocks = system_status.get("battery_blocks", [])
+        for idx, block in enumerate(blocks, 1):
+            fcv.update({
+                f"PW{idx}_name": None,
+                f"PW{idx}_PINV_Fout": get_value(block, "f_out"),
+                f"PW{idx}_PINV_VSplit1": None,
+                f"PW{idx}_PINV_VSplit2": None,
+                f"PW{idx}_PackagePartNumber": get_value(block, "PackagePartNumber"),
+                f"PW{idx}_PackageSerialNumber": get_value(block, "PackageSerialNumber"),
+                f"PW{idx}_p_out": get_value(block, "p_out"),
+                f"PW{idx}_q_out": get_value(block, "q_out"),
+                f"PW{idx}_v_out": get_value(block, "v_out"),
+                f"PW{idx}_f_out": get_value(block, "f_out"),
+                f"PW{idx}_i_out": get_value(block, "i_out"),
+            })
+        vitals = pw.vitals() or {}
+        for idx, (device, data) in enumerate(vitals.items()):
+            if device.startswith('TEPINV'):
+                fcv.update({
+                    f"PW{idx}_name": device,
+                    f"PW{idx}_PINV_Fout": get_value(data, 'PINV_Fout'),
+                    f"PW{idx}_PINV_VSplit1": get_value(data, 'PINV_VSplit1'),
+                    f"PW{idx}_PINV_VSplit2": get_value(data, 'PINV_VSplit2')    
+                })
+            if device.startswith(('TESYNC', 'TEMSA')):
+                fcv.update({key: value for key, value in data.items() if key.startswith(('ISLAND', 'METER'))})
+        fcv["grid_status"] = pw.grid_status(type="numeric")
+        self.send_json_response(fcv)
+
+    def handle_pod(self):
+        # Powerwall Battery Data
+        pod = {}
+        # Get Individual Powerwall Battery Data
+        system_status = pw.system_status() or {}
+        blocks = system_status.get("battery_blocks", [])
+        for idx, block in enumerate(blocks, 1):
+            pod.update({
+                # Vital Placeholders
+                f"PW{idx}_name": None,
+                f"PW{idx}_POD_ActiveHeating": None,
+                f"PW{idx}_POD_ChargeComplete": None,
+                f"PW{idx}_POD_ChargeRequest": None,
+                f"PW{idx}_POD_DischargeComplete": None,
+                f"PW{idx}_POD_PermanentlyFaulted": None,
+                f"PW{idx}_POD_PersistentlyFaulted": None,
+                f"PW{idx}_POD_enable_line": None,
+                f"PW{idx}_POD_available_charge_power": None,
+                f"PW{idx}_POD_available_dischg_power": None,
+                f"PW{idx}_POD_nom_energy_remaining": None,
+                f"PW{idx}_POD_nom_energy_to_be_charged": None,
+                f"PW{idx}_POD_nom_full_pack_energy": None,
+                # Additional System Status Data
+                f"PW{idx}_POD_nom_energy_remaining": get_value(block, "nominal_energy_remaining"), # map
+                f"PW{idx}_POD_nom_full_pack_energy": get_value(block, "nominal_full_pack_energy"), # map
+                f"PW{idx}_PackagePartNumber": get_value(block, "PackagePartNumber"),
+                f"PW{idx}_PackageSerialNumber": get_value(block, "PackageSerialNumber"),
+                f"PW{idx}_pinv_state": get_value(block, "pinv_state"),
+                f"PW{idx}_pinv_grid_state": get_value(block, "pinv_grid_state"),
+                f"PW{idx}_p_out": get_value(block, "p_out"),
+                f"PW{idx}_q_out": get_value(block, "q_out"),
+                f"PW{idx}_v_out": get_value(block, "v_out"),
+                f"PW{idx}_f_out": get_value(block, "f_out"),
+                f"PW{idx}_i_out": get_value(block, "i_out"),
+                f"PW{idx}_energy_charged": get_value(block, "energy_charged"),
+                f"PW{idx}_energy_discharged": get_value(block, "energy_discharged"),
+                f"PW{idx}_off_grid": int(get_value(block, "off_grid") or 0),
+                f"PW{idx}_vf_mode": int(get_value(block, "vf_mode") or 0),
+                f"PW{idx}_wobble_detected": int(get_value(block, "wobble_detected") or 0),
+                f"PW{idx}_charge_power_clamped": int(get_value(block, "charge_power_clamped") or 0),
+                f"PW{idx}_backup_ready": int(get_value(block, "backup_ready") or 0),
+                f"PW{idx}_OpSeqState": get_value(block, "OpSeqState"),
+                f"PW{idx}_version": get_value(block, "version")
+            })
+
+        vitals = pw.vitals() or {}
+        for idx, (device, data) in enumerate(vitals.items(), 1):
+            if not device.startswith('TEPOD'):
+                continue
+            pod.update({
+                f"PW{idx}_name": device,
+                f"PW{idx}_POD_ActiveHeating": int(get_value(data, 'POD_ActiveHeating') or 0),
+                f"PW{idx}_POD_ChargeComplete": int(get_value(data, 'POD_ChargeComplete') or 0),
+                f"PW{idx}_POD_ChargeRequest": int(get_value(data, 'POD_ChargeRequest') or 0),
+                f"PW{idx}_POD_DischargeComplete": int(get_value(data, 'POD_DischargeComplete') or 0),
+                f"PW{idx}_POD_PermanentlyFaulted": int(get_value(data, 'POD_PermanentlyFaulted') or 0),
+                f"PW{idx}_POD_PersistentlyFaulted": int(get_value(data, 'POD_PersistentlyFaulted') or 0),
+                f"PW{idx}_POD_enable_line": int(get_value(data, 'POD_enable_line') or 0),
+                f"PW{idx}_POD_available_charge_power": get_value(data, 'POD_available_charge_power'),
+                f"PW{idx}_POD_available_dischg_power": get_value(data, 'POD_available_dischg_power'),
+                f"PW{idx}_POD_nom_energy_remaining": get_value(data, 'POD_nom_energy_remaining'),
+                f"PW{idx}_POD_nom_energy_to_be_charged": get_value(data, 'POD_nom_energy_to_be_charged'),
+                f"PW{idx}_POD_nom_full_pack_energy": get_value(data, 'POD_nom_full_pack_energy')
+            })
+
+        pod.update({
+            "nominal_full_pack_energy": get_value(system_status, 'nominal_full_pack_energy'),
+            "nominal_energy_remaining": get_value(system_status, 'nominal_energy_remaining'),
+            "time_remaining_hours": pw.get_time_remaining(),
+            "backup_reserve_percent": pw.get_reserve()
+        })
+        self.send_json_response(pod)
+
+    def handle_version(self):
+        version = pw.version()
+        r = {"version": "SolarOnly", "vint": 0} if version is None else {"version": version, "vint": parse_version(version)}
+        self.send_json_response(r)
+
         elif self.path == '/help':
             # Display friendly help screen link and stats
             proxystats[PROXY_STATS_TYPE.TS] = int(time.time())
@@ -891,27 +914,57 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
-
-# noinspection PyTypeChecker
-with ThreadingHTTPServer((CONFIG[CONFIG_TYPE.PW_BIND_ADDRESS], CONFIG[CONFIG_TYPE.PW_PORT]), Handler) as server:
-    if CONFIG[CONFIG_TYPE.PW_HTTPS] == "yes":
-        # Activate HTTPS
-        log.debug("Activating HTTPS")
-        # pylint: disable=deprecated-method
-        server.socket = ssl.wrap_socket(
-            server.socket,
-            certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'),
-            server_side=True,
-            ssl_version=ssl.PROTOCOL_TLSv1_2,
-            ca_certs=None,
-            do_handshake_on_connect=True
-        )
-
-    # noinspection PyBroadException
+if __name__ == '__main__':
+    # Connect to Powerwall
+    # TODO: Add support for multiple Powerwalls
     try:
-        server.serve_forever()
-    except (Exception, KeyboardInterrupt, SystemExit):
-        print(' CANCEL \n')
+        pw = pypowerwall.Powerwall(
+            host=CONFIG[CONFIG_TYPE.PW_HOST],
+            password=CONFIG[CONFIG_TYPE.PW_PASSWORD],
+            email=CONFIG[CONFIG_TYPE.PW_EMAIL],
+            timezone=CONFIG[CONFIG_TYPE.PW_TIMEZONE],
+            cache_expire=CONFIG[CONFIG_TYPE.PW_CACHE_EXPIRE],
+            timeout=CONFIG[CONFIG_TYPE.PW_TIMEOUT],
+            pool_maxsize=CONFIG[CONFIG_TYPE.PW_POOL_MAXSIZE],
+            siteid=CONFIG[CONFIG_TYPE.PW_SITEID],
+            authpath=CONFIG[CONFIG_TYPE.PW_AUTH_PATH],
+            authmode=CONFIG[CONFIG_TYPE.PW_AUTH_MODE],
+            cachefile=CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
+            auto_select=True,
+            retry_modes=True,
+            gw_pwd=CONFIG[CONFIG_TYPE.PW_GW_PWD]
+        )
+    except Exception as e:
+        log.error(e)
+        log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+        while True:
+            try:
+                time.sleep(5)  # Infinite loop to keep container running
+            except (KeyboardInterrupt, SystemExit):
+                sys.exit(0)
 
-    log.info("pyPowerwall Proxy Stopped")
-    sys.exit(0)
+    pw_control = configure_pw_control(pw)
+
+    # noinspection PyTypeChecker
+    with ThreadingHTTPServer((CONFIG[CONFIG_TYPE.PW_BIND_ADDRESS], CONFIG[CONFIG_TYPE.PW_PORT]), Handler) as server:
+        if CONFIG[CONFIG_TYPE.PW_HTTPS] == "yes":
+            # Activate HTTPS
+            log.debug("Activating HTTPS")
+            # pylint: disable=deprecated-method
+            server.socket = ssl.wrap_socket(
+                server.socket,
+                certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'),
+                server_side=True,
+                ssl_version=ssl.PROTOCOL_TLSv1_2,
+                ca_certs=None,
+                do_handshake_on_connect=True
+            )
+
+        # noinspection PyBroadException
+        try:
+            server.serve_forever()
+        except (Exception, KeyboardInterrupt, SystemExit):
+            print(' CANCEL \n')
+
+        log.info("pyPowerwall Proxy Stopped")
+        sys.exit(0)
