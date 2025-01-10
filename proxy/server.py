@@ -49,7 +49,7 @@ from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Dict, Final, Optional, Set, Any
+from typing import Any, Dict, Final, Optional, Set
 from urllib.parse import parse_qs, urlparse
 
 from transform import get_static, inject_js
@@ -60,32 +60,32 @@ from pypowerwall import parse_version
 BUILD = "t67"
 
 ALLOWLIST = Set[str] = set([
-    '/api/status',
-    '/api/site_info/site_name',
+    '/api/auth/toggle/supported',
+    '/api/customer',
+    '/api/customer/registration',
+    '/api/installer',
+    '/api/meters',
+    '/api/meters/readings',
     '/api/meters/site',
     '/api/meters/solar',
-    '/api/sitemaster',
-    '/api/powerwalls',
-    '/api/customer/registration',
-    '/api/system_status',
-    '/api/system_status/grid_status',
-    '/api/system/update/status',
-    '/api/site_info',
-    '/api/system_status/grid_faults',
+    '/api/networks',
     '/api/operation',
+    '/api/powerwalls',
+    '/api/site_info',
     '/api/site_info/grid_codes',
+    '/api/site_info/site_name',
+    '/api/sitemaster',
+    '/api/solar_powerwall',
     '/api/solars',
     '/api/solars/brands',
-    '/api/customer',
-    '/api/meters',
-    '/api/installer',
-    '/api/networks',
-    '/api/system/networks',
-    '/api/meters/readings',
+    '/api/status',
     '/api/synchrometer/ct_voltage_references',
+    '/api/system_status',
+    '/api/system_status/grid_faults',
+    '/api/system_status/grid_status',
+    '/api/system/networks',
+    '/api/system/update/status',
     '/api/troubleshooting/problems',
-    '/api/auth/toggle/supported',
-    '/api/solar_powerwall',
 ])
 
 DISABLED = Set[str] = set([
@@ -125,54 +125,54 @@ class CONFIG_TYPE(StrEnum):
     Args:
         StrEnum (_type_): _description_
     """
-    PW_BIND_ADDRESS = auto()
-    PW_PASSWORD = auto()
-    PW_EMAIL = auto()
-    PW_HOST = auto()
-    PW_TIMEZONE = auto()
-    PW_DEBUG = auto()
-    PW_CACHE_EXPIRE = auto()
-    PW_BROWSER_CACHE = auto()
-    PW_TIMEOUT = auto()
-    PW_POOL_MAXSIZE = auto()
-    PW_HTTPS = auto()
-    PW_HTTP_TYPE = auto()
-    PW_PORT = auto()
-    PW_STYLE = auto()
-    PW_SITEID = auto()
-    PW_AUTH_PATH = auto()
     PW_AUTH_MODE = auto()
-    PW_CONTROL_SECRET = auto()
-    PW_GW_PWD = auto()
-    PW_NEG_SOLAR = auto()
-    PW_CACHE_FILE = auto()
     PW_AUTH_PATH = auto()
+    PW_AUTH_PATH = auto()
+    PW_BIND_ADDRESS = auto()
+    PW_BROWSER_CACHE = auto()
+    PW_CACHE_EXPIRE = auto()
+    PW_CACHE_FILE = auto()
+    PW_CONTROL_SECRET = auto()
     PW_COOKIE_SUFFIX = auto()
+    PW_DEBUG = auto()
+    PW_EMAIL = auto()
+    PW_GW_PWD = auto()
+    PW_HOST = auto()
+    PW_HTTP_TYPE = auto()
+    PW_HTTPS = auto()
+    PW_NEG_SOLAR = auto()
+    PW_PASSWORD = auto()
+    PW_POOL_MAXSIZE = auto()
+    PW_PORT = auto()
+    PW_SITEID = auto()
+    PW_STYLE = auto()
+    PW_TIMEOUT = auto()
+    PW_TIMEZONE = auto()
 
 # Configuration for Proxy - Check for environmental variables
 #    and always use those if available (required for Docker)
 # Configuration - Environment variables
 type PROXY_CONFIG = Dict[CONFIG_TYPE, str | int | bool | None]
 CONFIG: PROXY_CONFIG = {
-    CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
-    CONFIG_TYPE.PW_PASSWORD: os.getenv(CONFIG_TYPE.PW_PASSWORD, ""),
-    CONFIG_TYPE.PW_HOST: os.getenv(CONFIG_TYPE.PW_HOST, ""),
-    CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
-    CONFIG_TYPE.PW_EMAIL: os.getenv(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
-    CONFIG_TYPE.PW_TIMEZONE: os.getenv(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles"),
-    CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(CONFIG_TYPE.PW_CACHE_EXPIRE, "5")),
-    CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
-    CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(CONFIG_TYPE.PW_TIMEOUT, "5")),
-    CONFIG_TYPE.PW_POOL_MAXSIZE: int(os.getenv(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
-    CONFIG_TYPE.PW_HTTPS: os.getenv(CONFIG_TYPE.PW_HTTPS, "no"),
-    CONFIG_TYPE.PW_PORT: int(os.getenv(CONFIG_TYPE.PW_PORT, "8675")),
-    CONFIG_TYPE.PW_STYLE: os.getenv(CONFIG_TYPE.PW_STYLE, "clear") + ".js",
-    CONFIG_TYPE.PW_SITEID: os.getenv(CONFIG_TYPE.PW_SITEID, None),
-    CONFIG_TYPE.PW_AUTH_PATH: os.getenv(CONFIG_TYPE.PW_AUTH_PATH, ""),
     CONFIG_TYPE.PW_AUTH_MODE: os.getenv(CONFIG_TYPE.PW_AUTH_MODE, "cookie"),
-    CONFIG_TYPE.PW_GW_PWD: os.getenv(CONFIG_TYPE.PW_GW_PWD, None),
+    CONFIG_TYPE.PW_AUTH_PATH: os.getenv(CONFIG_TYPE.PW_AUTH_PATH, ""),
+    CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
+    CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
+    CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(CONFIG_TYPE.PW_CACHE_EXPIRE, "5")),
+    CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
     CONFIG_TYPE.PW_DEBUG: bool(os.getenv(CONFIG_TYPE.PW_DEBUG, "no").lower() == "yes"),
-    CONFIG_TYPE.PW_NEG_SOLAR: bool(os.getenv(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes")
+    CONFIG_TYPE.PW_EMAIL: os.getenv(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
+    CONFIG_TYPE.PW_GW_PWD: os.getenv(CONFIG_TYPE.PW_GW_PWD, None),
+    CONFIG_TYPE.PW_HOST: os.getenv(CONFIG_TYPE.PW_HOST, ""),
+    CONFIG_TYPE.PW_HTTPS: os.getenv(CONFIG_TYPE.PW_HTTPS, "no"),
+    CONFIG_TYPE.PW_NEG_SOLAR: bool(os.getenv(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes"),
+    CONFIG_TYPE.PW_PASSWORD: os.getenv(CONFIG_TYPE.PW_PASSWORD, ""),
+    CONFIG_TYPE.PW_POOL_MAXSIZE: int(os.getenv(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
+    CONFIG_TYPE.PW_PORT: int(os.getenv(CONFIG_TYPE.PW_PORT, "8675")),
+    CONFIG_TYPE.PW_SITEID: os.getenv(CONFIG_TYPE.PW_SITEID, None),
+    CONFIG_TYPE.PW_STYLE: os.getenv(CONFIG_TYPE.PW_STYLE, "clear") + ".js",
+    CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(CONFIG_TYPE.PW_TIMEOUT, "5")),
+    CONFIG_TYPE.PW_TIMEZONE: os.getenv(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles")
 }
 
 # Cache file
@@ -215,54 +215,54 @@ class PROXY_STATS_TYPE(StrEnum):
         StrEnum (_type_): _description_
     """
     AUTH_MODE = auto()
-    PYPOWERWALL = auto()
-    MODE = auto()
-    GETS = auto()
-    POSTS = auto()
-    ERRORS = auto()
-    TIMEOUT = auto()
-    URI = auto()
-    TS = auto()
-    START = auto()
-    CLEAR = auto()
-    UPTIME = auto()
-    MEM = auto()
-    SITE_NAME = auto()
-    CLOUDMODE = auto()
-    FLEETAPI = auto()
-    TEDAPI = auto()
-    PW3 = auto()
-    TEDAPI_MODE = auto()
-    SITEID = auto()
-    COUNTER = auto()
     CF = auto()
+    CLEAR = auto()
+    CLOUDMODE = auto()
     CONFIG = auto()
+    COUNTER = auto()
+    ERRORS = auto()
+    FLEETAPI = auto()
+    GETS = auto()
+    MEM = auto()
+    MODE = auto()
+    POSTS = auto()
+    PW3 = auto()
+    PYPOWERWALL = auto()
+    SITE_NAME = auto()
+    SITEID = auto()
+    START = auto()
+    TEDAPI = auto()
+    TEDAPI_MODE = auto()
+    TIMEOUT = auto()
+    TS = auto()
+    UPTIME = auto()
+    URI = auto()
 
 
 # Global Stats
 proxystats: Dict[PROXY_STATS_TYPE, str | int | bool | None | Dict[Any, Any]] = {
-    PROXY_STATS_TYPE.PYPOWERWALL: f"{pypowerwall.version} Proxy {BUILD}",
-    PROXY_STATS_TYPE.MODE: "Unknown",
-    PROXY_STATS_TYPE.GETS: 0,
-    PROXY_STATS_TYPE.POSTS: 0,
-    PROXY_STATS_TYPE.ERRORS: 0,
-    PROXY_STATS_TYPE.TIMEOUT: 0,
-    PROXY_STATS_TYPE.URI: {},
-    PROXY_STATS_TYPE.TS: int(time.time()),
-    PROXY_STATS_TYPE.START: int(time.time()),
-    PROXY_STATS_TYPE.CLEAR: int(time.time()),
-    PROXY_STATS_TYPE.UPTIME: "",
-    PROXY_STATS_TYPE.MEM: 0,
-    PROXY_STATS_TYPE.SITE_NAME: "",
-    PROXY_STATS_TYPE.CLOUDMODE: False,
-    PROXY_STATS_TYPE.FLEETAPI: False,
-    PROXY_STATS_TYPE.TEDAPI: False,
-    PROXY_STATS_TYPE.PW3: False,
-    PROXY_STATS_TYPE.TEDAPI_MODE: "off",
-    PROXY_STATS_TYPE.SITEID: None,
-    PROXY_STATS_TYPE.COUNTER: 0,
     PROXY_STATS_TYPE.CF: CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
-    PROXY_STATS_TYPE.CONFIG: CONFIG.copy()
+    PROXY_STATS_TYPE.CLEAR: int(time.time()),
+    PROXY_STATS_TYPE.CLOUDMODE: False,
+    PROXY_STATS_TYPE.CONFIG: CONFIG.copy(),
+    PROXY_STATS_TYPE.COUNTER: 0,
+    PROXY_STATS_TYPE.ERRORS: 0,
+    PROXY_STATS_TYPE.FLEETAPI: False,
+    PROXY_STATS_TYPE.GETS: 0,
+    PROXY_STATS_TYPE.MEM: 0,
+    PROXY_STATS_TYPE.MODE: "Unknown",
+    PROXY_STATS_TYPE.POSTS: 0,
+    PROXY_STATS_TYPE.PW3: False,
+    PROXY_STATS_TYPE.PYPOWERWALL: f"{pypowerwall.version} Proxy {BUILD}",
+    PROXY_STATS_TYPE.SITE_NAME: "",
+    PROXY_STATS_TYPE.SITEID: None,
+    PROXY_STATS_TYPE.START: int(time.time()),
+    PROXY_STATS_TYPE.TEDAPI_MODE: "off",
+    PROXY_STATS_TYPE.TEDAPI: False,
+    PROXY_STATS_TYPE.TIMEOUT: 0,
+    PROXY_STATS_TYPE.TS: int(time.time()),
+    PROXY_STATS_TYPE.UPTIME: "",
+    PROXY_STATS_TYPE.URI: {}
 }
 
 log.info(
@@ -337,24 +337,38 @@ else:
         proxystats[PROXY_STATS_TYPE.PW3] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
-pw_control = None
-if CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
+def configure_pw_control(pw):
+    if not CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
+        return None
+
     log.info("Control Commands Activating - WARNING: Use with caution!")
     try:
         if pw.cloudmode or pw.fleetapi:
             pw_control = pw
         else:
-            pw_control = pypowerwall.Powerwall("", password, email, siteid=siteid,
-                                               authpath=authpath, authmode=authmode,
-                                               cachefile=cachefile, auto_select=True)
+            pw_control = pypowerwall.Powerwall(
+                "",
+                CONFIG['PW_PASSWORD'],
+                CONFIG['PW_EMAIL'],
+                siteid=CONFIG['PW_SITEID'],
+                authpath=CONFIG['PW_AUTH_PATH'],
+                authmode=CONFIG['PW_AUTH_MODE'],
+                cachefile=CONFIG['PW_CACHE_FILE'],
+                auto_select=True
+            )
     except Exception as e:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
-        CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET] = ""
+        CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET] = None
+        return None
+
     if pw_control:
         log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET] = None
+        return None
+
+    return pw_control
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -366,8 +380,6 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, log_format, *args):
         if CONFIG[CONFIG_TYPE.PW_DEBUG]:
             log.debug("%s %s" % (self.address_string(), log_format % args))
-        else:
-            pass
 
     def address_string(self):
         # replace function to avoid lookup delays
@@ -440,7 +452,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         global proxystats
-        self.send_response(200)
+        self.send_response(HTTPStatus.OK)
         contenttype = 'application/json'
 
         if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
@@ -515,12 +527,10 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/temps/pw':
             # Temps of Powerwalls with Simple Keys
             pwtemp = {}
-            idx = 1
             temps = pw.temps()
-            for i in temps:
-                key = "PW%d_temp" % idx
+            for idx, i in enumerate(temps, start=1):
+                key = f"PW{idx}_temp"
                 pwtemp[key] = temps[i]
-                idx = idx + 1
             message: str = json.dumps(pwtemp)
         elif self.path == '/alerts':
             # Alerts
@@ -883,15 +893,19 @@ class Handler(BaseHTTPRequestHandler):
 
 
 # noinspection PyTypeChecker
-with ThreadingHTTPServer((bind_address, port), Handler) as server:
+with ThreadingHTTPServer((CONFIG[CONFIG_TYPE.PW_BIND_ADDRESS], CONFIG[CONFIG_TYPE.PW_PORT]), Handler) as server:
     if CONFIG[CONFIG_TYPE.PW_HTTPS] == "yes":
         # Activate HTTPS
         log.debug("Activating HTTPS")
         # pylint: disable=deprecated-method
-        server.socket = ssl.wrap_socket(server.socket,
-                                        certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'),
-                                        server_side=True, ssl_version=ssl.PROTOCOL_TLSv1_2, ca_certs=None,
-                                        do_handshake_on_connect=True)
+        server.socket = ssl.wrap_socket(
+            server.socket,
+            certfile=os.path.join(os.path.dirname(__file__), 'localhost.pem'),
+            server_side=True,
+            ssl_version=ssl.PROTOCOL_TLSv1_2,
+            ca_certs=None,
+            do_handshake_on_connect=True
+        )
 
     # noinspection PyBroadException
     try:
