@@ -93,8 +93,6 @@ DISABLED = Set[str] = set([
 ])
 WEB_ROOT: Final[str] = os.path.join(os.path.dirname(__file__), "web")
 
-
-
     # bind_address = os.getenv("PW_BIND_ADDRESS", "")
     # password = os.getenv("PW_PASSWORD", "")
     # email = os.getenv("PW_EMAIL", "email@example.com")
@@ -207,7 +205,6 @@ def sig_term_handle(signum, frame):
 
 signal.signal(signal.SIGTERM, sig_term_handle)
 
-
 class PROXY_STATS_TYPE(StrEnum):
     """_summary_
 
@@ -309,7 +306,7 @@ else:
         proxystats[PROXY_STATS_TYPE.PW3] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
-def configure_pw_control(pw):
+def configure_pw_control(pw: pypowerwall.Powerwall) -> pypowerwall.Powerwall:
     if not CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
         return None
 
@@ -329,7 +326,7 @@ def configure_pw_control(pw):
                 auto_select=True
             )
     except Exception as e:
-        log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
+        log.error(f"Control Mode Failed {e}: Unable to connect to cloud - Run Setup")
         CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET] = None
         return None
 
@@ -341,9 +338,6 @@ def configure_pw_control(pw):
         return None
 
     return pw_control
-
-class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
-    daemon_threads = True
 
 # pylint: disable=arguments-differ,global-variable-not-assigned
 # noinspection PyPep8Naming
@@ -368,70 +362,86 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(response.encode("utf8"))
         except Exception as exc:
             log.debug("Error sending response: %s", exc)
+            
+    def handle_control_post(self) -> bool:
+        """Handle control POST requests."""
+        if not pw_control:
+            proxystats[PROXY_STATS_TYPE.ERRORS] += 1
+            self.send_json_response(
+                {"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"},
+                status_code=HTTPStatus.BAD_REQUEST
+            )
+            return False
+
+        try:
+            action = urlparse(self.path).path.split('/')[2]
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            query_params = parse_qs(post_data.decode('utf-8'))
+            value = query_params.get('value', [''])[0]
+            token = query_params.get('token', [''])[0]
+        except Exception as er:
+            log.error("Control Command Error: %s", er)
+            self.send_json_response(
+                {"error": "Control Command Error: Invalid Request"},
+                status_code=HTTPStatus.BAD_REQUEST
+            )
+            return False
+
+        if token != CONFIG['PW_CONTROL_SECRET']:
+            self.send_json_response(
+                {"unauthorized": "Control Command Token Invalid"},
+                status_code=HTTPStatus.UNAUTHORIZED
+            )
+            return False
+
+        if action == 'reserve':
+            if not value:
+                self.send_json_response({"reserve": pw_control.get_reserve()})
+                return True
+            elif value.isdigit():
+                result = pw_control.set_reserve(int(value))
+                log.info(f"Control Command: Set Reserve to {value}")
+                self.send_json_response(result)
+                return True
+            else:
+                self.send_json_response(
+                    {"error": "Control Command Value Invalid"},
+                    status_code=HTTPStatus.BAD_REQUEST
+                )
+        elif action == 'mode':
+            if not value:
+                self.send_json_response({"mode": pw_control.get_mode()})
+                return True
+            elif value in ['self_consumption', 'backup', 'autonomous']:
+                result = pw_control.set_mode(value)
+                log.info(f"Control Command: Set Mode to {value}")
+                self.send_json_response(result)
+                return True
+            else:
+                self.send_json_response(
+                    {"error": "Control Command Value Invalid"},
+                    status_code=HTTPStatus.BAD_REQUEST
+                )
+        else:
+            self.send_json_response(
+                {"error": "Invalid Command Action"},
+                status_code=HTTPStatus.BAD_REQUEST
+            )
+        return False
+
 
     def do_POST(self):
-        global proxystats
-        contenttype = 'application/json'
-        message = '{"error": "Invalid Request"}'
+        """Handle POST requests."""
         if self.path.startswith('/control'):
-            # curl -X POST -d "value=20&token=1234" http://localhost:8675/control/reserve
-            # curl -X POST -d "value=backup&token=1234" http://localhost:8675/control/mode
-            message = None
-            if not CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
-                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
-            else:
-                try:
-                    action = urlparse(self.path).path.split('/')[2]
-                    post_data = self.rfile.read(int(self.headers['Content-Length']))
-                    query_params = parse_qs(post_data.decode('utf-8'))
-                    value = query_params.get('value', [''])[0]
-                    token = query_params.get('token', [''])[0]
-                except Exception as er:
-                    message = '{"error": "Control Command Error: Invalid Request"}'
-                    log.error(f"Control Command Error: {er}")
-                if not message:
-                    # Check if unable to connect to cloud
-                    if pw_control.client is None:
-                        message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
-                        log.error("Control Command Error: Unable to connect to cloud mode - Run Setup")
-                    else:
-                        if token == CONFIG[CONFIG_TYPE.PW_CONTROL_SECRET]:
-                            if action == 'reserve':
-                                # ensure value is an integer
-                                if not value:
-                                    # return current reserve level in json string
-                                    message = '{"reserve": %s}' % pw_control.get_reserve()
-                                elif value.isdigit():
-                                    message = json.dumps(pw_control.set_reserve(int(value)))
-                                    log.info(f"Control Command: Set Reserve to {value}")
-                                else:
-                                    message = '{"error": "Control Command Value Invalid"}'
-                            elif action == 'mode':
-                                if not value:
-                                    # return current mode in json string
-                                    message = '{"mode": "%s"}' % pw_control.get_mode()
-                                elif value in ['self_consumption', 'backup', 'autonomous']:
-                                    message = json.dumps(pw_control.set_mode(value))
-                                    log.info(f"Control Command: Set Mode to {value}")
-                                else:
-                                    message = '{"error": "Control Command Value Invalid"}'
-                            else:
-                                message = '{"error": "Invalid Command Action"}'
-                        else:
-                            message = '{"unauthorized": "Control Command Token Invalid"}'
-        if "error" in message:
-            self.send_response(HTTPStatus.BAD_REQUEST)
-            proxystats[PROXY_STATS_TYPE.ERRORS] += 1
-        elif "unauthorized" in message:
-            self.send_response(HTTPStatus.UNAUTHORIZED)
+            stat = PROXY_STATS_TYPE.POSTS if self.handle_control_post() else PROXY_STATS_TYPE.ERRORS
+            proxystats[stat] += 1
         else:
-            self.send_response(HTTPStatus.OK)
-            proxystats[PROXY_STATS_TYPE.POSTS] += 1
-        self.send_header('Content-type', contenttype)
-        self.send_header('Content-Length', str(len(message)))
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(message.encode("utf8"))
+            self.send_json_response(
+                {"error": "Invalid Request"},
+                status_code=HTTPStatus.BAD_REQUEST
+            )
+
 
     def do_GET(self):
         """Handle GET requests."""
@@ -477,6 +487,20 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_cloud(path)
         elif path.startswith('/fleetapi'):
             self.handle_fleetapi(path)
+        elif self.path.startswith('/control/reserve'):
+            # Current battery reserve level
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                message = '{"reserve": %s}' % pw_control.get_reserve()
+            self.send_json_response(json.loads(message))
+        elif self.path.startswith('/control/mode'):
+            # Current operating mode
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                message = '{"mode": "%s"}' % pw_control.get_mode()
+            self.send_json_response(json.loads(message))
         else:
             self.handle_static_content()
 
@@ -496,14 +520,17 @@ class Handler(BaseHTTPRequestHandler):
     def handle_soe(self):
         soe = pw.poll('/api/system_status/soe', jsonformat=True)
         self.send_json_response(json.loads(soe))
-        
+
+
     def handle_soe(self):
         soe = pw.poll('/api/system_status/soe', jsonformat=True)
         self.send_json_response(json.loads(soe))
 
+
     def handle_grid_status(self):
         grid_status = pw.poll('/api/system_status/grid_status', jsonformat=True)
         self.send_json_response(json.loads(grid_status))
+
 
     def handle_csv(self):
         # Grid,Home,Solar,Battery,Level - CSV
@@ -519,15 +546,18 @@ class Handler(BaseHTTPRequestHandler):
             home -= solar
         message = f"{grid:.2f},{home:.2f},{solar:.2f},{battery:.2f},{batterylevel:.2f}\n"
         self.send_json_response(message)
-        
+
+
     def handle_vitals(self):
         vitals = pw.vitals(jsonformat=True) or {}
         self.send_json_response(json.loads(vitals))
 
+
     def handle_strings(self):
         strings = pw.strings(jsonformat=True) or {}
         self.send_json_response(json.loads(strings))
-        
+
+
     def handle_stats(self):
         proxystats.update({
             PROXY_STATS_TYPE.TS: int(time.time()),
@@ -543,6 +573,7 @@ class Handler(BaseHTTPRequestHandler):
             proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
         self.send_json_response(proxystats)
 
+
     def handle_stats_clear(self):
         # Clear Internal Stats
         log.debug("Clear internal stats")
@@ -554,24 +585,29 @@ class Handler(BaseHTTPRequestHandler):
         })
         self.send_json_response(proxystats)
 
+
     def handle_temps(self):
         temps = pw.temps(jsonformat=True) or {}
         self.send_json_response(json.loads(temps))
-        
+
+
     def handle_temps_pw(self):
         temps = pw.temps() or {}
         pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
         self.send_json_response(pw_temp)
-        
+
+
     def handle_alerts(self):
         alerts = pw.alerts(jsonformat=True) or []
         self.send_json_response(alerts)
+
 
     def handle_alerts_pw(self):
         alerts = pw.alerts() or []
         pw_alerts = {alert: 1 for alert in alerts}
         self.send_json_response(pw_alerts)
-        
+
+
     def handle_freq(self):
         fcv = {}
         system_status = pw.system_status() or {}
@@ -603,6 +639,7 @@ class Handler(BaseHTTPRequestHandler):
                 fcv.update({key: value for key, value in data.items() if key.startswith(('ISLAND', 'METER'))})
         fcv["grid_status"] = pw.grid_status(type="numeric")
         self.send_json_response(fcv)
+
 
     def handle_pod(self):
         # Powerwall Battery Data
@@ -677,242 +714,245 @@ class Handler(BaseHTTPRequestHandler):
         })
         self.send_json_response(pod)
 
+
     def handle_version(self):
         version = pw.version()
         r = {"version": "SolarOnly", "vint": 0} if version is None else {"version": version, "vint": parse_version(version)}
         self.send_json_response(r)
 
-        elif self.path == '/help':
-            # Display friendly help screen link and stats
-            proxystats[PROXY_STATS_TYPE.TS] = int(time.time())
-            delta = proxystats[PROXY_STATS_TYPE.TS] - proxystats[PROXY_STATS_TYPE.START]
-            proxystats[PROXY_STATS_TYPE.UPTIME] = str(datetime.timedelta(seconds=delta))
-            proxystats[PROXY_STATS_TYPE.MEM] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats[PROXY_STATS_TYPE.SITE_NAME] = pw.site_name()
-            proxystats[PROXY_STATS_TYPE.CLOUDMODE] = pw.cloudmode
-            proxystats[PROXY_STATS_TYPE.FLEETAPI] = pw.fleetapi
-            if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
-                proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
-            proxystats[PROXY_STATS_TYPE.AUTH_MODE] = pw.authmode
-            contenttype = 'text/html'
-            message: str = """
-            <html>\n<head><meta http-equiv="refresh" content="5" />\n
-            <style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n
-            <style>h1 { font-family: Helvetica, Arial, sans-serif; font-size: 20px;}</style>\n
-            </head>\n<body>\n<h1>pyPowerwall [%VER%] Proxy [%BUILD%] </h1>\n\n
-            <p><a href="https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md">
-            Click here for API help.</a></p>\n\n
-            <table>\n<tr><th align ="left">Stat</th><th align ="left">Value</th></tr>
-            """
-            message = message.replace('%VER%', pypowerwall.version).replace('%BUILD%', BUILD)
-            for i in proxystats:
-                if i != PROXY_STATS_TYPE.URI and i != PROXY_STATS_TYPE.CONFIG:
-                    message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
-            for i in proxystats[PROXY_STATS_TYPE.URI]:
-                message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats[PROXY_STATS_TYPE.URI][i]}</td></tr>\n'
-            message += """
-            <tr>
-                <td align="left">Config:</td>
-                <td align="left">
-                    <details id="config-details">
-                        <summary>Click to view</summary>
-                        <table>
-            """
-            for i in proxystats[PROXY_STATS_TYPE.CONFIG]:
-                message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[PROXY_STATS_TYPE.CONFIG][i]}</td></tr>\n'
-            message += """
-                        </table>
-                    </details>
-                </td>
-            </tr>
-            <script>
-                document.addEventListener("DOMContentLoaded", function() {
-                    var details = document.getElementById("config-details");
-                    if (localStorage.getItem("config-details-open") === "true") {
-                        details.setAttribute("open", "open");
-                    }
-                    details.addEventListener("toggle", function() {
-                        localStorage.setItem("config-details-open", details.open);
-                    });
+    elif self.path == '/help':
+        # Display friendly help screen link and stats
+        proxystats[PROXY_STATS_TYPE.TS] = int(time.time())
+        delta = proxystats[PROXY_STATS_TYPE.TS] - proxystats[PROXY_STATS_TYPE.START]
+        proxystats[PROXY_STATS_TYPE.UPTIME] = str(datetime.timedelta(seconds=delta))
+        proxystats[PROXY_STATS_TYPE.MEM] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        proxystats[PROXY_STATS_TYPE.SITE_NAME] = pw.site_name()
+        proxystats[PROXY_STATS_TYPE.CLOUDMODE] = pw.cloudmode
+        proxystats[PROXY_STATS_TYPE.FLEETAPI] = pw.fleetapi
+        if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
+            proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
+            proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
+        proxystats[PROXY_STATS_TYPE.AUTH_MODE] = pw.authmode
+        contenttype = 'text/html'
+        message: str = """
+        <html>\n<head><meta http-equiv="refresh" content="5" />\n
+        <style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n
+        <style>h1 { font-family: Helvetica, Arial, sans-serif; font-size: 20px;}</style>\n
+        </head>\n<body>\n<h1>pyPowerwall [%VER%] Proxy [%BUILD%] </h1>\n\n
+        <p><a href="https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md">
+        Click here for API help.</a></p>\n\n
+        <table>\n<tr><th align ="left">Stat</th><th align ="left">Value</th></tr>
+        """
+        message = message.replace('%VER%', pypowerwall.version).replace('%BUILD%', BUILD)
+        for i in proxystats:
+            if i != PROXY_STATS_TYPE.URI and i != PROXY_STATS_TYPE.CONFIG:
+                message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
+        for i in proxystats[PROXY_STATS_TYPE.URI]:
+            message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats[PROXY_STATS_TYPE.URI][i]}</td></tr>\n'
+        message += """
+        <tr>
+            <td align="left">Config:</td>
+            <td align="left">
+                <details id="config-details">
+                    <summary>Click to view</summary>
+                    <table>
+        """
+        for i in proxystats[PROXY_STATS_TYPE.CONFIG]:
+            message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[PROXY_STATS_TYPE.CONFIG][i]}</td></tr>\n'
+        message += """
+                    </table>
+                </details>
+            </td>
+        </tr>
+        <script>
+            document.addEventListener("DOMContentLoaded", function() {
+                var details = document.getElementById("config-details");
+                if (localStorage.getItem("config-details-open") === "true") {
+                    details.setAttribute("open", "open");
+                }
+                details.addEventListener("toggle", function() {
+                    localStorage.setItem("config-details-open", details.open);
                 });
-            </script>
-            """
-            message += "</table>\n"
-            message += f'\n<p>Page refresh: {str(datetime.datetime.fromtimestamp(time.time()))}</p>\n</body>\n</html>'
-        elif self.path == '/api/troubleshooting/problems':
-            # Simulate old API call and respond with empty list
-            message = '{"problems": []}'
-            # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
-        elif self.path.startswith('/tedapi'):
-            # TEDAPI Specific Calls
-            if pw.tedapi:
-                message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"}'
-                if self.path == '/tedapi/config':
-                    message = json.dumps(pw.tedapi.get_config())
-                if self.path == '/tedapi/status':
-                    message = json.dumps(pw.tedapi.get_status())
-                if self.path == '/tedapi/components':
-                    message = json.dumps(pw.tedapi.get_components())
-                if self.path == '/tedapi/battery':
-                    message = json.dumps(pw.tedapi.get_battery_blocks())
-                if self.path == '/tedapi/controller':
-                    message = json.dumps(pw.tedapi.get_device_controller())
-            else:
-                message = '{"error": "TEDAPI not enabled"}'
-        elif self.path.startswith('/cloud'):
-            # Cloud API Specific Calls
-            if pw.cloudmode and not pw.fleetapi:
-                message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
-                if self.path == '/cloud/battery':
-                    message = json.dumps(pw.client.get_battery())
-                if self.path == '/cloud/power':
-                    message = json.dumps(pw.client.get_site_power())
-                if self.path == '/cloud/config':
-                    message = json.dumps(pw.client.get_site_config())
-            else:
-                message = '{"error": "Cloud API not enabled"}'
-        elif self.path.startswith('/fleetapi'):
-            # FleetAPI Specific Calls
-            if pw.fleetapi:
-                message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
-                if self.path == '/fleetapi/info':
-                    message = json.dumps(pw.client.get_site_info())
-                if self.path == '/fleetapi/status':
-                    message = json.dumps(pw.client.get_live_status())
-            else:
-                message = '{"error": "FleetAPI not enabled"}'
-        elif self.path in DISABLED:
-            # Disabled API Calls
-            message = '{"status": "404 Response - API Disabled"}'
-        elif self.path in ALLOWLIST:
-            # Allowed API Calls - Proxy to Powerwall
-            message: str = pw.poll(self.path, jsonformat=True)
-        elif self.path.startswith('/control/reserve'):
-            # Current battery reserve level
-            if not pw_control:
-                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
-            else:
-                message = '{"reserve": %s}' % pw_control.get_reserve()
-        elif self.path.startswith('/control/mode'):
-            # Current operating mode
-            if not pw_control:
-                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
-            else:
-                message = '{"mode": "%s"}' % pw_control.get_mode()
-        else:
-            # Everything else - Set auth headers required for web application
-            proxystats[PROXY_STATS_TYPE.GETS] += 1
-            if pw.authmode == "token":
-                # Create bogus cookies
-                self.send_header("Set-Cookie", f"AuthCookie=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
-                self.send_header("Set-Cookie", f"UserRecord=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
-            else:
-                self.send_header("Set-Cookie", f"AuthCookie={pw.client.auth['AuthCookie']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
-                self.send_header("Set-Cookie", f"UserRecord={pw.client.auth['UserRecord']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+            });
+        </script>
+        """
+        message += "</table>\n"
+        message += f'\n<p>Page refresh: {str(datetime.datetime.fromtimestamp(time.time()))}</p>\n</body>\n</html>'
 
-            # Serve static assets from web root first, if found.
-            # pylint: disable=attribute-defined-outside-init
-            if self.path == "/" or self.path == "":
-                self.path = "/index.html"
-                fcontent, ftype = get_static(WEB_ROOT, self.path)
-                # Replace {VARS} with current data
-                status = pw.status()
-                # convert fcontent to string
-                fcontent = fcontent.decode("utf-8")
-                # fix the following variables that if they are None, return ""
-                fcontent = fcontent.replace("{VERSION}", status["version"] or "")
-                fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
-                fcontent = fcontent.replace("{EMAIL}", CONFIG[CONFIG_TYPE.PW_EMAIL])
-                fcontent = fcontent.replace("{STYLE}", CONFIG[CONFIG_TYPE.PW_STYLE])
-                # convert fcontent back to bytes
-                fcontent = bytes(fcontent, 'utf-8')
-            else:
-                fcontent, ftype = get_static(WEB_ROOT, self.path)
-            if fcontent:
-                log.debug("Served from local web root: {} type {}".format(self.path, ftype))
-            # If not found, serve from Powerwall web server
-            elif pw.cloudmode or pw.fleetapi:
-                log.debug("Cloud Mode - File not found: {}".format(self.path))
-                fcontent = bytes("Not Found", 'utf-8')
-                ftype = "text/plain"
-            else:
-                # Proxy request to Powerwall web server.
-                proxy_path = self.path
-                if proxy_path.startswith("/"):
-                    proxy_path = proxy_path[1:]
-                pw_url = f"https://{pw.host}/{proxy_path}"
-                log.debug(f"Proxy request to: {pw_url}")
-                try:
-                    if pw.authmode == "token":
-                        r = pw.client.session.get(
-                            url=pw_url,
-                            headers=pw.auth,
-                            verify=False,
-                            stream=True,
-                            timeout=pw.timeout
-                        )
-                    else:
-                        r = pw.client.session.get(
-                            url=pw_url,
-                            cookies=pw.auth,
-                            verify=False,
-                            stream=True,
-                            timeout=pw.timeout
-                        )
-                    fcontent = r.content
-                    ftype = r.headers['content-type']
-                except AttributeError:
-                    # Display 404
-                    log.debug("File not found: {}".format(self.path))
-                    fcontent = bytes("Not Found", 'utf-8')
-                    ftype = "text/plain"
+    def handle_problems(self):
+        self.send_json_response({"problems": []})
 
-            # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
-            if CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE] > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
-                self.send_header("Cache-Control", "max-age={}".format(CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE]))
-            else:
-                self.send_header("Cache-Control", "no-cache, no-store")
 
-                # Inject transformations
-            if self.path.split('?')[0] == "/":
-                if os.path.exists(os.path.join(WEB_ROOT, CONFIG[CONFIG_TYPE.PW_STYLE])):
-                    fcontent = bytes(inject_js(fcontent, CONFIG[CONFIG_TYPE.PW_STYLE]), 'utf-8')
-
-            self.send_header('Content-type', '{}'.format(ftype))
-            self.end_headers()
-            try:
-                self.wfile.write(fcontent)
-            except Exception as exc:
-                if "Broken pipe" in str(exc):
-                    log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
-                    return
-                log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
+    def handle_tedapi(self, path):
+        if not pw.tedapi:
+            self.send_json_response({"error": "TEDAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
             return
 
-        # Count
-        if message is None:
-            proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
-            message = "TIMEOUT!"
-        elif message == "ERROR!":
-            proxystats[PROXY_STATS_TYPE.ERRORS] += 1
-            message = "ERROR!"
+        commands = {
+            '/tedapi/config': pw.tedapi.get_config,
+            '/tedapi/status': pw.tedapi.get_status,
+            '/tedapi/components': pw.tedapi.get_components,
+            '/tedapi/battery': pw.tedapi.get_battery_blocks,
+            '/tedapi/controller': pw.tedapi.get_device_controller,
+        }
+        command = commands.get(path)
+        if command:
+            self.send_json_response(command())
         else:
-            proxystats[PROXY_STATS_TYPE.GETS] += 1
-            if self.path in proxystats[PROXY_STATS_TYPE.URI]:
-                proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
-            else:
-                proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
+            self.send_json_response(
+                {"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"},
+                status_code=HTTPStatus.BAD_REQUEST
+            )
 
-        # Send headers and payload
-        try:
-            self.send_header('Content-type', contenttype)
-            self.send_header('Content-Length', str(len(message)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(message.encode("utf8"))
-        except Exception as exc:
-            log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
+
+    def handle_cloud(self, path):
+        if not pw.cloudmode or pw.fleetapi:
+            self.send_json_response({"error": "Cloud API not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
+            return
+
+        commands = {
+            '/cloud/battery': pw.client.get_battery,
+            '/cloud/power': pw.client.get_site_power,
+            '/cloud/config': pw.client.get_site_config,
+        }
+        command = commands.get(path)
+        if command:
+            self.send_json_response(command())
+        else:
+            self.send_json_response({"error": "Use /cloud/battery, /cloud/power, /cloud/config"}, status_code=HTTPStatus.BAD_REQUEST)
+
+
+    def handle_fleetapi(self, path):
+        if not pw.fleetapi:
+            self.send_json_response({"error": "FleetAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
+            return
+
+        commands = {
+            '/fleetapi/info': pw.client.get_site_info,
+            '/fleetapi/status': pw.client.get_live_status,
+        }
+        command = commands.get(path)
+        if command:
+            self.send_json_response(command())
+        else:
+            self.send_json_response({"error": "Use /fleetapi/info, /fleetapi/status"}, status_code=HTTPStatus.BAD_REQUEST)
+
+    # else:
+    #     # Everything else - Set auth headers required for web application
+    #     proxystats[PROXY_STATS_TYPE.GETS] += 1
+    #     if pw.authmode == "token":
+    #         # Create bogus cookies
+    #         self.send_header("Set-Cookie", f"AuthCookie=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+    #         self.send_header("Set-Cookie", f"UserRecord=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+    #     else:
+    #         self.send_header("Set-Cookie", f"AuthCookie={pw.client.auth['AuthCookie']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+    #         self.send_header("Set-Cookie", f"UserRecord={pw.client.auth['UserRecord']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+
+    #     # Serve static assets from web root first, if found.
+    #     # pylint: disable=attribute-defined-outside-init
+    #     if self.path == "/" or self.path == "":
+    #         self.path = "/index.html"
+    #         fcontent, ftype = get_static(WEB_ROOT, self.path)
+    #         # Replace {VARS} with current data
+    #         status = pw.status()
+    #         # convert fcontent to string
+    #         fcontent = fcontent.decode("utf-8")
+    #         # fix the following variables that if they are None, return ""
+    #         fcontent = fcontent.replace("{VERSION}", status["version"] or "")
+    #         fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
+    #         fcontent = fcontent.replace("{EMAIL}", CONFIG[CONFIG_TYPE.PW_EMAIL])
+    #         fcontent = fcontent.replace("{STYLE}", CONFIG[CONFIG_TYPE.PW_STYLE])
+    #         # convert fcontent back to bytes
+    #         fcontent = bytes(fcontent, 'utf-8')
+    #     else:
+    #         fcontent, ftype = get_static(WEB_ROOT, self.path)
+    #     if fcontent:
+    #         log.debug("Served from local web root: {} type {}".format(self.path, ftype))
+    #     # If not found, serve from Powerwall web server
+    #     elif pw.cloudmode or pw.fleetapi:
+    #         log.debug("Cloud Mode - File not found: {}".format(self.path))
+    #         fcontent = bytes("Not Found", 'utf-8')
+    #         ftype = "text/plain"
+    #     else:
+    #         # Proxy request to Powerwall web server.
+    #         proxy_path = self.path
+    #         if proxy_path.startswith("/"):
+    #             proxy_path = proxy_path[1:]
+    #         pw_url = f"https://{pw.host}/{proxy_path}"
+    #         log.debug(f"Proxy request to: {pw_url}")
+    #         try:
+    #             if pw.authmode == "token":
+    #                 r = pw.client.session.get(
+    #                     url=pw_url,
+    #                     headers=pw.auth,
+    #                     verify=False,
+    #                     stream=True,
+    #                     timeout=pw.timeout
+    #                 )
+    #             else:
+    #                 r = pw.client.session.get(
+    #                     url=pw_url,
+    #                     cookies=pw.auth,
+    #                     verify=False,
+    #                     stream=True,
+    #                     timeout=pw.timeout
+    #                 )
+    #             fcontent = r.content
+    #             ftype = r.headers['content-type']
+    #         except AttributeError:
+    #             # Display 404
+    #             log.debug("File not found: {}".format(self.path))
+    #             fcontent = bytes("Not Found", 'utf-8')
+    #             ftype = "text/plain"
+
+    #     # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
+    #     if CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE] > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
+    #         self.send_header("Cache-Control", "max-age={}".format(CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE]))
+    #     else:
+    #         self.send_header("Cache-Control", "no-cache, no-store")
+
+    #         # Inject transformations
+    #     if self.path.split('?')[0] == "/":
+    #         if os.path.exists(os.path.join(WEB_ROOT, CONFIG[CONFIG_TYPE.PW_STYLE])):
+    #             fcontent = bytes(inject_js(fcontent, CONFIG[CONFIG_TYPE.PW_STYLE]), 'utf-8')
+
+    #     self.send_header('Content-type', '{}'.format(ftype))
+    #     self.end_headers()
+    #     try:
+    #         self.wfile.write(fcontent)
+    #     except Exception as exc:
+    #         if "Broken pipe" in str(exc):
+    #             log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
+    #             return
+    #         log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
+    #     return
+
+    # # Count
+    # if message is None:
+    #     proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
+    #     message = "TIMEOUT!"
+    # elif message == "ERROR!":
+    #     proxystats[PROXY_STATS_TYPE.ERRORS] += 1
+    #     message = "ERROR!"
+    # else:
+    #     proxystats[PROXY_STATS_TYPE.GETS] += 1
+    #     if self.path in proxystats[PROXY_STATS_TYPE.URI]:
+    #         proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
+    #     else:
+    #         proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
+
+    # # Send headers and payload
+    # try:
+    #     self.send_header('Content-type', contenttype)
+    #     self.send_header('Content-Length', str(len(message)))
+    #     self.send_header("Access-Control-Allow-Origin", "*")
+    #     self.end_headers()
+    #     self.wfile.write(message.encode("utf8"))
+    # except Exception as exc:
+    #     log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
+    
+class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
 
 if __name__ == '__main__':
     # Connect to Powerwall
