@@ -504,6 +504,20 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.handle_static_content()
 
+            # # Count
+    # if message is None:
+    #     proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
+    #     message = "TIMEOUT!"
+    # elif message == "ERROR!":
+    #     proxystats[PROXY_STATS_TYPE.ERRORS] += 1
+    #     message = "ERROR!"
+    # else:
+    #     proxystats[PROXY_STATS_TYPE.GETS] += 1
+    #     if self.path in proxystats[PROXY_STATS_TYPE.URI]:
+    #         proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
+    #     else:
+    #         proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
+
     def handle_aggregates(self):
         # Meters - JSON
         aggregates = pw.poll('/api/meters/aggregates')
@@ -1001,19 +1015,7 @@ class Handler(BaseHTTPRequestHandler):
     #         log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
     #     return
 
-    # # Count
-    # if message is None:
-    #     proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
-    #     message = "TIMEOUT!"
-    # elif message == "ERROR!":
-    #     proxystats[PROXY_STATS_TYPE.ERRORS] += 1
-    #     message = "ERROR!"
-    # else:
-    #     proxystats[PROXY_STATS_TYPE.GETS] += 1
-    #     if self.path in proxystats[PROXY_STATS_TYPE.URI]:
-    #         proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
-    #     else:
-    #         proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
+
 
     # # Send headers and payload
     # try:
