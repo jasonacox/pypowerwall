@@ -214,55 +214,55 @@ class PROXY_STATS_TYPE(StrEnum):
     Args:
         StrEnum (_type_): _description_
     """
-    
-    'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
-    'mode': "Unknown",
-    'gets': 0,
-    'posts': 0,
-    'errors': 0,
-    'timeout': 0,
-    'uri': {},
-    'ts': int(time.time()),
-    'start': int(time.time()),
-    'clear': int(time.time()),
-    'uptime': "",
-    'mem': 0,
-    'site_name': "",
-    'cloudmode': False,
-    'fleetapi': False,
-    'tedapi': False,
-    'pw3': False,
-    'tedapi_mode': "off",
-    'siteid': None,
-    'counter': 0,
-    'cf': CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
-    'config': CONFIG.copy()
+    AUTH_MODE = auto()
+    PYPOWERWALL = auto()
+    MODE = auto()
+    GETS = auto()
+    POSTS = auto()
+    ERRORS = auto()
+    TIMEOUT = auto()
+    URI = auto()
+    TS = auto()
+    START = auto()
+    CLEAR = auto()
+    UPTIME = auto()
+    MEM = auto()
+    SITE_NAME = auto()
+    CLOUDMODE = auto()
+    FLEETAPI = auto()
+    TEDAPI = auto()
+    PW3 = auto()
+    TEDAPI_MODE = auto()
+    SITEID = auto()
+    COUNTER = auto()
+    CF = auto()
+    CONFIG = auto()
 
 
 # Global Stats
 proxystats: Dict[PROXY_STATS_TYPE, str | int | bool | None | Dict[Any, Any]] = {
-    'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
-    'mode': "Unknown",
-    'gets': 0,
-    'posts': 0,
-    'errors': 0,
-    'timeout': 0,
-    'uri': {},
-    'ts': int(time.time()),
-    'start': int(time.time()),
-    'clear': int(time.time()),
-    'uptime': "",
-    'mem': 0,
-    'site_name': "",
-    'cloudmode': False,
-    'fleetapi': False,
-    'tedapi': False,
-    'pw3': False,
-    'tedapi_mode': "off",
-    'siteid': None,
-    'counter': 0,
-    'cf': CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
-    'config': CONFIG.copy()
+    PROXY_STATS_TYPE.PYPOWERWALL: f"{pypowerwall.version} Proxy {BUILD}",
+    PROXY_STATS_TYPE.MODE: "Unknown",
+    PROXY_STATS_TYPE.GETS: 0,
+    PROXY_STATS_TYPE.POSTS: 0,
+    PROXY_STATS_TYPE.ERRORS: 0,
+    PROXY_STATS_TYPE.TIMEOUT: 0,
+    PROXY_STATS_TYPE.URI: {},
+    PROXY_STATS_TYPE.TS: int(time.time()),
+    PROXY_STATS_TYPE.START: int(time.time()),
+    PROXY_STATS_TYPE.CLEAR: int(time.time()),
+    PROXY_STATS_TYPE.UPTIME: "",
+    PROXY_STATS_TYPE.MEM: 0,
+    PROXY_STATS_TYPE.SITE_NAME: "",
+    PROXY_STATS_TYPE.CLOUDMODE: False,
+    PROXY_STATS_TYPE.FLEETAPI: False,
+    PROXY_STATS_TYPE.TEDAPI: False,
+    PROXY_STATS_TYPE.PW3: False,
+    PROXY_STATS_TYPE.TEDAPI_MODE: "off",
+    PROXY_STATS_TYPE.SITEID: None,
+    PROXY_STATS_TYPE.COUNTER: 0,
+    PROXY_STATS_TYPE.CF: CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
+    PROXY_STATS_TYPE.CONFIG: CONFIG.copy()
 }
 
 log.info(
@@ -312,10 +312,10 @@ except Exception as e:
 site_name = pw.site_name() or "Unknown"
 if pw.cloudmode or pw.fleetapi:
     if pw.fleetapi:
-        proxystats['mode'] = "FleetAPI"
+        proxystats[PROXY_STATS_TYPE.MODE] = "FleetAPI"
         log.info("pyPowerwall Proxy Server - FleetAPI Mode")
     else:
-        proxystats['mode'] = "Cloud"
+        proxystats[PROXY_STATS_TYPE.MODE] = "Cloud"
         log.info("pyPowerwall Proxy Server - Cloud Mode")
     log.info(f"Connected to Site ID {pw.client.siteid} ({site_name.strip()})")
     if CONFIG[CONFIG_TYPE.PW_SITEID] is not None and CONFIG[CONFIG_TYPE.PW_SITEID] != str(pw.client.siteid):
@@ -328,13 +328,13 @@ if pw.cloudmode or pw.fleetapi:
                 except (KeyboardInterrupt, SystemExit):
                     sys.exit(0)
 else:
-    proxystats['mode'] = "Local"
+    proxystats[PROXY_STATS_TYPE.MODE] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info(f"Connected to Energy Gateway {CONFIG[CONFIG_TYPE.PW_HOST]} ({site_name.strip()})")
     if pw.tedapi:
-        proxystats['tedapi'] = True
-        proxystats['tedapi_mode'] = pw.tedapi_mode
-        proxystats['pw3'] = pw.tedapi.pw3
+        proxystats[PROXY_STATS_TYPE.TEDAPI] = True
+        proxystats[PROXY_STATS_TYPE.TEDAPI_MODE] = pw.tedapi_mode
+        proxystats[PROXY_STATS_TYPE.PW3] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
 pw_control = None
@@ -426,12 +426,12 @@ class Handler(BaseHTTPRequestHandler):
                             message = '{"unauthorized": "Control Command Token Invalid"}'
         if "error" in message:
             self.send_response(HTTPStatus.BAD_REQUEST)
-            proxystats['errors'] = proxystats['errors'] + 1
+            proxystats[PROXY_STATS_TYPE.ERRORS] += 1
         elif "unauthorized" in message:
             self.send_response(HTTPStatus.UNAUTHORIZED)
         else:
             self.send_response(HTTPStatus.OK)
-            proxystats['posts'] = proxystats['posts'] + 1
+            proxystats[PROXY_STATS_TYPE.POSTS] += 1
         self.send_header('Content-type', contenttype)
         self.send_header('Content-Length', str(len(message)))
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -490,24 +490,24 @@ class Handler(BaseHTTPRequestHandler):
             message: str = pw.strings(jsonformat=True) or json.dumps({})
         elif self.path == '/stats':
             # Give Internal Stats
-            proxystats['ts'] = int(time.time())
-            delta = proxystats['ts'] - proxystats['start']
-            proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
-            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats['site_name'] = pw.site_name()
-            proxystats['cloudmode'] = pw.cloudmode
-            proxystats['fleetapi'] = pw.fleetapi
+            proxystats[PROXY_STATS_TYPE.TS] = int(time.time())
+            delta = proxystats[PROXY_STATS_TYPE.TS] - proxystats['start']
+            proxystats[PROXY_STATS_TYPE.UPTIME] = str(datetime.timedelta(seconds=delta))
+            proxystats[PROXY_STATS_TYPE.MEM] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            proxystats[PROXY_STATS_TYPE.SITE_NAME] = pw.site_name()
+            proxystats[PROXY_STATS_TYPE.CLOUDMODE] = pw.cloudmode
+            proxystats[PROXY_STATS_TYPE.FLEETAPI] = pw.fleetapi
             if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                proxystats['siteid'] = pw.client.siteid
-                proxystats['counter'] = pw.client.counter
+                proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
+                proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
             message: str = json.dumps(proxystats)
         elif self.path == '/stats/clear':
             # Clear Internal Stats
             log.debug("Clear internal stats")
-            proxystats['gets'] = 0
-            proxystats['errors'] = 0
-            proxystats['uri'] = {}
-            proxystats['clear'] = int(time.time())
+            proxystats[PROXY_STATS_TYPE.GETS] = 0
+            proxystats[PROXY_STATS_TYPE.ERRORS] = 0
+            proxystats[PROXY_STATS_TYPE.URI] = {}
+            proxystats[PROXY_STATS_TYPE.CLEAR] = int(time.time())
             message: str = json.dumps(proxystats)
         elif self.path == '/temps':
             # Temps of Powerwalls
@@ -651,17 +651,17 @@ class Handler(BaseHTTPRequestHandler):
                 message: str = json.dumps(v)
         elif self.path == '/help':
             # Display friendly help screen link and stats
-            proxystats['ts'] = int(time.time())
-            delta = proxystats['ts'] - proxystats['start']
-            proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
-            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats['site_name'] = pw.site_name()
-            proxystats['cloudmode'] = pw.cloudmode
-            proxystats['fleetapi'] = pw.fleetapi
+            proxystats[PROXY_STATS_TYPE.TS] = int(time.time())
+            delta = proxystats[PROXY_STATS_TYPE.TS] - proxystats[PROXY_STATS_TYPE.START]
+            proxystats[PROXY_STATS_TYPE.UPTIME] = str(datetime.timedelta(seconds=delta))
+            proxystats[PROXY_STATS_TYPE.MEM] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            proxystats[PROXY_STATS_TYPE.SITE_NAME] = pw.site_name()
+            proxystats[PROXY_STATS_TYPE.CLOUDMODE] = pw.cloudmode
+            proxystats[PROXY_STATS_TYPE.FLEETAPI] = pw.fleetapi
             if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                proxystats['siteid'] = pw.client.siteid
-                proxystats['counter'] = pw.client.counter
-            proxystats['authmode'] = pw.authmode
+                proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
+                proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
+            proxystats[PROXY_STATS_TYPE.AUTH_MODE] = pw.authmode
             contenttype = 'text/html'
             message: str = """
             <html>\n<head><meta http-equiv="refresh" content="5" />\n
@@ -674,10 +674,10 @@ class Handler(BaseHTTPRequestHandler):
             """
             message = message.replace('%VER%', pypowerwall.version).replace('%BUILD%', BUILD)
             for i in proxystats:
-                if i != 'uri' and i != 'config':
+                if i != PROXY_STATS_TYPE.URI and i != PROXY_STATS_TYPE.CONFIG:
                     message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
-            for i in proxystats['uri']:
-                message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats["uri"][i]}</td></tr>\n'
+            for i in proxystats[PROXY_STATS_TYPE.URI]:
+                message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats[PROXY_STATS_TYPE.URI][i]}</td></tr>\n'
             message += """
             <tr>
                 <td align="left">Config:</td>
@@ -686,8 +686,8 @@ class Handler(BaseHTTPRequestHandler):
                         <summary>Click to view</summary>
                         <table>
             """
-            for i in proxystats['config']:
-                message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats["config"][i]}</td></tr>\n'
+            for i in proxystats[PROXY_STATS_TYPE.CONFIG]:
+                message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[PROXY_STATS_TYPE.CONFIG][i]}</td></tr>\n'
             message += """
                         </table>
                     </details>
@@ -769,7 +769,7 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"mode": "%s"}' % pw_control.get_mode()
         else:
             # Everything else - Set auth headers required for web application
-            proxystats['gets'] = proxystats['gets'] + 1
+            proxystats[PROXY_STATS_TYPE.GETS] += 1
             if pw.authmode == "token":
                 # Create bogus cookies
                 self.send_header("Set-Cookie", f"AuthCookie=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
@@ -859,17 +859,17 @@ class Handler(BaseHTTPRequestHandler):
 
         # Count
         if message is None:
-            proxystats['timeout'] = proxystats['timeout'] + 1
+            proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
             message = "TIMEOUT!"
         elif message == "ERROR!":
-            proxystats['errors'] = proxystats['errors'] + 1
+            proxystats[PROXY_STATS_TYPE.ERRORS] += 1
             message = "ERROR!"
         else:
-            proxystats['gets'] = proxystats['gets'] + 1
-            if self.path in proxystats['uri']:
-                proxystats['uri'][self.path] = proxystats['uri'][self.path] + 1
+            proxystats[PROXY_STATS_TYPE.GETS] += 1
+            if self.path in proxystats[PROXY_STATS_TYPE.URI]:
+                proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
             else:
-                proxystats['uri'][self.path] = 1
+                proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
 
         # Send headers and payload
         try:
