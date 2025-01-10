@@ -837,6 +837,80 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_json_response({"error": "Use /fleetapi/info, /fleetapi/status"}, status_code=HTTPStatus.BAD_REQUEST)
 
+
+    def handle_static_content(self):
+        proxystats[PROXY_STATS_TYPE.GETS] += 1
+        self.send_response(HTTPStatus.OK)
+        self.send_header('Content-type', 'text/html')
+        if pw.authmode == "token":
+            self.send_header("Set-Cookie", f"AuthCookie=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+            self.send_header("Set-Cookie", f"UserRecord=1234567890;{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+        else:
+            auth = pw.client.auth
+            self.send_header("Set-Cookie", f"AuthCookie={auth['AuthCookie']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+            self.send_header("Set-Cookie", f"UserRecord={auth['UserRecord']};{CONFIG[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+
+        if self.path == "/" or self.path == "":
+            self.path = "/index.html"
+            content, content_type = get_static(WEB_ROOT, self.path)
+            status = pw.status()
+            content = content.decode("utf-8").format(
+                VERSION=status.get("version", ""),
+                HASH=status.get("git_hash", ""),
+                EMAIL=CONFIG['PW_EMAIL'],
+                STYLE=CONFIG['PW_STYLE'],
+            ).encode('utf-8')
+        else:
+            content, content_type = get_static(WEB_ROOT, self.path)
+
+        if content:
+            log.debug("Served from local web root: {} type {}".format(self.path, content_type))
+        # If not found, serve from Powerwall web server
+        elif pw.cloudmode or pw.fleetapi:
+            log.debug(f"Cloud Mode - File not found: {self.path}")
+            content = b"Not Found"
+            content_type = "text/plain"
+        else:
+            # Proxy request to Powerwall web server.
+            pw_url = f"https://{pw.host}/{self.path.lstrip('/')}"
+            log.debug("Proxy request to: %s", pw_url)
+            try:
+                session = pw.client.session
+                response = session.get(
+                    url=pw_url,
+                    headers=pw.auth if pw.authmode == "token" else None,
+                    cookies=None if pw.authmode == "token" else pw.auth,
+                    verify=False,
+                    stream=True,
+                    timeout=pw.timeout,
+                )
+                content = response.content
+                content_type = response.headers.get('content-type', 'text/html')
+            except Exception as exc:
+                log.error("Error proxying request: %s", exc)
+                content = b"Error during proxy"
+                content_type = "text/plain"
+
+        if CONFIG['PW_BROWSER_CACHE'] > 0 and content_type in ['text/css', 'application/javascript', 'image/png']:
+            self.send_header("Cache-Control", f"max-age={CONFIG[CONFIG_TYPE.PW_BROWSER_CACHE]}")
+        else:
+            self.send_header("Cache-Control", "no-cache, no-store")
+                
+        if self.path.split('?')[0] == "/":
+            if os.path.exists(os.path.join(WEB_ROOT, CONFIG[CONFIG_TYPE.PW_STYLE])):
+                content = bytes(inject_js(content, CONFIG[CONFIG_TYPE.PW_STYLE]), 'utf-8')
+
+        self.send_header('Content-type', content_type)
+        self.end_headers()
+        try:
+            self.wfile.write(content)
+        except Exception as exc:
+            if "Broken pipe" in str(exc):
+                log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
+                return
+            log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
+
+
     # else:
     #     # Everything else - Set auth headers required for web application
     #     proxystats[PROXY_STATS_TYPE.GETS] += 1
