@@ -49,7 +49,7 @@ import threading
 from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Final, Set, List
+from typing import Any, Dict, Final, Set, List, Tuple
 from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 
@@ -265,11 +265,6 @@ proxystats: Dict[PROXY_STATS_TYPE, str | int | bool | None | Dict[Any, Any]] = {
     PROXY_STATS_TYPE.URI: {}
 }
 
-log.info(
-    f"pyPowerwall [{pypowerwall.version}] Proxy Server [{BUILD}] - {CONFIG[CONFIG_TYPE.PW_HTTP_TYPE]} Port {CONFIG['PW_PORT']}{' - DEBUG' if CONFIG[CONFIG_TYPE.PW_DEBUG] else ''}"
-)
-log.info("pyPowerwall Proxy Started")
-
 # Check for cache expire time limit below 5s
 if CONFIG['PW_CACHE_EXPIRE'] < 5:
     log.warning(f"Cache expiration set below 5s (PW_CACHE_EXPIRE={CONFIG['PW_CACHE_EXPIRE']})")
@@ -342,8 +337,7 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 
     return pw_control
 
-# pylint: disable=arguments-differ,global-variable-not-assigned
-# noinspection PyPep8Naming
+
 class Handler(BaseHTTPRequestHandler):
     def __init__(self, *args, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, **kwargs):
         self.configuration = configuration
@@ -557,7 +551,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_csv(self):
         # Grid,Home,Solar,Battery,Level - CSV
-        contenttype = 'text/plain; charset=utf-8'
         batterylevel = self.pw.level() or 0
         grid = self.pw.grid() or 0
         solar = self.pw.solar() or 0
@@ -968,7 +961,9 @@ def read_config_file(file_path: Path) -> List[PROXY_CONFIG]:
                 # Split key and value
                 elif "=" in line:
                     key, value = line.split("=", 1)
-                    key, value = key.strip(), value.strip()
+                    def aggressive_strip(v: str) -> str:
+                        return v.strip().strip("'").strip('"')
+                    key, value = aggressive_strip(key), aggressive_strip(value)
 
                     # Ensure the key is valid
                     if not hasattr(CONFIG_TYPE, key):
@@ -1011,7 +1006,7 @@ def run_server(host, port, handler, enable_https=False):
 
 def main() -> None:
     configs = read_config_file(Path("pypowerwall.env"))
-    servers: List[threading.Thread] = []
+    servers: List[Tuple[PROXY_CONFIG, threading.Thread]] = []
 
     for config in configs:
         try:
@@ -1041,27 +1036,30 @@ def main() -> None:
                     sys.exit(0)
 
         pw_control = configure_pw_control(pw)
+        handler = Handler(configuration=config, pw=pw, pw_control=pw_control)
 
         server = threading.Thread(
             target=run_server,
             args=(
                 config[CONFIG_TYPE.PW_BIND_ADDRESS],  # Host
                 config[CONFIG_TYPE.PW_PORT],          # Port
-                Handler(configuration=config, pw=pw), # Handler
+                handler,                              # Handler
                 config[CONFIG_TYPE.PW_HTTPS] == "yes" # HTTPS
             )
         )
         servers.append(server)
 
     # Start all server threads
-    for s in servers: 
-        s.start()
-        s.start()
+    for config, server in zip(configs, servers):
+        log.info(
+            f"pyPowerwall [{pypowerwall.version}] Proxy Server [{BUILD}] - {config[CONFIG_TYPE.PW_HTTP_TYPE]} Port {config['PW_PORT']}{' - DEBUG' if config[CONFIG_TYPE.PW_DEBUG] else ''}"
+        )
+        log.info("pyPowerwall Proxy Started\n")
+        server.start()
 
-    # Wait for both threads to finish
-    for s in servers: 
-        s.join()
-        s.join()
+    # Wait for all server threads to finish
+    for server in servers:
+        server.join()
 
     log.info("pyPowerwall Proxy Stopped")
     sys.exit(0)
