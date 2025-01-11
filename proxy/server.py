@@ -51,6 +51,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Final, Set, List
 from urllib.parse import parse_qs, urlparse
+from pathlib import Path
 
 from transform import get_static, inject_js
 
@@ -344,8 +345,10 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 # pylint: disable=arguments-differ,global-variable-not-assigned
 # noinspection PyPep8Naming
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, configuration: PROXY_CONFIG, **kwargs):
+    def __init__(self, *args, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, **kwargs):
         self.configuration = configuration
+        self.pw = pw
+        self.pw_control = pw_control
         super().__init__(*args, **kwargs)
     
     def log_message(self, log_format, *args):
@@ -371,7 +374,7 @@ class Handler(BaseHTTPRequestHandler):
             
     def handle_control_post(self) -> bool:
         """Handle control POST requests."""
-        if not pw_control:
+        if not self.pw_control:
             proxystats[PROXY_STATS_TYPE.ERRORS] += 1
             self.send_json_response(
                 {"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"},
@@ -403,10 +406,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if action == 'reserve':
             if not value:
-                self.send_json_response({"reserve": pw_control.get_reserve()})
+                self.send_json_response({"reserve": self.pw_control.get_reserve()})
                 return True
             elif value.isdigit():
-                result = pw_control.set_reserve(int(value))
+                result = self.pw_control.set_reserve(int(value))
                 log.info(f"Control Command: Set Reserve to {value}")
                 self.send_json_response(result)
                 return True
@@ -417,10 +420,10 @@ class Handler(BaseHTTPRequestHandler):
                 )
         elif action == 'mode':
             if not value:
-                self.send_json_response({"mode": pw_control.get_mode()})
+                self.send_json_response({"mode": self.pw_control.get_mode()})
                 return True
             elif value in ['self_consumption', 'backup', 'autonomous']:
-                result = pw_control.set_mode(value)
+                result = self.pw_control.set_mode(value)
                 log.info(f"Control Command: Set Mode to {value}")
                 self.send_json_response(result)
                 return True
@@ -477,7 +480,7 @@ class Handler(BaseHTTPRequestHandler):
             '/help': self.handle_help,
             '/api/troubleshooting/problems': self.handle_problems,
         }
-        
+
         if path in path_handlers:
             path_handlers[path]()
         elif path in DISABLED:
@@ -495,17 +498,17 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_fleetapi(path)
         elif self.path.startswith('/control/reserve'):
             # Current battery reserve level
-            if not pw_control:
+            if not self.pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
-                message = '{"reserve": %s}' % pw_control.get_reserve()
+                message = '{"reserve": %s}' % self.pw_control.get_reserve()
             self.send_json_response(json.loads(message))
         elif self.path.startswith('/control/mode'):
             # Current operating mode
-            if not pw_control:
+            if not self.pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
-                message = '{"mode": "%s"}' % pw_control.get_mode()
+                message = '{"mode": "%s"}' % self.pw_control.get_mode()
             self.send_json_response(json.loads(message))
         else:
             self.handle_static_content()
@@ -526,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_aggregates(self):
         # Meters - JSON
-        aggregates = pw.poll('/api/meters/aggregates')
+        aggregates = self.pw.poll('/api/meters/aggregates')
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
             solar = aggregates['solar']
             if solar and 'instant_power' in solar and solar['instant_power'] < 0:
@@ -538,28 +541,28 @@ class Handler(BaseHTTPRequestHandler):
 
     
     def handle_soe(self):
-        soe = pw.poll('/api/system_status/soe', jsonformat=True)
+        soe = self.pw.poll('/api/system_status/soe', jsonformat=True)
         self.send_json_response(json.loads(soe))
 
 
     def handle_soe(self):
-        soe = pw.poll('/api/system_status/soe', jsonformat=True)
+        soe = self.pw.poll('/api/system_status/soe', jsonformat=True)
         self.send_json_response(json.loads(soe))
 
 
     def handle_grid_status(self):
-        grid_status = pw.poll('/api/system_status/grid_status', jsonformat=True)
+        grid_status = self.pw.poll('/api/system_status/grid_status', jsonformat=True)
         self.send_json_response(json.loads(grid_status))
 
 
     def handle_csv(self):
         # Grid,Home,Solar,Battery,Level - CSV
         contenttype = 'text/plain; charset=utf-8'
-        batterylevel = pw.level() or 0
-        grid = pw.grid() or 0
-        solar = pw.solar() or 0
-        battery = pw.battery() or 0
-        home = pw.home() or 0
+        batterylevel = self.pw.level() or 0
+        grid = self.pw.grid() or 0
+        solar = self.pw.solar() or 0
+        battery = self.pw.battery() or 0
+        home = self.pw.home() or 0
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
             solar = 0
             # Shift energy from solar to load
@@ -569,12 +572,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_vitals(self):
-        vitals = pw.vitals(jsonformat=True) or {}
+        vitals = self.pw.vitals(jsonformat=True) or {}
         self.send_json_response(json.loads(vitals))
 
 
     def handle_strings(self):
-        strings = pw.strings(jsonformat=True) or {}
+        strings = self.pw.strings(jsonformat=True) or {}
         self.send_json_response(json.loads(strings))
 
 
@@ -583,14 +586,14 @@ class Handler(BaseHTTPRequestHandler):
             PROXY_STATS_TYPE.TS: int(time.time()),
             PROXY_STATS_TYPE.UPTIME: str(datetime.timedelta(seconds=(proxystats[PROXY_STATS_TYPE.TS] - proxystats[PROXY_STATS_TYPE.START]))),
             PROXY_STATS_TYPE.MEM: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-            PROXY_STATS_TYPE.SITE_NAME: pw.site_name(),
-            PROXY_STATS_TYPE.CLOUDMODE: pw.cloudmode,
-            PROXY_STATS_TYPE.FLEETAPI: pw.fleetapi,
-            PROXY_STATS_TYPE.AUTH_MODE: pw.authmode
+            PROXY_STATS_TYPE.SITE_NAME: self.pw.site_name(),
+            PROXY_STATS_TYPE.CLOUDMODE: self.pw.cloudmode,
+            PROXY_STATS_TYPE.FLEETAPI: self.pw.fleetapi,
+            PROXY_STATS_TYPE.AUTH_MODE: self.pw.authmode
         })
-        if (pw.cloudmode or pw.fleetapi) and pw.client:
-            proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
-            proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
+        if (self.pw.cloudmode or self.pw.fleetapi) and self.pw.client:
+            proxystats[PROXY_STATS_TYPE.SITEID] = self.pw.client.siteid
+            proxystats[PROXY_STATS_TYPE.COUNTER] = self.pw.client.counter
         self.send_json_response(proxystats)
 
 
@@ -607,30 +610,30 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_temps(self):
-        temps = pw.temps(jsonformat=True) or {}
+        temps = self.pw.temps(jsonformat=True) or {}
         self.send_json_response(json.loads(temps))
 
 
     def handle_temps_pw(self):
-        temps = pw.temps() or {}
+        temps = self.pw.temps() or {}
         pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
         self.send_json_response(pw_temp)
 
 
     def handle_alerts(self):
-        alerts = pw.alerts(jsonformat=True) or []
+        alerts = self.pw.alerts(jsonformat=True) or []
         self.send_json_response(alerts)
 
 
     def handle_alerts_pw(self):
-        alerts = pw.alerts() or []
+        alerts = self.pw.alerts() or []
         pw_alerts = {alert: 1 for alert in alerts}
         self.send_json_response(pw_alerts)
 
 
     def handle_freq(self):
         fcv = {}
-        system_status = pw.system_status() or {}
+        system_status = self.pw.system_status() or {}
         blocks = system_status.get("battery_blocks", [])
         for idx, block in enumerate(blocks, 1):
             fcv.update({
@@ -646,7 +649,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_f_out": get_value(block, "f_out"),
                 f"PW{idx}_i_out": get_value(block, "i_out"),
             })
-        vitals = pw.vitals() or {}
+        vitals = self.pw.vitals() or {}
         for idx, (device, data) in enumerate(vitals.items()):
             if device.startswith('TEPINV'):
                 fcv.update({
@@ -657,7 +660,7 @@ class Handler(BaseHTTPRequestHandler):
                 })
             if device.startswith(('TESYNC', 'TEMSA')):
                 fcv.update({key: value for key, value in data.items() if key.startswith(('ISLAND', 'METER'))})
-        fcv["grid_status"] = pw.grid_status(type="numeric")
+        fcv["grid_status"] = self.pw.grid_status(type="numeric")
         self.send_json_response(fcv)
 
 
@@ -665,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
         # Powerwall Battery Data
         pod = {}
         # Get Individual Powerwall Battery Data
-        system_status = pw.system_status() or {}
+        system_status = self.pw.system_status() or {}
         blocks = system_status.get("battery_blocks", [])
         for idx, block in enumerate(blocks, 1):
             pod.update({
@@ -706,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_version": get_value(block, "version")
             })
 
-        vitals = pw.vitals() or {}
+        vitals = self.pw.vitals() or {}
         for idx, (device, data) in enumerate(vitals.items(), 1):
             if not device.startswith('TEPOD'):
                 continue
@@ -729,14 +732,14 @@ class Handler(BaseHTTPRequestHandler):
         pod.update({
             "nominal_full_pack_energy": get_value(system_status, 'nominal_full_pack_energy'),
             "nominal_energy_remaining": get_value(system_status, 'nominal_energy_remaining'),
-            "time_remaining_hours": pw.get_time_remaining(),
-            "backup_reserve_percent": pw.get_reserve()
+            "time_remaining_hours": self.pw.get_time_remaining(),
+            "backup_reserve_percent": self.pw.get_reserve()
         })
         self.send_json_response(pod)
 
 
     def handle_version(self):
-        version = pw.version()
+        version = self.pw.version()
         r = {"version": "SolarOnly", "vint": 0} if version is None else {"version": version, "vint": parse_version(version)}
         self.send_json_response(r)
 
@@ -751,15 +754,15 @@ class Handler(BaseHTTPRequestHandler):
             PROXY_STATS_TYPE.TS: int(time.time()),
             PROXY_STATS_TYPE.UPTIME: str(datetime.timedelta(seconds=int(time.time()) - proxystats[PROXY_STATS_TYPE.START])),
             PROXY_STATS_TYPE.MEM: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-            PROXY_STATS_TYPE.SITE_NAME: pw.site_name(),
-            PROXY_STATS_TYPE.CLOUDMODE: pw.cloudmode,
-            PROXY_STATS_TYPE.FLEETAPI: pw.fleetapi,
+            PROXY_STATS_TYPE.SITE_NAME: self.pw.site_name(),
+            PROXY_STATS_TYPE.CLOUDMODE: self.pw.cloudmode,
+            PROXY_STATS_TYPE.FLEETAPI: self.pw.fleetapi,
         })
 
-        if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-            proxystats[PROXY_STATS_TYPE.SITEID] = pw.client.siteid
-            proxystats[PROXY_STATS_TYPE.COUNTER] = pw.client.counter
-        proxystats[PROXY_STATS_TYPE.AUTH_MODE] = pw.authmode
+        if (self.pw.cloudmode or self.pw.fleetapi) and self.pw.client is not None:
+            proxystats[PROXY_STATS_TYPE.SITEID] = self.pw.client.siteid
+            proxystats[PROXY_STATS_TYPE.COUNTER] = self.pw.client.counter
+        proxystats[PROXY_STATS_TYPE.AUTH_MODE] = self.pw.authmode
         message = f"""
         <html>
         <head>
@@ -789,7 +792,7 @@ class Handler(BaseHTTPRequestHandler):
                     <table>
         """
         for key, value in proxystats[PROXY_STATS_TYPE.CONFIG].items():
-            display_value = '*' * len(value) if 'PASSWORD' in key or 'SECRET' in key else value
+            display_value = '*' * len(value) if any(substr in key for substr in ['PASSWORD', 'SECRET']) else value
             message += f'<tr><td align="left">{key}</td><td align="left">{display_value}</td></tr>\n'
         message += """
                     </table>
@@ -822,11 +825,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         commands = {
-            '/tedapi/config': pw.tedapi.get_config,
-            '/tedapi/status': pw.tedapi.get_status,
-            '/tedapi/components': pw.tedapi.get_components,
-            '/tedapi/battery': pw.tedapi.get_battery_blocks,
-            '/tedapi/controller': pw.tedapi.get_device_controller,
+            '/tedapi/config': self.pw.tedapi.get_config,
+            '/tedapi/status': self.pw.tedapi.get_status,
+            '/tedapi/components': self.pw.tedapi.get_components,
+            '/tedapi/battery': self.pw.tedapi.get_battery_blocks,
+            '/tedapi/controller': self.pw.tedapi.get_device_controller,
         }
         command = commands.get(path)
         if command:
@@ -839,14 +842,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_cloud(self, path):
-        if not pw.cloudmode or pw.fleetapi:
+        if not self.pw.cloudmode or self.pw.fleetapi:
             self.send_json_response({"error": "Cloud API not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
             return
 
         commands = {
-            '/cloud/battery': pw.client.get_battery,
-            '/cloud/power': pw.client.get_site_power,
-            '/cloud/config': pw.client.get_site_config,
+            '/cloud/battery': self.pw.client.get_battery,
+            '/cloud/power': self.pw.client.get_site_power,
+            '/cloud/config': self.pw.client.get_site_config,
         }
         command = commands.get(path)
         if command:
@@ -856,13 +859,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_fleetapi(self, path):
-        if not pw.fleetapi:
+        if not self.pw.fleetapi:
             self.send_json_response({"error": "FleetAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
             return
 
         commands = {
-            '/fleetapi/info': pw.client.get_site_info,
-            '/fleetapi/status': pw.client.get_live_status,
+            '/fleetapi/info': self.pw.client.get_site_info,
+            '/fleetapi/status': self.pw.client.get_live_status,
         }
         command = commands.get(path)
         if command:
@@ -875,18 +878,18 @@ class Handler(BaseHTTPRequestHandler):
         proxystats[PROXY_STATS_TYPE.GETS] += 1
         self.send_response(HTTPStatus.OK)
         self.send_header('Content-type', 'text/html')
-        if pw.authmode == "token":
+        if self.pw.authmode == "token":
             self.send_header("Set-Cookie", f"AuthCookie=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
         else:
-            auth = pw.client.auth
+            auth = self.pw.client.auth
             self.send_header("Set-Cookie", f"AuthCookie={auth['AuthCookie']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord={auth['UserRecord']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
 
         if self.path == "/" or self.path == "":
             self.path = "/index.html"
             content, content_type = get_static(WEB_ROOT, self.path)
-            status = pw.status()
+            status = self.pw.status()
             content = content.decode("utf-8").format(
                 VERSION=status.get("version", ""),
                 HASH=status.get("git_hash", ""),
@@ -899,23 +902,23 @@ class Handler(BaseHTTPRequestHandler):
         if content:
             log.debug("Served from local web root: {} type {}".format(self.path, content_type))
         # If not found, serve from Powerwall web server
-        elif pw.cloudmode or pw.fleetapi:
+        elif self.pw.cloudmode or self.pw.fleetapi:
             log.debug(f"Cloud Mode - File not found: {self.path}")
             content = b"Not Found"
             content_type = "text/plain"
         else:
             # Proxy request to Powerwall web server.
-            pw_url = f"https://{pw.host}/{self.path.lstrip('/')}"
+            pw_url = f"https://{self.pw.host}/{self.path.lstrip('/')}"
             log.debug("Proxy request to: %s", pw_url)
             try:
-                session = pw.client.session
+                session = self.pw.client.session
                 response = session.get(
                     url=pw_url,
-                    headers=pw.auth if pw.authmode == "token" else None,
-                    cookies=None if pw.authmode == "token" else pw.auth,
+                    headers=self.pw.auth if self.pw.authmode == "token" else None,
+                    cookies=None if self.pw.authmode == "token" else self.pw.auth,
                     verify=False,
                     stream=True,
-                    timeout=pw.timeout,
+                    timeout=self.pw.timeout,
                 )
                 content = response.content
                 content_type = response.headers.get('content-type', 'text/html')
@@ -943,6 +946,48 @@ class Handler(BaseHTTPRequestHandler):
                 return
             log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
 
+def read_config_file(file_path: Path) -> List[PROXY_CONFIG]:
+    configs: List[PROXY_CONFIG] = []
+    current_config: PROXY_CONFIG = {}
+
+    # Read the file and parse lines
+    try:
+        with file_path.open('r') as file:
+            for line in file:
+                # Ignore comments and empty lines
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                # Detect new configuration block
+                if line.startswith("[Powerwall"):
+                    if current_config:
+                        configs.append(current_config)
+                    current_config = {}
+                
+                # Split key and value
+                elif "=" in line:
+                    key, value = line.split("=", 1)
+                    key, value = key.strip(), value.strip()
+
+                    # Ensure the key is valid
+                    if not hasattr(CONFIG_TYPE, key):
+                        print(f"Warning: Invalid configuration key '{key}' ignored.")
+                        continue
+
+                    # Handle boolean values
+                    if value.lower() in ["yes", "no"]:
+                        value = value.lower() == "yes"
+
+                    # Assign to current configuration dictionary
+                    current_config[key] = value
+
+            # Add the last configuration block
+            if current_config:
+                configs.append(current_config)
+    except FileNotFoundError:
+        print(f"Configuration file '{file_path}' not found.")
+
 
 def run_server(host, port, handler, enable_https=False):
     with ThreadingHTTPServer((host, port), handler) as server:
@@ -963,55 +1008,64 @@ def run_server(host, port, handler, enable_https=False):
             log.info(f"Server on {host}:{port} stopped")
             sys.exit(0)
 
+
+def main() -> None:
+    configs = read_config_file(Path("pypowerwall.env"))
+    servers: List[threading.Thread] = []
+
+    for config in configs:
+        try:
+            pw = pypowerwall.Powerwall(
+                host=config[CONFIG_TYPE.PW_HOST],
+                password=config[CONFIG_TYPE.PW_PASSWORD],
+                email=config[CONFIG_TYPE.PW_EMAIL],
+                timezone=config[CONFIG_TYPE.PW_TIMEZONE],
+                cache_expire=config[CONFIG_TYPE.PW_CACHE_EXPIRE],
+                timeout=config[CONFIG_TYPE.PW_TIMEOUT],
+                pool_maxsize=config[CONFIG_TYPE.PW_POOL_MAXSIZE],
+                siteid=config[CONFIG_TYPE.PW_SITEID],
+                authpath=config[CONFIG_TYPE.PW_AUTH_PATH],
+                authmode=config[CONFIG_TYPE.PW_AUTH_MODE],
+                cachefile=config[CONFIG_TYPE.PW_CACHE_FILE],
+                auto_select=True,
+                retry_modes=True,
+                gw_pwd=config[CONFIG_TYPE.PW_GW_PWD]
+            )
+        except Exception as e:
+            log.error(e)
+            log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+            while True:
+                try:
+                    time.sleep(5)  # Infinite loop to keep container running
+                except (KeyboardInterrupt, SystemExit):
+                    sys.exit(0)
+
+        pw_control = configure_pw_control(pw)
+
+        server = threading.Thread(
+            target=run_server,
+            args=(
+                config[CONFIG_TYPE.PW_BIND_ADDRESS],  # Host
+                config[CONFIG_TYPE.PW_PORT],          # Port
+                Handler(configuration=config, pw=pw), # Handler
+                config[CONFIG_TYPE.PW_HTTPS] == "yes" # HTTPS
+            )
+        )
+        servers.append(server)
+
+    # Start all server threads
+    for s in servers: 
+        s.start()
+        s.start()
+
+    # Wait for both threads to finish
+    for s in servers: 
+        s.join()
+        s.join()
+
+    log.info("pyPowerwall Proxy Stopped")
+    sys.exit(0)
+
+
 if __name__ == '__main__':
-    # Connect to Powerwall
-    # TODO: Add support for multiple Powerwalls
-    try:
-        pw = pypowerwall.Powerwall(
-            host=CONFIG[CONFIG_TYPE.PW_HOST],
-            password=CONFIG[CONFIG_TYPE.PW_PASSWORD],
-            email=CONFIG[CONFIG_TYPE.PW_EMAIL],
-            timezone=CONFIG[CONFIG_TYPE.PW_TIMEZONE],
-            cache_expire=CONFIG[CONFIG_TYPE.PW_CACHE_EXPIRE],
-            timeout=CONFIG[CONFIG_TYPE.PW_TIMEOUT],
-            pool_maxsize=CONFIG[CONFIG_TYPE.PW_POOL_MAXSIZE],
-            siteid=CONFIG[CONFIG_TYPE.PW_SITEID],
-            authpath=CONFIG[CONFIG_TYPE.PW_AUTH_PATH],
-            authmode=CONFIG[CONFIG_TYPE.PW_AUTH_MODE],
-            cachefile=CONFIG[CONFIG_TYPE.PW_CACHE_FILE],
-            auto_select=True,
-            retry_modes=True,
-            gw_pwd=CONFIG[CONFIG_TYPE.PW_GW_PWD]
-        )
-    except Exception as e:
-        log.error(e)
-        log.error("Fatal Error: Unable to connect. Please fix config and restart.")
-        while True:
-            try:
-                time.sleep(5)  # Infinite loop to keep container running
-            except (KeyboardInterrupt, SystemExit):
-                sys.exit(0)
-
-    pw_control = configure_pw_control(pw)
-
-    # Start the first server
-    server1_thread = threading.Thread(
-        target=run_server,
-        args=(
-            CONFIG[CONFIG_TYPE.PW_BIND_ADDRESS],  # Host
-            CONFIG[CONFIG_TYPE.PW_PORT],         # Port
-            Handler,                             # Handler
-            CONFIG[CONFIG_TYPE.PW_HTTPS] == "yes"  # HTTPS
-        )
-    )
-
-    # Start the second server (different port or address)
-    server2_thread = threading.Thread(
-        target=run_server,
-        args=(
-            CONFIG[CONFIG_TYPE.PW_BIND_ADDRESS], # Host
-            CONFIG[CONFIG_TYPE.PW_PORT_2],       # Second Port (ensure it's different)
-            Handler,                             # Handler
-            CONFIG[CONFIG_TYPE.PW_HTTPS_2] == "yes"  # HTTPS for second server
-        )
-    )
+    main()
