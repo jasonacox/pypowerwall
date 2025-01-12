@@ -112,11 +112,6 @@ if SERVER_DEBUG:
     pypowerwall.set_debug(True)
 
 
-class CONFIGURATION_SOURCE(StrEnum):
-    ENVIRONMENT_VARIABLES = auto()
-    CONFIGURATION_FILE = auto()
-
-
 class CONFIG_TYPE(StrEnum):
     """_summary_
 
@@ -942,7 +937,7 @@ def read_env_configs() -> List[PROXY_CONFIG]:
             CONFIG_TYPE.PW_EMAIL: get_env_value(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
             CONFIG_TYPE.PW_GW_PWD: get_env_value(CONFIG_TYPE.PW_GW_PWD, None),
             CONFIG_TYPE.PW_HOST: get_env_value(CONFIG_TYPE.PW_HOST, ""),
-            CONFIG_TYPE.PW_HTTPS: get_env_value(CONFIG_TYPE.PW_HTTPS, "no"),
+            CONFIG_TYPE.PW_HTTPS: get_env_value(CONFIG_TYPE.PW_HTTPS, "no").lower(),
             CONFIG_TYPE.PW_NEG_SOLAR: bool(get_env_value(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes"),
             CONFIG_TYPE.PW_PASSWORD: get_env_value(CONFIG_TYPE.PW_PASSWORD, ""),
             CONFIG_TYPE.PW_POOL_MAXSIZE: int(get_env_value(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
@@ -956,175 +951,19 @@ def read_env_configs() -> List[PROXY_CONFIG]:
     return configs
 
 
-def read_config_file(file_path: Path) -> List[PROXY_CONFIG]:
-    configs: List[PROXY_CONFIG] = []
-    current_config: PROXY_CONFIG = {}
-
-    # Read the file and parse lines
-    try:
-        with file_path.open('r') as file:
-            for line in file:
-                # Ignore comments and empty lines
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-
-                # Detect new configuration block
-                if line.startswith("[Powerwall"):
-                    if current_config:
-                        configs.append(current_config)
-                    current_config = {}
-
-                # Split key and value
-                elif "=" in line:
-                    key, value = line.split("=", 1)
-                    def aggressive_strip(v: str) -> str:
-                        return v.strip().strip("'").strip('"')
-                    key, value = aggressive_strip(key), aggressive_strip(value)
-
-                    # Ensure the key is valid
-                    if not hasattr(CONFIG_TYPE, key):
-                        print(f"Warning: Invalid configuration key '{key}' ignored.")
-                        continue
-
-                    # Handle boolean values
-                    if value.lower() in ["yes", "no"]:
-                        value = value.lower() == "yes"
-
-                    # Assign to current configuration dictionary
-                    current_config[key] = value
-
-            # Add the last configuration block
-            if current_config:
-                configs.append(current_config)
-    except FileNotFoundError:
-        print(f"Configuration file '{file_path}' not found.")
-        
-import yaml
-
-#WIP, loading configuration as yaml.
-
-
-# powerwalls:
-#   powerwall_1:                      # Configuration for Powerwall 1
-#     PW_AUTH_MODE: "cookie"          # Authentication mode, default is "cookie"
-#     PW_AUTH_PATH: ""                # Path for authentication, default is empty
-#     PW_BIND_ADDRESS: ""             # Address to bind, default is empty
-#     PW_BROWSER_CACHE: 0             # Enable browser cache: 0 = disabled, 1 = enabled
-#     PW_CACHE_EXPIRE: 5              # Cache expiration in minutes
-#     PW_CONTROL_SECRET: ""           # Secret key for secure control
-#     PW_EMAIL: "email1@example.com"  # Email address for notifications
-#     PW_GW_PWD: null                 # Gateway password (if required)
-#     PW_HOST: "192.168.1.10"         # Host address of the Tesla Powerwall
-#     PW_HTTPS: "no"                  # Use HTTPS (yes/no)
-#     PW_NEG_SOLAR: true              # Allow negative solar values (true/false)
-#     PW_PASSWORD: ""                 # Password for authentication
-#     PW_POOL_MAXSIZE: 15             # Maximum size of the connection pool
-#     PW_PORT: 8675                   # Port number for the connection
-#     PW_SITEID: "site_1"             # Site ID (if required)
-#     PW_STYLE: "clear.js"            # JavaScript file for UI style
-#     PW_TIMEOUT: 5                   # Connection timeout in seconds
-#     PW_TIMEZONE: "America/Los_Angeles" # Default timezone
-#     PW_CACHE_FILE: ""               # Path to cache file
-
-#   powerwall_2:                      # Configuration for Powerwall 2
-#     PW_AUTH_MODE: "cookie"
-#     PW_AUTH_PATH: ""
-#     PW_BIND_ADDRESS: ""
-#     PW_BROWSER_CACHE: 0
-#     PW_CACHE_EXPIRE: 5
-#     PW_CONTROL_SECRET: ""
-#     PW_EMAIL: "email2@example.com"
-#     PW_GW_PWD: null
-#     PW_HOST: "192.168.1.11"
-#     PW_HTTPS: "no"
-#     PW_NEG_SOLAR: true
-#     PW_PASSWORD: ""
-#     PW_POOL_MAXSIZE: 15
-#     PW_PORT: 8675
-#     PW_SITEID: "site_2"
-#     PW_STYLE: "clear.js"
-#     PW_TIMEOUT: 5
-#     PW_TIMEZONE: "America/New_York"
-#     PW_CACHE_FILE: ""
-
-#   powerwall_3:                      # Configuration for Powerwall 3
-#     PW_AUTH_MODE: "cookie"
-#     PW_AUTH_PATH: ""
-#     PW_BIND_ADDRESS: ""
-#     PW_BROWSER_CACHE: 0
-#     PW_CACHE_EXPIRE: 5
-#     PW_CONTROL_SECRET: ""
-#     PW_EMAIL: "email3@example.com"
-#     PW_GW_PWD: null
-#     PW_HOST: "192.168.1.12"
-#     PW_HTTPS: "no"
-#     PW_NEG_SOLAR: true
-#     PW_PASSWORD: ""
-#     PW_POOL_MAXSIZE: 15
-#     PW_PORT: 8675
-#     PW_SITEID: "site_3"
-#     PW_STYLE: "clear.js"
-#     PW_TIMEOUT: 5
-#     PW_TIMEZONE: "Europe/London"
-#     PW_CACHE_FILE: ""
-
-def load_powerwall_config(file_path):
-    """
-    Loads a YAML configuration file with multiple Powerwall configurations 
-    into a list of dictionaries.
-
-    Args:
-        file_path (str): Path to the YAML configuration file.
-
-    Returns:
-        list: A list of dictionaries, where each dictionary represents a Powerwall configuration.
-    """
-    try:
-        with open(file_path, 'r') as file:
-            # Load the YAML data
-            config = yaml.safe_load(file)
-        
-        # Convert the named sections to a list of dictionaries
-        powerwalls = config.get('powerwalls', {})
-        return [
-            {"name": name, **details}
-            for name, details in powerwalls.items()
-        ]
-    except FileNotFoundError:
-        print(f"Error: File '{file_path}' not found.")
-        return []
-    except yaml.YAMLError as e:
-        print(f"Error parsing YAML file: {e}")
-        return []
-
-# Example usage
-if __name__ == "__main__":
-    file_path = "powerwall_config.yaml"  # Replace with your YAML file path
-    powerwall_list = load_powerwall_config(file_path)
-    for powerwall in powerwall_list:
-        print(powerwall)
-
-
 def build_configuration() -> List[PROXY_CONFIG]:
     COOKIE_SUFFIX: Final[str] = "path=/;SameSite=None;Secure;"
-    configuration_source: Final[CONFIGURATION_SOURCE] = CONFIGURATION_SOURCE(os.getenv("PW_CONFIGURATION_SOURCE", CONFIGURATION_SOURCE.ENVIRONMENT_VARIABLES))
-    configs: List[PROXY_CONFIG] = []
-
-    if configuration_source == CONFIGURATION_SOURCE.ENVIRONMENT_VARIABLES:
-        configs.append(read_env_config())
-    elif configuration_source == CONFIGURATION_SOURCE.CONFIGURATION_FILE:
-        configs.extend(read_config_file(Path("pypowerwall.env")))
-    else:
-        log.error("Configuration source misconfigured. This should never happen.")
+    configs = read_env_configs()
+    if len(configs) == 0:
+        log.error("No TED configurations found. This should never happen. Proxy cannot start.")
         exit(0)
 
     for config in configs:
         # HTTP/S configuration
-        if config[CONFIG_TYPE.PW_HTTPS].lower() == "yes":
+        if config[CONFIG_TYPE.PW_HTTPS] == "yes":
             config[CONFIG_TYPE.PW_COOKIE_SUFFIX] = COOKIE_SUFFIX
             config[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTPS"
-        elif config[CONFIG_TYPE.PW_HTTPS].lower() == "http":
+        elif config[CONFIG_TYPE.PW_HTTPS] == "http":
             config[CONFIG_TYPE.PW_COOKIE_SUFFIX] = COOKIE_SUFFIX
             config[CONFIG_TYPE.PW_HTTP_TYPE] = "HTTP"
         else:
@@ -1135,7 +974,7 @@ def build_configuration() -> List[PROXY_CONFIG]:
             config[CONFIG_TYPE.PW_CACHE_FILE] = os.path.join(config[CONFIG_TYPE.PW_AUTH_PATH], ".powerwall") if config[CONFIG_TYPE.PW_AUTH_PATH] else ".powerwall"
 
         # Check for cache expire time limit below 5s
-        if config['PW_CACHE_EXPIRE'] < 5:
+        if config[CONFIG_TYPE.PW_CACHE_EXPIRE] < 5:
             log.warning(f"Cache expiration set below 5s for host:port={config[CONFIG_TYPE.PW_HOST]}:{config[CONFIG_TYPE.PW_PORT]} (PW_CACHE_EXPIRE={config[CONFIG_TYPE.PW_CACHE_EXPIRE]})")
 
     return configs
@@ -1209,7 +1048,7 @@ def main() -> None:
     # Start all server threads
     for config, server in zip(configs, servers):
         log.info(
-            f"pyPowerwall [{pypowerwall.version}] Proxy Server [{BUILD}] - {config[CONFIG_TYPE.PW_HTTP_TYPE]} Port {config['PW_PORT']}{' - DEBUG' if config[CONFIG_TYPE.PW_DEBUG] else ''}"
+            f"pyPowerwall [{pypowerwall.version}] Proxy Server [{BUILD}] - {config[CONFIG_TYPE.PW_HTTP_TYPE]} Port {config[CONFIG_TYPE.PW_PORT]}{' - DEBUG' if SERVER_DEBUG else ''}"
         )
         log.info("pyPowerwall Proxy Started\n")
         server.start()
