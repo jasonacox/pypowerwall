@@ -287,14 +287,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, log_format, *args):
         if self.configuration[CONFIG_TYPE.PW_DEBUG]:
-            log.debug("%s %s" % (self.address_string(), log_format % args))
+            log.debug(f"{self.address_string()} {log_format % args}")
 
     def address_string(self):
         # replace function to avoid lookup delays
         hostaddr, hostport = self.client_address[:2]
         return hostaddr
 
-    def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json'):
+    def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json') -> bool:
         response = json.dumps(data)
         try:
             self.send_response(status_code)
@@ -302,9 +302,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', str(len(response)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(response.encode(UTF_8))
+            if self.wfile.write(response.encode(UTF_8)) > 0:
+                return True
         except Exception as exc:
             log.debug(f"Error sending response: {exc}")
+        return False
+
 
     def handle_control_post(self) -> bool:
         """Handle control POST requests."""
@@ -474,14 +477,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json_response(aggregates)
 
 
-    def handle_soe(self):
+    def handle_soe(self) -> bool:
         soe = self.pw.poll('/api/system_status/soe', jsonformat=True)
-        self.send_json_response(json.loads(soe))
+        return self.send_json_response(json.loads(soe))
 
 
-    def handle_soe(self):
-        soe = self.pw.poll('/api/system_status/soe', jsonformat=True)
-        self.send_json_response(json.loads(soe))
+    def handle_soe_scaled(self) -> bool:
+        level = self.pw.level(scale=True)
+        return self.send_json_response({"percentage": level})
 
 
     def handle_grid_status(self):
@@ -752,6 +755,9 @@ class Handler(BaseHTTPRequestHandler):
     def handle_problems(self):
         self.send_json_response({"problems": []})
 
+    def handle_allowlist(self, path) -> bool:
+        response = self.pw.poll(path, jsonformat=True)
+        return self.send_json_response(json.loads(response))
 
     def handle_tedapi(self, path):
         if not self.pw.tedapi:
