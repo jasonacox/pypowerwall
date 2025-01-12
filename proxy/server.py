@@ -937,6 +937,7 @@ def read_env_configs() -> List[PROXY_CONFIG]:
             CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(add_suffix(CONFIG_TYPE.PW_BIND_ADDRESS), ""),
             CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_BROWSER_CACHE), "0")),
             CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_EXPIRE), "5")),
+            CONFIG_TYPE.PW_CACHE_FILE: os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_FILE), ""),
             CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(add_suffix(CONFIG_TYPE.PW_CONTROL_SECRET), ""),
             CONFIG_TYPE.PW_EMAIL: os.getenv(add_suffix(CONFIG_TYPE.PW_EMAIL), "email@example.com"),
             CONFIG_TYPE.PW_GW_PWD: os.getenv(add_suffix(CONFIG_TYPE.PW_GW_PWD), None),
@@ -949,8 +950,7 @@ def read_env_configs() -> List[PROXY_CONFIG]:
             CONFIG_TYPE.PW_SITEID: os.getenv(add_suffix(CONFIG_TYPE.PW_SITEID), None),
             CONFIG_TYPE.PW_STYLE: os.getenv(add_suffix(CONFIG_TYPE.PW_STYLE), "clear") + ".js",
             CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEOUT), "5")),
-            CONFIG_TYPE.PW_TIMEZONE: os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEZONE), "America/Los_Angeles"),
-            CONFIG_TYPE.PW_CACHE_FILE: os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_FILE), "")
+            CONFIG_TYPE.PW_TIMEZONE: os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEZONE), "America/Los_Angeles")
         }
         configs.append(config)
     return configs
