@@ -963,6 +963,71 @@ import yaml
 
 #WIP, loading configuration as yaml.
 
+
+# powerwalls:
+#   powerwall_1:                      # Configuration for Powerwall 1
+#     PW_AUTH_MODE: "cookie"          # Authentication mode, default is "cookie"
+#     PW_AUTH_PATH: ""                # Path for authentication, default is empty
+#     PW_BIND_ADDRESS: ""             # Address to bind, default is empty
+#     PW_BROWSER_CACHE: 0             # Enable browser cache: 0 = disabled, 1 = enabled
+#     PW_CACHE_EXPIRE: 5              # Cache expiration in minutes
+#     PW_CONTROL_SECRET: ""           # Secret key for secure control
+#     PW_EMAIL: "email1@example.com"  # Email address for notifications
+#     PW_GW_PWD: null                 # Gateway password (if required)
+#     PW_HOST: "192.168.1.10"         # Host address of the Tesla Powerwall
+#     PW_HTTPS: "no"                  # Use HTTPS (yes/no)
+#     PW_NEG_SOLAR: true              # Allow negative solar values (true/false)
+#     PW_PASSWORD: ""                 # Password for authentication
+#     PW_POOL_MAXSIZE: 15             # Maximum size of the connection pool
+#     PW_PORT: 8675                   # Port number for the connection
+#     PW_SITEID: "site_1"             # Site ID (if required)
+#     PW_STYLE: "clear.js"            # JavaScript file for UI style
+#     PW_TIMEOUT: 5                   # Connection timeout in seconds
+#     PW_TIMEZONE: "America/Los_Angeles" # Default timezone
+#     PW_CACHE_FILE: ""               # Path to cache file
+
+#   powerwall_2:                      # Configuration for Powerwall 2
+#     PW_AUTH_MODE: "cookie"
+#     PW_AUTH_PATH: ""
+#     PW_BIND_ADDRESS: ""
+#     PW_BROWSER_CACHE: 0
+#     PW_CACHE_EXPIRE: 5
+#     PW_CONTROL_SECRET: ""
+#     PW_EMAIL: "email2@example.com"
+#     PW_GW_PWD: null
+#     PW_HOST: "192.168.1.11"
+#     PW_HTTPS: "no"
+#     PW_NEG_SOLAR: true
+#     PW_PASSWORD: ""
+#     PW_POOL_MAXSIZE: 15
+#     PW_PORT: 8675
+#     PW_SITEID: "site_2"
+#     PW_STYLE: "clear.js"
+#     PW_TIMEOUT: 5
+#     PW_TIMEZONE: "America/New_York"
+#     PW_CACHE_FILE: ""
+
+#   powerwall_3:                      # Configuration for Powerwall 3
+#     PW_AUTH_MODE: "cookie"
+#     PW_AUTH_PATH: ""
+#     PW_BIND_ADDRESS: ""
+#     PW_BROWSER_CACHE: 0
+#     PW_CACHE_EXPIRE: 5
+#     PW_CONTROL_SECRET: ""
+#     PW_EMAIL: "email3@example.com"
+#     PW_GW_PWD: null
+#     PW_HOST: "192.168.1.12"
+#     PW_HTTPS: "no"
+#     PW_NEG_SOLAR: true
+#     PW_PASSWORD: ""
+#     PW_POOL_MAXSIZE: 15
+#     PW_PORT: 8675
+#     PW_SITEID: "site_3"
+#     PW_STYLE: "clear.js"
+#     PW_TIMEOUT: 5
+#     PW_TIMEZONE: "Europe/London"
+#     PW_CACHE_FILE: ""
+
 def load_powerwall_config(file_path):
     """
     Loads a YAML configuration file with multiple Powerwall configurations 
