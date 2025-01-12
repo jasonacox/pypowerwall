@@ -890,29 +890,70 @@ class Handler(BaseHTTPRequestHandler):
             log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
 
 
-def read_env_config() -> PROXY_CONFIG:
-    config: PROXY_CONFIG = {
-        CONFIG_TYPE.PW_AUTH_MODE: os.getenv(CONFIG_TYPE.PW_AUTH_MODE, "cookie"),
-        CONFIG_TYPE.PW_AUTH_PATH: os.getenv(CONFIG_TYPE.PW_AUTH_PATH, ""),
-        CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
-        CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
-        CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(CONFIG_TYPE.PW_CACHE_EXPIRE, "5")),
-        CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
-        CONFIG_TYPE.PW_EMAIL: os.getenv(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
-        CONFIG_TYPE.PW_GW_PWD: os.getenv(CONFIG_TYPE.PW_GW_PWD, None),
-        CONFIG_TYPE.PW_HOST: os.getenv(CONFIG_TYPE.PW_HOST, ""),
-        CONFIG_TYPE.PW_HTTPS: os.getenv(CONFIG_TYPE.PW_HTTPS, "no"),
-        CONFIG_TYPE.PW_NEG_SOLAR: bool(os.getenv(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes"),
-        CONFIG_TYPE.PW_PASSWORD: os.getenv(CONFIG_TYPE.PW_PASSWORD, ""),
-        CONFIG_TYPE.PW_POOL_MAXSIZE: int(os.getenv(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
-        CONFIG_TYPE.PW_PORT: int(os.getenv(CONFIG_TYPE.PW_PORT, "8675")),
-        CONFIG_TYPE.PW_SITEID: os.getenv(CONFIG_TYPE.PW_SITEID, None),
-        CONFIG_TYPE.PW_STYLE: os.getenv(CONFIG_TYPE.PW_STYLE, "clear") + ".js",
-        CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(CONFIG_TYPE.PW_TIMEOUT, "5")),
-        CONFIG_TYPE.PW_TIMEZONE: os.getenv(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles"),
-        CONFIG_TYPE.PW_CACHE_FILE: os.getenv(CONFIG_TYPE.PW_CACHE_FILE, "")
-    }
-    return config
+def check_for_environmental_pw_configs() -> List[str]:
+    """
+    Checks for environment variables with specific suffix patterns and returns the list of matching suffixes.
+
+    This function iterates over predefined suffixes (starting with an empty string and "1") to check if any 
+    configuration-related environment variables are defined. If a match is found, the suffix is added to the 
+    result list. For numeric suffixes, the function dynamically generates and checks the next numeric suffix.
+
+    Returns:
+        List[str]: A list of suffixes for which environment variables were found.
+
+    Notes:
+        - Environment variable names are constructed by appending the suffix to the `value` attribute of each
+          item in `CONFIG_TYPE`.
+        - The function dynamically appends numeric suffixes based on the highest found numeric suffix.
+    """
+    suffixes_to_check = {"", "1"}
+    actual_configs = []
+
+    while suffixes_to_check:
+        current_suffix = suffixes_to_check.pop()
+        for config in CONFIG_TYPE:
+            env_var = f"{config.value}{current_suffix}"
+            if env_var in os.environ:
+                actual_configs.append(current_suffix)
+                break
+
+        if current_suffix.isnumeric():
+            next_suffix = str(int(current_suffix) + 1)
+            if next_suffix not in suffixes_to_check:
+                suffixes_to_check.append(next_suffix)
+
+    return actual_configs
+
+
+def read_env_configs() -> List[PROXY_CONFIG]:
+    suffixes = check_for_environmental_pw_configs()
+    configs: List[PROXY_CONFIG] = []
+    for s in suffixes:
+        def add_suffix(type: CONFIG_TYPE) -> str:
+            return f"{str(type)}{s}"
+        config: PROXY_CONFIG = {
+            CONFIG_TYPE.PW_AUTH_MODE: os.getenv(add_suffix(CONFIG_TYPE.PW_AUTH_MODE), "cookie"),
+            CONFIG_TYPE.PW_AUTH_PATH: os.getenv(add_suffix(CONFIG_TYPE.PW_AUTH_PATH), ""),
+            CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(add_suffix(CONFIG_TYPE.PW_BIND_ADDRESS), ""),
+            CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_BROWSER_CACHE), "0")),
+            CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_EXPIRE), "5")),
+            CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(add_suffix(CONFIG_TYPE.PW_CONTROL_SECRET), ""),
+            CONFIG_TYPE.PW_EMAIL: os.getenv(add_suffix(CONFIG_TYPE.PW_EMAIL), "email@example.com"),
+            CONFIG_TYPE.PW_GW_PWD: os.getenv(add_suffix(CONFIG_TYPE.PW_GW_PWD), None),
+            CONFIG_TYPE.PW_HOST: os.getenv(add_suffix(CONFIG_TYPE.PW_HOST), ""),
+            CONFIG_TYPE.PW_HTTPS: os.getenv(add_suffix(CONFIG_TYPE.PW_HTTPS), "no"),
+            CONFIG_TYPE.PW_NEG_SOLAR: bool(os.getenv(add_suffix(CONFIG_TYPE.PW_NEG_SOLAR), "yes").lower() == "yes"),
+            CONFIG_TYPE.PW_PASSWORD: os.getenv(add_suffix(CONFIG_TYPE.PW_PASSWORD), ""),
+            CONFIG_TYPE.PW_POOL_MAXSIZE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_POOL_MAXSIZE), "15")),
+            CONFIG_TYPE.PW_PORT: int(os.getenv(add_suffix(CONFIG_TYPE.PW_PORT), "8675")),
+            CONFIG_TYPE.PW_SITEID: os.getenv(add_suffix(CONFIG_TYPE.PW_SITEID), None),
+            CONFIG_TYPE.PW_STYLE: os.getenv(add_suffix(CONFIG_TYPE.PW_STYLE), "clear") + ".js",
+            CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEOUT), "5")),
+            CONFIG_TYPE.PW_TIMEZONE: os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEZONE), "America/Los_Angeles"),
+            CONFIG_TYPE.PW_CACHE_FILE: os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_FILE), "")
+        }
+        configs.append(config)
+    return configs
 
 
 def read_config_file(file_path: Path) -> List[PROXY_CONFIG]:
