@@ -49,7 +49,7 @@ import threading
 from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Final, Set, List, Tuple
+from typing import Any, Dict, Final, Optional, Set, List, Tuple
 from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 
@@ -911,12 +911,9 @@ def check_for_environmental_pw_configs() -> List[str]:
 
     while suffixes_to_check:
         current_suffix = suffixes_to_check.pop()
-        for config in CONFIG_TYPE:
-            env_var = f"{config.value}{current_suffix}"
-            if env_var in os.environ:
-                actual_configs.append(current_suffix)
-                break
-
+        test_suffix = f"_{current_suffix}" if current_suffix.isnumeric() else current_suffix
+        if any(f"{config.value}{test_suffix}" in os.environ for config in CONFIG_TYPE):
+            actual_configs.append(test_suffix)
         if current_suffix.isnumeric():
             next_suffix = str(int(current_suffix) + 1)
             if next_suffix not in suffixes_to_check:
@@ -929,28 +926,31 @@ def read_env_configs() -> List[PROXY_CONFIG]:
     suffixes = check_for_environmental_pw_configs()
     configs: List[PROXY_CONFIG] = []
     for s in suffixes:
-        def add_suffix(type: CONFIG_TYPE) -> str:
-            return f"{str(type)}{s}"
+        def get_env_value(config_type: CONFIG_TYPE, default: str | None) -> str | None:
+            """Helper function to construct environment variable names and retrieve their values."""
+            env_var = f"{config_type.value}{s}"
+            return os.getenv(env_var, default)
+
         config: PROXY_CONFIG = {
-            CONFIG_TYPE.PW_AUTH_MODE: os.getenv(add_suffix(CONFIG_TYPE.PW_AUTH_MODE), "cookie"),
-            CONFIG_TYPE.PW_AUTH_PATH: os.getenv(add_suffix(CONFIG_TYPE.PW_AUTH_PATH), ""),
-            CONFIG_TYPE.PW_BIND_ADDRESS: os.getenv(add_suffix(CONFIG_TYPE.PW_BIND_ADDRESS), ""),
-            CONFIG_TYPE.PW_BROWSER_CACHE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_BROWSER_CACHE), "0")),
-            CONFIG_TYPE.PW_CACHE_EXPIRE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_EXPIRE), "5")),
-            CONFIG_TYPE.PW_CACHE_FILE: os.getenv(add_suffix(CONFIG_TYPE.PW_CACHE_FILE), ""),
-            CONFIG_TYPE.PW_CONTROL_SECRET: os.getenv(add_suffix(CONFIG_TYPE.PW_CONTROL_SECRET), ""),
-            CONFIG_TYPE.PW_EMAIL: os.getenv(add_suffix(CONFIG_TYPE.PW_EMAIL), "email@example.com"),
-            CONFIG_TYPE.PW_GW_PWD: os.getenv(add_suffix(CONFIG_TYPE.PW_GW_PWD), None),
-            CONFIG_TYPE.PW_HOST: os.getenv(add_suffix(CONFIG_TYPE.PW_HOST), ""),
-            CONFIG_TYPE.PW_HTTPS: os.getenv(add_suffix(CONFIG_TYPE.PW_HTTPS), "no"),
-            CONFIG_TYPE.PW_NEG_SOLAR: bool(os.getenv(add_suffix(CONFIG_TYPE.PW_NEG_SOLAR), "yes").lower() == "yes"),
-            CONFIG_TYPE.PW_PASSWORD: os.getenv(add_suffix(CONFIG_TYPE.PW_PASSWORD), ""),
-            CONFIG_TYPE.PW_POOL_MAXSIZE: int(os.getenv(add_suffix(CONFIG_TYPE.PW_POOL_MAXSIZE), "15")),
-            CONFIG_TYPE.PW_PORT: int(os.getenv(add_suffix(CONFIG_TYPE.PW_PORT), "8675")),
-            CONFIG_TYPE.PW_SITEID: os.getenv(add_suffix(CONFIG_TYPE.PW_SITEID), None),
-            CONFIG_TYPE.PW_STYLE: os.getenv(add_suffix(CONFIG_TYPE.PW_STYLE), "clear") + ".js",
-            CONFIG_TYPE.PW_TIMEOUT: int(os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEOUT), "5")),
-            CONFIG_TYPE.PW_TIMEZONE: os.getenv(add_suffix(CONFIG_TYPE.PW_TIMEZONE), "America/Los_Angeles")
+            CONFIG_TYPE.PW_AUTH_MODE: get_env_value(CONFIG_TYPE.PW_AUTH_MODE, "cookie"),
+            CONFIG_TYPE.PW_AUTH_PATH: get_env_value(CONFIG_TYPE.PW_AUTH_PATH, ""),
+            CONFIG_TYPE.PW_BIND_ADDRESS: get_env_value(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
+            CONFIG_TYPE.PW_BROWSER_CACHE: int(get_env_value(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
+            CONFIG_TYPE.PW_CACHE_EXPIRE: int(get_env_value(CONFIG_TYPE.PW_CACHE_EXPIRE, "5")),
+            CONFIG_TYPE.PW_CACHE_FILE: get_env_value(CONFIG_TYPE.PW_CACHE_FILE, ""),
+            CONFIG_TYPE.PW_CONTROL_SECRET: get_env_value(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
+            CONFIG_TYPE.PW_EMAIL: get_env_value(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
+            CONFIG_TYPE.PW_GW_PWD: get_env_value(CONFIG_TYPE.PW_GW_PWD, None),
+            CONFIG_TYPE.PW_HOST: get_env_value(CONFIG_TYPE.PW_HOST, ""),
+            CONFIG_TYPE.PW_HTTPS: get_env_value(CONFIG_TYPE.PW_HTTPS, "no"),
+            CONFIG_TYPE.PW_NEG_SOLAR: bool(get_env_value(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes"),
+            CONFIG_TYPE.PW_PASSWORD: get_env_value(CONFIG_TYPE.PW_PASSWORD, ""),
+            CONFIG_TYPE.PW_POOL_MAXSIZE: int(get_env_value(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
+            CONFIG_TYPE.PW_PORT: int(get_env_value(CONFIG_TYPE.PW_PORT, "8675")),
+            CONFIG_TYPE.PW_SITEID: get_env_value(CONFIG_TYPE.PW_SITEID, None),
+            CONFIG_TYPE.PW_STYLE: get_env_value(CONFIG_TYPE.PW_STYLE, "clear") + ".js",
+            CONFIG_TYPE.PW_TIMEOUT: int(get_env_value(CONFIG_TYPE.PW_TIMEOUT, "5")),
+            CONFIG_TYPE.PW_TIMEZONE: get_env_value(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles")
         }
         configs.append(config)
     return configs
