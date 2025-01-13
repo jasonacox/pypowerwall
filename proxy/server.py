@@ -60,7 +60,7 @@ from pypowerwall import parse_version
 BUILD: Final[str] = "t67"
 UTF_8: Final[str] = "utf-8"
 
-ALLOWLIST = Final[Set[str]] = set([
+ALLOWLIST: Final[Set[str]] = set([
     '/api/auth/toggle/supported',
     '/api/customer',
     '/api/customer/registration',
@@ -89,7 +89,7 @@ ALLOWLIST = Final[Set[str]] = set([
     '/api/troubleshooting/problems',
 ])
 
-DISABLED = Final[Set[str]] = set([
+DISABLED: Final[Set[str]] = set([
     '/api/customer/registration',
 ])
 WEB_ROOT: Final[str] = os.path.join(os.path.dirname(__file__), "web")
@@ -118,7 +118,6 @@ class CONFIG_TYPE(StrEnum):
         StrEnum (_type_): _description_
     """
     PW_AUTH_MODE = auto()
-    PW_AUTH_PATH = auto()
     PW_AUTH_PATH = auto()
     PW_BIND_ADDRESS = auto()
     PW_BROWSER_CACHE = auto()
@@ -299,10 +298,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             if self.wfile.write(response.encode(UTF_8)) > 0:
-                return True
+                return response
         except Exception as exc:
             log.debug(f"Error sending response: {exc}")
-            self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
+            self.proxystats[PROXY_STATS_TYPE.ERRORS] = int(self.proxystats[PROXY_STATS_TYPE.ERRORS]) + 1
         return response
 
 
@@ -515,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
     def handle_stats(self) -> str:
         self.proxystats.update({
             PROXY_STATS_TYPE.TS: int(time.time()),
-            PROXY_STATS_TYPE.UPTIME: str(datetime.timedelta(seconds=(self.proxystats[PROXY_STATS_TYPE.TS] - self.proxystats[PROXY_STATS_TYPE.START]))),
+            PROXY_STATS_TYPE.UPTIME: str(datetime.timedelta(seconds=(float(self.proxystats[PROXY_STATS_TYPE.TS]) - float(self.proxystats[PROXY_STATS_TYPE.START])))),
             PROXY_STATS_TYPE.MEM: resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             PROXY_STATS_TYPE.SITE_NAME: self.pw.site_name(),
             PROXY_STATS_TYPE.CLOUDMODE: self.pw.cloudmode,
@@ -748,7 +747,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_problems(self) -> str:
-        self.send_json_response({"problems": []})
+        return self.send_json_response({"problems": []})
 
     def handle_allowlist(self, path) -> str:
         response = self.pw.poll(path, jsonformat=True)
@@ -824,8 +823,8 @@ class Handler(BaseHTTPRequestHandler):
             content = content.decode(UTF_8).format(
                 VERSION=status.get("version", ""),
                 HASH=status.get("git_hash", ""),
-                EMAIL=self.configuration['PW_EMAIL'],
-                STYLE=self.configuration['PW_STYLE'],
+                EMAIL=self.configuration[CONFIG_TYPE.PW_EMAIL],
+                STYLE=self.configuration[CONFIG_TYPE.PW_STYLE],
             ).encode(UTF_8)
         else:
             content, content_type = get_static(WEB_ROOT, self.path)
@@ -874,7 +873,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             if "Broken pipe" in str(exc):
                 log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
-                return
+                return content
             log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
         return content
 
@@ -903,10 +902,12 @@ def check_for_environmental_pw_configs() -> List[str]:
         test_suffix = f"_{current_suffix}" if current_suffix.isnumeric() else current_suffix
         if any(f"{config.value}{test_suffix}" in os.environ for config in CONFIG_TYPE):
             actual_configs.append(test_suffix)
+        elif current_suffix.isnumeric() and int(current_suffix) > 1:
+            break
         if current_suffix.isnumeric():
             next_suffix = str(int(current_suffix) + 1)
             if next_suffix not in suffixes_to_check:
-                suffixes_to_check.append(next_suffix)
+                suffixes_to_check.add(next_suffix)
 
     return actual_configs
 
@@ -931,13 +932,13 @@ def read_env_configs() -> List[PROXY_CONFIG]:
             CONFIG_TYPE.PW_EMAIL: get_env_value(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
             CONFIG_TYPE.PW_GW_PWD: get_env_value(CONFIG_TYPE.PW_GW_PWD, None),
             CONFIG_TYPE.PW_HOST: get_env_value(CONFIG_TYPE.PW_HOST, ""),
-            CONFIG_TYPE.PW_HTTPS: get_env_value(CONFIG_TYPE.PW_HTTPS, "no").lower(),
-            CONFIG_TYPE.PW_NEG_SOLAR: bool(get_env_value(CONFIG_TYPE.PW_NEG_SOLAR, "yes").lower() == "yes"),
+            CONFIG_TYPE.PW_HTTPS: (get_env_value(CONFIG_TYPE.PW_HTTPS, "no") or "no").lower(),
+            CONFIG_TYPE.PW_NEG_SOLAR: bool((get_env_value(CONFIG_TYPE.PW_NEG_SOLAR, "yes") or "yes").lower() == "yes"),
             CONFIG_TYPE.PW_PASSWORD: get_env_value(CONFIG_TYPE.PW_PASSWORD, ""),
             CONFIG_TYPE.PW_POOL_MAXSIZE: int(get_env_value(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
             CONFIG_TYPE.PW_PORT: int(get_env_value(CONFIG_TYPE.PW_PORT, "8675")),
             CONFIG_TYPE.PW_SITEID: get_env_value(CONFIG_TYPE.PW_SITEID, None),
-            CONFIG_TYPE.PW_STYLE: get_env_value(CONFIG_TYPE.PW_STYLE, "clear") + ".js",
+            CONFIG_TYPE.PW_STYLE: str(get_env_value(CONFIG_TYPE.PW_STYLE, "clear")) + ".js",
             CONFIG_TYPE.PW_TIMEOUT: int(get_env_value(CONFIG_TYPE.PW_TIMEOUT, "5")),
             CONFIG_TYPE.PW_TIMEZONE: get_env_value(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles")
         }
@@ -949,7 +950,7 @@ def build_configuration() -> List[PROXY_CONFIG]:
     COOKIE_SUFFIX: Final[str] = "path=/;SameSite=None;Secure;"
     configs = read_env_configs()
     if len(configs) == 0:
-        log.error("No TED configurations found. This should never happen. Proxy cannot start.")
+        log.error("No Tesla Energy Gateway configurations found. This should never happen. Proxy cannot start.")
         exit(0)
 
     for config in configs:
@@ -968,7 +969,7 @@ def build_configuration() -> List[PROXY_CONFIG]:
             config[CONFIG_TYPE.PW_CACHE_FILE] = os.path.join(config[CONFIG_TYPE.PW_AUTH_PATH], ".powerwall") if config[CONFIG_TYPE.PW_AUTH_PATH] else ".powerwall"
 
         # Check for cache expire time limit below 5s
-        if config[CONFIG_TYPE.PW_CACHE_EXPIRE] < 5:
+        if int(config[CONFIG_TYPE.PW_CACHE_EXPIRE]) < 5:
             log.warning(f"Cache expiration set below 5s for host:port={config[CONFIG_TYPE.PW_HOST]}:{config[CONFIG_TYPE.PW_PORT]} (PW_CACHE_EXPIRE={config[CONFIG_TYPE.PW_CACHE_EXPIRE]})")
 
     return configs
@@ -995,7 +996,7 @@ def run_server(host, port, handler, enable_https=False):
 
 
 def main() -> None:
-    servers: List[Tuple[PROXY_CONFIG, threading.Thread]] = []
+    servers: List[threading.Thread] = []
     configs = build_configuration()
 
     for config in configs:
@@ -1025,7 +1026,7 @@ def main() -> None:
                 except (KeyboardInterrupt, SystemExit):
                     sys.exit(0)
 
-        pw_control = configure_pw_control(pw)
+        pw_control = configure_pw_control(pw, config)
         handler = Handler(configuration=config, pw=pw, pw_control=pw_control)
 
         server = threading.Thread(
