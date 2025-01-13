@@ -44,14 +44,13 @@ import resource
 import signal
 import ssl
 import sys
-import time
 import threading
+import time
 from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, Final, Optional, Set, List, Tuple
+from typing import Dict, Final, List, Set, Tuple
 from urllib.parse import parse_qs, urlparse
-from pathlib import Path
 
 from transform import get_static, inject_js
 
@@ -197,12 +196,12 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
         else:
             pw_control = pypowerwall.Powerwall(
                 "",
-                configuration['PW_PASSWORD'],
-                configuration['PW_EMAIL'],
-                siteid=configuration['PW_SITEID'],
-                authpath=configuration['PW_AUTH_PATH'],
-                authmode=configuration['PW_AUTH_MODE'],
-                cachefile=configuration['PW_CACHE_FILE'],
+                configuration[CONFIG_TYPE.PW_PASSWORD],
+                configuration[CONFIG_TYPE.PW_EMAIL],
+                siteid=configuration[CONFIG_TYPE.PW_SITEID],
+                authpath=configuration[CONFIG_TYPE.PW_AUTH_PATH],
+                authmode=configuration[CONFIG_TYPE.PW_AUTH_MODE],
+                cachefile=configuration[CONFIG_TYPE.PW_CACHE_FILE],
                 auto_select=True
             )
     except Exception as e:
@@ -283,7 +282,7 @@ class Handler(BaseHTTPRequestHandler):
         super().__init__(*args, **kwargs)
 
     def log_message(self, log_format, *args):
-        if self.configuration[CONFIG_TYPE.PW_DEBUG]:
+        if SERVER_DEBUG:
             log.debug(f"{self.address_string()} {log_format % args}")
 
     def address_string(self):
@@ -291,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
         hostaddr, hostport = self.client_address[:2]
         return hostaddr
 
-    def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json') -> bool:
+    def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json') -> str:
         response = json.dumps(data)
         try:
             self.send_response(status_code)
@@ -304,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.debug(f"Error sending response: {exc}")
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
-        return False
+        return response
 
 
     def handle_control_post(self) -> bool:
@@ -389,7 +388,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests."""
-        self.proxystats[PROXY_STATS_TYPE.GETS] += 1
         parsed_path = urlparse(self.path)
         path = parsed_path.path
 
@@ -415,54 +413,53 @@ class Handler(BaseHTTPRequestHandler):
             '/help': self.handle_help,
             '/api/troubleshooting/problems': self.handle_problems,
         }
-
+        
+        result: str = ""
         if path in path_handlers:
-            path_handlers[path]()
+            result = path_handlers[path]()
         elif path in DISABLED:
-            self.send_json_response(
+            result = self.send_json_response(
                 {"status": "404 Response - API Disabled"},
                 status_code=HTTPStatus.NOT_FOUND
             )
         elif path in ALLOWLIST:
-            self.handle_allowlist(path)
+            result = self.handle_allowlist(path)
         elif path.startswith('/tedapi'):
-            self.handle_tedapi(path)
+            result = self.handle_tedapi(path)
         elif path.startswith('/cloud'):
-            self.handle_cloud(path)
+            result = self.handle_cloud(path)
         elif path.startswith('/fleetapi'):
-            self.handle_fleetapi(path)
+            result = self.handle_fleetapi(path)
         elif self.path.startswith('/control/reserve'):
             # Current battery reserve level
             if not self.pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 message = '{"reserve": %s}' % self.pw_control.get_reserve()
-            self.send_json_response(json.loads(message))
+            result = self.send_json_response(json.loads(message))
         elif self.path.startswith('/control/mode'):
             # Current operating mode
             if not self.pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 message = '{"mode": "%s"}' % self.pw_control.get_mode()
-            self.send_json_response(json.loads(message))
+            result = self.send_json_response(json.loads(message))
         else:
-            self.handle_static_content()
+            result = self.handle_static_content()
+        
+        if result is None or result == "":
+            self.proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
+        elif result == "ERROR!":
+            self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
+        else:
+            self.proxystats[PROXY_STATS_TYPE.GETS] += 1
+            if self.path in self.proxystats[PROXY_STATS_TYPE.URI]:
+                self.proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
+            else:
+                self.proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
 
-            # # Count
-    # if message is None:
-    #     proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
-    #     message = "TIMEOUT!"
-    # elif message == "ERROR!":
-    #     proxystats[PROXY_STATS_TYPE.ERRORS] += 1
-    #     message = "ERROR!"
-    # else:
-    #     proxystats[PROXY_STATS_TYPE.GETS] += 1
-    #     if self.path in proxystats[PROXY_STATS_TYPE.URI]:
-    #         proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
-    #     else:
-    #         proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
 
-    def handle_aggregates(self):
+    def handle_aggregates(self) -> str:
         # Meters - JSON
         aggregates = self.pw.poll('/api/meters/aggregates')
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
@@ -472,25 +469,25 @@ class Handler(BaseHTTPRequestHandler):
                 # Shift energy from solar to load
                 if 'load' in aggregates and 'instant_power' in aggregates['load']:
                     aggregates['load']['instant_power'] -= solar['instant_power']
-        self.send_json_response(aggregates)
+        return self.send_json_response(aggregates)
 
 
-    def handle_soe(self) -> bool:
+    def handle_soe(self) -> str:
         soe = self.pw.poll('/api/system_status/soe', jsonformat=True)
         return self.send_json_response(json.loads(soe))
 
 
-    def handle_soe_scaled(self) -> bool:
+    def handle_soe_scaled(self) -> str:
         level = self.pw.level(scale=True)
         return self.send_json_response({"percentage": level})
 
 
-    def handle_grid_status(self):
+    def handle_grid_status(self) -> str:
         grid_status = self.pw.poll('/api/system_status/grid_status', jsonformat=True)
-        self.send_json_response(json.loads(grid_status))
+        return self.send_json_response(json.loads(grid_status))
 
 
-    def handle_csv(self):
+    def handle_csv(self) -> str:
         # Grid,Home,Solar,Battery,Level - CSV
         batterylevel = self.pw.level() or 0
         grid = self.pw.grid() or 0
@@ -502,20 +499,20 @@ class Handler(BaseHTTPRequestHandler):
             # Shift energy from solar to load
             home -= solar
         message = f"{grid:.2f},{home:.2f},{solar:.2f},{battery:.2f},{batterylevel:.2f}\n"
-        self.send_json_response(message)
+        return self.send_json_response(message)
 
 
-    def handle_vitals(self):
+    def handle_vitals(self) -> str:
         vitals = self.pw.vitals(jsonformat=True) or {}
-        self.send_json_response(json.loads(vitals))
+        return self.send_json_response(json.loads(vitals))
 
 
-    def handle_strings(self):
+    def handle_strings(self) -> str:
         strings = self.pw.strings(jsonformat=True) or {}
-        self.send_json_response(json.loads(strings))
+        return self.send_json_response(json.loads(strings))
 
 
-    def handle_stats(self):
+    def handle_stats(self) -> str:
         self.proxystats.update({
             PROXY_STATS_TYPE.TS: int(time.time()),
             PROXY_STATS_TYPE.UPTIME: str(datetime.timedelta(seconds=(self.proxystats[PROXY_STATS_TYPE.TS] - self.proxystats[PROXY_STATS_TYPE.START]))),
@@ -528,10 +525,10 @@ class Handler(BaseHTTPRequestHandler):
         if (self.pw.cloudmode or self.pw.fleetapi) and self.pw.client:
             self.proxystats[PROXY_STATS_TYPE.SITEID] = self.pw.client.siteid
             self.proxystats[PROXY_STATS_TYPE.COUNTER] = self.pw.client.counter
-        self.send_json_response(self.proxystats)
+        return self.send_json_response(self.proxystats)
 
 
-    def handle_stats_clear(self):
+    def handle_stats_clear(self) -> str:
         # Clear Internal Stats
         log.debug("Clear internal stats")
         self.proxystats.update({
@@ -540,32 +537,32 @@ class Handler(BaseHTTPRequestHandler):
             PROXY_STATS_TYPE.URI: {},
             PROXY_STATS_TYPE.CLEAR: int(time.time()),
         })
-        self.send_json_response(self.proxystats)
+        return self.send_json_response(self.proxystats)
 
 
-    def handle_temps(self):
+    def handle_temps(self) -> str:
         temps = self.pw.temps(jsonformat=True) or {}
-        self.send_json_response(json.loads(temps))
+        return self.send_json_response(json.loads(temps))
 
 
-    def handle_temps_pw(self):
+    def handle_temps_pw(self) -> str:
         temps = self.pw.temps() or {}
         pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
-        self.send_json_response(pw_temp)
+        return self.send_json_response(pw_temp)
 
 
-    def handle_alerts(self):
+    def handle_alerts(self) -> str:
         alerts = self.pw.alerts(jsonformat=True) or []
-        self.send_json_response(alerts)
+        return self.send_json_response(alerts)
 
 
-    def handle_alerts_pw(self):
+    def handle_alerts_pw(self) -> str:
         alerts = self.pw.alerts() or []
         pw_alerts = {alert: 1 for alert in alerts}
-        self.send_json_response(pw_alerts)
+        return self.send_json_response(pw_alerts)
 
 
-    def handle_freq(self):
+    def handle_freq(self) -> str:
         fcv = {}
         system_status = self.pw.system_status() or {}
         blocks = system_status.get("battery_blocks", [])
@@ -595,10 +592,10 @@ class Handler(BaseHTTPRequestHandler):
             if device.startswith(('TESYNC', 'TEMSA')):
                 fcv.update({key: value for key, value in data.items() if key.startswith(('ISLAND', 'METER'))})
         fcv["grid_status"] = self.pw.grid_status(type="numeric")
-        self.send_json_response(fcv)
+        return self.send_json_response(fcv)
 
 
-    def handle_pod(self):
+    def handle_pod(self) -> str:
         # Powerwall Battery Data
         pod = {}
         # Get Individual Powerwall Battery Data
@@ -669,16 +666,16 @@ class Handler(BaseHTTPRequestHandler):
             "time_remaining_hours": self.pw.get_time_remaining(),
             "backup_reserve_percent": self.pw.get_reserve()
         })
-        self.send_json_response(pod)
+        return self.send_json_response(pod)
 
 
-    def handle_version(self):
+    def handle_version(self) -> str:
         version = self.pw.version()
         r = {"version": "SolarOnly", "vint": 0} if version is None else {"version": version, "vint": parse_version(version)}
-        self.send_json_response(r)
+        return self.send_json_response(r)
 
 
-    def handle_help(self):
+    def handle_help(self) -> str:
         self.send_response(HTTPStatus.OK)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -747,20 +744,19 @@ class Handler(BaseHTTPRequestHandler):
         """
         message += "</table>\n"
         message += f'\n<p>Page refresh: {str(datetime.datetime.fromtimestamp(time.time()))}</p>\n</body>\n</html>'
-        self.wfile.write(message.encode(UTF_8))
+        return self.wfile.write(message.encode(UTF_8))
 
 
-    def handle_problems(self):
+    def handle_problems(self) -> str:
         self.send_json_response({"problems": []})
 
-    def handle_allowlist(self, path) -> bool:
+    def handle_allowlist(self, path) -> str:
         response = self.pw.poll(path, jsonformat=True)
         return self.send_json_response(json.loads(response))
 
-    def handle_tedapi(self, path):
+    def handle_tedapi(self, path) -> str:
         if not self.pw.tedapi:
-            self.send_json_response({"error": "TEDAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
-            return
+            return self.send_json_response({"error": "TEDAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
 
         commands = {
             '/tedapi/config': self.pw.tedapi.get_config,
@@ -771,18 +767,17 @@ class Handler(BaseHTTPRequestHandler):
         }
         command = commands.get(path)
         if command:
-            self.send_json_response(command())
-        else:
-            self.send_json_response(
-                {"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"},
-                status_code=HTTPStatus.BAD_REQUEST
-            )
+            return self.send_json_response(command())
+
+        return self.send_json_response(
+            {"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"},
+            status_code=HTTPStatus.BAD_REQUEST
+        )
 
 
-    def handle_cloud(self, path):
+    def handle_cloud(self, path) -> str:
         if not self.pw.cloudmode or self.pw.fleetapi:
-            self.send_json_response({"error": "Cloud API not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
-            return
+            return self.send_json_response({"error": "Cloud API not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
 
         commands = {
             '/cloud/battery': self.pw.client.get_battery,
@@ -791,15 +786,13 @@ class Handler(BaseHTTPRequestHandler):
         }
         command = commands.get(path)
         if command:
-            self.send_json_response(command())
-        else:
-            self.send_json_response({"error": "Use /cloud/battery, /cloud/power, /cloud/config"}, status_code=HTTPStatus.BAD_REQUEST)
+            return self.send_json_response(command())
+        return self.send_json_response({"error": "Use /cloud/battery, /cloud/power, /cloud/config"}, status_code=HTTPStatus.BAD_REQUEST)
 
 
-    def handle_fleetapi(self, path):
+    def handle_fleetapi(self, path) -> str:
         if not self.pw.fleetapi:
-            self.send_json_response({"error": "FleetAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
-            return
+            return self.send_json_response({"error": "FleetAPI not enabled"}, status_code=HTTPStatus.BAD_REQUEST)
 
         commands = {
             '/fleetapi/info': self.pw.client.get_site_info,
@@ -807,12 +800,12 @@ class Handler(BaseHTTPRequestHandler):
         }
         command = commands.get(path)
         if command:
-            self.send_json_response(command())
-        else:
-            self.send_json_response({"error": "Use /fleetapi/info, /fleetapi/status"}, status_code=HTTPStatus.BAD_REQUEST)
+            return self.send_json_response(command())
+
+        return self.send_json_response({"error": "Use /fleetapi/info, /fleetapi/status"}, status_code=HTTPStatus.BAD_REQUEST)
 
 
-    def handle_static_content(self):
+    def handle_static_content(self) -> str:
         self.proxystats[PROXY_STATS_TYPE.GETS] += 1
         self.send_response(HTTPStatus.OK)
         self.send_header('Content-type', 'text/html')
@@ -883,6 +876,7 @@ class Handler(BaseHTTPRequestHandler):
                 log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
                 return
             log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
+        return content
 
 
 def check_for_environmental_pw_configs() -> List[str]:
