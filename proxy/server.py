@@ -227,7 +227,7 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, *args, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, **kwargs):
+    def __init__(self, request, client_address, server, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall):
         self.configuration = configuration
         self.pw = pw
         self.pw_control = pw_control
@@ -286,7 +286,7 @@ class Handler(BaseHTTPRequestHandler):
                 proxystats[PROXY_STATS_TYPE.PW3] = pw.tedapi.pw3
                 log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
-        super().__init__(*args, **kwargs)
+        super().__init__(request, client_address, server)
 
     def log_message(self, log_format, *args):
         if SERVER_DEBUG:
@@ -928,7 +928,7 @@ def read_env_configs() -> List[PROXY_CONFIG]:
     for s in suffixes:
         def get_env_value(config_type: CONFIG_TYPE, default: str | None) -> str | None:
             """Helper function to construct environment variable names and retrieve their values."""
-            env_var = f"{config_type.value}{s}"
+            env_var = f"{config_type.value}{s}".upper()
             return os.getenv(env_var, default)
 
         config: PROXY_CONFIG = {
@@ -985,8 +985,8 @@ def build_configuration() -> List[PROXY_CONFIG]:
     return configs
 
 
-def run_server(host, port, handler, enable_https=False):
-    with ThreadingHTTPServer((host, port), handler) as server:
+def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall):
+    with ThreadingHTTPServer((host, port), lambda *args: Handler(*args, configuration, pw, pw_control)) as server:
         if enable_https:
             log.debug(f"Activating HTTPS on {host}:{port}")
             server.socket = ssl.wrap_socket(
@@ -1037,15 +1037,16 @@ def main() -> None:
                     sys.exit(0)
 
         pw_control = configure_pw_control(pw, config)
-        handler = Handler(configuration=config, pw=pw, pw_control=pw_control)
 
         server = threading.Thread(
             target=run_server,
             args=(
-                config[CONFIG_TYPE.PW_BIND_ADDRESS],  # Host
-                config[CONFIG_TYPE.PW_PORT],          # Port
-                handler,                              # Handler
-                config[CONFIG_TYPE.PW_HTTPS] == "yes" # HTTPS
+                config[CONFIG_TYPE.PW_BIND_ADDRESS],   # Host
+                config[CONFIG_TYPE.PW_PORT],           # Port
+                config[CONFIG_TYPE.PW_HTTPS] == "yes", # HTTPS
+                config,
+                pw,
+                pw_control
             )
         )
         servers.append(server)
