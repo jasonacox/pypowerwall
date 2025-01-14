@@ -46,6 +46,7 @@ import ssl
 import sys
 import threading
 import time
+import unicodedata
 from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -56,6 +57,13 @@ from transform import get_static, inject_js
 
 import pypowerwall
 from pypowerwall import parse_version
+
+
+def normalize_caseless(text: str) -> str:
+    return unicodedata.normalize("NFKD", text.casefold())
+
+def caseless_equal(left: str, right: str) -> bool:
+    return normalize_caseless(left) == normalize_caseless(right)
 
 BUILD: Final[str] = "t67"
 UTF_8: Final[str] = "utf-8"
@@ -896,12 +904,14 @@ def check_for_environmental_pw_configs() -> List[str]:
     """
     suffixes_to_check = {"", "1"}
     actual_configs = []
-
+    
+    environment = [normalize_caseless(key) for key in os.environ]
     while suffixes_to_check:
         current_suffix = suffixes_to_check.pop()
         test_suffix = f"_{current_suffix}" if current_suffix.isnumeric() else current_suffix
-        if any(f"{config.value}{test_suffix}" in os.environ for config in CONFIG_TYPE):
-            actual_configs.append(test_suffix)
+        #if any( in (normalize_caseless(key) ) ):
+        if any(f"{config.value}{test_suffix}" in environment for config in CONFIG_TYPE):
+            actual_configs.append(test_suffix)    
         elif current_suffix.isnumeric() and int(current_suffix) > 1:
             break
         if current_suffix.isnumeric():
@@ -1006,9 +1016,9 @@ def main() -> None:
                 password=config[CONFIG_TYPE.PW_PASSWORD],
                 email=config[CONFIG_TYPE.PW_EMAIL],
                 timezone=config[CONFIG_TYPE.PW_TIMEZONE],
-                cache_expire=config[CONFIG_TYPE.PW_CACHE_EXPIRE],
+                pwcacheexpire=config[CONFIG_TYPE.PW_CACHE_EXPIRE],
                 timeout=config[CONFIG_TYPE.PW_TIMEOUT],
-                pool_maxsize=config[CONFIG_TYPE.PW_POOL_MAXSIZE],
+                poolmaxsize=config[CONFIG_TYPE.PW_POOL_MAXSIZE],
                 siteid=config[CONFIG_TYPE.PW_SITEID],
                 authpath=config[CONFIG_TYPE.PW_AUTH_PATH],
                 authmode=config[CONFIG_TYPE.PW_AUTH_MODE],
