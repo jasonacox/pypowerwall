@@ -16,8 +16,6 @@
     <script>
         // Get Firmware Version
         function showversion() {
-            // Get port from the URL
-            var port = window.location.port;
             var pwver = window.location.protocol + "//" + window.location.hostname + ":" + window.location.port + "/version";
             $.getJSON(pwver, function(data) {
                 var text = `Firmware: ${data.version}`;
