@@ -331,7 +331,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             return False
 
-        if token != self.configuration['PW_CONTROL_SECRET']:
+        if token != self.configuration[CONFIG_TYPE.PW_CONTROL_SECRET]:
             self.send_json_response(
                 {"unauthorized": "Control Command Token Invalid"},
                 status_code=HTTPStatus.UNAUTHORIZED
@@ -858,7 +858,7 @@ class Handler(BaseHTTPRequestHandler):
                 content = b"Error during proxy"
                 content_type = "text/plain"
 
-        if self.configuration['PW_BROWSER_CACHE'] > 0 and content_type in ['text/css', 'application/javascript', 'image/png']:
+        if self.configuration[CONFIG_TYPE.PW_BROWSER_CACHE] > 0 and content_type in ['text/css', 'application/javascript', 'image/png']:
             self.send_header("Cache-Control", f"max-age={self.configuration[CONFIG_TYPE.PW_BROWSER_CACHE]}")
         else:
             self.send_header("Cache-Control", "no-cache, no-store")
