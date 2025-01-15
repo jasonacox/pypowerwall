@@ -821,12 +821,14 @@ class Handler(BaseHTTPRequestHandler):
             self.path = "/index.html"
             content, content_type = get_static(WEB_ROOT, self.path)
             status = self.pw.status()
-            content = content.decode(UTF_8).format(
-                VERSION=status.get("version", ""),
-                HASH=status.get("git_hash", ""),
-                EMAIL=self.configuration[CONFIG_TYPE.PW_EMAIL],
-                STYLE=self.configuration[CONFIG_TYPE.PW_STYLE],
-            ).encode(UTF_8)
+            content = content.decode(UTF_8)
+            # fix the following variables that if they are None, return ""
+            content = content.replace("{VERSION}", status.get("version", "") or "")
+            content = content.replace("{HASH}", status.get("git_hash", "") or "")
+            content = content.replace("{EMAIL}", self.configuration.get(CONFIG_TYPE.PW_EMAIL, "") or "")
+            content = content.replace("{STYLE}", self.configuration.get(CONFIG_TYPE.PW_STYLE, "") or "")
+            # convert fcontent back to bytes
+            content = bytes(content, UTF_8)
         else:
             content, content_type = get_static(WEB_ROOT, self.path)
 
@@ -835,7 +837,7 @@ class Handler(BaseHTTPRequestHandler):
         # If not found, serve from Powerwall web server
         elif self.pw.cloudmode or self.pw.fleetapi:
             log.debug(f"Cloud Mode - File not found: {self.path}")
-            content = b"Not Found"
+            content = bytes("Not Found", UTF_8)
             content_type = "text/plain"
         else:
             # Proxy request to Powerwall web server.
