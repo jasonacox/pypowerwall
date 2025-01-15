@@ -220,65 +220,11 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, server, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall):
+    def __init__(self, request, client_address, server, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, proxy_stats: PROXY_STATS):
         self.configuration = configuration
         self.pw = pw
         self.pw_control = pw_control
-
-        proxystats: PROXY_STATS = {
-            PROXY_STATS_TYPE.CF: configuration[CONFIG_TYPE.PW_CACHE_FILE],
-            PROXY_STATS_TYPE.CLEAR: int(time.time()),
-            PROXY_STATS_TYPE.CLOUDMODE: False,
-            PROXY_STATS_TYPE.CONFIG: configuration.copy(),
-            PROXY_STATS_TYPE.COUNTER: 0,
-            PROXY_STATS_TYPE.ERRORS: 0,
-            PROXY_STATS_TYPE.FLEETAPI: False,
-            PROXY_STATS_TYPE.GETS: 0,
-            PROXY_STATS_TYPE.MEM: 0,
-            PROXY_STATS_TYPE.MODE: "Unknown",
-            PROXY_STATS_TYPE.POSTS: 0,
-            PROXY_STATS_TYPE.PW3: False,
-            PROXY_STATS_TYPE.PYPOWERWALL: f"{pypowerwall.version} Proxy {BUILD}",
-            PROXY_STATS_TYPE.SITE_NAME: "",
-            PROXY_STATS_TYPE.SITEID: None,
-            PROXY_STATS_TYPE.START: int(time.time()),
-            PROXY_STATS_TYPE.TEDAPI_MODE: "off",
-            PROXY_STATS_TYPE.TEDAPI: False,
-            PROXY_STATS_TYPE.TIMEOUT: 0,
-            PROXY_STATS_TYPE.TS: int(time.time()),
-            PROXY_STATS_TYPE.UPTIME: "",
-            PROXY_STATS_TYPE.URI: {}
-        }
-        self.proxystats = proxystats
-
-        site_name = pw.site_name() or "Unknown"
-        if pw.cloudmode or pw.fleetapi:
-            if pw.fleetapi:
-                proxystats[PROXY_STATS_TYPE.MODE] = "FleetAPI"
-                log.info("pyPowerwall Proxy Server - FleetAPI Mode")
-            else:
-                proxystats[PROXY_STATS_TYPE.MODE] = "Cloud"
-                log.info("pyPowerwall Proxy Server - Cloud Mode")
-            log.info(f"Connected to Site ID {pw.client.siteid} ({site_name.strip()})")
-            if configuration[CONFIG_TYPE.PW_SITEID] is not None and configuration[CONFIG_TYPE.PW_SITEID] != str(pw.client.siteid):
-                log.info(f"Switch to Site ID {configuration[CONFIG_TYPE.PW_SITEID]}")
-                if not pw.client.change_site(configuration[CONFIG_TYPE.PW_SITEID]):
-                    log.error("Fatal Error: Unable to connect. Please fix config and restart.")
-                    while True:
-                        try:
-                            time.sleep(5)  # Infinite loop to keep container running
-                        except (KeyboardInterrupt, SystemExit):
-                            sys.exit(0)
-        else:
-            proxystats[PROXY_STATS_TYPE.MODE] = "Local"
-            log.info("pyPowerwall Proxy Server - Local Mode")
-            log.info(f"Connected to Energy Gateway {configuration[CONFIG_TYPE.PW_HOST]} ({site_name.strip()})")
-            if pw.tedapi:
-                proxystats[PROXY_STATS_TYPE.TEDAPI] = True
-                proxystats[PROXY_STATS_TYPE.TEDAPI_MODE] = pw.tedapi_mode
-                proxystats[PROXY_STATS_TYPE.PW3] = pw.tedapi.pw3
-                log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
-
+        self.proxystats = proxy_stats
         super().__init__(request, client_address, server)
 
     def log_message(self, log_format, *args):
@@ -306,7 +252,7 @@ class Handler(BaseHTTPRequestHandler):
         return response
 
 
-    def handle_control_post(self) -> bool:
+    def handle_control_post(self, self_path) -> bool:
         """Handle control POST requests."""
         if not self.pw_control:
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
@@ -317,7 +263,7 @@ class Handler(BaseHTTPRequestHandler):
             return False
 
         try:
-            action = urlparse(self.path).path.split('/')[2]
+            action = urlparse(self_path).path.split('/')[2]
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
             query_params = parse_qs(post_data.decode(UTF_8))
@@ -377,7 +323,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handle POST requests."""
         if self.path.startswith('/control'):
-            stat = PROXY_STATS_TYPE.POSTS if self.handle_control_post() else PROXY_STATS_TYPE.ERRORS
+            stat = PROXY_STATS_TYPE.POSTS if self.handle_control_post(self.path) else PROXY_STATS_TYPE.ERRORS
             self.proxystats[stat] += 1
         else:
             self.send_json_response(
@@ -388,8 +334,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         """Handle GET requests."""
-        parsed_path = urlparse(self.path)
-        path = parsed_path.path
+        path = self.path
 
         # Map paths to handler functions
         path_handlers = {
@@ -413,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
             '/help': self.handle_help,
             '/api/troubleshooting/problems': self.handle_problems,
         }
-        
+
         result: str = ""
         if path in path_handlers:
             result = path_handlers[path]()
@@ -430,14 +375,14 @@ class Handler(BaseHTTPRequestHandler):
             result = self.handle_cloud(path)
         elif path.startswith('/fleetapi'):
             result = self.handle_fleetapi(path)
-        elif self.path.startswith('/control/reserve'):
+        elif path.startswith('/control/reserve'):
             # Current battery reserve level
             if not self.pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 message = '{"reserve": %s}' % self.pw_control.get_reserve()
             result = self.send_json_response(json.loads(message))
-        elif self.path.startswith('/control/mode'):
+        elif path.startswith('/control/mode'):
             # Current operating mode
             if not self.pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
@@ -445,18 +390,18 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"mode": "%s"}' % self.pw_control.get_mode()
             result = self.send_json_response(json.loads(message))
         else:
-            result = self.handle_static_content()
-        
+            result = self.handle_static_content(path)
+
         if result is None or result == "":
             self.proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
         elif result == "ERROR!":
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
         else:
             self.proxystats[PROXY_STATS_TYPE.GETS] += 1
-            if self.path in self.proxystats[PROXY_STATS_TYPE.URI]:
-                self.proxystats[PROXY_STATS_TYPE.URI][self.path] += 1
+            if path in self.proxystats[PROXY_STATS_TYPE.URI]:
+                self.proxystats[PROXY_STATS_TYPE.URI][path] += 1
             else:
-                self.proxystats[PROXY_STATS_TYPE.URI][self.path] = 1
+                self.proxystats[PROXY_STATS_TYPE.URI][path] = 1
 
 
     def handle_aggregates(self) -> str:
@@ -805,7 +750,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_json_response({"error": "Use /fleetapi/info, /fleetapi/status"}, status_code=HTTPStatus.BAD_REQUEST)
 
 
-    def handle_static_content(self) -> str:
+    def handle_static_content(self, path) -> str:
         self.proxystats[PROXY_STATS_TYPE.GETS] += 1
         self.send_response(HTTPStatus.OK)
         self.send_header('Content-type', 'text/html')
@@ -817,9 +762,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", f"AuthCookie={auth['AuthCookie']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord={auth['UserRecord']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
 
-        if self.path == "/" or self.path == "":
-            self.path = "/index.html"
-            content, content_type = get_static(WEB_ROOT, self.path)
+        if path == "/" or path == "":
+            path = "/index.html"
+            content, content_type = get_static(WEB_ROOT, path)
             status = self.pw.status()
             content = content.decode(UTF_8)
             # fix the following variables that if they are None, return ""
@@ -830,19 +775,19 @@ class Handler(BaseHTTPRequestHandler):
             # convert fcontent back to bytes
             content = bytes(content, UTF_8)
         else:
-            content, content_type = get_static(WEB_ROOT, self.path)
+            content, content_type = get_static(WEB_ROOT, path)
 
         if content:
-            log.debug("Served from local web root: {} type {}".format(self.path, content_type))
+            log.debug("Served from local web root: {} type {}".format(path, content_type))
         # If not found, serve from Powerwall web server
         elif self.pw.cloudmode or self.pw.fleetapi:
-            log.debug(f"Cloud Mode - File not found: {self.path}")
+            log.debug(f"Cloud Mode - File not found: {path}")
             content = bytes("Not Found", UTF_8)
             content_type = "text/plain"
         else:
             # Proxy request to Powerwall web server.
-            pw_url = f"https://{self.pw.host}/{self.path.lstrip('/')}"
-            log.debug("Proxy request to: %s", pw_url)
+            pw_url = f"https://{self.pw.host}/{path.lstrip('/')}"
+            log.debug(f"Proxy request to: {pw_url}")
             try:
                 session = self.pw.client.session
                 response = session.get(
@@ -865,7 +810,7 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self.send_header("Cache-Control", "no-cache, no-store")
 
-        if self.path.split('?')[0] == "/":
+        if path.split('?')[0] == "/":
             if os.path.exists(os.path.join(WEB_ROOT, self.configuration[CONFIG_TYPE.PW_STYLE])):
                 content = bytes(inject_js(content, self.configuration[CONFIG_TYPE.PW_STYLE]), UTF_8)
 
@@ -885,8 +830,8 @@ def check_for_environmental_pw_configs() -> List[str]:
     """
     Checks for environment variables with specific suffix patterns and returns the list of matching suffixes.
 
-    This function iterates over predefined suffixes (starting with an empty string and "1") to check if any 
-    configuration-related environment variables are defined. If a match is found, the suffix is added to the 
+    This function iterates over predefined suffixes (starting with an empty string and "1") to check if any
+    configuration-related environment variables are defined. If a match is found, the suffix is added to the
     result list. For numeric suffixes, the function dynamically generates and checks the next numeric suffix.
 
     Returns:
@@ -905,7 +850,7 @@ def check_for_environmental_pw_configs() -> List[str]:
         current_suffix = suffixes_to_check.pop()
         test_suffix = f"_{current_suffix}" if current_suffix.isnumeric() else current_suffix
         if any(f"{config.value}{test_suffix}" in environment for config in CONFIG_TYPE):
-            actual_configs.append(test_suffix)    
+            actual_configs.append(test_suffix)
         elif current_suffix.isnumeric() and int(current_suffix) > 1:
             break
         if current_suffix.isnumeric():
@@ -980,7 +925,35 @@ def build_configuration() -> List[PROXY_CONFIG]:
 
 
 def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall):
-    with ThreadingHTTPServer((host, port), lambda *args: Handler(*args, configuration, pw, pw_control)) as server:
+    proxystats: PROXY_STATS = {
+        PROXY_STATS_TYPE.CF: configuration[CONFIG_TYPE.PW_CACHE_FILE],
+        PROXY_STATS_TYPE.CLEAR: int(time.time()),
+        PROXY_STATS_TYPE.CLOUDMODE: False,
+        PROXY_STATS_TYPE.CONFIG: configuration.copy(),
+        PROXY_STATS_TYPE.COUNTER: 0,
+        PROXY_STATS_TYPE.ERRORS: 0,
+        PROXY_STATS_TYPE.FLEETAPI: False,
+        PROXY_STATS_TYPE.GETS: 0,
+        PROXY_STATS_TYPE.MEM: 0,
+        PROXY_STATS_TYPE.MODE: "Unknown",
+        PROXY_STATS_TYPE.POSTS: 0,
+        PROXY_STATS_TYPE.PW3: False,
+        PROXY_STATS_TYPE.PYPOWERWALL: f"{pypowerwall.version} Proxy {BUILD}",
+        PROXY_STATS_TYPE.SITE_NAME: "",
+        PROXY_STATS_TYPE.SITEID: None,
+        PROXY_STATS_TYPE.START: int(time.time()),
+        PROXY_STATS_TYPE.TEDAPI_MODE: "off",
+        PROXY_STATS_TYPE.TEDAPI: False,
+        PROXY_STATS_TYPE.TIMEOUT: 0,
+        PROXY_STATS_TYPE.TS: int(time.time()),
+        PROXY_STATS_TYPE.UPTIME: "",
+        PROXY_STATS_TYPE.URI: {}
+    }
+
+    def handler_factory(*args, **kwargs):
+        return Handler(*args, configuration=configuration, pw=pw, pw_control=pw_control, proxy_stats=proxystats, **kwargs)
+
+    with ThreadingHTTPServer((host, port), handler_factory) as server:
         if enable_https:
             log.debug(f"Activating HTTPS on {host}:{port}")
             server.socket = ssl.wrap_socket(
@@ -993,6 +966,34 @@ def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowe
             )
         try:
             log.info(f"Starting server on {host}:{port}")
+            site_name = pw.site_name() or "Unknown"
+            if pw.cloudmode or pw.fleetapi:
+                if pw.fleetapi:
+                    proxystats[PROXY_STATS_TYPE.MODE] = "FleetAPI"
+                    log.info("pyPowerwall Proxy Server - FleetAPI Mode")
+                else:
+                    proxystats[PROXY_STATS_TYPE.MODE] = "Cloud"
+                    log.info("pyPowerwall Proxy Server - Cloud Mode")
+                log.info(f"Connected to Site ID {pw.client.siteid} ({site_name.strip()})")
+                if configuration[CONFIG_TYPE.PW_SITEID] is not None and configuration[CONFIG_TYPE.PW_SITEID] != str(pw.client.siteid):
+                    log.info(f"Switch to Site ID {configuration[CONFIG_TYPE.PW_SITEID]}")
+                    if not pw.client.change_site(configuration[CONFIG_TYPE.PW_SITEID]):
+                        log.error("Fatal Error: Unable to connect. Please fix config and restart.")
+                        while True:
+                            try:
+                                time.sleep(5)  # Infinite loop to keep container running
+                            except (KeyboardInterrupt, SystemExit):
+                                sys.exit(0)
+            else:
+                proxystats[PROXY_STATS_TYPE.MODE] = "Local"
+                log.info("pyPowerwall Proxy Server - Local Mode")
+                log.info(f"Connected to Energy Gateway {configuration[CONFIG_TYPE.PW_HOST]} ({site_name.strip()})")
+                if pw.tedapi:
+                    proxystats[PROXY_STATS_TYPE.TEDAPI] = True
+                    proxystats[PROXY_STATS_TYPE.TEDAPI_MODE] = pw.tedapi_mode
+                    proxystats[PROXY_STATS_TYPE.PW3] = pw.tedapi.pw3
+                    log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
+
             server.serve_forever()
         except (Exception, KeyboardInterrupt, SystemExit):
             log.info(f"Server on {host}:{port} stopped")
