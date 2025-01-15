@@ -92,7 +92,6 @@ ALLOWLIST: Final[Set[str]] = set([
 
 DISABLED: Final[Set[str]] = set([
     '/api/customer/registration',
-    '/networks'
 ])
 WEB_ROOT: Final[str] = os.path.join(os.path.dirname(__file__), "web")
 SERVER_DEBUG: Final[bool] = bool(os.getenv("PW_DEBUG", "no").lower() == "yes")
@@ -365,8 +364,7 @@ class Handler(BaseHTTPRequestHandler):
             result = path_handlers[path]()
         elif path in DISABLED:
             result = self.send_json_response(
-                {"status": "404 Response - API Disabled"},
-                status_code=HTTPStatus.NOT_FOUND
+                {"status": "404 Response - API Disabled"}
             )
         elif path in ALLOWLIST:
             result = self.handle_allowlist(path)
