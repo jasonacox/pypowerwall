@@ -92,6 +92,7 @@ ALLOWLIST: Final[Set[str]] = set([
 
 DISABLED: Final[Set[str]] = set([
     '/api/customer/registration',
+    '/networks'
 ])
 WEB_ROOT: Final[str] = os.path.join(os.path.dirname(__file__), "web")
 SERVER_DEBUG: Final[bool] = bool(os.getenv("PW_DEBUG", "no").lower() == "yes")
@@ -753,7 +754,7 @@ class Handler(BaseHTTPRequestHandler):
     def handle_static_content(self, path) -> str:
         self.proxystats[PROXY_STATS_TYPE.GETS] += 1
         self.send_response(HTTPStatus.OK)
-        self.send_header('Content-type', 'text/html')
+        # self.send_header('Content-type', 'text/html')
         if self.pw.authmode == "token":
             self.send_header("Set-Cookie", f"AuthCookie=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
