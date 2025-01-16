@@ -92,6 +92,7 @@ ALLOWLIST: Final[Set[str]] = set([
 
 DISABLED: Final[Set[str]] = set([
     '/api/customer/registration',
+    '/networks'
 ])
 WEB_ROOT: Final[str] = os.path.join(os.path.dirname(__file__), "web")
 SERVER_DEBUG: Final[bool] = bool(os.getenv("PW_DEBUG", "no").lower() == "yes")
