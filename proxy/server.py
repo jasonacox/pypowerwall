@@ -752,7 +752,6 @@ class Handler(BaseHTTPRequestHandler):
     def handle_static_content(self, path) -> str:
         self.proxystats[PROXY_STATS_TYPE.GETS] += 1
         self.send_response(HTTPStatus.OK)
-        # self.send_header('Content-type', 'text/html')
         if self.pw.authmode == "token":
             self.send_header("Set-Cookie", f"AuthCookie=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
