@@ -454,7 +454,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_strings(self) -> str:
         strings = self.pw.strings(jsonformat=True) or {}
-        return self.send_json_response(json.loads(strings))
+        din_suffix = self.pw.din()[-2:]
+        output = {f"{key}_{din_suffix}":value for key, value in json.loads(strings).items()}
+        return self.send_json_response(output)
 
 
     def handle_stats(self) -> str:
