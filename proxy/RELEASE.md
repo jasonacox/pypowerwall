@@ -1,5 +1,14 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t68 (20 Jan 2025)
+
+* pyPowerwall v0.12.3 - Adds Custom GW IP for TEDAPI. 
+* Add new API /csv/v2 which extends /csv by adding grids status (1/0) and battery reserve (%)setting:
+
+```python
+# Grid,Home,Solar,Battery,Battery_Level,Grid_Status,Reserve
+```
+
 ### Proxy t67 (26 Dec 2024)
 
 * pyPowerwall v0.12.2 - Fix bug in cache timeout code that was not honoring pwcacheexpire setting. Raised by @erikgiesele in https://github.com/jasonacox/pypowerwall/issues/122 - PW_CACHE_EXPIRE=0 not possible? (Proxy)
