@@ -1,15 +1,15 @@
 import json
 import logging
-from typing import Optional, Union
 import math
+from typing import Optional, Union
 
-from pypowerwall.tedapi import TEDAPI, GW_IP, lookup
+from pypowerwall import __version__
+from pypowerwall.pypowerwall_base import PyPowerwallBase
+from pypowerwall.tedapi import GW_IP, TEDAPI, lookup
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
-from pypowerwall.tedapi.exceptions import * # pylint: disable=unused-wildcard-import
+from pypowerwall.tedapi.exceptions import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.tedapi.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.tedapi.stubs import *
-from pypowerwall.pypowerwall_base import PyPowerwallBase
-from pypowerwall import __version__
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
         self.siteid = None
+        self.session = None
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize TEDAPI
@@ -223,18 +224,22 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             }
         return data
 
-    def get_api_system_status_grid_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
-        force = kwargs.get('force', False)
-        status = self.tedapi.get_status(force=force)
+    def extract_grid_status(self, status) -> str:
+        alerts = lookup(status, ["control", "alerts", "active"])
+        if "SystemConnectedToGrid" in alerts:
+            return "SystemGridConnected"
         grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])
         if not grid_state:
             return None
         if grid_state == "ISLAND_GridConnected_Connected":
-            grid_status = "SystemGridConnected"
-        else:
-            grid_status = "SystemIslandedActive"
+            return "SystemGridConnected"
+        return "SystemIslandedActive"
+
+    def get_api_system_status_grid_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        force = kwargs.get('force', False)
+        status = self.tedapi.get_status(force=force)
         data = {
-            "grid_status": grid_status,
+            "grid_status": self.extract_grid_status(status),
             "grid_services_active": None, # TODO
         }
         return data
@@ -409,13 +414,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
         status = self.tedapi.get_status(force=force)
-        grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])
-        if not grid_state:
-            grid_status = None
-        elif grid_state == "ISLAND_GridConnected_Connected":
-            grid_status = "SystemGridConnected"
-        else:
-            grid_status = "SystemIslandedActive"
+        grid_status = self.extract_grid_status(status)
         total_pack_energy = lookup(status, ["control", "systemStatus", "nominalFullPackEnergyWh"]) or 0
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"]) or 0
         batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
@@ -558,6 +557,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
 if __name__ == "__main__":
     import sys
+
     # Command Line Debugging Mode
     print(f"pyPowerwall - Powerwall Gateway TEDAPI Test [v{__version__}]")
     set_debug(quiet=False, debug=True, color=True)

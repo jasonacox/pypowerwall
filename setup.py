@@ -18,7 +18,10 @@ setuptools.setup(
     install_requires=[
         'requests',      
         'protobuf>=3.20.0',        
-        'teslapy',     
+        'teslapy',
+        'setuptools>=42',
+        'wheel',
+        'urllib3'
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

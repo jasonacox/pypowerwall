@@ -84,9 +84,9 @@ import json
 import logging
 import os.path
 import sys
-from json import JSONDecodeError
-from typing import Union, Optional
 import time
+from json import JSONDecodeError
+from typing import Optional, Union
 
 version_tuple = (0, 12, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
@@ -95,15 +95,14 @@ __author__ = 'jasonacox'
 # noinspection PyPackageRequirements
 import urllib3
 
-from pypowerwall.regex import HOST_REGEX, IPV4_6_REGEX, EMAIL_REGEX
-from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter, InvalidBatteryReserveLevelException
-from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
-from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
-from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
-from pypowerwall.pypowerwall_base import parse_version, PyPowerwallBase
-from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
+from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE, PyPowerwallCloud
+from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter
 from pypowerwall.fleetapi.fleetapi import CONFIGFILE
-from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE
+from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
+from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
+from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
+from pypowerwall.regex import EMAIL_REGEX, HOST_REGEX, IPV4_6_REGEX
+from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
 
 urllib3.disable_warnings()  # Disable SSL warnings
 
@@ -581,17 +580,18 @@ class Powerwall(object):
           jsonformat = If True, return JSON format otherwise return Python Dictionary
           alertonly  = If True, return only alerts without device name
         """
-        alerts = []
+        alerts = set()
         devices: dict = self.vitals() or {}
         if devices:
             for device in devices:
-                if 'alerts' in devices[device]:
-                    for i in devices[device]['alerts']:
-                        if alertsonly:
-                            alerts.append(i)
-                        else:
-                            item = {device: i}
-                            alerts.append(item)
+                if not 'alerts' in devices[device]:
+                    continue
+                for i in devices[device]['alerts']:
+                    if alertsonly:
+                        alerts.add(i)
+                        continue
+                    item = {device: i}
+                    alerts.add(item)
         elif not devices and alertsonly is True:
             # Vitals API is not present in firmware versions > 23.44 for local mode.
             # This is a workaround to get alerts from the /api/solar_powerwall endpoint
@@ -599,27 +599,29 @@ class Powerwall(object):
             pvac_alerts = data.get('pvac_alerts') or {}
             for alert, value in pvac_alerts.items():
                 if value is True:
-                    alerts.append(alert)
+                    alerts.add(alert)
             pvs_alerts = data.get('pvs_alerts') or {}
             for alert, value in pvs_alerts.items():
                 if value is True:
-                    alerts.append(alert)
+                    alerts.add(alert)
 
         # Augment with inferred alerts from the grid_status
         grid_status = self.poll('/api/system_status/grid_status')
         if grid_status:
             alert = grid_status.get('grid_status')
-            if alert == 'SystemGridConnected' and 'SystemConnectedToGrid' not in alerts:
-                alerts.append('SystemConnectedToGrid')
-            elif alert:
-                alerts.append(alert)
             if grid_status.get('grid_services_active'):
-                alerts.append('GridServicesActive')
+                alerts.add('GridServicesActive')
+            elif alert:
+                alerts.add(alert)
+
+        def normalize_alerts(s: str) -> str:
+            return s.replace("SystemGridConnected", "SystemConnectedToGrid")
+
+        normalized_alerts = {normalize_alerts(s) for s in alerts}
 
         if jsonformat:
-            return json.dumps(alerts, indent=4, sort_keys=True)
-        else:
-            return alerts
+            return json.dumps(normalized_alerts, indent=4, sort_keys=True)
+        return normalized_alerts
 
     def get_reserve(self, scale=True, force=False) -> Optional[float]:
         """
@@ -707,7 +709,7 @@ class Powerwall(object):
     def grid_status(self, type="string") -> Optional[Union[str, int]]:
         """
         Get the status of the grid  
-        
+
         Args:
             type == "string" (default) returns: "UP", "DOWN", "SYNCING"
             type == "json" return raw JSON

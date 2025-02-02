@@ -1,6 +1,9 @@
-pypowerwall==0.12.3
 bs4==0.0.2
 beautifulsoup4==4.12.3
 requests==2.32.3
 protobuf==5.29.3
 teslapy==2.9.0
+urllib3==2.3.0
+setuptools==75.8.0
+wheel
+urllib3

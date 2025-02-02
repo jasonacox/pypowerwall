@@ -46,7 +46,6 @@ import ssl
 import sys
 import threading
 import time
-import unicodedata
 from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -221,11 +220,14 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, server, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, proxy_stats: PROXY_STATS):
+    def __init__(self, request, client_address, server, 
+                 configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, proxy_stats: PROXY_STATS, 
+                 all_pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]]):
         self.configuration = configuration
         self.pw = pw
         self.pw_control = pw_control
         self.proxystats = proxy_stats
+        self.all_pws = all_pws
         super().__init__(request, client_address, server)
 
     def log_message(self, log_format, *args):
@@ -405,16 +407,64 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_aggregates(self) -> str:
-        # Meters - JSON
-        aggregates = self.pw.poll('/api/meters/aggregates')
-        if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
-            solar = aggregates['solar']
-            if solar and 'instant_power' in solar and solar['instant_power'] < 0:
-                solar['instant_power'] = 0
-                # Shift energy from solar to load
-                if 'load' in aggregates and 'instant_power' in aggregates['load']:
-                    aggregates['load']['instant_power'] -= solar['instant_power']
-        return self.send_json_response(aggregates)
+        def merge_category(dest: dict, src: dict) -> None:
+            """
+            Merge two dictionaries representing the same meter category.
+            Numeric values (or None, treated as 0) are added together,
+            while non-numeric values (like timestamps) are set only if not already present.
+            """
+            for key, value in src.items():
+                if isinstance(value, (int, float)) or value is None:
+                    # Treat None as 0 when summing.
+                    dest[key] = dest.get(key, 0) + (value if value is not None else 0)
+                    continue
+                # For non-numeric fields, only set a value if one hasn't been set yet.
+                dest.setdefault(key, value)
+
+        def aggregate_meter_results(meter_results: list[dict]) -> dict:
+            """
+            Combine a list of meter result dictionaries into a single aggregated dict.
+            """
+            combined = {}
+            for result in meter_results:
+                for category, readings in result.items():
+                    combined.setdefault(category, {})
+                    merge_category(combined[category], readings)
+            return combined
+
+        # Poll all meter objects and gather non-empty results.
+        results = []
+        for (pw, _) in self.all_pws:
+            result = pw.poll("/api/meters/aggregates")
+            if not result:
+                results.append(result)
+
+        # Combine all the results.
+        combined = aggregate_meter_results(results)
+
+        # Adjust negative solar values if configuration disallows negative solar.
+        if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR]:
+            solar = combined.get("solar", {})
+            if solar.get("instant_power", 0) < 0:
+                negative_value = solar["instant_power"]
+                solar["instant_power"] = 0
+                if "load" in combined:
+                    load = combined["load"]
+                    load["instant_power"] = load.get("instant_power", 0) + (-negative_value)
+
+        return self.send_json_response(combined)
+
+    # def handle_aggregates(self) -> str:
+    #     # Meters - JSON
+    #     aggregates = self.pw.poll('/api/meters/aggregates')
+    #     if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
+    #         solar = aggregates['solar']
+    #         if solar and 'instant_power' in solar and solar['instant_power'] < 0:
+    #             solar['instant_power'] = 0
+    #             # Shift energy from solar to load
+    #             if 'load' in aggregates and 'instant_power' in aggregates['load']:
+    #                 aggregates['load']['instant_power'] -= solar['instant_power']
+    #     return self.send_json_response(aggregates)
 
 
     def handle_soe(self) -> str:
@@ -500,12 +550,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_alerts(self) -> str:
         alerts = self.pw.alerts(jsonformat=True) or []
-        return self.send_json_response(alerts)
+        output = [f"{self.pw.din()}_{alert}" for alert in json.loads(alerts)]
+        return self.send_json_response(output)
 
 
     def handle_alerts_pw(self) -> str:
         alerts = self.pw.alerts() or []
-        pw_alerts = {alert: 1 for alert in alerts}
+        pw_alerts = {f"{self.pw.din()}_{alert}": 1 for alert in alerts}
         return self.send_json_response(pw_alerts)
 
 
@@ -785,7 +836,7 @@ class Handler(BaseHTTPRequestHandler):
             log.debug(f"Cloud Mode - File not found: {path}")
             content = bytes("Not Found", UTF_8)
             content_type = "text/plain"
-        else:
+        elif self.pw.client.session:
             # Proxy request to Powerwall web server.
             pw_url = f"https://{self.pw.host}/{path.lstrip('/')}"
             log.debug(f"Proxy request to: {pw_url}")
@@ -925,7 +976,7 @@ def build_configuration() -> List[PROXY_CONFIG]:
     return configs
 
 
-def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall):
+def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]]):
     proxystats: PROXY_STATS = {
         PROXY_STATS_TYPE.CF: configuration[CONFIG_TYPE.PW_CACHE_FILE],
         PROXY_STATS_TYPE.CLEAR: int(time.time()),
@@ -952,7 +1003,7 @@ def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowe
     }
 
     def handler_factory(*args, **kwargs):
-        return Handler(*args, configuration=configuration, pw=pw, pw_control=pw_control, proxy_stats=proxystats, **kwargs)
+        return Handler(*args, configuration=configuration, pw=pw, pw_control=pw_control, proxy_stats=proxystats, all_pws=pws, **kwargs)
 
     with ThreadingHTTPServer((host, port), handler_factory) as server:
         if enable_https:
@@ -1003,6 +1054,7 @@ def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowe
 
 def main() -> None:
     servers: List[threading.Thread] = []
+    pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]] = []
     configs = build_configuration()
 
     for config in configs:
@@ -1033,7 +1085,9 @@ def main() -> None:
                     sys.exit(0)
 
         pw_control = configure_pw_control(pw, config)
+        pws.append((pw, pw_control))
 
+    for pw in pws:
         server = threading.Thread(
             target=run_server,
             args=(
@@ -1041,8 +1095,9 @@ def main() -> None:
                 config[CONFIG_TYPE.PW_PORT],           # Port
                 config[CONFIG_TYPE.PW_HTTPS] == "yes", # HTTPS
                 config,
-                pw,
-                pw_control
+                pw[0],
+                pw[1],
+                pws
             )
         )
         servers.append(server)
