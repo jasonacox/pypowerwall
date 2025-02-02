@@ -496,8 +496,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_strings(self) -> str:
         strings = self.pw.strings(jsonformat=True) or {}
-        din_suffix = self.pw.din()[-2:]
-        output = {f"{key}_{din_suffix}":value for key, value in json.loads(strings).items()}
+        output = json.loads(strings)
+        if len(self.all_pws) > 1:
+            din_suffix = self.pw.din()[-3:]
+            output = {f"{key}_{din_suffix}":value for key, value in output.items()}
         return self.send_json_response(output)
 
 
@@ -542,14 +544,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_alerts(self) -> str:
         alerts = self.pw.alerts(jsonformat=True) or []
-        output = [f"{self.pw.din()}_{alert}" for alert in json.loads(alerts)]
+        output = json.loads(alerts)
+        if len(self.all_pws) > 1:
+            din_suffix = self.pw.din()[-3:]
+            output = [f"{din_suffix}_{alert}" for alert in output]
         return self.send_json_response(output)
 
 
     def handle_alerts_pw(self) -> str:
         alerts = self.pw.alerts() or []
-        pw_alerts = {f"{self.pw.din()}_{alert}": 1 for alert in alerts}
-        return self.send_json_response(pw_alerts)
+        if len(self.all_pws) > 1:
+            alerts = {f"{self.pw.din()}_{alert}": 1 for alert in alerts}
+        return self.send_json_response(alerts)
 
 
     def handle_freq(self) -> str:
