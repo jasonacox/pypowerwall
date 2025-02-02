@@ -220,8 +220,8 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 
 
 class Handler(BaseHTTPRequestHandler):
-    def __init__(self, request, client_address, server, 
-                 configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, proxy_stats: PROXY_STATS, 
+    def __init__(self, request, client_address, server,
+                 configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, proxy_stats: PROXY_STATS,
                  all_pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]]):
         self.configuration = configuration
         self.pw = pw
@@ -413,7 +413,11 @@ class Handler(BaseHTTPRequestHandler):
             Numeric values (or None, treated as 0) are added together,
             while non-numeric values (like timestamps) are set only if not already present.
             """
+            SKIP_KEYS: Final[List[str]] = ["instant_average_voltage"]
             for key, value in src.items():
+                if key in SKIP_KEYS:
+                    dest.setdefault(key, value)
+                    continue
                 if isinstance(value, (int, float)) or value is None:
                     # Treat None as 0 when summing.
                     dest[key] = dest.get(key, 0) + (value if value is not None else 0)
@@ -425,19 +429,19 @@ class Handler(BaseHTTPRequestHandler):
             """
             Combine a list of meter result dictionaries into a single aggregated dict.
             """
+            COMBINE_CATEGORIES: Final[List[str]] = ["solar"]
             combined = {}
             for result in meter_results:
                 for category, readings in result.items():
                     combined.setdefault(category, {})
-                    merge_category(combined[category], readings)
+                    if category in COMBINE_CATEGORIES:
+                        merge_category(combined[category], readings)
+                        continue
+                    combined[category] = readings
             return combined
 
         # Poll all meter objects and gather non-empty results.
-        results = []
-        for (pw, _) in self.all_pws:
-            result = pw.poll("/api/meters/aggregates")
-            if not result:
-                results.append(result)
+        results = [result for pws in self.all_pws if (result := pws[0].poll("/api/meters/aggregates"))]
 
         # Combine all the results.
         combined = aggregate_meter_results(results)
@@ -453,18 +457,6 @@ class Handler(BaseHTTPRequestHandler):
                     load["instant_power"] = load.get("instant_power", 0) + (-negative_value)
 
         return self.send_json_response(combined)
-
-    # def handle_aggregates(self) -> str:
-    #     # Meters - JSON
-    #     aggregates = self.pw.poll('/api/meters/aggregates')
-    #     if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
-    #         solar = aggregates['solar']
-    #         if solar and 'instant_power' in solar and solar['instant_power'] < 0:
-    #             solar['instant_power'] = 0
-    #             # Shift energy from solar to load
-    #             if 'load' in aggregates and 'instant_power' in aggregates['load']:
-    #                 aggregates['load']['instant_power'] -= solar['instant_power']
-    #     return self.send_json_response(aggregates)
 
 
     def handle_soe(self) -> str:
@@ -1057,6 +1049,7 @@ def main() -> None:
     pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]] = []
     configs = build_configuration()
 
+    # Build powerwalls objects
     for config in configs:
         try:
             pw = pypowerwall.Powerwall(
@@ -1087,7 +1080,10 @@ def main() -> None:
         pw_control = configure_pw_control(pw, config)
         pws.append((pw, pw_control))
 
-    for pw in pws:
+    # Create the servers
+    for (pw, config) in zip(pws, configs):
+        powerwall = pw[0]
+        powerwall_control = pw[1]
         server = threading.Thread(
             target=run_server,
             args=(
@@ -1095,8 +1091,8 @@ def main() -> None:
                 config[CONFIG_TYPE.PW_PORT],           # Port
                 config[CONFIG_TYPE.PW_HTTPS] == "yes", # HTTPS
                 config,
-                pw[0],
-                pw[1],
+                powerwall,
+                powerwall_control,
                 pws
             )
         )
