@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.4 - Neurio Vitals
+
+* Fix bug in TEDAPI vitals processor that was not pulling in all Neurio CTS data for Vitals. Issue report in https://github.com/jasonacox/Powerwall-Dashboard/discussions/578#discussioncomment-12034018 and tracked in https://github.com/jasonacox/pypowerwall/issues/136.
+
 ## v0.12.3 - Custom GW IP
 
 * Fix TEDAPI URL from constant GW_IP to constructor selectable host gw_ip by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/129 - The hard-coded 192.168.91.1 for the TEDAPI internal endpoint doesn't always work if you're using NAT. This change enables support for this use-case.
