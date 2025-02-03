@@ -2,7 +2,9 @@
 
 ## v0.12.4 - Neurio Vitals
 
-* Fix bug in TEDAPI vitals processor that was not pulling in all Neurio CTS data for Vitals. Issue report in https://github.com/jasonacox/Powerwall-Dashboard/discussions/578#discussioncomment-12034018 and tracked in https://github.com/jasonacox/pypowerwall/issues/136.
+* Update proxy for /csv/v2 API support by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/134
+* Fix CTS data retrieval in TEDAPI vitals processor #136 by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/137
+* Fix bug in TEDAPI vitals processor that was not pulling in all Neurio CTS data. Issue reported in https://github.com/jasonacox/Powerwall-Dashboard/discussions/578#discussioncomment-12034018 and tracked in https://github.com/jasonacox/pypowerwall/issues/136.
 
 ## v0.12.3 - Custom GW IP
 
