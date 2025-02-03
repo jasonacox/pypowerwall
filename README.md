@@ -984,6 +984,12 @@ There are several ways you can support this project.
 * Python Tesla Powerwall API – https://github.com/jrester/tesla_powerwall
 * GoTesla - go based Tesla API - https://github.com/bmah888/gotesla
 
+## Contributors
+
+<a href="https://github.com/jasonacox/pypowerwall/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=jasonacox/pypowerwall" />
+</a>
+
 ## Citation
 
 If you wish to cite this project, please use:
