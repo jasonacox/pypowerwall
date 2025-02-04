@@ -614,10 +614,8 @@ class Powerwall(object):
             elif alert:
                 alerts.add(alert)
 
-        def normalize_alerts(s: str) -> str:
-            return s.replace("SystemGridConnected", "SystemConnectedToGrid")
-
-        normalized_alerts = {normalize_alerts(s) for s in alerts}
+        # In the future, if more replacements are needed, create a utility function here.
+        normalized_alerts = list({s.replace("SystemGridConnected", "SystemConnectedToGrid") for s in alerts})
 
         if jsonformat:
             return json.dumps(normalized_alerts, indent=4, sort_keys=True)
