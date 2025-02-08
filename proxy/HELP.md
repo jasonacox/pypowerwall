@@ -10,6 +10,7 @@ There are several shortcut API URLs that aggregate or otherwise process Powerwal
 * /temps - Powerwall Temperatures
 * /temps/pw - Powerwall Temperatures with Simplified Key (PWx_temp)
 * /csv - Key power data in CSV format: (grid, home, solar, battery, batterylevel)
+* /csv/v2 - CSV format: (grid, home, solar, battery, batterylevel, grid_up, reserve)
 * /vitals - Powerwall Device Vitals 
 * /strings - Powerwall Inverter String Data
 * /soe - Powerwall Battery Level

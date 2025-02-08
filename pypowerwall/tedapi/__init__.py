@@ -986,17 +986,32 @@ class TEDAPI:
         if "meters" in config:
             # Loop through each meter and use device_serial as the key
             for meter in config['meters']:
-                if meter['type'] == "neurio_w2_tcp":
+                if meter.get('type') == "neurio_w2_tcp":
                     device_serial = lookup(meter, ['connection', 'device_serial'])
                     if device_serial:
-                        meter_config[device_serial] = {
-                            "type": meter.get('type'),
-                            "location": meter.get('location'),
-                            "cts": meter.get('cts'),
-                            "inverted": meter.get('inverted'),
-                            "connection": meter.get('connection'),
-                            "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
-                        }
+                        # Check to see if we already have this meter in meter_config
+                        if device_serial in meter_config:
+                            cts = meter.get('cts', [False] * 4)
+                            if not isinstance(cts, list):
+                                cts = [False] * 4
+                            for i, ct in enumerate(cts):
+                                if ct:
+                                    meter_config[device_serial]['cts'][i] = True
+                                    meter_config[device_serial]['location'][i] = meter.get('location', "")
+                        else:
+                            # New meter, add to meter_config
+                            cts = meter.get('cts', [False] * 4)
+                            if not isinstance(cts, list):
+                                cts = [False] * 4
+                            location = meter.get('location', "")
+                            meter_config[device_serial] = {
+                                "type": meter.get('type'),
+                                "location": [location] * 4,
+                                "cts": cts,
+                                "inverted": meter.get('inverted'),
+                                "connection": meter.get('connection'),
+                                "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
+                            }
 
         # Create Header
         tesla = {}
@@ -1032,7 +1047,8 @@ class TEDAPI:
                 cts[device + "InstReactivePower"] = lookup(ct, ['reactivePowerVAR'])
                 cts[device + "InstVoltage"] = lookup(ct, ['voltageV'])
                 cts[device + "InstCurrent"] = lookup(ct, ['currentA'])
-                cts[device + "Location"] = lookup(meter_config, [sn, 'location'])
+                location = lookup(meter_config, [sn, 'location'])
+                cts[device + "Location"] = location[i] if len(location) > i else None
                 i = i + 1
             meter_manufacturer = None
             if lookup(meter_config, [sn, 'type']) == "neurio_w2_tcp":

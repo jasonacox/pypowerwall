@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t67"
+BUILD = "t68"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -369,8 +369,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/system_status/grid_status':
             # Grid Status - JSON
             message: str = pw.poll('/api/system_status/grid_status', jsonformat=True)
-        elif self.path == '/csv':
-            # Grid,Home,Solar,Battery,Level - CSV
+        elif self.path == '/csv' or self.path == '/csv/v2':
+            # CSV Output - Grid,Home,Solar,Battery,Level
+            # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             contenttype = 'text/plain; charset=utf-8'
             batterylevel = pw.level() or 0
             grid = pw.grid() or 0
@@ -381,8 +382,15 @@ class Handler(BaseHTTPRequestHandler):
                 solar = 0
                 # Shift energy from solar to load
                 home -= solar
-            message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
-                      % (grid, home, solar, battery, batterylevel)
+            if self.path == '/csv':
+                message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
+                    % (grid, home, solar, battery, batterylevel)
+            else:
+                gridstatus = 1 if pw.grid_status() == 'UP' else 0
+                reserve = pw.get_reserve() or 0
+                message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" \
+                    % (grid, home, solar, battery, batterylevel, 
+                        gridstatus, reserve)
         elif self.path == '/vitals':
             # Vitals Data - JSON
             message: str = pw.vitals(jsonformat=True) or json.dumps({})

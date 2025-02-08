@@ -4,6 +4,12 @@
 
 * Fix an issue in TEDAPI where the grid status is not accurately reported in certain edge cases. Now, only the "SystemConnectedToGrid" alert will appear if it is present in alerts API. This update also eliminates the risk of duplicate and redundant ("SystemGridConnected") alerts and normalizes this specific alert. PR https://github.com/jasonacox/pypowerwall/pull/139 by @Nexarian
 
+## v0.12.4 - Neurio Vitals
+
+* Update proxy for /csv/v2 API support by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/134
+* Fix CTS data retrieval in TEDAPI vitals processor #136 by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/137
+* Fix bug in TEDAPI vitals processor that was not pulling in all Neurio CTS data. Issue reported in https://github.com/jasonacox/Powerwall-Dashboard/discussions/578#discussioncomment-12034018 and tracked in https://github.com/jasonacox/pypowerwall/issues/136.
+
 ## v0.12.3 - Custom GW IP
 
 * Fix TEDAPI URL from constant GW_IP to constructor selectable host gw_ip by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/129 - The hard-coded 192.168.91.1 for the TEDAPI internal endpoint doesn't always work if you're using NAT. This change enables support for this use-case.
