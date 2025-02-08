@@ -1,8 +1,8 @@
 # RELEASE NOTES
 
-## v0.12.4 - Normalize Alerts
+## v0.12.5 - Normalize Alerts
 
-* Fix an issue in TEDAPI where the grid status is not accurately reported in certain edge cases. Now, only the "SystemConnectedToGrid" alert will appear if it is present in alerts API. This update also eliminates the risk of duplicate alerts and normalizes this specific alert. PR https://github.com/jasonacox/pypowerwall/pull/139 by @Nexarian
+* Fix an issue in TEDAPI where the grid status is not accurately reported in certain edge cases. Now, only the "SystemConnectedToGrid" alert will appear if it is present in alerts API. This update also eliminates the risk of duplicate and redundant ("SystemGridConnected") alerts and normalizes this specific alert. PR https://github.com/jasonacox/pypowerwall/pull/139 by @Nexarian
 
 ## v0.12.3 - Custom GW IP
 
