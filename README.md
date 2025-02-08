@@ -91,6 +91,8 @@ route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
 python3 -m pypowerwall tedapi
 ```
 
+Troubleshooting note: On the QNAP NAS, and possibly other platforms, adding routes from command line may not work. You can try adding a static route via the appliance's networking control panel.
+
 ### FreeBSD Install
 
 FreeBSD users can install from ports or pkg [FreshPorts](https://www.freshports.org/net-mgmt/py-pypowerwall):
