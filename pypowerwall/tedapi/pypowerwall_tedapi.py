@@ -352,9 +352,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_solar = sum_vll_solar / count_solar if count_solar else 0
         # External PV meter current
         meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
-        yi1 = meter_x.get("METER_Y_CTA_I", 0)
-        yi2 = meter_x.get("METER_Y_CTB_I", 0)
-        yi3 = meter_x.get("METER_Y_CTC_I", 0)
+        yi1 = meter_y.get("METER_Y_CTA_I", 0)
+        yi2 = meter_y.get("METER_Y_CTB_I", 0)
+        yi3 = meter_y.get("METER_Y_CTC_I", 0)
         # Compute battery voltages
         v_battery = lookup(status, ("esCan","bus","PINV")) or []
         sum_vll_battery = 0
