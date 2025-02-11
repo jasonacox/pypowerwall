@@ -323,13 +323,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         battery_power = self.tedapi.current_power(force=force, location="battery")
         load_power = self.tedapi.current_power(force=force, location="load")
         grid_power = self.tedapi.current_power(force=force, location="site")
-        # Compute load (home) voltages and current
+        # Compute load (home) voltages
         v_load = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
         v1n = v_load.get("ISLAND_VL1N_Main", 0)
         v2n = v_load.get("ISLAND_VL2N_Main", 0)
         v3n = v_load.get("ISLAND_VL3N_Main", 0)
         vll_load = compute_LL_voltage(v1n, v2n, v3n)
-        # Compute site (grid) voltages
+        # Compute site (grid) voltages and current
         v_site = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
         v1n = v_site.get("ISLAND_VL1N_Main", 0)
         v2n = v_site.get("ISLAND_VL2N_Main", 0)
@@ -340,7 +340,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         i2 = meter_x.get("METER_X_CTB_I", 0)
         i3 = meter_x.get("METER_X_CTC_I", 0)
         i_site = i1 + i2 + i3
-        # Compute solar (pv) voltages
+        # Compute solar (pv) voltages and current
         v_solar = lookup(status, ("esCan","bus","PVS")) or []
         sum_vll_solar = 0
         count_solar = 0
@@ -350,6 +350,11 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 sum_vll_solar += v
                 count_solar += 1
         vll_solar = sum_vll_solar / count_solar if count_solar else 0
+        # External PV meter current
+        meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
+        yi1 = meter_y.get("METER_Y_CTA_I", 0)
+        yi2 = meter_y.get("METER_Y_CTB_I", 0)
+        yi3 = meter_y.get("METER_Y_CTC_I", 0)
         # Compute battery voltages
         v_battery = lookup(status, ("esCan","bus","PINV")) or []
         sum_vll_battery = 0
@@ -367,6 +372,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "instant_power": grid_power,
             "instant_average_voltage": vll_site,
             "instant_average_current": i_site,
+            "i_a_current": i1,
+            "i_b_current": i2,
+            "i_c_current": i3,
             "instant_total_current": i_site,
             "num_meters_aggregated": 1,
             "disclaimer": "voltage and current calculated from tedapi data",
@@ -388,7 +396,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "instant_power": solar_power,
             "num_meters_aggregated": count_solar,
             "instant_average_voltage": vll_solar,
-            "disclaimer": "voltage calculated from tedapi data",
+            "i_a_current": yi1,
+            "i_b_current": yi2,
+            "i_c_current": yi3,
+            "disclaimer": "voltage and current calculated from tedapi data",
         })
         return data
 

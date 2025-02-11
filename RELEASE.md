@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.6 - Aggregates Data
+
+* Updated aggregates call to include site current (METER_X) and external PV inverter data in solar (METER_Y). Reported in Issue #140.
+
 ## v0.12.5 - Normalize Alerts
 
 * Fix an issue in TEDAPI where the grid status is not accurately reported in certain edge cases. Now, only the "SystemConnectedToGrid" alert will appear if it is present in alerts API. This update also eliminates the risk of duplicate and redundant ("SystemGridConnected") alerts and normalizes this specific alert. PR https://github.com/jasonacox/pypowerwall/pull/139 by @Nexarian
