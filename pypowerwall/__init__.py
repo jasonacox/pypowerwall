@@ -96,8 +96,7 @@ __author__ = 'jasonacox'
 import urllib3
 
 from pypowerwall.cloud.pypowerwall_cloud import AUTHFILE, PyPowerwallCloud
-from pypowerwall.exceptions import (InvalidBatteryReserveLevelException,
-                                    PyPowerwallInvalidConfigurationParameter)
+from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter
 from pypowerwall.fleetapi.fleetapi import CONFIGFILE
 from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
@@ -707,7 +706,7 @@ class Powerwall(object):
     def grid_status(self, type="string") -> Optional[Union[str, int]]:
         """
         Get the status of the grid  
-        
+
         Args:
             type == "string" (default) returns: "UP", "DOWN", "SYNCING"
             type == "json" return raw JSON
