@@ -224,7 +224,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return data
 
     def extract_grid_status(self, status) -> str:
-        alerts = lookup(status, ["control", "alerts", "active"])
+        alerts = lookup(status, ["control", "alerts", "active"]) or []
         if "SystemConnectedToGrid" in alerts:
             return "SystemGridConnected"
         grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])

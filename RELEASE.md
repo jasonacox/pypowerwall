@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.7 - SystemConnectedToGrid Fix
+
+* Alerts in extract_grid_status can be None. Block this edge case. #145
+
 ## v0.12.6 - Aggregates Data
 
 * Updated aggregates call to include site current (METER_X) and external PV inverter data in solar (METER_Y). Reported in Issue #140.
