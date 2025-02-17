@@ -197,161 +197,169 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(bytes(message, "utf8"))
 
 def do_test_endpoint(self):
+    if self.path == '/test/':
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        with open('control.html', 'rb') as file:
+            self.wfile.write(file.read())
+        return
+    
     # Test Endpoints
-        global agg_solar, agg_home, agg_grid, agg_powerwall, api, active_scenario
-        if self.path == '/test/toggle-grid':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            active_scenario = ''
-            if "SystemGridConnected" not in api['/api/system_status/grid_status']:
-                api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-                message = 'Grid is now connected'
-            else:
-                api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
-                message = 'Grid is now disconnected'
-            self.wfile.write(bytes(message, "utf8"))
-            return
-        
-        if self.path.startswith('/test/battery-percentage/'):
-            # Correct for the correction factor that pypowerwall will do
-            percentage = 0.95 * float(self.path.split('/')[-1]) + 5
-            active_scenario = ''
-            api['/api/system_status/soe'] = '{"percentage":%s}' % percentage
-            self._send_ok()
-            return
-        
-        if self.path.startswith('/test/solar-power/'):
-            agg_solar = int(self.path.split('/')[-1])
-            api['/api/meters/aggregates'] = generate_aggregates()
-            self._send_ok()
-            return
-        
-        # Sample scenarios
-        if self.path.startswith('/test/scenario/'):
-            active_scenario = self.path.split('/')[-1]
-            print("Setting active scenario to %s" % active_scenario, flush=True)
-        
-        if self.path == '/test/scenario':
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "*")
-            self.end_headers()
-            message = '{"active_scenario":"%s"}' % active_scenario
-            self.wfile.write(bytes(message, "utf8"))
-            return
+    global agg_solar, agg_home, agg_grid, agg_powerwall, api, active_scenario
+    if self.path == '/test/toggle-grid':
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        active_scenario = ''
+        if "SystemGridConnected" not in api['/api/system_status/grid_status']:
+            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+            message = 'Grid is now connected'
+        else:
+            api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+            message = 'Grid is now disconnected'
+        self.wfile.write(bytes(message, "utf8"))
+        return
+    
+    if self.path.startswith('/test/battery-percentage/'):
+        # Correct for the correction factor that pypowerwall will do
+        percentage = 0.95 * float(self.path.split('/')[-1]) + 5
+        active_scenario = ''
+        api['/api/system_status/soe'] = '{"percentage":%s}' % percentage
+        self._send_ok()
+        return
+    
+    if self.path.startswith('/test/solar-power/'):
+        agg_solar = int(self.path.split('/')[-1])
+        api['/api/meters/aggregates'] = generate_aggregates()
+        self._send_ok()
+        return
+    
+    # Sample scenarios
+    if self.path.startswith('/test/scenario/'):
+        active_scenario = self.path.split('/')[-1]
+        print("Setting active scenario to %s" % active_scenario, flush=True)
+    
+    if self.path == '/test/scenario':
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.end_headers()
+        message = '{"active_scenario":"%s"}' % active_scenario
+        self.wfile.write(bytes(message, "utf8"))
+        return
 
-        if self.path == '/test/scenario/battery-exporting':
-            agg_solar = 0
-            agg_home = 900
-            agg_grid = -2100
-            agg_powerwall = 3000
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/solar-exporting':
-            agg_solar = 1500
-            agg_home = 400
-            agg_grid = -1100
-            agg_powerwall = 0
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/solar-powered':
-            agg_solar = 900
-            agg_home = 900
-            agg_grid = 0
-            agg_powerwall = 0
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/grid-powered':
-            agg_solar = 0
-            agg_home = 900
-            agg_grid = 900
-            agg_powerwall = 0
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/self-powered':
-            agg_solar = 500
-            agg_home = 900
-            agg_grid = 0
-            agg_powerwall = 400
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/battery-powered':
-            agg_solar = 0
-            agg_home = 900
-            agg_grid = 0
-            agg_powerwall = 900
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/grid-charging':
-            agg_solar = 0
-            agg_home = 900
-            agg_grid = 1200
-            agg_powerwall = -300
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/solar-charging':
-            agg_solar = 1200
-            agg_home = 900
-            agg_grid = 0
-            agg_powerwall = -300
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/sunny-day-outage':
-            agg_solar = 4300
-            agg_home = 1200
-            agg_grid = 0
-            agg_powerwall = -3100
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/cloudy-day-outage':
-            agg_solar = 600
-            agg_home = 1400
-            agg_grid = 0
-            agg_powerwall = 800
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
-            self._send_ok()
-            return
-        
-        if self.path == '/test/scenario/nighttime-outage':
-            agg_solar = 0
-            agg_home = 900
-            agg_grid = 0
-            agg_powerwall = 900
-            api['/api/meters/aggregates'] = generate_aggregates()
-            api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
-            self._send_ok()
-            return  
+    if self.path == '/test/scenario/battery-exporting':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = -2100
+        agg_powerwall = 3000
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/solar-exporting':
+        agg_solar = 1500
+        agg_home = 400
+        agg_grid = -1100
+        agg_powerwall = 0
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/solar-powered':
+        agg_solar = 900
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 0
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/grid-powered':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 900
+        agg_powerwall = 0
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/self-powered':
+        agg_solar = 500
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 400
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/battery-powered':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 900
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/grid-charging':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 1200
+        agg_powerwall = -300
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/solar-charging':
+        agg_solar = 1200
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = -300
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/sunny-day-outage':
+        agg_solar = 4300
+        agg_home = 1200
+        agg_grid = 0
+        agg_powerwall = -3100
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/cloudy-day-outage':
+        agg_solar = 600
+        agg_home = 1400
+        agg_grid = 0
+        agg_powerwall = 800
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+        self._send_ok()
+        return
+    
+    if self.path == '/test/scenario/nighttime-outage':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 900
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+        self._send_ok()
+        return  
 
 # noinspection PyBroadException
 try:
