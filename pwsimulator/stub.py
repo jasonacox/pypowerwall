@@ -230,6 +230,7 @@ def do_test_endpoint(self):
         # Sample scenarios
         if self.path.startswith('/test/scenario/'):
             active_scenario = self.path.split('/')[-1]
+            print("Setting active scenario to %s" % active_scenario, flush=True)
         
         if self.path == '/test/scenario':
             self.send_response(200)
