@@ -41,6 +41,7 @@ agg_solar = 6500
 agg_home = 900
 agg_grid = -2100
 agg_powerwall = -3500
+active_scenario = ''
 
 def generate_aggregates():
     global agg_solar, agg_home, agg_grid, agg_powerwall
@@ -197,12 +198,12 @@ class Handler(BaseHTTPRequestHandler):
 
 def do_test_endpoint(self):
     # Test Endpoints
-        global agg_solar, agg_home, agg_grid, agg_powerwall, api
+        global agg_solar, agg_home, agg_grid, agg_powerwall, api, active_scenario
         if self.path == '/test/toggle-grid':
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
-            session_valid = True
+            active_scenario = ''
             if "SystemGridConnected" not in api['/api/system_status/grid_status']:
                 api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
                 message = 'Grid is now connected'
@@ -215,6 +216,7 @@ def do_test_endpoint(self):
         if self.path.startswith('/test/battery-percentage/'):
             # Correct for the correction factor that pypowerwall will do
             percentage = 0.95 * float(self.path.split('/')[-1]) + 5
+            active_scenario = ''
             api['/api/system_status/soe'] = '{"percentage":%s}' % percentage
             self._send_ok()
             return
@@ -226,6 +228,20 @@ def do_test_endpoint(self):
             return
         
         # Sample scenarios
+        if self.path.startswith('/test/scenario/'):
+            active_scenario = self.path.split('/')[-1]
+        
+        if self.path == '/test/scenario':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "*")
+            self.end_headers()
+            message = '{"active_scenario":"%s"}' % active_scenario
+            self.wfile.write(bytes(message, "utf8"))
+            return
+
         if self.path == '/test/scenario/battery-exporting':
             agg_solar = 0
             agg_home = 900
