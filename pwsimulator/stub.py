@@ -198,14 +198,6 @@ class Handler(BaseHTTPRequestHandler):
 def do_test_endpoint(self):
     # Test Endpoints
         global agg_solar, agg_home, agg_grid, agg_powerwall, api
-        if self.path == '/test/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            with open('control.html', 'rb') as file:
-                self.wfile.write(file.read())
-            return
-        
         if self.path == '/test/toggle-grid':
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
