@@ -28,10 +28,11 @@ You can use pyPowerwall simulator to mimic the responses from the Powerwall Gate
     ```bash
     # Launch Proxy
     cd ..
-    export PW_PASSWORD="password"
-    export PW_EMAIL="me@example.com"
-    export PW_DEBUG="yes"
-    python3 proxy/server.py
+    PW_HOST=localhost \
+    PW_PASSWORD=password \
+    PW_EMAIL=me@example.com \
+    PW_DEBUG=yes python3 proxy/server.py
+
     # Open http://localhost:8675/example.html
     ```
 
@@ -113,3 +114,15 @@ curl -k http://localhost/test/scenario/sunny-day-outage
 curl -k http://localhost/test/scenario/cloudy-day-outage
 curl -k http://localhost/test/scenario/nighttime-outage
 ```
+
+## Powerwall Scenario Simulator
+
+Thanks to @mccahan, there is an external UI that can be used to manage the Simulator while also watching the Power Flow Animation udpates. This can be installed with:
+
+```bash
+docker run --rm -p 3000:3000 mccahan/pypowerwall-simulator-control:latest
+
+# Open http://localhost:3000
+```
+
+<img width="800" alt="image" src="https://github.com/user-attachments/assets/027674b0-f1ca-4363-9162-5f5f7be351ff" />
