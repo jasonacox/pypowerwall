@@ -25,7 +25,7 @@ import ssl
 import json
 import os
 
-version_tuple = (0, 0, 3)
+version_tuple = (0, 1, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -197,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(bytes(message, "utf8"))
 
 def do_test_endpoint(self):
-    if self.path == '/test/':
+    if self.path in ['/test', '/test/']:
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -361,6 +361,13 @@ def do_test_endpoint(self):
         self._send_ok()
         return  
 
+    # Unknown API
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    message = "Invalid test command received."
+    self.wfile.write(bytes(message, "utf8"))
+    
 # noinspection PyBroadException
 try:
     # noinspection PyTypeChecker
