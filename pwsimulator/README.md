@@ -35,6 +35,8 @@ You can use pyPowerwall simulator to mimic the responses from the Powerwall Gate
     # Open http://localhost:8675/example.html
     ```
 
+4. Change simulated values using [https://localhost/test/](https://localhost/test/).
+
 ## Build Your Own
 
 1. Build the Docker Container
