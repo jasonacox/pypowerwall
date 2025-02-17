@@ -78,3 +78,36 @@ docker stop pypowerwall
 # Start the server
 docker start pypowerwall
 ```
+
+## Test Commands
+
+### Battery
+Full: `curl -k https://localhost/test/battery-percentage/100.0`
+Empty: `curl -k https://localhost/test/battery-percentage/0.0`
+
+### Grid
+Toggle Grid Connection: `curl -k https://localhost/test/toggle-grid`
+
+### Solar
+Zero solar: `curl -k https://localhost/test/solar-power/0`
+Some solar: `curl -k https://localhost/test/solar-power/1450`
+
+### Scenarios
+This script includes some sample scenarios to cover common use cases
+
+```sh
+# Flow Scenarios
+curl -k http://localhost/test/scenario/battery-exporting
+curl -k http://localhost/test/scenario/solar-exporting
+curl -k http://localhost/test/scenario/solar-powered
+curl -k http://localhost/test/scenario/grid-powered
+curl -k http://localhost/test/scenario/self-powered
+curl -k http://localhost/test/scenario/battery-powered
+curl -k http://localhost/test/scenario/grid-charging
+curl -k http://localhost/test/scenario/solar-charging
+
+# Outages
+curl -k http://localhost/test/scenario/sunny-day-outage
+curl -k http://localhost/test/scenario/cloudy-day-outage
+curl -k http://localhost/test/scenario/nighttime-outage
+```
