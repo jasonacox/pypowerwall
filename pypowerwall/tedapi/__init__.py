@@ -45,15 +45,20 @@
 
 # Imports
 
+import json
 import logging
 import math
 import sys
 import time
-import json
+from http import HTTPStatus
+
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
 from pypowerwall import __version__
+
 from . import tedapi_pb2
+
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 # TEDAPI Fixed Gateway IP Address
@@ -898,7 +903,7 @@ class TEDAPI:
         self.din = None
         try:
             resp = requests.get(url, verify=False, timeout=5)
-            if resp.status_code != 200:
+            if resp.status_code != HTTPStatus.OK:
                 # Connected but appears to be Powerwall 3
                 log.debug("Detected Powerwall 3 Gateway")
                 self.pw3 = True
