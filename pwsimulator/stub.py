@@ -25,23 +25,38 @@ import ssl
 import json
 import os
 
-
-version_tuple = (0, 0, 3)
+version_tuple = (0, 1, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
 # Create Simulator
 server_address = ('0.0.0.0', 443)
-print(f'pyPowerwall - Powerwall Simulator v{__version__} by @{__author__} - Running')
+print(f'pyPowerwall - Powerwall Simulator v{__version__} by @{__author__} - Running', flush=True)
 
 # Environmental Variables
 VITALS = os.getenv('VITALS', True)
 
 # Static Results
-SOLAR = 6500
-HOME = 900
-GRID = -2100
-POWERWALL = -3500
+agg_solar = 6500
+agg_home = 900
+agg_grid = -2100
+agg_powerwall = -3500
+percentage = 23.975388097174584
+active_scenario = ''
+
+def generate_aggregates():
+    global agg_solar, agg_home, agg_grid, agg_powerwall, percentage
+    # Enforce grid balance
+    grid_bal = (agg_home - agg_powerwall - agg_solar)
+    if agg_grid != grid_bal:
+        agg_grid = grid_bal
+        print(f"Power imbalance detected, adjusting grid to {agg_grid}")
+    return '{"site":{"last_communication_time":"2021-10-17T07:23:34.290637169-07:00","instant_power":%d,"instant_reactive_power":-439,"instant_apparent_power":1414.830731925201,"frequency":0,"energy_exported":687.6503234502925,"energy_imported":887602.0847810425,"instant_average_voltage":210.20168600655896,"instant_average_current":12.47,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":1,"instant_total_current":12.47},"battery":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":330,"instant_apparent_power":335.4101966249685,"frequency":60.019999999999996,"energy_exported":136540,"energy_imported":161080,"instant_average_voltage":242.95,"instant_average_current":0.6000000000000001,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":2,"instant_total_current":0.6000000000000001},"load":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":-131,"instant_apparent_power":1546.0599115170148,"frequency":0,"energy_exported":0,"energy_imported":1120094.4344575922,"instant_average_voltage":210.20168600655896,"instant_average_current":7.328675755492901,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"instant_total_current":7.328675755492901},"solar":{"last_communication_time":"2021-10-17T07:23:34.290245943-07:00","instant_power":%d,"instant_reactive_power":-20,"instant_apparent_power":240.8318915758459,"frequency":60.012,"energy_exported":257720,"energy_imported":0,"instant_average_voltage":242.4,"instant_average_current":0.9488448844884488,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1000000000,"num_meters_aggregated":1,"instant_total_current":0.9488448844884488}}' % (agg_grid, agg_powerwall, agg_home, agg_solar)
+
+def generate_percentage():
+    global percentage
+    return '{"percentage":%f}' % percentage
+
 api = {
     '/api/status': '{"din":"1232100-00-E--TG123456789ABC","start_time":"2024-03-11 09:12:41 +0800","up_time_seconds":"127h34m16.275122187s","is_new":false,"version":"23.44.0 9064fc6a","git_hash":"4064fc6a5b32425509f91f19556f2431cb7f6872","commission_count":0,"device_type":"teg","teg_type":"unknown","sync_type":"v2.1","cellular_disabled":false,"can_reboot":true}',
     '/api/site_info/site_name': '{"site_name":"Tesla Energy Gateway","timezone":"America/Los_Angeles"}',
@@ -51,17 +66,34 @@ api = {
     '/api/system_status/grid_faults': '[]',
     '/api/networks': '[{"network_name":"ethernet_tesla_internal_default","interface":"EthType","enabled":true,"dhcp":true,"extra_ips":[{"ip":"192.168.90.2","netmask":24}],"active":true,"primary":true,"lastTeslaConnected":true,"lastInternetConnected":true,"iface_network_info":{"network_name":"ethernet_tesla_internal_default","ip_networks":[{"IP":"","Mask":"////AA=="}],"gateway":"","interface":"EthType","state":"DeviceStateReady","state_reason":"DeviceStateReasonNone","signal_strength":0,"hw_address":""}},{"network_name":"gsm_tesla_internal_default","interface":"GsmType","enabled":true,"dhcp":null,"active":true,"primary":false,"lastTeslaConnected":false,"lastInternetConnected":false,"iface_network_info":{"network_name":"gsm_tesla_internal_default","ip_networks":[{"IP":"","Mask":"/////w=="}],"gateway":"","interface":"GsmType","state":"DeviceStateReady","state_reason":"DeviceStateReasonNone","signal_strength":71,"hw_address":""}}]',
     '/api/site_info': '{"max_system_energy_kWh":27,"max_system_power_kW":10.8,"site_name":"Tesla Energy Gateway","timezone":"America/Los_Angeles","max_site_meter_power_kW":1000000000,"min_site_meter_power_kW":-1000000000,"nominal_system_energy_kWh":27,"nominal_system_power_kW":10.8,"panel_max_current":100,"grid_code":{"grid_code":"60Hz_240V_s_UL1741SA:2019_California","grid_voltage_setting":240,"grid_freq_setting":60,"grid_phase_setting":"Split","country":"United States","state":"California","utility":"Southern California Edison"}}',
-    '/api/meters/aggregates': '{"site":{"last_communication_time":"2021-10-17T07:23:34.290637169-07:00","instant_power":%d,"instant_reactive_power":-439,"instant_apparent_power":1414.830731925201,"frequency":0,"energy_exported":687.6503234502925,"energy_imported":887602.0847810425,"instant_average_voltage":210.20168600655896,"instant_average_current":12.47,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":1,"instant_total_current":12.47},"battery":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":330,"instant_apparent_power":335.4101966249685,"frequency":60.019999999999996,"energy_exported":136540,"energy_imported":161080,"instant_average_voltage":242.95,"instant_average_current":0.6000000000000001,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"num_meters_aggregated":2,"instant_total_current":0.6000000000000001},"load":{"last_communication_time":"2021-10-17T07:23:34.289652105-07:00","instant_power":%d,"instant_reactive_power":-131,"instant_apparent_power":1546.0599115170148,"frequency":0,"energy_exported":0,"energy_imported":1120094.4344575922,"instant_average_voltage":210.20168600655896,"instant_average_current":7.328675755492901,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1500000000,"instant_total_current":7.328675755492901},"solar":{"last_communication_time":"2021-10-17T07:23:34.290245943-07:00","instant_power":%d,"instant_reactive_power":-20,"instant_apparent_power":240.8318915758459,"frequency":60.012,"energy_exported":257720,"energy_imported":0,"instant_average_voltage":242.4,"instant_average_current":0.9488448844884488,"i_a_current":0,"i_b_current":0,"i_c_current":0,"last_phase_voltage_communication_time":"0001-01-01T00:00:00Z","last_phase_power_communication_time":"0001-01-01T00:00:00Z","timeout":1000000000,"num_meters_aggregated":1,"instant_total_current":0.9488448844884488}}' % (GRID, POWERWALL, HOME, SOLAR),
-    '/api/system_status/soe': '{"percentage":23.975388097174584}',
+    '/api/meters/aggregates': generate_aggregates(),
+    '/api/system_status/soe': generate_percentage(),
     '/api/system_status/grid_status': '{"grid_status":"SystemGridConnected","grid_services_active":false}',
     '/api/powerwalls': '{"powerwalls":[]}',
     '/api/auth/toggle/supported': '{"toggle_auth_supported":true}',
     '/api/solar_powerwall': '{"pvac_status":{"state":"PVAC_Active","disabled":false,"disabled_reasons":[],"grid_state":"Grid_Compliant","inv_state":"INV_Grid_Connected","v_out":241.60000000000002,"f_out":59.992000000000004,"p_out":0,"q_out":-10,"i_out":1.12,"string_vitals":[{"string_id":1,"connected":true,"measured_voltage":10.3,"current":0,"measured_power":0},{"string_id":2,"connected":false,"measured_voltage":33.2,"current":0,"measured_power":0},{"string_id":3,"connected":true,"measured_voltage":11,"current":0,"measured_power":0},{"string_id":4,"connected":true,"measured_voltage":10.3,"current":0,"measured_power":0}]},"pvs_status":{"state":"PVS_GridSupporting","disabled":false,"enable_output":true,"v_ll":242.4,"self_test_state":"PVS_SelfTestOff"},"pv_power_limit":230.39999999999998,"power_status_setpoint":"on","pvac_alerts":{"LastRxTime":"2024-03-18T20:40:15.175038-07:00","ReceivedMuxBitmask":1,"PVAC_alertMatrixIndex":0,"PVAC_a001_inv_L1_HW_overcurrent":false,"PVAC_a002_inv_L2_HW_overcurrent":false,"PVAC_a003_inv_HVBus_HW_overvoltage":false,"PVAC_a004_pv_HW_CMPSS_OC_STGA":false,"PVAC_a005_pv_HW_CMPSS_OC_STGB":false,"PVAC_a006_pv_HW_CMPSS_OC_STGC":false,"PVAC_a007_pv_HW_CMPSS_OC_STGD":false,"PVAC_a008_inv_HVBus_undervoltage":false,"PVAC_a009_SwAppBoot":false,"PVAC_a010_inv_AC_overvoltage":false,"PVAC_a011_inv_AC_undervoltage":false,"PVAC_a012_inv_AC_overfrequency":false,"PVAC_a013_inv_AC_underfrequency":false,"PVAC_a014_PVS_disabled_relay":false,"PVAC_a015_pv_HW_Allegro_OC_STGA":false,"PVAC_a016_pv_HW_Allegro_OC_STGB":false,"PVAC_a017_pv_HW_Allegro_OC_STGC":false,"PVAC_a018_pv_HW_Allegro_OC_STGD":false,"PVAC_a019_ambient_overtemperature":false,"PVAC_a020_dsp_overtemperature":false,"PVAC_a021_dcac_heatsink_overtemperature":false,"PVAC_a022_mppt_heatsink_overtemperature":false,"PVAC_a023_unused":false,"PVAC_a024_PVACrx_Command_mia":false,"PVAC_a025_PVS_Status_mia":false,"PVAC_a026_inv_AC_peak_overvoltage":false,"PVAC_a027_inv_K1_relay_welded":false,"PVAC_a028_inv_K2_relay_welded":false,"PVAC_a029_pump_faulted":false,"PVAC_a030_fan_faulted":false,"PVAC_a031_VFCheck_OV":false,"PVAC_a032_VFCheck_UV":false,"PVAC_a033_VFCheck_OF":false,"PVAC_a034_VFCheck_UF":false,"PVAC_a035_VFCheck_RoCoF":false,"PVAC_a036_inv_lost_iL_control":false,"PVAC_a037_PVS_processor_nERROR":false,"PVAC_a038_inv_failed_xcap_precharge":false,"PVAC_a039_inv_HVBus_SW_overvoltage":false,"PVAC_a040_pump_correction_saturated":false,"PVAC_a041_excess_PV_clamp_triggered":false,"PVAC_a042_mppt_curve_scan_completed":false,"PVAC_a043_fan_speed_mismatch_detected":false,"PVAC_a044_fan_deadband_toggled":false},"pvs_alerts":{"LastRxTime":"2024-03-18T20:40:15.065876-07:00","ReceivedMuxBitmask":0,"PVS_a001_WatchdogReset":false,"PVS_a002_SW_App_Boot":false,"PVS_a003_V12vOutOfBounds":false,"PVS_a004_V1v5OutOfBounds":false,"PVS_a005_VAfdRefOutOfBounds":false,"PVS_a006_GfOvercurrent300":false,"PVS_a007_UNUSED_7":false,"PVS_a008_UNUSED_8":false,"PVS_a009_GfOvercurrent030":false,"PVS_a010_PvIsolationTotal":false,"PVS_a011_PvIsolationStringA":false,"PVS_a012_PvIsolationStringB":false,"PVS_a013_PvIsolationStringC":false,"PVS_a014_PvIsolationStringD":false,"PVS_a015_SelfTestGroundFault":false,"PVS_a016_ESMFault":false,"PVS_a017_MciStringA":false,"PVS_a018_MciStringB":true,"PVS_a019_MciStringC":false,"PVS_a020_MciStringD":false,"PVS_a021_RapidShutdown":false,"PVS_a022_Mci1SignalLevel":false,"PVS_a023_Mci2SignalLevel":false,"PVS_a024_Mci3SignalLevel":false,"PVS_a025_Mci4SignalLevel":false,"PVS_a026_Mci1PvVoltage":false,"PVS_a027_Mci2PvVoltage":false,"PVS_a028_systemInitFailed":false,"PVS_a029_PvArcFault":false,"PVS_a030_VDcOv":false,"PVS_a031_Mci3PvVoltage":false,"PVS_a032_Mci4PvVoltage":false,"PVS_a033_dataException":false,"PVS_a034_PeImpedance":false,"PVS_a035_PvArcDetected":false,"PVS_a036_PvArcLockout":false,"PVS_a037_PvArcFaultData1":false,"PVS_a038_PvArcFault_SelfTest":false,"PVS_a039_SelfTestRelayFault":false,"PVS_a040_LEDIrrationalFault":false,"PVS_a041_MciPowerSwitch":false,"PVS_a042_MciPowerFault":false,"PVS_a043_InactiveUnsafePvStrings":false,"PVS_a044_FaultStatePvStringSafety":false,"PVS_a045_RelayCoilIrrationalFault":false,"PVS_a046_RelayCoilIrrationalLockout":false,"PVS_a047_AcSensorIrrationalFault":false,"PVS_a048_DcSensorIrrationalFault":false,"PVS_a049_arcSignalMibspiHealth":false,"PVS_a050_RelayCoilIrrationalWarning":false,"PVS_a051_DcBusShortCircuitDetected":false,"PVS_a052_PvArcFault_PreSelfTest":false,"PVS_a053_PvArcFaultData2":false,"PVS_a054_PvArcFaultData3":false,"PVS_a055_PvArcFaultData4":false,"PVS_a056_PvIsolation24HrLockout":false,"PVS_a057_DisabledDuringSelftest":false,"PVS_a058_MciOpenOnFault":false,"PVS_a059_MciOpen":true,"PVS_a060_MciClose":false,"PVS_a061_SelfTestRelayFaultLockout":false,"PVS_a062_arcSoftLockout":false,"PVS_a063_sbsComplete_info":false}}',
 }
 
-
 # Handlers
 class Handler(BaseHTTPRequestHandler):
+    # Handle CORS headers and preflight OPTIONS requests
+    def _send_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+
+    def _send_ok(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain')
+        self._send_cors_headers()
+        self.end_headers()
+        self.wfile.write(bytes('OK', "utf8"))
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
+
     # POST Handler
     def do_POST(self):
         message = "ERROR!"
@@ -93,6 +125,10 @@ class Handler(BaseHTTPRequestHandler):
     # GET Handler
     def do_GET(self):
         message = "ERROR!"
+
+        if self.path.startswith('/test'):
+            return do_test_endpoint(self)
+        
         # Handlers
         #
         # Status - SOE
@@ -169,6 +205,177 @@ class Handler(BaseHTTPRequestHandler):
         # Send Response
         self.wfile.write(bytes(message, "utf8"))
 
+def do_test_endpoint(self):
+    if self.path in ['/test', '/test/']:
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        with open('control.html', 'rb') as file:
+            self.wfile.write(file.read())
+        return
+
+    # Test Endpoints
+    global agg_solar, agg_home, agg_grid, agg_powerwall, api, active_scenario, percentage
+    if self.path == '/test/toggle-grid':
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        active_scenario = ''
+        if "SystemGridConnected" not in api['/api/system_status/grid_status']:
+            api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+            message = 'Grid is now connected'
+        else:
+            api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+            message = 'Grid is now disconnected'
+        self.wfile.write(bytes(message, "utf8"))
+        return
+
+    if self.path.startswith('/test/battery-percentage/'):
+        # Correct for the correction factor that pypowerwall will do
+        percentage = 0.95 * float(self.path.split('/')[-1]) + 5
+        active_scenario = ''
+        api['/api/system_status/soe'] = '{"percentage":%s}' % percentage
+        self._send_ok()
+        return
+
+    if self.path.startswith('/test/solar-power/'):
+        agg_solar = int(self.path.split('/')[-1])
+        api['/api/meters/aggregates'] = generate_aggregates()
+        self._send_ok()
+        return
+
+    # Sample scenarios
+    if self.path.startswith('/test/scenario/'):
+        active_scenario = self.path.split('/')[-1]
+        print("Setting active scenario to %s" % active_scenario, flush=True)
+
+    if self.path == '/test/scenario':
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.end_headers()
+        message = '{"active_scenario":"%s"}' % active_scenario
+        self.wfile.write(bytes(message, "utf8"))
+        return
+
+    if self.path == '/test/scenario/battery-exporting':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = -2100
+        agg_powerwall = 3000
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/solar-exporting':
+        agg_solar = 1500
+        agg_home = 400
+        agg_grid = -1100
+        agg_powerwall = 0
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/solar-powered':
+        agg_solar = 900
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 0
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/grid-powered':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 900
+        agg_powerwall = 0
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/self-powered':
+        agg_solar = 500
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 400
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/battery-powered':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 900
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/grid-charging':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 1200
+        agg_powerwall = -300
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/solar-charging':
+        agg_solar = 1200
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = -300
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemGridConnected","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/sunny-day-outage':
+        agg_solar = 4300
+        agg_home = 1200
+        agg_grid = 0
+        agg_powerwall = -3100
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/cloudy-day-outage':
+        agg_solar = 600
+        agg_home = 1400
+        agg_grid = 0
+        agg_powerwall = 800
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    if self.path == '/test/scenario/nighttime-outage':
+        agg_solar = 0
+        agg_home = 900
+        agg_grid = 0
+        agg_powerwall = 900
+        api['/api/meters/aggregates'] = generate_aggregates()
+        api['/api/system_status/grid_status'] = '{"grid_status":"SystemIslandedActive","grid_services_active":false}'
+        self._send_ok()
+        return
+
+    # Unknown API
+    self.send_response(200)
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    message = "Invalid test command received."
+    self.wfile.write(bytes(message, "utf8"))
 
 # noinspection PyBroadException
 try:

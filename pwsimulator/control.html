@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Powerwall Simulator Control</title>
+    <script>
+        function sendRequest(scenario) {
+            fetch(`/test/scenario/${scenario}`, { method: 'GET' })
+                .then(response => response.text())
+                .then(data => console.log(`Scenario ${scenario} activated:`, data))
+                .catch(error => console.error(`Error activating ${scenario}:`, error));
+        }
+    </script>
+</head>
+<body>
+    <h1>Powerwall Simulator Control</h1>
+    <button onclick="sendRequest('grid-charging')">Grid Charging</button>
+    <button onclick="sendRequest('solar-charging')">Solar Charging</button>
+    <button onclick="sendRequest('solar-powered')">Solar Powered</button>
+    <button onclick="sendRequest('self-powered')">Self Powered</button>
+    <button onclick="sendRequest('grid-powered')">Grid Powered</button>
+
+    <button onclick="sendRequest('battery-powered')">Battery Powered</button>
+    <button onclick="sendRequest('battery-exporting')">Battery Exporting</button>
+    <button onclick="sendRequest('solar-exporting')">Solar Exporting</button>
+
+    <h2>Outages</h2>
+    <button onclick="sendRequest('sunny-day-outage')">Sunny Day Outage</button>
+    <button onclick="sendRequest('cloudy-day-outage')">Cloudy Day Outage</button>
+    <button onclick="sendRequest('nighttime-outage')">Nighttime Outage</button>
+</body>
+</html>
