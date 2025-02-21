@@ -1,4 +1,5 @@
 FROM python:3.13-alpine
+RUN apk add gcc python3-dev musl-dev linux-headers
 WORKDIR /app
 COPY ./proxy/requirements.txt /app/requirements.txt
 RUN pip3 install --upgrade pip

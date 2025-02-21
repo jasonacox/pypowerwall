@@ -1,11 +1,14 @@
+from collections import defaultdict
 import json
 import logging
 import os
+import threading
 import time
 from typing import Optional, Union, List
 
 from teslapy import Tesla, Battery, SolarPanel
 
+from pypowerwall.api_lock import acquire_lock_with_backoff
 from pypowerwall.cloud.decorators import not_implemented_mock_data
 from pypowerwall.cloud.exceptions import * # pylint: disable=unused-wildcard-import
 from pypowerwall.cloud.mock_data import *  # pylint: disable=unused-wildcard-import
@@ -54,7 +57,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         super().__init__(email)
         self.site = None
         self.tesla = None
-        self.apilock = {}  # holds lock flag for pending cloud api requests
+        self.apilock = defaultdict(threading.Lock)  # holds lock flag for pending cloud api requests
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.siteindex = 0  # site index to use
@@ -296,35 +299,23 @@ class PyPowerwallCloud(PyPowerwallBase):
         if self.tesla is None:
             log.debug(" -- cloud: No connection to Tesla Cloud")
             return None, False
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
-                    return None, False
-        # Check to see if we have cached data
-        if self.pwcache.get(name) is not None and not force:
-            if self.pwcachetime[name] > time.perf_counter() - ttl:
-                log.debug(f" -- cloud: Returning cached {name} data")
-                return self.pwcache[name], True
-
         response = None
-        try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name, **kwargs)
-        except Exception as err:
-            log.error(f"Failed to retrieve {name} - {repr(err)}")
-        else:
-            log.debug(f" -- cloud: Retrieved {name} data")
-            self.pwcache[name] = response
-            self.pwcachetime[name] = time.perf_counter()
-        finally:
-            # Release lock
-            self.apilock[name] = False
+        with acquire_lock_with_backoff(self.apilock[name], self.timeout):
+            # Check to see if we have cached data
+            if self.pwcache.get(name) is not None and not force:
+                if self.pwcachetime[name] > time.perf_counter() - ttl:
+                    log.debug(f" -- cloud: Returning cached {name} data")
+                    return self.pwcache[name], True
+            try:
+                response = self.site.api(name, **kwargs)
+            except Exception as err:
+                log.error(f"Failed to retrieve {name} - {repr(err)}")
+            else:
+                log.debug(f" -- cloud: Retrieved {name} data")
+                self.pwcache[name] = response
+                self.pwcachetime[name] = time.perf_counter()
         return response, False
+
 
     def get_battery(self, force: bool = False):
         """

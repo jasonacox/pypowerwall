@@ -224,8 +224,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             }
         return data
 
-    def extract_grid_status(self, status) -> str:
-        alerts = lookup(status, ["control", "alerts", "active"])
+    def extract_grid_status(self, status) -> str | None:
+        alerts = lookup(status, ["control", "alerts", "active"]) or []
         if "SystemConnectedToGrid" in alerts:
             return "SystemGridConnected"
         grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])
@@ -314,6 +314,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
+        log.info(f"Getting aggregate info from {self.host}")
         config = self.tedapi.get_config(force=force)
         status = self.tedapi.get_status(force=force)
         # ensure both are dictionary objects

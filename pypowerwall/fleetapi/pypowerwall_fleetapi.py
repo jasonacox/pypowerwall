@@ -1,16 +1,18 @@
 import json
 import logging
 import os
+import threading
 import time
+from collections import defaultdict
 from typing import Optional, Union
 
-from pypowerwall.fleetapi.fleetapi import FleetAPI, CONFIGFILE
+from pypowerwall import __version__
 from pypowerwall.fleetapi.decorators import not_implemented_mock_data
-from pypowerwall.fleetapi.exceptions import * # pylint: disable=unused-wildcard-import
+from pypowerwall.fleetapi.exceptions import *  # pylint: disable=unused-wildcard-import
+from pypowerwall.fleetapi.fleetapi import CONFIGFILE, FleetAPI
 from pypowerwall.fleetapi.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.fleetapi.stubs import *
 from pypowerwall.pypowerwall_base import PyPowerwallBase
-from pypowerwall import __version__
 
 log = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                  authpath: str = ""):
         super().__init__(email)
         self.fleet = None
-        self.apilock = {}  # holds lock flag for pending api requests
+        self.apilock = defaultdict(threading.Lock)  # holds lock flag for pending api requests
         self.siteindex = 0  # site index to use
         self.siteid = siteid  # site id to use
         self.counter = 0  # counter for SITE_DATA API
@@ -796,6 +798,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
 if __name__ == "__main__":
     import sys
+
     # Command Line Debugging Mode
     print(f"pyPowerwall - Powerwall Gateway FleetAPI Test [v{__version__}]")
     set_debug(quiet=False, debug=True, color=True)

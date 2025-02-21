@@ -36,12 +36,14 @@
     Set: PW_CONTROL_SECRET to enable this mode.
 
 """
+import copy
 import datetime
 import json
 import logging
 import os
 import resource
 import signal
+import socket
 import ssl
 import sys
 import threading
@@ -49,9 +51,12 @@ import time
 from enum import StrEnum, auto
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Dict, Final, List, Set, Tuple
+from ipaddress import IPv4Address
+from typing import Any, Dict, Final, List, Set, Tuple
 from urllib.parse import parse_qs, urlparse
 
+import psutil
+from pyroute2 import IPRoute
 from transform import get_static, inject_js
 
 import pypowerwall
@@ -177,6 +182,61 @@ class PROXY_STATS_TYPE(StrEnum):
 type PROXY_CONFIG = Dict[CONFIG_TYPE, str | int | bool | None]
 type PROXY_STATS = Dict[PROXY_STATS_TYPE, str | int | bool | None | PROXY_CONFIG | Dict[str, int]]
 
+
+def get_local_ip() -> IPv4Address:
+    """
+    Retrieve the local IPv4 address associated with the system's default network interface.
+
+    This function determines the default network interface by inspecting the system's routing
+    table for a route with a destination length of 0 (i.e., the default route). It then retrieves
+    the interface name corresponding to that route and uses the `psutil` library to obtain the
+    associated IPv4 address. The resulting IP address is returned as an `ipaddress.IPv4Address`
+    object, ensuring a strongly typed representation.
+
+    Returns:
+        ipaddress.IPv4Address: The IPv4 address of the default network interface.
+
+    Raises:
+        RuntimeError: If the default network interface, the interface name, or the IPv4 address
+                      cannot be found.
+        Exception: Propagates any unexpected exceptions raised by the underlying libraries.
+    """
+
+    with IPRoute() as ip:
+        iface_index = next(
+            (
+                iface_index
+                for route in ip.get_routes(family=socket.AF_INET)
+                if route.get('dst_len', 0) == 0
+                for key, iface_index in route.get('attrs', [])
+                if key == 'RTA_OIF'
+            ),
+            None
+        )
+        if iface_index is None:
+            raise RuntimeError("Default network interface not found.")
+
+        iface_name = next(
+            (
+                name for key, name in ip.link('get', index=iface_index)[0].get('attrs', [])
+                if key == 'IFLA_IFNAME'
+            ),
+            None
+        )
+        if iface_name is None:
+            raise RuntimeError("Interface name not found.")
+
+    addrs = psutil.net_if_addrs().get(iface_name, [])
+    ip_addr_str = next(
+        (addr.address for addr in addrs if addr.family == socket.AF_INET),
+        None
+    )
+    if ip_addr_str is None:
+        raise RuntimeError(f"No IPv4 address found for interface '{iface_name}'.")
+
+    return IPv4Address(ip_addr_str)
+
+
 # Get Value Function - Key to Value or Return Null
 def get_value(a, key):
     value = a.get(key)
@@ -222,7 +282,7 @@ def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG)
 class Handler(BaseHTTPRequestHandler):
     def __init__(self, request, client_address, server,
                  configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, proxy_stats: PROXY_STATS,
-                 all_pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]]):
+                 all_pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall, PROXY_CONFIG]]):
         self.configuration = configuration
         self.pw = pw
         self.pw_control = pw_control
@@ -341,8 +401,8 @@ class Handler(BaseHTTPRequestHandler):
 
         # Map paths to handler functions
         path_handlers = {
-            '/aggregates': self.handle_aggregates,
-            '/api/meters/aggregates': self.handle_aggregates,
+            '/aggregates': self.handle_combined_aggregates,
+            '/api/meters/aggregates': self.handle_individual_gateway_aggregates,
             '/soe': self.handle_soe,
             '/api/system_status/soe': self.handle_soe_scaled,
             '/api/system_status/grid_status': self.handle_grid_status,
@@ -406,30 +466,49 @@ class Handler(BaseHTTPRequestHandler):
                 self.proxystats[PROXY_STATS_TYPE.URI][path] = 1
 
 
-    def handle_aggregates(self) -> str:
-        def merge_category(dest: dict, src: dict) -> None:
+    def handle_individual_gateway_aggregates(self) -> str:
+        aggregates = self.pw.poll('/api/meters/aggregates')
+        if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
+            solar = aggregates['solar']
+            if solar and 'instant_power' in solar and solar['instant_power'] < 0:
+                solar['instant_power'] = 0
+                # Shift energy from solar to load
+                if 'load' in aggregates and 'instant_power' in aggregates['load']:
+                    aggregates['load']['instant_power'] -= solar['instant_power']
+            else:
+                load = aggregates.get("load", {})
+                if load:
+                    load["instant_power"] = abs(load.get("instant_power"))
+                site = aggregates.get("site", {})
+                if site:
+                    site["instant_power"] = abs(site.get("instant_power"))
+        return self.send_json_response(aggregates)
+
+
+    def handle_combined_aggregates(self) -> str:
+        def merge_category(dest: Dict[Any, Any], src: Dict[Any, Any]) -> None:
             """
             Merge two dictionaries representing the same meter category.
             Numeric values (or None, treated as 0) are added together,
             while non-numeric values (like timestamps) are set only if not already present.
             """
-            SKIP_KEYS: Final[List[str]] = ["instant_average_voltage"]
+            SKIP_KEYS: Final[List[str]] = ["instant_average_voltage", "timeout", "disclaimer"]
             for key, value in src.items():
                 if key in SKIP_KEYS:
                     dest.setdefault(key, value)
                     continue
-                if isinstance(value, (int, float)) or value is None:
+                if isinstance(value, (int, float)):
                     # Treat None as 0 when summing.
-                    dest[key] = dest.get(key, 0) + (value if value is not None else 0)
+                    dest[key] = (dest.get(key, 0) or 0) + (value if value is not None else 0)
                     continue
                 # For non-numeric fields, only set a value if one hasn't been set yet.
                 dest.setdefault(key, value)
 
-        def aggregate_meter_results(meter_results: list[dict]) -> dict:
+        def aggregate_meter_results(meter_results: List[Dict[Any, Any]]) -> Dict[Any, Any]:
             """
             Combine a list of meter result dictionaries into a single aggregated dict.
             """
-            COMBINE_CATEGORIES: Final[List[str]] = ["solar"]
+            COMBINE_CATEGORIES: Final[List[str]] = ["solar", "load", "site"]
             combined = {}
             for result in meter_results:
                 for category, readings in result.items():
@@ -441,9 +520,7 @@ class Handler(BaseHTTPRequestHandler):
             return combined
 
         # Poll all meter objects and gather non-empty results.
-        results = [result for pws in self.all_pws if (result := pws[0].poll("/api/meters/aggregates"))]
-
-        # Combine all the results.
+        results = [copy.deepcopy(result) for pws in self.all_pws if (result := pws[0].poll("/api/meters/aggregates"))]
         combined = aggregate_meter_results(results)
 
         # Adjust negative solar values if configuration disallows negative solar.
@@ -455,6 +532,13 @@ class Handler(BaseHTTPRequestHandler):
                 if "load" in combined:
                     load = combined["load"]
                     load["instant_power"] = load.get("instant_power", 0) + (-negative_value)
+            else:
+                load = combined.get("load", {})
+                if load:
+                    load["instant_power"] = abs(load.get("instant_power"))
+                site = combined.get("site", {})
+                if site:
+                    site["instant_power"] = abs(site.get("instant_power"))
 
         return self.send_json_response(combined)
 
@@ -813,9 +897,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", f"AuthCookie={auth['AuthCookie']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord={auth['UserRecord']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
 
+        content, content_type = get_static(WEB_ROOT, path)
         if path == "/" or path == "":
             path = "/index.html"
-            content, content_type = get_static(WEB_ROOT, path)
             status = self.pw.status()
             content = content.decode(UTF_8)
             # fix the following variables that if they are None, return ""
@@ -825,20 +909,24 @@ class Handler(BaseHTTPRequestHandler):
             content = content.replace("{STYLE}", self.configuration.get(CONFIG_TYPE.PW_STYLE, "") or "")
             # convert fcontent back to bytes
             content = bytes(content, UTF_8)
-        else:
-            content, content_type = get_static(WEB_ROOT, path)
+        elif path == "/app.js":
+            content = content.decode(UTF_8)
+            content = content.replace("{PW_HOST}", str(get_local_ip()) or "")
+            content = content.replace("{PW_PORT}", str(self.configuration.get(CONFIG_TYPE.PW_PORT, "")) or "")
+            content = bytes(content, UTF_8)
+
 
         if content:
-            log.debug("Served from local web root: {} type {}".format(path, content_type))
+            log.info("Served from local web root: {} type {}".format(path, content_type))
         # If not found, serve from Powerwall web server
         elif self.pw.cloudmode or self.pw.fleetapi:
-            log.debug(f"Cloud Mode - File not found: {path}")
+            log.info(f"Cloud Mode - File not found: {path}")
             content = bytes("Not Found", UTF_8)
             content_type = "text/plain"
         elif self.pw.client.session:
             # Proxy request to Powerwall web server.
             pw_url = f"https://{self.pw.host}/{path.lstrip('/')}"
-            log.debug(f"Proxy request to: {pw_url}")
+            log.info(f"Proxy request to: {pw_url}")
             try:
                 session = self.pw.client.session
                 response = session.get(
@@ -850,9 +938,10 @@ class Handler(BaseHTTPRequestHandler):
                     timeout=self.pw.timeout,
                 )
                 content = response.content
+                log.info(f"Proxy request content: {content}")
                 content_type = response.headers.get('content-type', 'text/html')
             except Exception as exc:
-                log.error("Error proxying request: %s", exc)
+                log.info("Error proxying request: %s", exc)
                 content = b"Error during proxy"
                 content_type = "text/plain"
 
@@ -871,9 +960,9 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(content)
         except Exception as exc:
             if "Broken pipe" in str(exc):
-                log.debug(f"Client disconnected before payload sent [doGET]: {exc}")
+                log.info(f"Client disconnected before payload sent [doGET]: {exc}")
                 return content
-            log.error(f"Error occured while sending PROXY response to client [doGET]: {exc}")
+            log.info(f"Error occured while sending PROXY response to client [doGET]: {exc}")
         return content
 
 
@@ -975,7 +1064,7 @@ def build_configuration() -> List[PROXY_CONFIG]:
     return configs
 
 
-def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]]):
+def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowerwall.Powerwall, pw_control: pypowerwall.Powerwall, pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall, PROXY_CONFIG]]):
     proxystats: PROXY_STATS = {
         PROXY_STATS_TYPE.CF: configuration[CONFIG_TYPE.PW_CACHE_FILE],
         PROXY_STATS_TYPE.CLEAR: int(time.time()),
@@ -1053,13 +1142,13 @@ def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowe
 
 def main() -> None:
     servers: List[threading.Thread] = []
-    pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall]] = []
+    pws: List[Tuple[pypowerwall.Powerwall, pypowerwall.Powerwall, PROXY_CONFIG]] = []
     configs = build_configuration()
 
     # Build powerwalls objects
     for config in configs:
         try:
-            pw = pypowerwall.Powerwall(
+            pw_monitor = pypowerwall.Powerwall(
                 host=config[CONFIG_TYPE.PW_HOST],
                 password=config[CONFIG_TYPE.PW_PASSWORD],
                 email=config[CONFIG_TYPE.PW_EMAIL],
@@ -1075,6 +1164,8 @@ def main() -> None:
                 retry_modes=True,
                 gw_pwd=config[CONFIG_TYPE.PW_GW_PWD]
             )
+            pw_control = configure_pw_control(pw_monitor, config)
+            pws.append((pw_monitor, pw_control, config))
         except Exception as e:
             log.error(e)
             log.error("Fatal Error: Unable to connect. Please fix config and restart.")
@@ -1084,13 +1175,11 @@ def main() -> None:
                 except (KeyboardInterrupt, SystemExit):
                     sys.exit(0)
 
-        pw_control = configure_pw_control(pw, config)
-        pws.append((pw, pw_control))
-
     # Create the servers
-    for (pw, config) in zip(pws, configs):
-        powerwall = pw[0]
+    for pw in pws:
+        powerwall_monitor = pw[0]
         powerwall_control = pw[1]
+        config = pw[2]
         server = threading.Thread(
             target=run_server,
             args=(
@@ -1098,7 +1187,7 @@ def main() -> None:
                 config[CONFIG_TYPE.PW_PORT],           # Port
                 config[CONFIG_TYPE.PW_HTTPS] == "yes", # HTTPS
                 config,
-                powerwall,
+                powerwall_monitor,
                 powerwall_control,
                 pws
             )
