@@ -372,6 +372,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith('/csv') or self.path.startswith('/csv/v2'):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
+            # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = 'text/plain; charset=utf-8'
             batterylevel = pw.level() or 0
             grid = pw.grid() or 0
