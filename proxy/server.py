@@ -482,7 +482,8 @@ class Handler(BaseHTTPRequestHandler):
                 site = aggregates.get("site", {})
                 if site:
                     site["instant_power"] = abs(site.get("instant_power"))
-        return self.send_json_response(aggregates)
+        appended = {f"{self.pw.din()[-3:]}_{key}": value for key, value in aggregates.items()}
+        return self.send_json_response(appended)
 
 
     def handle_combined_aggregates(self) -> str:
@@ -522,6 +523,12 @@ class Handler(BaseHTTPRequestHandler):
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := pws[0].poll("/api/meters/aggregates"))]
         combined = aggregate_meter_results(results)
+
+        site = combined.get("site", {})
+        solar = combined.get("solar", {})
+        load = combined.get("load", {})
+        if site and solar and load:
+            load["instant_power"] = solar.get("instant_power") + site.get("instant_power")
 
         # Adjust negative solar values if configuration disallows negative solar.
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR]:
@@ -1135,8 +1142,8 @@ def run_server(host, port, enable_https, configuration: PROXY_CONFIG, pw: pypowe
                     log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
 
             server.serve_forever()
-        except (Exception, KeyboardInterrupt, SystemExit):
-            log.info(f"Server on {host}:{port} stopped")
+        except (Exception, KeyboardInterrupt, SystemExit) as e:
+            log.info(f"Server on {host}:{port} stopped due to exception {e}")
             sys.exit(0)
 
 

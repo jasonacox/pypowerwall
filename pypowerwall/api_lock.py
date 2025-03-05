@@ -6,7 +6,6 @@ from contextlib import contextmanager
 
 log = logging.getLogger(__name__)
 
-
 def acquire_with_exponential_backoff(
     lock: threading.Lock,
     timeout: float,
@@ -38,7 +37,8 @@ def acquire_with_exponential_backoff(
     delay = initial_delay
 
     # Continue trying until the elapsed time exceeds the timeout
-    while (elapsed := time.perf_counter() - start_time) < timeout:
+    elapsed = time.perf_counter() - start_time
+    while elapsed < timeout:
         if lock.acquire(blocking=False):
             return True
         remaining_time = timeout - elapsed
@@ -47,15 +47,18 @@ def acquire_with_exponential_backoff(
         time.sleep(sleep_time)
         delay = min(delay * factor, max_delay)
         log.info(f"Timeout for {lock}")
+        elapsed = time.perf_counter() - start_time
 
     return False
 
+
 @contextmanager
-def acquire_lock_with_backoff(lock, timeout, **backoff_kwargs):
+def acquire_lock_with_backoff(func, timeout, **backoff_kwargs):
     """
     Context manager for acquiring a lock using exponential backoff with jitter.
     Raises TimeoutError if the lock is not acquired in the given timeout.
     """
+    lock: threading.Lock = func.api_lock
     if not acquire_with_exponential_backoff(lock, timeout, **backoff_kwargs):
         raise TimeoutError("Unable to acquire lock within the specified timeout.")
     try:
