@@ -90,16 +90,18 @@ def lookup(data, keylist):
     return data
 
 def uses_api_lock(func):
+    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
+    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
+        func.api_lock = threading.Lock()
     @wraps(func)
     def wrapper(*args, **kwargs):
         # Inject the function object itself into kwargs.
         kwargs['self_function'] = func
         return func(*args, **kwargs)
-    func.api_lock = threading.Lock()
     return wrapper
 
 # TEDAPI Class
-class TEDAPI():
+class TEDAPI:
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP) -> None:
         self.debug = debug
