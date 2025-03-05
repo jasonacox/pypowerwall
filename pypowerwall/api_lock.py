@@ -8,20 +8,6 @@ from typing import DefaultDict
 
 log = logging.getLogger(__name__)
 
-
-class ApiLockPool:
-    def __init__(self):
-        self._locks: DefaultDict[str, threading.Lock] = defaultdict(threading.Lock)
-        self._pool_lock = threading.Lock()
-
-    def get_lock(self, key: str) -> threading.Lock:
-        with self._pool_lock:
-            return self._locks[key]
-
-    def __getitem__(self, key: str) -> threading.Lock:
-        return self.get_lock(key)
-
-
 def acquire_with_exponential_backoff(
     lock: threading.Lock,
     timeout: float,
@@ -69,11 +55,12 @@ def acquire_with_exponential_backoff(
 
 
 @contextmanager
-def acquire_lock_with_backoff(lock, timeout, **backoff_kwargs):
+def acquire_lock_with_backoff(func, timeout, **backoff_kwargs):
     """
     Context manager for acquiring a lock using exponential backoff with jitter.
     Raises TimeoutError if the lock is not acquired in the given timeout.
     """
+    lock: threading.Lock = func.api_lock
     if not acquire_with_exponential_backoff(lock, timeout, **backoff_kwargs):
         raise TimeoutError("Unable to acquire lock within the specified timeout.")
     try:

@@ -43,12 +43,13 @@
  For more information see https://github.com/jasonacox/pypowerwall
 """
 
-# Imports
 import json
 import logging
 import math
 import sys
+import threading
 import time
+from functools import wraps
 from http import HTTPStatus
 from typing import List
 
@@ -57,7 +58,7 @@ import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
 from pypowerwall import __version__
-from pypowerwall.api_lock import ApiLockPool, acquire_lock_with_backoff
+from pypowerwall.api_lock import acquire_lock_with_backoff
 
 from . import tedapi_pb2
 
@@ -88,6 +89,15 @@ def lookup(data, keylist):
             return None
     return data
 
+def uses_api_lock(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Inject the function object itself into kwargs.
+        kwargs['self_function'] = func
+        return func(*args, **kwargs)
+    func.api_lock = threading.Lock()
+    return wrapper
+
 # TEDAPI Class
 class TEDAPI:
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
@@ -102,7 +112,6 @@ class TEDAPI:
         self.gw_ip = host
         self.din = None
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
-        self.apilock = ApiLockPool()
         if not gw_pwd:
             raise ValueError("Missing gw_pwd")
         if self.debug:
@@ -113,7 +122,6 @@ class TEDAPI:
             log.error("Failed to connect to Powerwall Gateway")
 
     # TEDAPI Functions
-
     def set_debug(self, toggle=True, color=True):
         """Enable verbose logging"""
         if toggle:
@@ -160,7 +168,9 @@ class TEDAPI:
         self.pwcache["din"] = din
         return din
 
-    def get_config(self,force=False):
+
+    @uses_api_lock
+    def get_config(self, self_function, force=False):
         """
         Get the Powerwall Gateway Configuration
 
@@ -193,7 +203,7 @@ class TEDAPI:
         """
         # Check for lock and wait if api request already sent
         data = None
-        with acquire_lock_with_backoff(self.apilock['config'], self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout):
             # Check Cache
             if not force and "config" in self.pwcachetime:
                 if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
@@ -249,7 +259,9 @@ class TEDAPI:
                 data = None
         return data
 
-    def get_status(self, force=False):
+
+    @uses_api_lock
+    def get_status(self, self_function, force=False):
         """
         Get the Powerwall Gateway Status
 
@@ -291,7 +303,7 @@ class TEDAPI:
         """
         # Check for lock and wait if api request already sent
         data = None
-        with acquire_lock_with_backoff(self.apilock['status'], self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout):
             # Check Cache
             if not force and "status" in self.pwcachetime:
                 if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
@@ -351,7 +363,9 @@ class TEDAPI:
                 data = None
         return data
 
-    def get_device_controller(self, force=False):
+
+    @uses_api_lock
+    def get_device_controller(self, self_function, force=False):
         """
         Get the Powerwall Device Controller Status
 
@@ -371,7 +385,7 @@ class TEDAPI:
         """
         # Check for lock and wait if api request already sent
         data = None
-        with acquire_lock_with_backoff(self.apilock['controller'], self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout):
             # Check Cache
             if not force and "controller" in self.pwcachetime:
                 if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
@@ -432,7 +446,9 @@ class TEDAPI:
                 data = None
         return data
 
-    def get_firmware_version(self, force=False, details=False):
+
+    @uses_api_lock
+    def get_firmware_version(self, self_function, force=False, details=False):
         """
         Get the Powerwall Firmware Version
 
@@ -442,7 +458,7 @@ class TEDAPI:
                             gateway part number, serial number, and wireless devices
         """
         payload = None
-        with acquire_lock_with_backoff(self.apilock['firmware'], self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout):
             # Check Connection
             if not self.din:
                 if not self.connect():
@@ -524,14 +540,16 @@ class TEDAPI:
                 payload = None
         return payload
 
-    def get_components(self, force=False):
+
+    @uses_api_lock
+    def get_components(self, self_function, force=False):
         """
         Get the Powerwall 3 Device Information
 
         Note: Provides empty response for previous Powerwall versions
         """
         components = None
-        with acquire_lock_with_backoff(self.apilock['components'], self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout):
             # Check Connection
             if not self.din:
                 if not self.connect():
@@ -639,14 +657,14 @@ class TEDAPI:
             # Rate limited - return None
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        components = self.get_components(force)
+        components = self.get_components(force=force)
         din = self.din
         if not components:
             log.error("Unable to get Powerwall 3 Components")
             return None
 
         response = {}
-        config = self.get_config(force)
+        config = self.get_config(force=force)
         battery_blocks = config['battery_blocks']
 
         # Loop through all the battery blocks (Powerwalls)
@@ -763,12 +781,13 @@ class TEDAPI:
         """
         Return Powerwall Battery Blocks
         """
-        config = self.get_config(force)
+        config = self.get_config(force=force)
         battery_blocks = config.get('battery_blocks') or []
         return battery_blocks
 
 
-    def get_battery_block(self, din=None, force=False):
+    @uses_api_lock
+    def get_battery_block(self, self_function, din=None, force=False):
         """
         Get the Powerwall 3 Battery Block Information
 
@@ -783,7 +802,7 @@ class TEDAPI:
             log.error("No DIN specified - Unable to get battery block")
             return None
         data = None
-        with acquire_lock_with_backoff(self.apilock[din], self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout):
             # Check Cache
             if not force and din in self.pwcachetime:
                 if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
@@ -869,7 +888,7 @@ class TEDAPI:
         Get the current power in watts for a location:
             BATTERY, SITE, LOAD, SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR
         """
-        status = self.get_status(force)
+        status = self.get_status(force=force)
         power = lookup(status, ['control', 'meterAggregates'])
         if not isinstance(power, list):
             return None
@@ -889,7 +908,7 @@ class TEDAPI:
         """
         Get the time remaining in hours
         """
-        status = self.get_status(force)
+        status = self.get_status(force=force)
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
         load = self.current_power('LOAD', force)
         if not nominalEnergyRemainingWh or not load:
@@ -902,7 +921,7 @@ class TEDAPI:
         """
         Get the battery level as a percentage
         """
-        status = self.get_status(force)
+        status = self.get_status(force=force)
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
         nominalFullPackEnergyWh = lookup(status, ['control', 'systemStatus', 'nominalFullPackEnergyWh'])
         if not nominalEnergyRemainingWh or not nominalFullPackEnergyWh:
@@ -912,7 +931,6 @@ class TEDAPI:
 
 
     # Vitals API Mapping Function
-
     def vitals(self, force=False):
         """
         Use tedapi data to create a vitals API dictionary
@@ -928,8 +946,8 @@ class TEDAPI:
             return power
 
         # status = self.get_status(force)
-        config = self.get_config(force)
-        status = self.get_device_controller(force)
+        config = self.get_config(force=force)
+        status = self.get_device_controller(force=force)
 
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
@@ -1363,8 +1381,8 @@ class TEDAPI:
         """
         Get the list of battery blocks from the Powerwall Gateway
         """
-        status = self.get_status(force)
-        config = self.get_config(force)
+        status = self.get_status(force=force)
+        config = self.get_config(force=force)
 
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
