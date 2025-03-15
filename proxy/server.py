@@ -679,7 +679,7 @@ class Handler(BaseHTTPRequestHandler):
                     f"PW{idx}_PINV_VSplit2": get_value(data, 'PINV_VSplit2')
                 })
             if device.startswith(('PVAC', 'TESYNC', 'TEMSA')):
-                fcv.update({(f"{key}" if not din_suffix else f"{din_suffix}_{key}"): value for key, value in data.items() if key.startswith(('ISLAND', 'METER', 'PVAC_Fan_Speed', 'PVAC_Fout', 'PVAC_VL1Ground', 'PVAC_VL2Ground'))})
+                fcv.update({(f"{key}" if not din_suffix else f"{din_suffix}_{key}"): value for key, value in data.items() if key.startswith(('ISLAND', 'METER', 'PVAC_Fan_Speed', 'PVAC_Fout', 'PVAC_VL'))})
         fcv["grid_status"] = self.pw.grid_status(type="numeric")
         return self.send_json_response(fcv)
 
