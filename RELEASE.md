@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## v0.12.8 - TEDAPI Command Line Fix
+## v0.12.8 - TEDAPI Improvements
 
 * Avoid divide by zero when nominalFullPackEnergyWh is zero by @rlpm in https://github.com/jasonacox/pypowerwall/pull/150
+* Add thread locking to TEDAPI by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/148
 
 ## v0.12.7 - SystemConnectedToGrid Fix
 
