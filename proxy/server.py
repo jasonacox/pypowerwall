@@ -669,6 +669,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_i_out": get_value(block, "i_out"),
             })
         vitals = self.pw.vitals() or {}
+        din_suffix = self.pw.din()[-3:]
         for idx, (device, data) in enumerate(vitals.items()):
             if device.startswith('TEPINV'):
                 fcv.update({
@@ -677,8 +678,8 @@ class Handler(BaseHTTPRequestHandler):
                     f"PW{idx}_PINV_VSplit1": get_value(data, 'PINV_VSplit1'),
                     f"PW{idx}_PINV_VSplit2": get_value(data, 'PINV_VSplit2')
                 })
-            if device.startswith(('TESYNC', 'TEMSA')):
-                fcv.update({key: value for key, value in data.items() if key.startswith(('ISLAND', 'METER'))})
+            if device.startswith(('PVAC', 'TESYNC', 'TEMSA')):
+                fcv.update({(f"{key}" if not din_suffix else f"{din_suffix}_{key}"): value for key, value in data.items() if key.startswith(('ISLAND', 'METER', 'PVAC_Fan_Speed', 'PVAC_Fout', 'PVAC_VL1Ground', 'PVAC_VL2Ground'))})
         fcv["grid_status"] = self.pw.grid_status(type="numeric")
         return self.send_json_response(fcv)
 
