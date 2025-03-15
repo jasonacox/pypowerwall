@@ -115,8 +115,11 @@ def run_tedapi_test(auto=False, debug=False):
     print(" - Power Data:")
     nominalEnergyRemainingWh = status.get('control', {}).get('systemStatus', {}).get('nominalEnergyRemainingWh', 0)
     nominalFullPackEnergyWh = status.get('control', {}).get('systemStatus', {}).get('nominalFullPackEnergyWh', 0)
-    soe = round(nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100, 2)
-    print(f"   - Battery Charge: {soe}% ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
+    if nominalFullPackEnergyWh == 0:
+        print(f"   - Battery Full Charge Unknown ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
+    else:
+        soe = round(nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100, 2)
+        print(f"   - Battery Charge: {soe}% ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
     meterAggregates = status.get('control', {}).get('meterAggregates', [])
     for meter in meterAggregates:
         location = meter.get('location', 'Unknown').title()
