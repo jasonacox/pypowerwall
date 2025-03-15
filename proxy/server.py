@@ -669,7 +669,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_i_out": get_value(block, "i_out"),
             })
         vitals = self.pw.vitals() or {}
-        din_suffix = self.pw.din()[-3:]
+        din_suffix = self.pw.din()[-3:] if len(self.all_pws) > 1 else None
         for idx, (device, data) in enumerate(vitals.items()):
             if device.startswith('TEPINV'):
                 fcv.update({
