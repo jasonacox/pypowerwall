@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.8 - TEDAPI Command Line Fix
+
+* Avoid divide by zero when nominalFullPackEnergyWh is zero by @rlpm in https://github.com/jasonacox/pypowerwall/pull/150
+
 ## v0.12.7 - SystemConnectedToGrid Fix
 
 * Alerts in extract_grid_status can be None. Block this edge case. #145
