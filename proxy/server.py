@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t68"
+BUILD = "t69"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -369,9 +369,10 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == '/api/system_status/grid_status':
             # Grid Status - JSON
             message: str = pw.poll('/api/system_status/grid_status', jsonformat=True)
-        elif self.path == '/csv' or self.path == '/csv/v2':
+        elif self.path.startswith('/csv') or self.path.startswith('/csv/v2'):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
+            # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = 'text/plain; charset=utf-8'
             batterylevel = pw.level() or 0
             grid = pw.grid() or 0
@@ -382,15 +383,21 @@ class Handler(BaseHTTPRequestHandler):
                 solar = 0
                 # Shift energy from solar to load
                 home -= solar
-            if self.path == '/csv':
-                message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
-                    % (grid, home, solar, battery, batterylevel)
-            else:
+            if self.path.startswith('/csv/v2'):
                 gridstatus = 1 if pw.grid_status() == 'UP' else 0
                 reserve = pw.get_reserve() or 0
-                message = "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" \
+                message = ""
+                if "headers" in self.path:
+                    message += "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
+                message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" \
                     % (grid, home, solar, battery, batterylevel, 
                         gridstatus, reserve)
+            else:
+                message = ""
+                if "headers" in self.path:
+                    message += "Grid,Home,Solar,Battery,BatteryLevel\n"
+                message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
+                    % (grid, home, solar, battery, batterylevel)
         elif self.path == '/vitals':
             # Vitals Data - JSON
             message: str = pw.vitals(jsonformat=True) or json.dumps({})

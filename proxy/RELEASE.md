@@ -1,5 +1,15 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t69 (15 Mar 2025)
+
+* pyPowerwall v0.12.7 - Added new data features (Neurio Vitals, Aggregates Data) and fixed a critical issue (SystemConnectedToGrid Fix) while normalizing Alerts.
+* Add option to get CSV headers by @mccahan in https://github.com/jasonacox/pypowerwall/pull/149
+
+```bash
+curl http://localhost:8675/csv/v2?headers
+curl http://localhost:8675/csv?headers
+```
+
 ### Proxy t68 (20 Jan 2025)
 
 * pyPowerwall v0.12.3 - Adds Custom GW IP for TEDAPI. 
