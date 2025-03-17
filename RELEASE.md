@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.9 - Fan Speeds
+
+* Add PVAC fan speeds to TEDAPI vitals monitoring (PVAC_Fan_Speed_Actual_RPM and PVAC_Fan_Speed_Target_RPM).
+
 ## v0.12.8 - TEDAPI Improvements
 
 * Avoid divide by zero when nominalFullPackEnergyWh is zero by @rlpm in https://github.com/jasonacox/pypowerwall/pull/150
