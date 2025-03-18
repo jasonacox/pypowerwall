@@ -338,10 +338,31 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         v3n = v_site.get("ISLAND_VL3N_Main", 0)
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
         meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
-        i1 = meter_x.get("METER_X_CTA_I", 0)
-        i2 = meter_x.get("METER_X_CTB_I", 0)
-        i3 = meter_x.get("METER_X_CTC_I", 0)
-        i_site = i1 + i2 + i3
+        i_site = i1 = i2 = i3 = 0
+        if meter_x and meter_x["isMIA"] == "true":
+            i1 = meter_x.get("METER_X_CTA_I", 0)
+            i2 = meter_x.get("METER_X_CTB_I", 0)
+            i3 = meter_x.get("METER_X_CTC_I", 0)
+            i_site = i1 + i2 + i3
+        elif "neurio" in status:
+            neurio_data = self.tedapi.aggregate_neurio_data(
+                config_data=config,
+                status_data=status,
+                meter_config_data=self.tedapi.derive_meter_config(config)
+            )
+            for i, data in enumerate(neurio_data[1].values()):
+                if data["Location"] != "site":
+                    continue
+                current = data["InstCurrent"]
+                if i == 1:
+                    i1 = current
+                elif i == 2:
+                    i2 = current
+                else:
+                    i3 = current
+            nonzero = [x for x in (i1, i2, i3) if x != 0]
+            i_site = sum(nonzero) / len(nonzero) if nonzero else 0
+
         # Compute solar (pv) voltages and current
         v_solar = lookup(status, ("esCan","bus","PVS")) or []
         sum_vll_solar = 0
