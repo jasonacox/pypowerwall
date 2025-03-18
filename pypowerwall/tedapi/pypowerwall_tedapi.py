@@ -339,7 +339,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
         meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
         i_site = i1 = i2 = i3 = 0
-        if meter_x and meter_x["isMIA"] == "true":
+        if meter_x and not meter_x["isMIA"]:
             i1 = meter_x.get("METER_X_CTA_I", 0)
             i2 = meter_x.get("METER_X_CTB_I", 0)
             i3 = meter_x.get("METER_X_CTC_I", 0)
