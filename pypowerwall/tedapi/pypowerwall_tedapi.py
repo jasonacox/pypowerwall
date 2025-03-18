@@ -358,7 +358,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                     i1 = current
                 elif i == 2:
                     i2 = current
-                else:
+                elif i == 3:
                     i3 = current
             nonzero = [x for x in (i1, i2, i3) if x != 0]
             i_site = sum(nonzero) / len(nonzero) if nonzero else 0
