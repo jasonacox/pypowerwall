@@ -61,7 +61,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from pypowerwall import __version__
 from pypowerwall.api_lock import acquire_lock_with_backoff
 
-from .tedapi_messages import ConfigMessage, DeviceControllerMessage, FirmwareMessage, GatewayStatusMessage, TEDAPIMessage
+from pypowerwall.tedapi.ted_api_messages import ConfigMessage, DeviceControllerMessage, FirmwareMessage, GatewayStatusMessage, TEDAPIMessage
 
 from . import tedapi_pb2
 from .decorators import uses_cache, uses_connection_required
