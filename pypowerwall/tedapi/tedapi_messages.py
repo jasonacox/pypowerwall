@@ -10,6 +10,9 @@ class TEDAPIMessage:
     def __init__(self, din):
         self.din = din
 
+    def SerializeToString(self):
+        return self.getMessage().SerializeToString()
+
 class ConfigMessage(TEDAPIMessage):
     def __init__(self, din):
         self.din = din
@@ -24,9 +27,6 @@ class ConfigMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
-    def SerializeToString(self):
-        return self.getMessage().SerializeToString()
     
     def ParseFromString(self, data):
         self.pb.ParseFromString(data)
@@ -58,9 +58,6 @@ class GatewayStatusMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
-    def SerializeToString(self):
-        return self.getMessage().SerializeToString()
     
     def ParseFromString(self, data):
         self.getMessage().ParseFromString(data)
@@ -95,10 +92,7 @@ class DeviceControllerMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
-    def SerializeToString(self):
-        return self.getMessage().SerializeToString()
-    
+ 
     def ParseFromString(self, data):
         self.getMessage().ParseFromString(data)
         payload = self.pb.message.payload.recv.text
@@ -123,9 +117,6 @@ class FirmwareMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
-    def SerializeToString(self):
-        return self.getMessage().SerializeToString()
     
     def ParseFromString(self, data):
         self.pb.ParseFromString(data)

@@ -241,12 +241,8 @@ class TEDAPI:
             "vin": "1232100-00-E--TG11234567890"
         }
         """
-        # Check for lock and wait if api request already sent
-        data = None
-    
         # Fetch Configuration from Powerwall
         log.debug("Get Configuration from Powerwall")
-        # Build Protobuf to fetch config
         pb = ConfigMessage(self.din)
         url = f'https://{self.gw_ip}/tedapi/v1'
         try:
@@ -257,12 +253,10 @@ class TEDAPI:
                 return None
             
             log.debug(f"Configuration: {data}")
-            self.pwcachetime["config"] = time.time()
-            self.pwcache["config"] = data
+            return data
         except Exception as e:
             log.error(f"Error fetching config: {e}")
-            data = None
-        return data
+            return None
 
     @uses_connection_required
     @uses_cache('status')
@@ -307,9 +301,6 @@ class TEDAPI:
             "system": {}
         }
         """
-        # Check for lock and wait if api request already sent
-        data = None
-        
         # Fetch Current Status from Powerwall
         log.debug("Get Status from Powerwall")
         # Build Protobuf to fetch status
@@ -321,11 +312,12 @@ class TEDAPI:
             if error:
                 log.error(f"Error fetching status: {error}")
                 return None
+            
+            return data
 
         except Exception as e:
             log.error(f"Error fetching status: {e}")
-            data = None
-        return data
+            return None
 
 
     @uses_connection_required
@@ -349,7 +341,6 @@ class TEDAPI:
 
         TODO: Refactor to combine tedapi queries
         """
-        data = None
         # Fetch Current Status from Powerwall
         log.debug("Get controller data from Powerwall")
         # Build Protobuf to fetch controller data
@@ -361,11 +352,12 @@ class TEDAPI:
             if error:
                 log.error(f"Error fetching device controller status: {error}")
                 return None
+            
+            return data
 
         except Exception as e:
             log.error(f"Error fetching device controller status: {e}")
-            data = None
-        return data
+            return None
 
     @uses_connection_required
     def get_firmware_version(self, force=False, details=False):
