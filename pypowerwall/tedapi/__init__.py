@@ -61,7 +61,7 @@ from urllib3.exceptions import InsecureRequestWarning
 from pypowerwall import __version__
 from pypowerwall.api_lock import acquire_lock_with_backoff
 
-from .tedapi_messages import ConfigMessage, DeviceControllerMessage, TEDAPIMessage, GatewayStatusMessage
+from .tedapi_messages import ConfigMessage, DeviceControllerMessage, FirmwareMessage, GatewayStatusMessage, TEDAPIMessage
 
 from . import tedapi_pb2
 from .decorators import uses_cache, uses_connection_required
@@ -367,9 +367,8 @@ class TEDAPI:
             data = None
         return data
 
-
-    @uses_api_lock
-    def get_firmware_version(self, self_function, force=False, details=False):
+    @uses_connection_required
+    def get_firmware_version(self, force=False, details=False):
         """
         Get the Powerwall Firmware Version
 
@@ -378,88 +377,32 @@ class TEDAPI:
             details (bool): Return additional system information including
                             gateway part number, serial number, and wireless devices
         """
-        payload = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get firmware version")
-                    return None
-            # Check Cache
-            if not force and "firmware" in self.pwcachetime:
-                if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
-                    log.debug("Using Cached Firmware")
-                    return self.pwcache["firmware"]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Fetch Current Status from Powerwall
-            log.debug("Get Firmware Version from Powerwall")
-            # Build Protobuf to fetch status
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.firmware.request = ""
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching firmware version: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                firmware_version = tedapi.message.firmware.system.version.text
-                if details:
-                    payload = {
-                        "system": {
-                            "gateway": {
-                                "partNumber": tedapi.message.firmware.system.gateway.partNumber,
-                                "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
-                            },
-                            "din": tedapi.message.firmware.system.din,
-                            "version": {
-                                "text": tedapi.message.firmware.system.version.text,
-                                "githash": tedapi.message.firmware.system.version.githash
-                            },
-                            "five": tedapi.message.firmware.system.five,
-                            "six": tedapi.message.firmware.system.six,
-                            "wireless": {
-                                "device": []
-                            }
-                        }
-                    }
-                    try:
-                        for device in tedapi.message.firmware.system.wireless.device:
-                            payload["system"]["wireless"]["device"].append({
-                                "company": device.company.value,
-                                "model": device.model.value,
-                                "fcc_id": device.fcc_id.value,
-                                "ic": device.ic.value
-                            })
-                    except Exception as e:
-                        log.debug(f"Error parsing wireless devices: {e}")
-                    log.debug(f"Firmware Version: {payload}")
-                else:
-                    payload = firmware_version
-                log.debug(f"Firmware Version: {firmware_version}")
-                self.pwcachetime["firmware"] = time.time()
-                self.pwcache["firmware"] = firmware_version
-            except Exception as e:
-                log.error(f"Error fetching firmware version: {e}")
-                payload = None
-        return payload
+        try:
+            data = self.__get_firmware_data(force)
+            log.debug(f"Firmware Version: {data}")
+            if details:
+                return data
+            else:
+                return data["system"]["version"]["text"]
+        except Exception as e:
+            log.error(f"Error fetching firmware version: {e}")
+            return None
+    
+    @uses_cache('firmware')
+    @uses_api_lock
+    def __get_firmware_data(self, force=False):
+        """
+        Internal function to load the firmware with details so the cache includes everything
+        """
+        log.debug("Get Firmware Version from Powerwall")
+        pb = FirmwareMessage(self.din)
+        url = f'https://{self.gw_ip}/tedapi/v1'
+        data, error = self.__run_request(url, method='post', payload=pb)
+        
+        if error:
+            log.error(f"Error fetching device controller status: {error}")
+            return None
+        return data
 
 
     @uses_api_lock
