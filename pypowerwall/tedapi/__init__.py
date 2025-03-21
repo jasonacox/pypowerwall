@@ -135,6 +135,51 @@ class TEDAPI:
             log.debug("%s [%s]\n" % (__name__, __version__))
         else:
             log.setLevel(logging.NOTSET)
+    
+    def __run_request(self, url, method='get', payload=None):
+        """
+        Run a request to the Powerwall Gateway
+
+        Args:
+            url (str): The URL to send the request to.
+            method (str): The HTTP method to use ('get' or 'post'). Default is 'get'.
+            payload (protobuf.Message): The payload to send with the request (for 'post' method).
+
+        Returns:
+            tuple: A tuple containing the requests.Response object (or None on error) and a possible error message string.
+        """
+        try:
+            if method.lower() == 'post':
+                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
+                                  headers={'Content-type': 'application/octet-string'},
+                                  data=payload.SerializeToString() if payload else None, timeout=self.timeout)
+            elif method.lower() == 'get':
+                r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False, timeout=self.timeout)
+            else:
+                log.error(f"Unsupported HTTP method: {method}")
+                return None, f"Unsupported HTTP method: {method}"
+
+            log.debug(f"Response Code: {r.status_code}")
+            if r.status_code in BUSY_CODES:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                return None, 'Possible Rate limited by Powerwall at - Activating 5 minute cooldown'
+            if r.status_code == HTTPStatus.FORBIDDEN:
+                log.error("Access Denied: Check your Gateway Password")
+                raise PermissionError("Access Denied: Check your Gateway Password")
+            if r.status_code != HTTPStatus.OK:
+                log.error(f"Error fetching status: {r.status_code}")
+                return None, f"Error fetching status: {r.status_code}"
+            
+            if isinstance(payload, TEDAPIMessage):
+                data = payload.ParseFromString(r.content)
+                return data, None
+            
+            return r, None
+        except requests.RequestException as e:
+            log.error(f"Request failed: {e}")
+            raise e
 
     def get_din(self, force=False):
         """
