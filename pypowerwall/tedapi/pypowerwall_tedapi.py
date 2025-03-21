@@ -339,12 +339,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
         meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
         i_site = i1 = i2 = i3 = 0
+        neurio_readings = lookup(status, ("neurio", "readings"))
         if meter_x and not meter_x["isMIA"]:
             i1 = meter_x.get("METER_X_CTA_I", 0)
             i2 = meter_x.get("METER_X_CTB_I", 0)
             i3 = meter_x.get("METER_X_CTC_I", 0)
             i_site = i1 + i2 + i3
-        elif "neurio" in status:
+        elif neurio_readings and len(neurio_readings) > 0:
             neurio_data = self.tedapi.aggregate_neurio_data(
                 config_data=config,
                 status_data=status,
@@ -353,7 +354,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             for i, data in enumerate(neurio_data[1].values()):
                 if data["Location"] != "site":
                     continue
-                current = data["InstCurrent"]
+                current = math.copysign(data["InstCurrent"], data["InstRealPower"])
                 if i == 1:
                     i1 = current
                 elif i == 2:

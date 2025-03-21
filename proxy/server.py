@@ -528,7 +528,16 @@ class Handler(BaseHTTPRequestHandler):
         solar = combined.get("solar", {})
         load = combined.get("load", {})
         if site and solar and load:
-            load["instant_power"] = solar.get("instant_power") + site.get("instant_power")
+            site_power = site.get("instant_power")
+            site_current = site["instant_average_current"]
+            load_power = solar.get("instant_power") + site_power
+            load["instant_power"] = load_power
+            solar_volts = solar.get("instant_average_voltage")
+            solar["instant_total_current"] = solar.get("instant_power") / solar_volts if solar_volts else 0
+            load_current = solar["instant_total_current"] + site_current
+            load["instant_total_current"] = load_current
+            load["instant_average_voltage"] = load_power / load_current if load_current else 0
+            site["instant_average_voltage"] = site_power / site_current if site_current else 0
 
         # Adjust negative solar values if configuration disallows negative solar.
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR]:
