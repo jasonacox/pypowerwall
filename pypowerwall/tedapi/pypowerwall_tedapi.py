@@ -346,6 +346,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             i3 = meter_x.get("METER_X_CTC_I", 0)
             i_site = i1 + i2 + i3
         elif neurio_readings and len(neurio_readings) > 0:
+            vll_site = v1n = v2n = v3n = 0
             neurio_data = self.tedapi.aggregate_neurio_data(
                 config_data=config,
                 status_data=status,
@@ -354,15 +355,24 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             for i, data in enumerate(neurio_data[1].values()):
                 if data["Location"] != "site":
                     continue
-                current = math.copysign(data["InstCurrent"], data["InstRealPower"])
+                current = math.copysign(data.get("InstCurrent", 0), data.get("InstRealPower", 0))
+                voltage = data.get("InstVoltage", 0)
                 if i == 1:
                     i1 = current
+                    v1n = voltage
                 elif i == 2:
                     i2 = current
+                    v2n = voltage
                 elif i == 3:
                     i3 = current
+                    v3n = voltage
             nonzero = [x for x in (i1, i2, i3) if x != 0]
             i_site = sum(nonzero) / len(nonzero) if nonzero else 0
+            vll_site = compute_LL_voltage(
+                v1n = v1n,
+                v2n = v2n,
+                v3n = v3n if i == 3 else None
+            )
 
         # Compute solar (pv) voltages and current
         v_solar = lookup(status, ("esCan","bus","PVS")) or []
