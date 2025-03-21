@@ -520,24 +520,42 @@ class Handler(BaseHTTPRequestHandler):
                     combined[category] = readings
             return combined
 
+        def update_power_metrics(combined: dict) -> None:
+            # Retrieve sections from the combined dictionary
+            site = combined.get("site", {})
+            solar = combined.get("solar", {})
+            load = combined.get("load", {})
+
+            # Ensure all required sections are available
+            if not (site and solar and load):
+                return
+
+            # Get values with defaults to avoid None values
+            site_power = site.get("instant_power", 0)
+            site_current = site.get("instant_average_current", 0)
+            solar_power = solar.get("instant_power", 0)
+            solar_voltage = solar.get("instant_average_voltage", 0)
+
+            # Calculate load power as the sum of solar and site power
+            load_power = solar_power + site_power
+            load["instant_power"] = load_power
+
+            # Calculate solar total current if voltage is available
+            solar_total_current = solar_power / solar_voltage if solar_voltage else 0
+            solar["instant_total_current"] = solar_total_current
+
+            # Calculate load total current by adding site current and solar total current
+            load_current = solar_total_current + site_current
+            load["instant_total_current"] = load_current
+
+            # Update voltages, ensuring we avoid division by zero
+            load["instant_average_voltage"] = load_power / load_current if load_current else 0
+            site["instant_average_voltage"] = site_power / site_current if site_current else 0
+
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := pws[0].poll("/api/meters/aggregates"))]
         combined = aggregate_meter_results(results)
-
-        site = combined.get("site", {})
-        solar = combined.get("solar", {})
-        load = combined.get("load", {})
-        if site and solar and load:
-            site_power = site.get("instant_power")
-            site_current = site["instant_average_current"]
-            load_power = solar.get("instant_power") + site_power
-            load["instant_power"] = load_power
-            solar_volts = solar.get("instant_average_voltage")
-            solar["instant_total_current"] = solar.get("instant_power") / solar_volts if solar_volts else 0
-            load_current = solar["instant_total_current"] + site_current
-            load["instant_total_current"] = load_current
-            load["instant_average_voltage"] = load_power / load_current if load_current else 0
-            site["instant_average_voltage"] = site_power / site_current if site_current else 0
+        update_power_metrics(combined)
 
         # Adjust negative solar values if configuration disallows negative solar.
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR]:
