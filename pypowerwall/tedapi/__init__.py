@@ -1,7 +1,7 @@
 # pyPowerWall - Tesla TEDAPI Class
 # -*- coding: utf-8 -*-
 """
- Tesla TEADAPI Class
+ Tesla TEDAPI Class
 
  This module allows you to access the Tesla Powerwall Gateway
  TEDAPI on 192.168.91.1 as used by the Tesla One app.
