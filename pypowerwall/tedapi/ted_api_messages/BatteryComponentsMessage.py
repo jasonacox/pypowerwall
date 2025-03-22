@@ -7,11 +7,13 @@ log = logging.getLogger(__name__)
 
 
 class BatteryComponentsMessage(TEDAPIMessage):
+    """ Protobuf message for requesting battery component data from the Powerwall. """
+
     def __init__(self, din, pw_din):
         super().__init__(din)
         self.pw_din = pw_din
 
-    def getMessage(self):
+    def get_message(self):
         pb = tedapi_pb2.Message()
         pb.message.deliveryChannel = 1
         pb.message.sender.local = 1
@@ -27,7 +29,7 @@ class BatteryComponentsMessage(TEDAPIMessage):
         return self.pb
 
     def ParseFromString(self, data):
-        self.getMessage().ParseFromString(data)
+        self.get_message().ParseFromString(data)
         payload = self.pb.message.payload.recv.text
 
         try:

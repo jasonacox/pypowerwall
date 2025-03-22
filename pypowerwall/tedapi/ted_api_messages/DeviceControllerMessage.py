@@ -8,10 +8,12 @@ log = logging.getLogger(__name__)
 
 
 class DeviceControllerMessage(TEDAPIMessage):
+    """Protobuf message for requesting controller data from the Powerwall."""
+
     def __init__(self, din):
         super().__init__(din)
 
-    def getMessage(self): 
+    def get_message(self): 
         pb = tedapi_pb2.Message()
         pb.message.deliveryChannel = 1
         pb.message.sender.local = 1
@@ -31,7 +33,7 @@ class DeviceControllerMessage(TEDAPIMessage):
         return self.pb
 
     def ParseFromString(self, data):
-        self.getMessage().ParseFromString(data)
+        self.get_message().ParseFromString(data)
         payload = self.pb.message.payload.recv.text
 
         try:

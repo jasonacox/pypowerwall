@@ -7,10 +7,12 @@ log = logging.getLogger(__name__)
 
 
 class ConfigMessage(TEDAPIMessage):
+    """Protobuf message for requesting configuration data from the Powerwall."""
+
     def __init__(self, din):
         super().__init__(din)
 
-    def getMessage(self):
+    def get_message(self):
         pb = tedapi_pb2.Message()
         pb.message.deliveryChannel = 1
         pb.message.sender.local = 1
