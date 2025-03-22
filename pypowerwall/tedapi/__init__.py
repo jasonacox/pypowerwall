@@ -106,6 +106,9 @@ def uses_api_lock(func):
         return result
     return wrapper
 
+class PowerwallThrottleException(Exception):
+    pass
+
 # TEDAPI Class
 class TEDAPI:
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
@@ -152,8 +155,11 @@ class TEDAPI:
             payload (protobuf.Message): The payload to send with the request (for 'post' method).
 
         Returns:
-            tuple: A tuple containing the requests.Response object (or None on error) and a possible error message string.
+            tuple: The requests.Response object or the Protobuf payload data (for Message types).
         """
+        if self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            raise PowerwallThrottleException('Rate limit cooldown period - Pausing API calls')
         try:
             if method.lower() == 'post':
                 r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
@@ -163,26 +169,29 @@ class TEDAPI:
                 r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False, timeout=self.timeout)
             else:
                 log.error(f"Unsupported HTTP method: {method}")
-                return None, f"Unsupported HTTP method: {method}"
+                raise ValueError(f"Unsupported HTTP method: {method}")
 
             log.debug(f"Response Code: {r.status_code}")
             if r.status_code in BUSY_CODES:
                 # Rate limited - Switch to cooldown mode for 5 minutes
                 self.pwcooldown = time.perf_counter() + 300
                 log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                return None, 'Possible Rate limited by Powerwall at - Activating 5 minute cooldown'
+                raise PowerwallThrottleException("Rate limited by Powerwall")
             if r.status_code == HTTPStatus.FORBIDDEN:
                 log.error("Access Denied: Check your Gateway Password")
-                raise PermissionError("Access Denied: Check your Gateway Password")
+                raise requests.RequestException("Access Denied: Check your Gateway Password", response=r)
             if r.status_code != HTTPStatus.OK:
-                log.error(f"Error fetching status: {r.status_code}")
-                return None, f"Error fetching status: {r.status_code}"
+                log.error(f"Request failed with code: {r.status_code}")
+                raise requests.RequestException(f"Request failed with code: {r.status_code}", response=r)
             
+            # If it's a Protobuf payload, we can just hydrate it and return it for convenience
             if isinstance(payload, TEDAPIMessage):
                 data = payload.ParseFromString(r.content)
-                return data, None
+                return data
             
-            return r, None
+            return r
+        
+        # Log request exceptions but bubble them anyway
         except requests.RequestException as e:
             log.error(f"Request failed: {e}")
             raise e
@@ -194,17 +203,18 @@ class TEDAPI:
         """
         log.debug("Fetching DIN from Powerwall...")
         url = f'https://{self.gw_ip}/tedapi/din'
-        r, error = self.__run_request(url, 'get')
-        if error:
-            log.error(f"Error fetching DIN: {error}")
-            raise Exception(f"Error fetching DIN: {error}")
+        try:
+            r = self.__run_request(url, 'get')
         
-        data = r.text if r and hasattr(r, 'text') else None
-        if data:
-            log.debug(f"Connected: Powerwall Gateway DIN: {data}")
-            return data
-        else:
-            log.error("No response text found in the request.")
+            data = r.text if r and hasattr(r, 'text') else None
+            if data:
+                log.debug(f"Connected: Powerwall Gateway DIN: {data}")
+                return data
+            else:
+                log.error("No response text found in the request.")
+                return None
+        except Exception as e:
+            log.error(f"Error fetching DIN: {e}")
             return None
 
     @uses_connection_required
@@ -246,12 +256,7 @@ class TEDAPI:
         pb = ConfigMessage(self.din)
         url = f'https://{self.gw_ip}/tedapi/v1'
         try:
-            data, error = self.__run_request(url, method='post', payload=pb)
-
-            if error:
-                log.error(f"Error fetching config: {error}")
-                return None
-            
+            data = self.__run_request(url, method='post', payload=pb)
             log.debug(f"Configuration: {data}")
             return data
         except Exception as e:
@@ -307,12 +312,7 @@ class TEDAPI:
         pb = GatewayStatusMessage(self.din)
         url = f'https://{self.gw_ip}/tedapi/v1'
         try:
-            data, error = self.__run_request(url, method='post', payload=pb)
-            
-            if error:
-                log.error(f"Error fetching status: {error}")
-                return None
-            
+            data = self.__run_request(url, method='post', payload=pb)
             return data
 
         except Exception as e:
@@ -347,12 +347,7 @@ class TEDAPI:
         pb = DeviceControllerMessage(self.din)
         url = f'https://{self.gw_ip}/tedapi/v1'
         try:
-            data, error = self.__run_request(url, method='post', payload=pb)
-            
-            if error:
-                log.error(f"Error fetching device controller status: {error}")
-                return None
-            
+            data = self.__run_request(url, method='post', payload=pb)
             return data
 
         except Exception as e:
@@ -389,13 +384,8 @@ class TEDAPI:
         log.debug("Get Firmware Version from Powerwall")
         pb = FirmwareMessage(self.din)
         url = f'https://{self.gw_ip}/tedapi/v1'
-        data, error = self.__run_request(url, method='post', payload=pb)
-        
-        if error:
-            log.error(f"Error fetching device controller status: {error}")
-            return None
+        data = self.__run_request(url, method='post', payload=pb)
         return data
-
 
     @uses_connection_required
     @uses_cache('components')
@@ -410,14 +400,8 @@ class TEDAPI:
         pb = ComponentsMessage(self.din)
         url = f'https://{self.gw_ip}/tedapi/v1'
         try:
-            data, error = self.__run_request(url, method='post', payload=pb)
-            
-            if error:
-                log.error(f"Error fetching components: {error}")
-                return None
-            
+            data = self.__run_request(url, method='post', payload=pb)
             return data
-
         except Exception as e:
             log.error(f"Error fetching device controller status: {e}")
             return None
@@ -478,16 +462,16 @@ class TEDAPI:
             battery_type = battery['type']
             if "Powerwall3" not in battery_type:
                 continue
+
             # Fetch Device ComponentsQuery from each Powerwall
             pb = BatteryComponentsMessage(din, pw_din)
             url = f'https://{self.gw_ip}/tedapi/device/{pw_din}/v1'
             log.debug(f"Fetching components from {pw_din}")
-
-            data, error = self.__run_request(url, method='post', payload=pb)
-            
-            if error:
+            try:
+                data = self.__run_request(url, method='post', payload=pb)
+            except Exception as e:
                 log.error(f"No payload for {pw_din}")
-                return None
+                raise e
             
             # Collect alerts for the top level response
             alerts = []
@@ -598,14 +582,13 @@ class TEDAPI:
         url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
         log.debug(f"Fetching components from {din}")
 
-        data, error = self.__run_request(url, method='post', payload=pb)
-        
-        if error:
-            log.error(f"No payload for {din}")
+        try:
+            data = self.__run_request(url, method='post', payload=pb)
+            log.debug(f"Configuration: {data}")
+            return data
+        except Exception as e:
+            log.error(f"Error fetching battery block: {e}")
             return None
-            
-        log.debug(f"Configuration: {data}")
-        return data
 
     def connect(self):
         """
