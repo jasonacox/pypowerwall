@@ -44,11 +44,18 @@ def uses_cache(cache_key):
             if 'force' in namedArgs:
                 force = namedArgs['force']
             
+            # Allow for dynamic cache keys using an argument to the function
+            # e.g. @uses_cache('battery-[args-din]') would cache the result of the function with the key 'battery-<din>'
+            use_cache_key = cache_key
+            if '[args-' in cache_key:
+                namedArg = cache_key.split('args-')[1].split(']')[0]
+                use_cache_key = cache_key.replace(f'[args-{namedArg}]', str(namedArgs[namedArg]))
+            
             # Check Cache
-            if not force and cache_key in self.pwcachetime:
-                if time.time() - self.pwcachetime[cache_key] < self.pwcacheexpire:
-                    log.debug(f"Using Cached {cache_key}")
-                    return self.pwcache[cache_key]
+            if not force and use_cache_key in self.pwcachetime:
+                if time.time() - self.pwcachetime[use_cache_key] < self.pwcacheexpire:
+                    log.debug(f"Using Cached {use_cache_key}")
+                    return self.pwcache[use_cache_key]
                 
             # Check Rate Limit
             if not force and self.pwcooldown > time.perf_counter():
@@ -59,8 +66,8 @@ def uses_cache(cache_key):
 
             # Update Cache
             if result is not None:
-                self.pwcachetime[cache_key] = time.time()
-                self.pwcache[cache_key] = result
+                self.pwcachetime[use_cache_key] = time.time()
+                self.pwcache[use_cache_key] = result
             return result
         return wrapper
     return decorator
