@@ -154,7 +154,7 @@ class TEDAPI:
             payload (protobuf.Message): The payload to send with the request (for 'post' method).
 
         Returns:
-            tuple: The requests.Response object or the Protobuf payload data (for Message types).
+            The requests.Response object or the Protobuf payload data (for Message types).
         """
         if self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
