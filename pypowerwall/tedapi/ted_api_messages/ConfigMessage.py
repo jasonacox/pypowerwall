@@ -5,9 +5,10 @@ from .TEDAPIMessage import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
+
 class ConfigMessage(TEDAPIMessage):
     def __init__(self, din):
-        self.din = din
+        super().__init__(din)
 
     def getMessage(self):
         pb = tedapi_pb2.Message()
@@ -19,7 +20,7 @@ class ConfigMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
+
     def ParseFromString(self, data):
         self.pb.ParseFromString(data)
         payload = self.pb.message.config.recv.file.text

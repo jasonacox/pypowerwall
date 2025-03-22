@@ -4,10 +4,11 @@ from .TEDAPIMessage import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
+
 class FirmwareMessage(TEDAPIMessage):
     def __init__(self, din):
-        self.din = din
-    
+        super().__init__(din)
+
     def getMessage(self):
         pb = tedapi_pb2.Message()
         pb.message.deliveryChannel = 1
@@ -17,7 +18,7 @@ class FirmwareMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
+
     def ParseFromString(self, data):
         self.pb.ParseFromString(data)
         data = self.pb.message.firmware.system

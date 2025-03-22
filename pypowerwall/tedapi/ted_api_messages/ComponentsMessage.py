@@ -1,14 +1,14 @@
 import logging
 import json
-import os
 from .. import tedapi_pb2
 from .TEDAPIMessage import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
+
 class ComponentsMessage(TEDAPIMessage):
     def __init__(self, din):
-        self.din = din
+        super().__init__(din)
 
     def getMessage(self):
         pb = tedapi_pb2.Message()
@@ -23,7 +23,7 @@ class ComponentsMessage(TEDAPIMessage):
         pb.tail.value = 1
         self.pb = pb
         return self.pb
- 
+
     def ParseFromString(self, data):
         self.getMessage().ParseFromString(data)
         payload = self.pb.message.payload.recv.text

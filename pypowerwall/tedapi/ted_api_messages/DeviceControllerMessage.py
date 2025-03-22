@@ -6,9 +6,10 @@ from .TEDAPIMessage import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
+
 class DeviceControllerMessage(TEDAPIMessage):
     def __init__(self, din):
-        self.din = din
+        super().__init__(din)
 
     def getMessage(self): 
         pb = tedapi_pb2.Message()
@@ -23,12 +24,12 @@ class DeviceControllerMessage(TEDAPIMessage):
         with open(os.path.join(os.path.dirname(__file__), "graphql/device_controller_query.sig"), "rb") as sig_file:
             pb.message.payload.send.code = sig_file.read()
         pb.tail.value = 1
-        
+
         pb.message.payload.send.b.value = "{}"
         pb.tail.value = 1
         self.pb = pb
         return self.pb
- 
+
     def ParseFromString(self, data):
         self.getMessage().ParseFromString(data)
         payload = self.pb.message.payload.recv.text

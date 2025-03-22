@@ -144,7 +144,7 @@ class TEDAPI:
             log.debug("%s [%s]\n" % (__name__, __version__))
         else:
             log.setLevel(logging.NOTSET)
-    
+
     def __run_request(self, url, method='get', payload=None):
         """
         Run a request to the Powerwall Gateway
@@ -183,14 +183,14 @@ class TEDAPI:
             if r.status_code != HTTPStatus.OK:
                 log.error(f"Request failed with code: {r.status_code}")
                 raise requests.RequestException(f"Request failed with code: {r.status_code}", response=r)
-            
+
             # If it's a Protobuf payload, we can just hydrate it and return it for convenience
             if isinstance(payload, TEDAPIMessage):
                 data = payload.ParseFromString(r.content)
                 return data
-            
+
             return r
-        
+
         # Log request exceptions but bubble them anyway
         except requests.RequestException as e:
             log.error(f"Request failed: {e}")
@@ -198,6 +198,7 @@ class TEDAPI:
 
     @uses_cache('din')
     def get_din(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the DIN from the Powerwall Gateway
         """
@@ -205,7 +206,7 @@ class TEDAPI:
         url = f'https://{self.gw_ip}/tedapi/din'
         try:
             r = self.__run_request(url, 'get')
-        
+
             data = r.text if r and hasattr(r, 'text') else None
             if data:
                 log.debug(f"Connected: Powerwall Gateway DIN: {data}")
@@ -221,6 +222,7 @@ class TEDAPI:
     @uses_cache('config')
     @uses_api_lock
     def get_config(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall Gateway Configuration
 
@@ -267,6 +269,7 @@ class TEDAPI:
     @uses_cache('status')
     @uses_api_lock
     def get_status(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall Gateway Status
 
@@ -324,6 +327,7 @@ class TEDAPI:
     #@uses_cache('device_controller')
     @uses_api_lock
     def get_device_controller(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall Device Controller Status
 
@@ -374,10 +378,11 @@ class TEDAPI:
         except Exception as e:
             log.error(f"Error fetching firmware version: {e}")
             return None
-    
+
     @uses_cache('firmware')
     @uses_api_lock
     def __get_firmware_data(self, force=False):
+        # pylint: disable=unused-argument
         """
         Internal function to load the firmware with details so the cache includes everything
         """
@@ -391,6 +396,7 @@ class TEDAPI:
     @uses_cache('components')
     @uses_api_lock
     def get_components(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall 3 Device Information
 
@@ -472,7 +478,7 @@ class TEDAPI:
             except Exception as e:
                 log.error(f"No payload for {pw_din}")
                 raise e
-            
+
             # Collect alerts for the top level response
             alerts = []
             components = data['components']
@@ -549,7 +555,6 @@ class TEDAPI:
                 response[f"PVS--{pw_din}"][f"PVS_String{n}_Connected"] = ("Pv_Active" in pv_state)
         return response
 
-
     def get_battery_blocks(self, force=False):
         """
         Return Powerwall Battery Blocks
@@ -558,11 +563,11 @@ class TEDAPI:
         battery_blocks = config.get('battery_blocks') or []
         return battery_blocks
 
-
     @uses_connection_required
     @uses_cache('battery-[args-din]')
     @uses_api_lock
     def get_battery_block(self, din=None, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall 3 Battery Block Information
 
@@ -612,7 +617,7 @@ class TEDAPI:
         return self.din
 
     # Handy Function to access Powerwall Status
-
+    
     def current_power(self, location=None, force=False):
         """
         Get the current power in watts for a location:

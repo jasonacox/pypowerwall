@@ -6,9 +6,10 @@ from .TEDAPIMessage import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
+
 class GatewayStatusMessage(TEDAPIMessage):
     def __init__(self, din):
-        self.din = din
+        super().__init__(din)
 
     def getMessage(self): 
         pb = tedapi_pb2.Message()
@@ -21,12 +22,12 @@ class GatewayStatusMessage(TEDAPIMessage):
             pb.message.payload.send.payload.text = file.read()
         with open(os.path.join(os.path.dirname(__file__), "graphql/status_query.sig"), "rb") as sig_file:
             pb.message.payload.send.code = sig_file.read()
-        
+
         pb.message.payload.send.b.value = "{}"
         pb.tail.value = 1
         self.pb = pb
         return self.pb
-    
+
     def ParseFromString(self, data):
         self.getMessage().ParseFromString(data)
         payload = self.pb.message.payload.recv.text
