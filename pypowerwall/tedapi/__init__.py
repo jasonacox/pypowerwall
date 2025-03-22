@@ -65,6 +65,7 @@ from pypowerwall.tedapi.ted_api_messages import BatteryComponentsMessage, Config
 
 from . import tedapi_pb2
 from .decorators import uses_cache, uses_connection_required
+from .exceptions import PyPowerwallTEDAPIThrottleException
 from .vitals_dictionary import VitalsDictionary
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -106,9 +107,6 @@ def uses_api_lock(func):
             result = func(*args, **kwargs)
         return result
     return wrapper
-
-class PowerwallThrottleException(Exception):
-    pass
 
 # TEDAPI Class
 class TEDAPI:
@@ -160,7 +158,7 @@ class TEDAPI:
         """
         if self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
-            raise PowerwallThrottleException('Rate limit cooldown period - Pausing API calls')
+            raise PyPowerwallTEDAPIThrottleException('Rate limit cooldown period - Pausing API calls')
         try:
             if method.lower() == 'post':
                 r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
@@ -177,7 +175,7 @@ class TEDAPI:
                 # Rate limited - Switch to cooldown mode for 5 minutes
                 self.pwcooldown = time.perf_counter() + 300
                 log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                raise PowerwallThrottleException("Rate limited by Powerwall")
+                raise PyPowerwallTEDAPIThrottleException("Rate limited by Powerwall")
             if r.status_code == HTTPStatus.FORBIDDEN:
                 log.error("Access Denied: Check your Gateway Password")
                 raise requests.RequestException("Access Denied: Check your Gateway Password", response=r)

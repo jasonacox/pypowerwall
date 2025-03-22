@@ -1,6 +1,7 @@
 import logging
 import json
 from .. import tedapi_pb2
+from ..exceptions import PyPowerwallTEDAPIException
 from .TEDAPIMessage import TEDAPIMessage
 
 log = logging.getLogger(__name__)
@@ -35,6 +36,6 @@ class BatteryComponentsMessage(TEDAPIMessage):
         try:
             data = json.loads(payload)
         except json.JSONDecodeError as e:
-            log.error(f"Error decoding JSON: {e}")
-            data = {}
+            log.error(f"Error decoding JSON: {e} for payload: {payload}")
+            raise PyPowerwallTEDAPIException(f"Error decoding JSON for payload: {payload}")
         return data
