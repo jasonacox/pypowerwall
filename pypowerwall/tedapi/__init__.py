@@ -470,15 +470,7 @@ class TEDAPI:
             if "Powerwall3" not in battery_type:
                 continue
 
-            # Fetch Device ComponentsQuery from each Powerwall
-            pb = BatteryComponentsMessage(din, pw_din)
-            url = f'https://{self.gw_ip}/tedapi/device/{pw_din}/v1'
-            log.debug(f"Fetching components from {pw_din}")
-            try:
-                data = self.__run_request(url, method='post', payload=pb)
-            except Exception as e:
-                log.error(f"No payload for {pw_din}")
-                raise e
+            data = self.get_battery_block(pw_din)
 
             # Collect alerts for the top level response
             alerts = []
