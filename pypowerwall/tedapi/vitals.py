@@ -26,19 +26,19 @@ class Vitals:
 
     def get_vitals(self):
         return {
-            **self.get_header(),
-            **self.get_neurio(),
-            **self.get_pvac(),
-            **self.get_pvs(),
-            **self.get_ststsm(),
-            **self.get_tepinv(),
-            **self.get_tepod(),
-            **self.get_tesla(),
-            **self.get_tesync(),
-            **self.get_tethc(),
+            **self.__get_header(),
+            **self.__get_neurio(),
+            **self.__get_pvac(),
+            **self.__get_pvs(),
+            **self.__get_ststsm(),
+            **self.__get_tepinv(),
+            **self.__get_tepod(),
+            **self.__get_tesla(),
+            **self.__get_tesync(),
+            **self.__get_tethc(),
         }
 
-    def get_header(self):
+    def __get_header(self):
         header = {}
         header["VITALS"] = {
             "text": "Device vitals generated from Tesla Powerwall Gateway TEDAPI",
@@ -48,7 +48,7 @@ class Vitals:
         }
         return header
 
-    def get_meters(self):
+    def __get_meters(self):
         meter_config = {}
         if "meters" in self.config:
             # Loop through each meter and use device_serial as the key
@@ -81,9 +81,9 @@ class Vitals:
                             }
         return meter_config
 
-    def get_neurio(self):
+    def __get_neurio(self):
         # Build meter Lookup if available
-        meter_config = self.get_meters()
+        meter_config = self.__get_meters()
         neurio = {}
         c = 1000
         # Loop through each Neurio device serial number
@@ -123,7 +123,7 @@ class Vitals:
             neurio[f"NEURIO--{sn}"] = {**cts, **rest}
         return neurio
 
-    def get_pvac(self):
+    def __get_pvac(self):
         pvac = {}
         pvac_strings = self.__get_pvac_strings()
 
@@ -189,7 +189,7 @@ class Vitals:
             }
         return pvac
 
-    def get_pvs(self):
+    def __get_pvs(self):
         pvs, _ = self.__get_pvs_and_pvac_strings()
         return pvs
 
@@ -249,7 +249,7 @@ class Vitals:
                 }
         return pvs, pvac_strings
 
-    def get_tesla(self):
+    def __get_tesla(self):
         tesla = {}
         # Loop through each device serial number
         for i, p in enumerate(lookup(self.status, ['esCan', 'bus', 'PVAC']) or {}):
@@ -294,7 +294,7 @@ class Vitals:
             }
         return tesla
     
-    def get_temp_sensors(self):
+    def __get_temp_sensors(self):
         temp_sensors = {}
         for i in lookup(self.status, ['components', 'msa']) or []:
             if "signals" in i and "serialNumber" in i and i["serialNumber"]:
@@ -303,7 +303,7 @@ class Vitals:
                         temp_sensors[i["serialNumber"]] = s["value"]
         return temp_sensors
 
-    def get_ststsm(self):
+    def __get_ststsm(self):
         name = f"STSTSM--{lookup(self.config, ['vin'])}"
         ststsm = {}
         ststsm[name] =  {
@@ -320,9 +320,9 @@ class Vitals:
         }
         return ststsm
 
-    def get_tethc(self):
+    def __get_tethc(self):
         tethc = {}
-        temp_sensors = self.get_temp_sensors()
+        temp_sensors = self.__get_temp_sensors()
 
         # Loop through each THC device serial number
         for i, p in enumerate(lookup(self.status, ['esCan', 'bus', 'THC']) or {}):
@@ -348,7 +348,7 @@ class Vitals:
             }
         return tethc
 
-    def get_tepod(self):
+    def __get_tepod(self):
         tepod = {}
         # Loop through each THC device serial number
         for i, p in enumerate(lookup(self.status, ['esCan', 'bus', 'THC']) or {}):
@@ -396,7 +396,7 @@ class Vitals:
             }
         return tepod
 
-    def get_tepinv(self):
+    def __get_tepinv(self):
         tepinv = {}
         # Loop through each THC device serial number
         for i, p in enumerate(lookup(self.status, ['esCan', 'bus', 'THC']) or {}):
@@ -440,7 +440,7 @@ class Vitals:
             }
         return tepinv
 
-    def get_tesync(self):
+    def __get_tesync(self):
         tesync = {}
         status = self.status
         sync = lookup(status, ['esCan', 'bus', 'SYNC']) or {}
