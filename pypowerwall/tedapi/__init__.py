@@ -453,6 +453,7 @@ class TEDAPI:
             # Collect alerts for the top level response
             alerts = []
             if data is None:
+                log.error(f"No data returned for battery block {pw_din}")
                 raise ValueError(f"No data returned for battery block {pw_din}")
             
             components = data['components']
