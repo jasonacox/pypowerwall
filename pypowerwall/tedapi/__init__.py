@@ -199,7 +199,7 @@ class TEDAPI:
 
     @uses_connection_required
     @uses_cache('config')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def get_config(self, force=False):
         # pylint: disable=unused-argument
         """
@@ -246,7 +246,7 @@ class TEDAPI:
 
     @uses_connection_required
     @uses_cache('status')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def get_status(self, force=False):
         # pylint: disable=unused-argument
         """
@@ -304,7 +304,7 @@ class TEDAPI:
 
     @uses_connection_required
     #@uses_cache('device_controller')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def get_device_controller(self, force=False):
         # pylint: disable=unused-argument
         """
@@ -359,7 +359,7 @@ class TEDAPI:
             return None
 
     @uses_cache('firmware')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def __get_firmware_data(self, force=False):
         # pylint: disable=unused-argument
         """
@@ -373,7 +373,7 @@ class TEDAPI:
 
     @uses_connection_required
     @uses_cache('components')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def get_components(self, force=False):
         # pylint: disable=unused-argument
         """
@@ -393,7 +393,7 @@ class TEDAPI:
 
     @uses_connection_required
     @uses_cache('pw3_vitals')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def get_pw3_vitals(self, force=False):
         """
         Get Powerwall 3 Battery Vitals Data
@@ -536,7 +536,7 @@ class TEDAPI:
 
     @uses_connection_required
     @uses_cache('battery-[args-din]')
-    @uses_api_lock
+    @uses_api_lock # Applies lock to the entire function
     def get_battery_block(self, din=None, force=False):
         # pylint: disable=unused-argument
         """

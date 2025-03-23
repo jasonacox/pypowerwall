@@ -12,6 +12,8 @@ WARNED_ONCE = {}
 
 def uses_api_lock(func):
     # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
+    # WARNING: this locks the entire function. If you want to split your function between parts that lock and parts that don't,
+    # you should either split your function to separate the parts that need locking, or use `acquire_lock_with_backoff` directly
     if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
         func.api_lock = threading.Lock()
     @functools.wraps(func)
