@@ -1,10 +1,27 @@
 import functools
 import inspect
 import logging
+import threading
 import time
+
+from pypowerwall.api_lock import acquire_lock_with_backoff
 
 log = logging.getLogger('pypowerwall.tedapi.pypowerwall_tedapi')
 WARNED_ONCE = {}
+
+
+def uses_api_lock(func):
+    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
+    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
+        func.api_lock = threading.Lock()
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # Wrap the function with the lock
+        self = args[0]
+        with acquire_lock_with_backoff(func, self.timeout):
+            result = func(*args, **kwargs)
+        return result
+    return wrapper
 
 
 def not_implemented_mock_data(func):

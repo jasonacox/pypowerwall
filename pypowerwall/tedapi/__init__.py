@@ -45,9 +45,7 @@
 
 import logging
 import sys
-import threading
 import time
-from functools import wraps
 from http import HTTPStatus
 from typing import List
 
@@ -56,12 +54,10 @@ import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
 from pypowerwall import __version__
-from pypowerwall.api_lock import acquire_lock_with_backoff
 
 from pypowerwall.tedapi.ted_api_messages import BatteryComponentsMessage, ConfigMessage, ComponentsMessage, DeviceControllerMessage, FirmwareMessage, GatewayStatusMessage, TEDAPIMessage
 
-from . import tedapi_pb2
-from .decorators import uses_cache, uses_connection_required
+from .decorators import uses_api_lock, uses_cache, uses_connection_required
 from .exceptions import PyPowerwallTEDAPIThrottleException
 from .vitals_dictionary import VitalsDictionary
 
@@ -91,19 +87,6 @@ def lookup(data, keylist):
         else:
             return None
     return data
-
-def uses_api_lock(func):
-    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
-    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
-        func.api_lock = threading.Lock()
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Wrap the function with the lock
-        self = args[0]
-        with acquire_lock_with_backoff(func, self.timeout):
-            result = func(*args, **kwargs)
-        return result
-    return wrapper
 
 # TEDAPI Class
 class TEDAPI:
