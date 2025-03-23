@@ -190,12 +190,12 @@ class Vitals:
         return pvac
 
     def __get_pvs(self):
-        pvs, _ = self.__get_pvs_and_pvac_strings()
-        return pvs
+        data = self.__get_pvs_and_pvac_strings()
+        return data["pvs"]
 
     def __get_pvac_strings(self):
-        _, pvac_strings = self.__get_pvs_and_pvac_strings()
-        return pvac_strings
+        data = self.__get_pvs_and_pvac_strings()
+        return data["pvac_strings"]
 
     def __get_pvs_and_pvac_strings(self):
         pvs = {}
@@ -247,7 +247,11 @@ class Vitals:
                         "ecuType": 297
                     }
                 }
-        return pvs, pvac_strings
+
+        return {
+            "pvs": pvs,
+            "pvac_strings": pvac_strings
+        }
 
     def __get_tesla(self):
         tesla = {}
