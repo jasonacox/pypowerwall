@@ -218,6 +218,12 @@ class VitalsDictionary:
                 string_c = lookup(pvs_data, ['PVS_Status', 'PVS_StringC_Connected'])
                 string_d = lookup(pvs_data, ['PVS_Status', 'PVS_StringD_Connected'])
                 # Set PVAC PvState based on PVS String Connected states
+                pvac_strings[pvac_name] = {
+                    "PVAC_PvState_A": None,
+                    "PVAC_PvState_B": None,
+                    "PVAC_PvState_C": None,
+                    "PVAC_PvState_D": None
+                }
                 pvac_strings[pvac_name]["PVAC_PvState_A"] = "PV_Active" if string_a else "PV_Disabled"
                 pvac_strings[pvac_name]["PVAC_PvState_B"] = "PV_Active" if string_b else "PV_Disabled"
                 pvac_strings[pvac_name]["PVAC_PvState_C"] = "PV_Active" if string_c else "PV_Disabled"
