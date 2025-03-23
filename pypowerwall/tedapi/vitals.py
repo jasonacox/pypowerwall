@@ -1,4 +1,3 @@
-import json
 from pypowerwall import __version__
 import time
 
@@ -19,7 +18,7 @@ def calculate_dc_power(V, I):
     power = V * I
     return power
 
-class VitalsDictionary:
+class Vitals:
     def __init__(self, config, status, gw_ip):
         self.config = config
         self.gw_ip = gw_ip

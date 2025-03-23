@@ -59,7 +59,7 @@ from pypowerwall.tedapi.ted_api_messages import BatteryComponentsMessage, Config
 
 from .decorators import uses_api_lock, uses_cache, uses_connection_required
 from .exceptions import PyPowerwallTEDAPIThrottleException
-from .vitals_dictionary import VitalsDictionary
+from .vitals import Vitals
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -654,7 +654,7 @@ class TEDAPI:
             log.debug("PVAC and PVS device count mismatch in TEDAPI")
 
         # Create Vitals Dictionary
-        vitals_dictionary = VitalsDictionary(config, status, self.gw_ip)
+        vitals_dictionary = Vitals(config, status, self.gw_ip)
         vitals = vitals_dictionary.get_vitals()
 
         # Merge in the Powerwall 3 data if available
