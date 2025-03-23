@@ -363,7 +363,8 @@ class TEDAPI:
     def __get_firmware_data(self, force=False):
         # pylint: disable=unused-argument
         """
-        Internal function to load the firmware with details so the cache includes everything
+        Get the firmware data with full details so we can cache the entire payload. The get_firmware_version()
+        function will make the decision whether to show the full details or just the main PW version text.
         """
         log.debug("Get Firmware Version from Powerwall")
         pb = FirmwareMessage(self.din)
