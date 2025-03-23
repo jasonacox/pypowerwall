@@ -452,6 +452,9 @@ class TEDAPI:
 
             # Collect alerts for the top level response
             alerts = []
+            if data is None:
+                raise ValueError(f"No data returned for battery block {pw_din}")
+            
             components = data['components']
             for component in components:
                 if components[component]:
