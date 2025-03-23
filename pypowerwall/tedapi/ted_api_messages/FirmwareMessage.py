@@ -34,9 +34,9 @@ class FirmwareMessage(TEDAPIMessage):
                 "din": data.din,
                 "version": {
                     "text": data.version.text,
-                    "githash": data.version.githash
+                    "githash": data.version.githash # Whatever this is, it isn't JSON-serializable
                 },
-                "five": data.five,
+                "five": data.five, # Whatever this is, it isn't JSON-serializable
                 "six": data.six,
                 "wireless": {
                     "device": []
