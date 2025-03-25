@@ -1673,8 +1673,8 @@
         Object.defineProperty(t, "__esModule", { value: !0 }), (t.authedPostOptions = t.apiToUrl = t.toApi = void 0);
         const n = i(4),
             r = "http://10.33.155.246:8088",
-            a = { api: { host: r, uri: r + "/api" }, static: { host: "http://10.33.155.246:3000", uri: "http://10.33.155.246:3000" }, credentials: "include" };
-        (a.api.host = ""), (a.api.uri = "/api"), (a.static.host = ""), (a.static.uri = ""), (a.credentials = "same-origin");
+            a = { api: { host: r, uri: r + window.apiBaseUrl }, static: { host: "http://10.33.155.246:3000", uri: "http://10.33.155.246:3000" }, credentials: "include" };
+        (a.api.host = ""), (a.api.uri = window.apiBaseUrl), (a.static.host = ""), (a.static.uri = ""), (a.credentials = "same-origin");
         t.toApi = (e) => `${a.api.uri}/${e}`;
         t.apiToUrl = (e) => `${a.api.uri}${e}`;
         (t.authedPostOptions = (e) => Object.assign(Object.assign({}, (0, n.postOptions)(e)), { credentials: a.credentials })), (t.default = a);

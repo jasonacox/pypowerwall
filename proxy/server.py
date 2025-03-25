@@ -95,6 +95,7 @@ cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
+api_base_url = os.getenv("PROXY_API_BASE_URL", "/api") # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
 
 # Global Stats
 proxystats = {
@@ -718,6 +719,8 @@ class Handler(BaseHTTPRequestHandler):
                 static_asset_prefix = "/viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
                 fcontent = fcontent.replace("{STYLE}", static_asset_prefix + style)
                 fcontent = fcontent.replace("{ASSET_PREFIX}", static_asset_prefix)
+
+                fcontent = fcontent.replace("{API_BASE_URL}", api_base_url)
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
