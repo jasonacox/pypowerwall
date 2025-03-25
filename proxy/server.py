@@ -95,7 +95,7 @@ cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
-api_base_url = os.getenv("PROXY_API_BASE_URL", "/api") # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
+api_base_url = os.getenv("PROXY_BASE_URL", "/") # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
 
 # Global Stats
 proxystats = {
@@ -161,6 +161,11 @@ else:
 log = logging.getLogger("proxy")
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 log.setLevel(logging.INFO)
+
+# Ensure api_base_url ends with a /
+if not api_base_url.endswith('/'):
+    log.error("PROXY_BASE_URL must end with a '/'. Current value: '%s'" % api_base_url)
+    sys.exit(1)
 
 if debugmode:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" %
@@ -716,11 +721,11 @@ class Handler(BaseHTTPRequestHandler):
                 fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
                 fcontent = fcontent.replace("{EMAIL}", email)
 
-                static_asset_prefix = "/viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
+                static_asset_prefix = api_base_url + "viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
                 fcontent = fcontent.replace("{STYLE}", static_asset_prefix + style)
                 fcontent = fcontent.replace("{ASSET_PREFIX}", static_asset_prefix)
 
-                fcontent = fcontent.replace("{API_BASE_URL}", api_base_url)
+                fcontent = fcontent.replace("{API_BASE_URL}", api_base_url + "api")
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
