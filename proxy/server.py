@@ -162,11 +162,6 @@ log = logging.getLogger("proxy")
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 log.setLevel(logging.INFO)
 
-# Ensure api_base_url ends with a /
-if not api_base_url.endswith('/'):
-    log.error("PROXY_BASE_URL must end with a '/'. Current value: '%s'" % api_base_url)
-    sys.exit(1)
-
 if debugmode:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" %
              (pypowerwall.version, BUILD, httptype, port))
@@ -176,6 +171,11 @@ else:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d" %
              (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
+
+# Ensure api_base_url ends with a /
+if not api_base_url.endswith('/'):
+    api_base_url += '/'
+    log.info(f"Added trailing / to API Base URL: {api_base_url}")
 
 # Check for cache expire time limit below 5s
 if cache_expire < 5:
