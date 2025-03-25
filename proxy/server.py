@@ -290,7 +290,8 @@ class Handler(BaseHTTPRequestHandler):
         # instead of using the prefix inside of the checks to maintain the ability to use the regular URLs in addition to
         # the proxied URLs, so Telegraf configs or existing integrations don't need to be modified.
         request_path = self.path
-        request_path = request_path.replace(api_base_url, "/")
+        if request_path.startswith(api_base_url):
+            request_path = "/" + request_path[len(api_base_url):]
 
         if request_path.startswith('/control'):
             # curl -X POST -d "value=20&token=1234" http://localhost:8675/control/reserve
@@ -361,7 +362,8 @@ class Handler(BaseHTTPRequestHandler):
         # instead of using the prefix inside of the checks to maintain the ability to use the regular URLs in addition to
         # the proxied URLs, so Telegraf configs or existing integrations don't need to be modified.
         request_path = self.path
-        request_path = request_path.replace(api_base_url, "/")
+        if request_path.startswith(api_base_url):
+            request_path = "/" + request_path[len(api_base_url):]
 
         if request_path == '/aggregates' or request_path == '/api/meters/aggregates':
             # Meters - JSON
