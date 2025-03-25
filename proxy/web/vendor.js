@@ -27948,6 +27948,9 @@
                                                   return e && "function" == typeof Symbol && e.constructor === Symbol && e !== Symbol.prototype ? "symbol" : typeof e;
                                               },
                                     o = (function () {
+                                        // FIX: return here to prevent IndexDB from being used - otherwise it will lock waiting for
+                                        // something and you can't have the animation open in different tabs.
+                                        //return
                                         try {
                                             if ("undefined" != typeof indexedDB) return indexedDB;
                                             if ("undefined" != typeof webkitIndexedDB) return webkitIndexedDB;
