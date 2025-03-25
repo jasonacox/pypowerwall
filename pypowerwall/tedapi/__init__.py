@@ -32,6 +32,7 @@
     get_battery_block(din) - Get the Powerwall 3 Battery Block Information
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
+    get_fan_speed() - Get the fan speeds in RPM
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -932,6 +933,7 @@ class TEDAPI:
         return battery_level
 
 
+    # Helper Function
     def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
         fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
 
@@ -953,7 +955,13 @@ class TEDAPI:
             result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
         return result
 
-
+    def get_fan_speeds(self, force=False):
+        """
+        Get the fan speeds for the Powerwall / Inverter
+        """
+        return self.extract_fan_speeds(self.get_device_controller(force=force))
+    
+    
     # Vitals API Mapping Function
     def vitals(self, force=False):
         """
