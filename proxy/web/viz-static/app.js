@@ -32,7 +32,7 @@
               { 2: 1, 4: 1, 5: 1, 6: 1, 7: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 21: 1, 22: 1, 23: 1, 24: 1, 25: 1, 27: 1, 30: 1, 31: 1, 32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1 }[e] &&
               t.push(
                   (r[e] = new Promise(function (t, i) {
-                      for (var n = e + ".17c71172308436a079d1.css", a = s.p + n, o = document.getElementsByTagName("link"), _ = 0; _ < o.length; _++) {
+                      for (var n = window.appPrefix + e + ".17c71172308436a079d1.css", a = s.p + n, o = document.getElementsByTagName("link"), _ = 0; _ < o.length; _++) {
                           var l = (d = o[_]).getAttribute("data-href") || d.getAttribute("href");
                           if ("stylesheet" === d.rel && (l === n || l === a)) return t();
                       }
@@ -171,7 +171,7 @@
         (s.o = function (e, t) {
             return Object.prototype.hasOwnProperty.call(e, t);
         }),
-        (s.p = "/"),
+        (s.p = window.appPrefix),
         (s.oe = function (e) {
             throw (console.error(e), e);
         });

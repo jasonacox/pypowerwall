@@ -714,7 +714,10 @@ class Handler(BaseHTTPRequestHandler):
                 fcontent = fcontent.replace("{VERSION}", status["version"] or "")
                 fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
                 fcontent = fcontent.replace("{EMAIL}", email)
-                fcontent = fcontent.replace("{STYLE}", style)
+
+                prefix = "/viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
+                fcontent = fcontent.replace("{STYLE}", prefix + style)
+                fcontent = fcontent.replace("{PREFIX}", prefix)
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
@@ -757,6 +760,8 @@ class Handler(BaseHTTPRequestHandler):
                     log.debug("File not found: {}".format(self.path))
                     fcontent = bytes("Not Found", 'utf-8')
                     ftype = "text/plain"
+                    self.send_response(404)
+                    return
 
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
