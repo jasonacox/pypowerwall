@@ -715,9 +715,9 @@ class Handler(BaseHTTPRequestHandler):
                 fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
                 fcontent = fcontent.replace("{EMAIL}", email)
 
-                prefix = "/viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
-                fcontent = fcontent.replace("{STYLE}", prefix + style)
-                fcontent = fcontent.replace("{PREFIX}", prefix)
+                static_asset_prefix = "/viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
+                fcontent = fcontent.replace("{STYLE}", static_asset_prefix + style)
+                fcontent = fcontent.replace("{ASSET_PREFIX}", static_asset_prefix)
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
