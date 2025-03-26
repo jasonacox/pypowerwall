@@ -1,5 +1,5 @@
 /*! For license information please see vendor.17c71172308436a079d1.js.LICENSE */
-(window.webpackJsonp = window.webpackJsonp || []).push([
+(window.webpackJsonp_pypowerwall = window.webpackJsonp_pypowerwall || []).push([
     [0],
     [
         function (e, t, n) {
@@ -27948,15 +27948,7 @@
                                                   return e && "function" == typeof Symbol && e.constructor === Symbol && e !== Symbol.prototype ? "symbol" : typeof e;
                                               },
                                     o = (function () {
-                                        try {
-                                            if ("undefined" != typeof indexedDB) return indexedDB;
-                                            if ("undefined" != typeof webkitIndexedDB) return webkitIndexedDB;
-                                            if ("undefined" != typeof mozIndexedDB) return mozIndexedDB;
-                                            if ("undefined" != typeof OIndexedDB) return OIndexedDB;
-                                            if ("undefined" != typeof msIndexedDB) return msIndexedDB;
-                                        } catch (e) {
-                                            return;
-                                        }
+                                        return;
                                     })();
                                 function a(e, t) {
                                     (e = e || []), (t = t || {});
