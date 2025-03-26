@@ -175,7 +175,7 @@
         (s.oe = function (e) {
             throw (console.error(e), e);
         });
-    var _ = (window.webpackJsonp = window.webpackJsonp || []),
+    var _ = (window.webpackJsonp_pypowerwall = window.webpackJsonp_pypowerwall || []),
         l = _.push.bind(_);
     (_.push = t), (_ = _.slice());
     for (var c = 0; c < _.length; c++) t(_[c]);
@@ -1671,6 +1671,9 @@
     function (e, t, i) {
         "use strict";
         Object.defineProperty(t, "__esModule", { value: !0 }), (t.authedPostOptions = t.apiToUrl = t.toApi = void 0);
+        //const n = i(4),
+        //    r = "http://{PW_HOST}:{PW_PORT}",
+        //    a = { api: { host: r, uri: r + "/api" }, static: { host: "", uri: "" }, credentials: "same-origin" };
         const n = i(4),
             r = "http://10.33.155.246:8088",
             a = { api: { host: r, uri: r + "/api" }, static: { host: "http://10.33.155.246:3000", uri: "http://10.33.155.246:3000" }, credentials: "include" };
@@ -10220,7 +10223,7 @@
                     return await Object(c.e)(
                         c.a,
                         new Error("Request timed out"),
-                        fetch(_.a.api.uri + "/meters/aggregates", { credentials: _.a.credentials })
+                        fetch(_.a.api.host + "/aggregates", { credentials: _.a.credentials })
                             .then(l.checkStatus)
                             .then(l.parseJSON)
                             .then((t) => {

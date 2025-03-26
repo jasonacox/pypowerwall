@@ -951,7 +951,6 @@ class Handler(BaseHTTPRequestHandler):
             content = content.replace("{PW_PORT}", str(self.configuration.get(CONFIG_TYPE.PW_PORT, "")) or "")
             content = bytes(content, UTF_8)
 
-
         if content:
             log.info("Served from local web root: {} type {}".format(path, content_type))
         # If not found, serve from Powerwall web server
@@ -998,7 +997,7 @@ class Handler(BaseHTTPRequestHandler):
             if "Broken pipe" in str(exc):
                 log.info(f"Client disconnected before payload sent [doGET]: {exc}")
                 return content
-            log.info(f"Error occured while sending PROXY response to client [doGET]: {exc}")
+            log.info(f"Error occured while sending PROXY response to client [doGET], Error: {exc}, Content: {content}, Content_Type: {content_type} Path: {path}")
         return content
 
 

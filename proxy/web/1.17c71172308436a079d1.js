@@ -1,4 +1,4 @@
-(window.webpackJsonp = window.webpackJsonp || []).push([
+(window.webpackJsonp_pypowerwall = window.webpackJsonp_pypowerwall || []).push([
     [1],
     {
         1154: function (e, t, r) {
