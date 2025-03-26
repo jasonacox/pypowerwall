@@ -17794,7 +17794,8 @@
                 u = s.canUseDOM && !(0, o.supportsPopstateOnHashchange)(),
                 c = function (e) {
                     var t = e && e.key;
-                    return (0, r.createLocation)({ pathname: window.location.pathname, search: window.location.search, hash: window.location.hash, state: t ? (0, a.readState)(t) : void 0 }, void 0, t);
+                    // Forcing pathName to "/" here to prevent it from rewriting all URLs to "/" when you're proxying
+                    return (0, r.createLocation)({ pathname: "/", search: window.location.search, hash: window.location.hash, state: t ? (0, a.readState)(t) : void 0 }, void 0, t);
                 },
                 l = (t.getCurrentLocation = function () {
                     var e = void 0;

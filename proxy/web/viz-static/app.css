@@ -459,112 +459,112 @@ ul.detailed-errors>li {
 
 @font-face {
     font-family: Gotham;
-    src: url(/124f233cfa9945f861dcaca7acedd308.otf);
+    src: url(124f233cfa9945f861dcaca7acedd308.otf);
     font-weight: 100;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/2bf15a1686c7a1bf7b577337a07d7049.otf);
+    src: url(2bf15a1686c7a1bf7b577337a07d7049.otf);
     font-weight: 100;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/86a6894da889a3db781418529403290f.otf);
+    src: url(86a6894da889a3db781418529403290f.otf);
     font-weight: 200;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/a3b0d611359e6fa8356cd88aa9035268.otf);
+    src: url(a3b0d611359e6fa8356cd88aa9035268.otf);
     font-weight: 200;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/bceda3fae660177ae570735feec62811.otf);
+    src: url(bceda3fae660177ae570735feec62811.otf);
     font-weight: 300;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/d859fee2eba0e67c75c4c92e719d0630.otf);
+    src: url(d859fee2eba0e67c75c4c92e719d0630.otf);
     font-weight: 300;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/eca1317ee8a99162d0d0e2df77330cec.otf);
+    src: url(eca1317ee8a99162d0d0e2df77330cec.otf);
     font-weight: 400;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/befdfda70624c396169873b05de57f8a.otf);
+    src: url(befdfda70624c396169873b05de57f8a.otf);
     font-weight: 400;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/e19c20e966bde501f94e41cd0322dbe8.otf);
+    src: url(e19c20e966bde501f94e41cd0322dbe8.otf);
     font-weight: 600;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/653969a51632a4df33358a39d7012f79.otf);
+    src: url(653969a51632a4df33358a39d7012f79.otf);
     font-weight: 600;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/722c5f898bbca8b2eb3fce0287688326.otf);
+    src: url(722c5f898bbca8b2eb3fce0287688326.otf);
     font-weight: 700;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/ec89c09b066f57efc7687540c998845b.otf);
+    src: url(ec89c09b066f57efc7687540c998845b.otf);
     font-weight: 700;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/89aec2cc0b804667e95b1adc02e1ac4a.otf);
+    src: url(89aec2cc0b804667e95b1adc02e1ac4a.otf);
     font-weight: 800;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/ec6b35b07448e1624cb09323b5fb6e32.otf);
+    src: url(ec6b35b07448e1624cb09323b5fb6e32.otf);
     font-weight: 800;
     font-style: italic
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/b8d72cb0ef934ba1fe847c692d9dfed1.otf);
+    src: url(b8d72cb0ef934ba1fe847c692d9dfed1.otf);
     font-weight: 900;
     font-style: normal
 }
 
 @font-face {
     font-family: Gotham;
-    src: url(/ac2944015a17576924af7c56d88751cb.otf);
+    src: url(ac2944015a17576924af7c56d88751cb.otf);
     font-weight: 900;
     font-style: italic
 }
@@ -1151,8 +1151,8 @@ th {
 
 @font-face {
     font-family: Glyphicons Halflings;
-    src: url(/f4769f9bdb7466be65088239c12046d1.eot);
-    src: url(/f4769f9bdb7466be65088239c12046d1.eot?#iefix) format("embedded-opentype"), url(/448c34a56d699c29117adc64c43affeb.woff2) format("woff2"), url(/fa2772327f55d8198301fdb8bcfc8158.woff) format("woff"), url(/e18bbf611f2a2e43afc071aa2f4e1512.ttf) format("truetype"), url(/89889688147bd7575d6327160d64e760.svg#glyphicons_halflingsregular) format("svg")
+    src: url(f4769f9bdb7466be65088239c12046d1.eot);
+    src: url(f4769f9bdb7466be65088239c12046d1.eot?#iefix) format("embedded-opentype"), url(448c34a56d699c29117adc64c43affeb.woff2) format("woff2"), url(fa2772327f55d8198301fdb8bcfc8158.woff) format("woff"), url(e18bbf611f2a2e43afc071aa2f4e1512.ttf) format("truetype"), url(89889688147bd7575d6327160d64e760.svg#glyphicons_halflingsregular) format("svg")
 }
 
 .glyphicon {
