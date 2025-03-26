@@ -291,12 +291,12 @@ class Handler(BaseHTTPRequestHandler):
         contenttype = 'application/json'
         message = '{"error": "Invalid Request"}'
 
-        # Get the request path and subtract the base URL. This is intentionally doing a replace on the URL we check
-        # instead of using the prefix inside of the checks to maintain the ability to use the regular URLs in addition to
-        # the proxied URLs, so Telegraf configs or existing integrations don't need to be modified.
+        # If set, remove the api_base_url from the requested path. This allows installing the
+        # the proxy on a path without impacting the use of Telegraf or other integrations. Python 3.9+
         request_path = self.path
-        if request_path.startswith(api_base_url):
-            request_path = "/" + request_path[len(api_base_url):]
+        new_path = request_path.removeprefix(api_base_url)
+        if new_path is not request_path:
+            request_path = "/" + new_path
 
         if request_path.startswith('/control'):
             # curl -X POST -d "value=20&token=1234" http://localhost:8675/control/reserve
@@ -363,12 +363,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         contenttype = 'application/json'
 
-        # Get the request path and subtract the base URL. This is intentionally doing a replace on the URL we check
-        # instead of using the prefix inside of the checks to maintain the ability to use the regular URLs in addition to
-        # the proxied URLs, so Telegraf configs or existing integrations don't need to be modified.
+        # If set, remove the api_base_url from the requested path. This allows installing the
+        # the proxy on a path without impacting the use of Telegraf or other integrations. Python 3.9+
         request_path = self.path
-        if request_path.startswith(api_base_url):
-            request_path = "/" + request_path[len(api_base_url):]
+        new_path = request_path.removeprefix(api_base_url)
+        if new_path is not request_path:
+            request_path = "/" + new_path
 
         if request_path == '/aggregates' or request_path == '/api/meters/aggregates':
             # Meters - JSON
