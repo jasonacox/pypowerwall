@@ -549,9 +549,9 @@ class Handler(BaseHTTPRequestHandler):
             load["instant_total_current"] = load_current
 
             # Update voltages, ensuring we avoid division by zero
-            load["instant_average_voltage"] = load_power / load_current if load_current else 0
+            load["instant_average_voltage"] = abs(load_power) / abs(load_current) if load_current else 0
             if not site.get("instant_average_voltage", 0):
-                site["instant_average_voltage"] = site_power / site_current if site_current else 0
+                site["instant_average_voltage"] = abs(site_power) / abs(site_current) if site_current else 0
 
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := pws[0].poll("/api/meters/aggregates"))]
