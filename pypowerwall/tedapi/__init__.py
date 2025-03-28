@@ -32,6 +32,7 @@
     get_battery_block(din) - Get the Powerwall 3 Battery Block Information
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
+    get_fan_speed() - Get the fan speeds in RPM
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -47,7 +48,7 @@ import logging
 import sys
 import time
 from http import HTTPStatus
-from typing import List
+from typing import Dict, List
 
 import requests
 import urllib3
@@ -641,6 +642,35 @@ class TEDAPI:
         return battery_level
 
 
+    # Helper Function
+    def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
+        fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
+
+        # List to store the valid fan speed values
+        result = {}
+
+        # Iterate over each component in the "msa" list
+        for component in data.get("components", {}).get("msa", []):
+            signals = component.get("signals", [])
+            fan_speeds = {
+                signal["name"]: signal["value"]
+                for signal in signals
+                if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
+            }
+            if not fan_speeds:
+                continue
+            componentPartNumber = component.get("partNumber")
+            componentSerialNumber = component.get("serialNumber")
+            result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
+        return result
+
+    def get_fan_speeds(self, force=False):
+        """
+        Get the fan speeds for the Powerwall / Inverter
+        """
+        return self.extract_fan_speeds(self.get_device_controller(force=force))
+    
+    
     # Vitals API Mapping Function
     def vitals(self, force=False):
         """

@@ -1,5 +1,16 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t70 (25 Mar 2025)
+
+pyPowerwall v0.12.9:
+* Add PVAC fan speeds to TEDAPI vitals monitoring (PVAC_Fan_Speed_Actual_RPM and PVAC_Fan_Speed_Target_RPM).
+* Avoid divide by zero when nominalFullPackEnergyWh is zero by @rlpm in #150
+* Add thread locking to TEDAPI by @Nexarian in #148
+
+Proxy:
+* Add PROXY_BASE_URL option for reverse proxying by @mccahan in https://github.com/jasonacox/pypowerwall/pull/155
+* Fix issue with visualization showing blank with multiple tabs by @mccahan in https://github.com/jasonacox/pypowerwall/pull/156
+
 ### Proxy t69 (15 Mar 2025)
 
 * pyPowerwall v0.12.7 - Added new data features (Neurio Vitals, Aggregates Data) and fixed a critical issue (SystemConnectedToGrid Fix) while normalizing Alerts.

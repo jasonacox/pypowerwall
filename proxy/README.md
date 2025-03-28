@@ -214,6 +214,7 @@ Proxy Settings
 * PW_CACHE_FILE - Proxy cache file path, with override PW_AUTH_PATH if provided (".powerwall")
 * PW_SITEID - For `cloud mode`, if you have multiple sites configured, use this site ID ("")
 * PW_CONTROL_SECRET - If provided, will activate the Powerwall control commands to adjust Powerwall backup reserve level and mode (disabled by default)
+* PROXY_BASE_URL - If you are using a reverse proxy to put pypowerwall in a subdirectory, set it here to adjust the URLs for the flow animation (`/` by default)
 
 ## Control Mode
 

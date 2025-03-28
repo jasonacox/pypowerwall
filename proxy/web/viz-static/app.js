@@ -32,7 +32,7 @@
               { 2: 1, 4: 1, 5: 1, 6: 1, 7: 1, 10: 1, 11: 1, 12: 1, 13: 1, 14: 1, 15: 1, 16: 1, 17: 1, 18: 1, 19: 1, 20: 1, 21: 1, 22: 1, 23: 1, 24: 1, 25: 1, 27: 1, 30: 1, 31: 1, 32: 1, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1 }[e] &&
               t.push(
                   (r[e] = new Promise(function (t, i) {
-                      for (var n = e + ".17c71172308436a079d1.css", a = s.p + n, o = document.getElementsByTagName("link"), _ = 0; _ < o.length; _++) {
+                      for (var n = window.appPrefix + e + ".17c71172308436a079d1.css", a = s.p + n, o = document.getElementsByTagName("link"), _ = 0; _ < o.length; _++) {
                           var l = (d = o[_]).getAttribute("data-href") || d.getAttribute("href");
                           if ("stylesheet" === d.rel && (l === n || l === a)) return t();
                       }
@@ -171,7 +171,7 @@
         (s.o = function (e, t) {
             return Object.prototype.hasOwnProperty.call(e, t);
         }),
-        (s.p = "/"),
+        (s.p = window.appPrefix),
         (s.oe = function (e) {
             throw (console.error(e), e);
         });
@@ -1673,8 +1673,8 @@
         Object.defineProperty(t, "__esModule", { value: !0 }), (t.authedPostOptions = t.apiToUrl = t.toApi = void 0);
         const n = i(4),
             r = "http://10.33.155.246:8088",
-            a = { api: { host: r, uri: r + "/api" }, static: { host: "http://10.33.155.246:3000", uri: "http://10.33.155.246:3000" }, credentials: "include" };
-        (a.api.host = ""), (a.api.uri = "/api"), (a.static.host = ""), (a.static.uri = ""), (a.credentials = "same-origin");
+            a = { api: { host: r, uri: r + window.apiBaseUrl }, static: { host: "http://10.33.155.246:3000", uri: "http://10.33.155.246:3000" }, credentials: "include" };
+        (a.api.host = ""), (a.api.uri = window.apiBaseUrl), (a.static.host = ""), (a.static.uri = ""), (a.credentials = "same-origin");
         t.toApi = (e) => `${a.api.uri}/${e}`;
         t.apiToUrl = (e) => `${a.api.uri}${e}`;
         (t.authedPostOptions = (e) => Object.assign(Object.assign({}, (0, n.postOptions)(e)), { credentials: a.credentials })), (t.default = a);
