@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t69"
+BUILD = "t70"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -95,6 +95,7 @@ cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
+api_base_url = os.getenv("PROXY_BASE_URL", "/") # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
 
 # Global Stats
 proxystats = {
@@ -161,6 +162,11 @@ log = logging.getLogger("proxy")
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 log.setLevel(logging.INFO)
 
+# Ensure api_base_url ends with a /
+if not api_base_url.endswith('/'):
+    log.error("PROXY_BASE_URL must end with a '/'. Current value: '%s'" % api_base_url)
+    sys.exit(1)
+
 if debugmode:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" %
              (pypowerwall.version, BUILD, httptype, port))
@@ -170,6 +176,11 @@ else:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d" %
              (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
+
+# Ensure api_base_url ends with a /
+if not api_base_url.endswith('/'):
+    api_base_url += '/'
+    log.info(f"Added trailing / to API Base URL: {api_base_url}")
 
 # Check for cache expire time limit below 5s
 if cache_expire < 5:
@@ -279,7 +290,15 @@ class Handler(BaseHTTPRequestHandler):
         global proxystats
         contenttype = 'application/json'
         message = '{"error": "Invalid Request"}'
-        if self.path.startswith('/control'):
+
+        # If set, remove the api_base_url from the requested path. This allows installing the
+        # the proxy on a path without impacting the use of Telegraf or other integrations. Python 3.9+
+        request_path = self.path
+        new_path = request_path.removeprefix(api_base_url)
+        if new_path is not request_path:
+            request_path = "/" + new_path
+
+        if request_path.startswith('/control'):
             # curl -X POST -d "value=20&token=1234" http://localhost:8675/control/reserve
             # curl -X POST -d "value=backup&token=1234" http://localhost:8675/control/mode
             message = None
@@ -287,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 try:
-                    action = urlparse(self.path).path.split('/')[2]
+                    action = urlparse(request_path).path.split('/')[2]
                     post_data = self.rfile.read(int(self.headers['Content-Length']))
                     query_params = parse_qs(post_data.decode('utf-8'))
                     value = query_params.get('value', [''])[0]
@@ -344,7 +363,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         contenttype = 'application/json'
 
-        if self.path == '/aggregates' or self.path == '/api/meters/aggregates':
+        # If set, remove the api_base_url from the requested path. This allows installing the
+        # the proxy on a path without impacting the use of Telegraf or other integrations. Python 3.9+
+        request_path = self.path
+        new_path = request_path.removeprefix(api_base_url)
+        if new_path is not request_path:
+            request_path = "/" + new_path
+
+        if request_path == '/aggregates' or request_path == '/api/meters/aggregates':
             # Meters - JSON
             aggregates = pw.poll('/api/meters/aggregates')
             if not neg_solar and aggregates and 'solar' in aggregates:
@@ -359,17 +385,17 @@ class Handler(BaseHTTPRequestHandler):
             except:
                 log.error(f"JSON encoding error in payload: {aggregates}")
                 message = None
-        elif self.path == '/soe':
+        elif request_path == '/soe':
             # Battery Level - JSON
             message: str = pw.poll('/api/system_status/soe', jsonformat=True)
-        elif self.path == '/api/system_status/soe':
+        elif request_path == '/api/system_status/soe':
             # Force 95% Scale
             level = pw.level(scale=True)
             message: str = json.dumps({"percentage": level})
-        elif self.path == '/api/system_status/grid_status':
+        elif request_path == '/api/system_status/grid_status':
             # Grid Status - JSON
             message: str = pw.poll('/api/system_status/grid_status', jsonformat=True)
-        elif self.path.startswith('/csv') or self.path.startswith('/csv/v2'):
+        elif request_path.startswith('/csv') or request_path.startswith('/csv/v2'):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
@@ -383,28 +409,28 @@ class Handler(BaseHTTPRequestHandler):
                 solar = 0
                 # Shift energy from solar to load
                 home -= solar
-            if self.path.startswith('/csv/v2'):
+            if request_path.startswith('/csv/v2'):
                 gridstatus = 1 if pw.grid_status() == 'UP' else 0
                 reserve = pw.get_reserve() or 0
                 message = ""
-                if "headers" in self.path:
+                if "headers" in request_path:
                     message += "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
                 message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" \
                     % (grid, home, solar, battery, batterylevel, 
                         gridstatus, reserve)
             else:
                 message = ""
-                if "headers" in self.path:
+                if "headers" in request_path:
                     message += "Grid,Home,Solar,Battery,BatteryLevel\n"
                 message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" \
                     % (grid, home, solar, battery, batterylevel)
-        elif self.path == '/vitals':
+        elif request_path == '/vitals':
             # Vitals Data - JSON
             message: str = pw.vitals(jsonformat=True) or json.dumps({})
-        elif self.path == '/strings':
+        elif request_path == '/strings':
             # Strings Data - JSON
             message: str = pw.strings(jsonformat=True) or json.dumps({})
-        elif self.path == '/stats':
+        elif request_path == '/stats':
             # Give Internal Stats
             proxystats['ts'] = int(time.time())
             delta = proxystats['ts'] - proxystats['start']
@@ -417,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
                 proxystats['siteid'] = pw.client.siteid
                 proxystats['counter'] = pw.client.counter
             message: str = json.dumps(proxystats)
-        elif self.path == '/stats/clear':
+        elif request_path == '/stats/clear':
             # Clear Internal Stats
             log.debug("Clear internal stats")
             proxystats['gets'] = 0
@@ -425,10 +451,10 @@ class Handler(BaseHTTPRequestHandler):
             proxystats['uri'] = {}
             proxystats['clear'] = int(time.time())
             message: str = json.dumps(proxystats)
-        elif self.path == '/temps':
+        elif request_path == '/temps':
             # Temps of Powerwalls
             message: str = pw.temps(jsonformat=True) or json.dumps({})
-        elif self.path == '/temps/pw':
+        elif request_path == '/temps/pw':
             # Temps of Powerwalls with Simple Keys
             pwtemp = {}
             idx = 1
@@ -438,10 +464,10 @@ class Handler(BaseHTTPRequestHandler):
                 pwtemp[key] = temps[i]
                 idx = idx + 1
             message: str = json.dumps(pwtemp)
-        elif self.path == '/alerts':
+        elif request_path == '/alerts':
             # Alerts
             message: str = pw.alerts(jsonformat=True) or json.dumps([])
-        elif self.path == '/alerts/pw':
+        elif request_path == '/alerts/pw':
             # Alerts in dictionary/object format
             pwalerts = {}
             alerts = pw.alerts()
@@ -451,7 +477,7 @@ class Handler(BaseHTTPRequestHandler):
                 for alert in alerts:
                     pwalerts[alert] = 1
                 message: str = json.dumps(pwalerts) or json.dumps({})
-        elif self.path == '/freq':
+        elif request_path == '/freq':
             # Frequency, Current, Voltage and Grid Status
             fcv = {}
             idx = 1
@@ -490,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
                             fcv[i] = d[i]
             fcv["grid_status"] = pw.grid_status(type="numeric")
             message: str = json.dumps(fcv)
-        elif self.path == '/pod':
+        elif request_path == '/pod':
             # Powerwall Battery Data
             pod = {}
             # Get Individual Powerwall Battery Data
@@ -560,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
             pod["time_remaining_hours"] = pw.get_time_remaining()
             pod["backup_reserve_percent"] = pw.get_reserve()
             message: str = json.dumps(pod)
-        elif self.path == '/version':
+        elif request_path == '/version':
             # Firmware Version
             version = pw.version()
             v = {}
@@ -572,7 +598,7 @@ class Handler(BaseHTTPRequestHandler):
                 v["version"] = version
                 v["vint"] = parse_version(version)
                 message: str = json.dumps(v)
-        elif self.path == '/help':
+        elif request_path == '/help':
             # Display friendly help screen link and stats
             proxystats['ts'] = int(time.time())
             delta = proxystats['ts'] - proxystats['start']
@@ -630,61 +656,61 @@ class Handler(BaseHTTPRequestHandler):
             """
             message += "</table>\n"
             message += f'\n<p>Page refresh: {str(datetime.datetime.fromtimestamp(time.time()))}</p>\n</body>\n</html>'
-        elif self.path == '/api/troubleshooting/problems':
+        elif request_path == '/api/troubleshooting/problems':
             # Simulate old API call and respond with empty list
             message = '{"problems": []}'
             # message = pw.poll('/api/troubleshooting/problems') or '{"problems": []}'
-        elif self.path.startswith('/tedapi'):
+        elif request_path.startswith('/tedapi'):
             # TEDAPI Specific Calls
             if pw.tedapi:
                 message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"}'
-                if self.path == '/tedapi/config':
+                if request_path == '/tedapi/config':
                     message = json.dumps(pw.tedapi.get_config())
-                if self.path == '/tedapi/status':
+                if request_path == '/tedapi/status':
                     message = json.dumps(pw.tedapi.get_status())
-                if self.path == '/tedapi/components':
+                if request_path == '/tedapi/components':
                     message = json.dumps(pw.tedapi.get_components())
-                if self.path == '/tedapi/battery':
+                if request_path == '/tedapi/battery':
                     message = json.dumps(pw.tedapi.get_battery_blocks())
-                if self.path == '/tedapi/controller':
+                if request_path == '/tedapi/controller':
                     message = json.dumps(pw.tedapi.get_device_controller())
             else:
                 message = '{"error": "TEDAPI not enabled"}'
-        elif self.path.startswith('/cloud'):
+        elif request_path.startswith('/cloud'):
             # Cloud API Specific Calls
             if pw.cloudmode and not pw.fleetapi:
                 message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
-                if self.path == '/cloud/battery':
+                if request_path == '/cloud/battery':
                     message = json.dumps(pw.client.get_battery())
-                if self.path == '/cloud/power':
+                if request_path == '/cloud/power':
                     message = json.dumps(pw.client.get_site_power())
-                if self.path == '/cloud/config':
+                if request_path == '/cloud/config':
                     message = json.dumps(pw.client.get_site_config())
             else:
                 message = '{"error": "Cloud API not enabled"}'
-        elif self.path.startswith('/fleetapi'):
+        elif request_path.startswith('/fleetapi'):
             # FleetAPI Specific Calls
             if pw.fleetapi:
                 message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
-                if self.path == '/fleetapi/info':
+                if request_path == '/fleetapi/info':
                     message = json.dumps(pw.client.get_site_info())
-                if self.path == '/fleetapi/status':
+                if request_path == '/fleetapi/status':
                     message = json.dumps(pw.client.get_live_status())
             else:
                 message = '{"error": "FleetAPI not enabled"}'
-        elif self.path in DISABLED:
+        elif request_path in DISABLED:
             # Disabled API Calls
             message = '{"status": "404 Response - API Disabled"}'
-        elif self.path in ALLOWLIST:
+        elif request_path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
-            message: str = pw.poll(self.path, jsonformat=True)
-        elif self.path.startswith('/control/reserve'):
+            message: str = pw.poll(request_path, jsonformat=True)
+        elif request_path.startswith('/control/reserve'):
             # Current battery reserve level
             if not pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 message = '{"reserve": %s}' % pw_control.get_reserve()
-        elif self.path.startswith('/control/mode'):
+        elif request_path.startswith('/control/mode'):
             # Current operating mode
             if not pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
@@ -703,9 +729,9 @@ class Handler(BaseHTTPRequestHandler):
 
             # Serve static assets from web root first, if found.
             # pylint: disable=attribute-defined-outside-init
-            if self.path == "/" or self.path == "":
-                self.path = "/index.html"
-                fcontent, ftype = get_static(web_root, self.path)
+            if request_path == "/" or request_path == "":
+                request_path = "/index.html"
+                fcontent, ftype = get_static(web_root, request_path)
                 # Replace {VARS} with current data
                 status = pw.status()
                 # convert fcontent to string
@@ -714,21 +740,26 @@ class Handler(BaseHTTPRequestHandler):
                 fcontent = fcontent.replace("{VERSION}", status["version"] or "")
                 fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
                 fcontent = fcontent.replace("{EMAIL}", email)
-                fcontent = fcontent.replace("{STYLE}", style)
+
+                static_asset_prefix = api_base_url + "viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
+                fcontent = fcontent.replace("{STYLE}", static_asset_prefix + style)
+                fcontent = fcontent.replace("{ASSET_PREFIX}", static_asset_prefix)
+
+                fcontent = fcontent.replace("{API_BASE_URL}", api_base_url + "api")
                 # convert fcontent back to bytes
                 fcontent = bytes(fcontent, 'utf-8')
             else:
-                fcontent, ftype = get_static(web_root, self.path)
+                fcontent, ftype = get_static(web_root, request_path)
             if fcontent:
-                log.debug("Served from local web root: {} type {}".format(self.path, ftype))
+                log.debug("Served from local web root: {} type {}".format(request_path, ftype))
             # If not found, serve from Powerwall web server
             elif pw.cloudmode or pw.fleetapi:
-                log.debug("Cloud Mode - File not found: {}".format(self.path))
+                log.debug("Cloud Mode - File not found: {}".format(request_path))
                 fcontent = bytes("Not Found", 'utf-8')
                 ftype = "text/plain"
             else:
                 # Proxy request to Powerwall web server.
-                proxy_path = self.path
+                proxy_path = request_path
                 if proxy_path.startswith("/"):
                     proxy_path = proxy_path[1:]
                 pw_url = "https://{}/{}".format(pw.host, proxy_path)
@@ -754,9 +785,11 @@ class Handler(BaseHTTPRequestHandler):
                     ftype = r.headers['content-type']
                 except AttributeError:
                     # Display 404
-                    log.debug("File not found: {}".format(self.path))
+                    log.debug("File not found: {}".format(request_path))
                     fcontent = bytes("Not Found", 'utf-8')
                     ftype = "text/plain"
+                    self.send_response(404)
+                    return
 
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (ftype == 'text/css' or ftype == 'application/javascript' or ftype == 'image/png'):
@@ -765,7 +798,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Cache-Control", "no-cache, no-store")
 
                 # Inject transformations
-            if self.path.split('?')[0] == "/":
+            if request_path.split('?')[0] == "/":
                 if os.path.exists(os.path.join(web_root, style)):
                     fcontent = bytes(inject_js(fcontent, style), 'utf-8')
 
@@ -789,10 +822,10 @@ class Handler(BaseHTTPRequestHandler):
             message = "ERROR!"
         else:
             proxystats['gets'] = proxystats['gets'] + 1
-            if self.path in proxystats['uri']:
-                proxystats['uri'][self.path] = proxystats['uri'][self.path] + 1
+            if request_path in proxystats['uri']:
+                proxystats['uri'][request_path] = proxystats['uri'][request_path] + 1
             else:
-                proxystats['uri'][self.path] = 1
+                proxystats['uri'][request_path] = 1
 
         # Send headers and payload
         try:

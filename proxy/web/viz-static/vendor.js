@@ -17794,7 +17794,8 @@
                 u = s.canUseDOM && !(0, o.supportsPopstateOnHashchange)(),
                 c = function (e) {
                     var t = e && e.key;
-                    return (0, r.createLocation)({ pathname: window.location.pathname, search: window.location.search, hash: window.location.hash, state: t ? (0, a.readState)(t) : void 0 }, void 0, t);
+                    // Forcing pathName to "/" here to prevent it from rewriting all URLs to "/" when you're proxying
+                    return (0, r.createLocation)({ pathname: "/", search: window.location.search, hash: window.location.hash, state: t ? (0, a.readState)(t) : void 0 }, void 0, t);
                 },
                 l = (t.getCurrentLocation = function () {
                     var e = void 0;
@@ -27948,6 +27949,9 @@
                                                   return e && "function" == typeof Symbol && e.constructor === Symbol && e !== Symbol.prototype ? "symbol" : typeof e;
                                               },
                                     o = (function () {
+                                        // FIX: return here to prevent IndexDB from being used - otherwise it will lock waiting for
+                                        // something and you can't have the animation open in different tabs.
+                                        return
                                         try {
                                             if ("undefined" != typeof indexedDB) return indexedDB;
                                             if ("undefined" != typeof webkitIndexedDB) return webkitIndexedDB;
