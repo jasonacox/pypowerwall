@@ -1,9 +1,8 @@
 import logging
 import json
-import os
 from .. import tedapi_pb2
 from ..exceptions import PyPowerwallTEDAPIException
-from .TEDAPIMessage import TEDAPIMessage
+from .tedapi_message import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 

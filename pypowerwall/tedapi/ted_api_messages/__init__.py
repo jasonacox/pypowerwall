@@ -1,13 +1,10 @@
-import json
-import os
-from .. import tedapi_pb2
-from .BatteryComponentsMessage import BatteryComponentsMessage
-from .ComponentsMessage import ComponentsMessage
-from .ConfigMessage import ConfigMessage
-from .DeviceControllerMessage import DeviceControllerMessage
-from .FirmwareMessage import FirmwareMessage
-from .GatewayStatusMessage import GatewayStatusMessage
-from .TEDAPIMessage import TEDAPIMessage
+from .battery_components_message import BatteryComponentsMessage
+from .components_message import ComponentsMessage
+from .config_message import ConfigMessage
+from .device_controller_message import DeviceControllerMessage
+from .firmware_message import FirmwareMessage
+from .gateway_status_message import GatewayStatusMessage
+from .tedapi_message import TEDAPIMessage
 
 __all__ = [
         "BatteryComponentsMessage",

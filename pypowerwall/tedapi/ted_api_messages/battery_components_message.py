@@ -2,22 +2,24 @@ import logging
 import json
 from .. import tedapi_pb2
 from ..exceptions import PyPowerwallTEDAPIException
-from .TEDAPIMessage import TEDAPIMessage
+from .tedapi_message import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
 
-class ComponentsMessage(TEDAPIMessage):
-    """ Protobuf message for requesting component data from the Powerwall. """
+class BatteryComponentsMessage(TEDAPIMessage):
+    """ Protobuf message for requesting battery component data from the Powerwall. """
 
-    def __init__(self, din):
+    def __init__(self, din, pw_din):
         super().__init__(din)
+        self.pw_din = pw_din
 
     def get_message(self):
         pb = tedapi_pb2.Message()
         pb.message.deliveryChannel = 1
         pb.message.sender.local = 1
-        pb.message.recipient.din = self.din  # DIN of Powerwall
+        pb.message.sender.din = self.din  # DIN of Primary Powerwall 3 / System
+        pb.message.recipient.din = self.pw_din  # DIN of Powerwall of Interest
         pb.message.payload.send.num = 2
 
         # WARNING: This query payload is precisely checksummed/signed and should not be modified at all, even the whitespace
@@ -27,7 +29,7 @@ class ComponentsMessage(TEDAPIMessage):
 
         # These parameters are editable
         pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
-        pb.tail.value = 1
+        pb.tail.value = 2
         self.pb = pb
         return self.pb
 

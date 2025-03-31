@@ -1,7 +1,7 @@
 import logging
 import json
 from .. import tedapi_pb2
-from .TEDAPIMessage import TEDAPIMessage
+from .tedapi_message import TEDAPIMessage
 
 log = logging.getLogger(__name__)
 
