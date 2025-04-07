@@ -719,7 +719,7 @@ class Handler(BaseHTTPRequestHandler):
         elif request_path == '/fans':
             # Fan speeds in raw format
             message = json.dumps(pw.tedapi.get_fan_speeds() if pw.tedapi else {})
-        elif self.path.startswith('/fans/pw'):
+        elif request_path.startswith('/fans/pw'):
             # Fan speeds in simplified format (e.g. FAN1_actual, FAN1_target)
             if pw.tedapi:
                 fans = {}
