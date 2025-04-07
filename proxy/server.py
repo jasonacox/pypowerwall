@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t70"
+BUILD = "t71"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -716,6 +716,20 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 message = '{"mode": "%s"}' % pw_control.get_mode()
+        elif request_path == '/fans':
+            # Fan speeds in raw format
+            message = json.dumps(pw.tedapi.get_fan_speeds() if pw.tedapi else {})
+        elif self.path.startswith('/fans/pw'):
+            # Fan speeds in simplified format (e.g. FAN1_actual, FAN1_target)
+            if pw.tedapi:
+                fans = {}
+                for i, (_, value) in enumerate(sorted(pw.tedapi.get_fan_speeds().items())):
+                    key = f"FAN{i+1}"
+                    fans[f"{key}_actual"] = value.get('PVAC_Fan_Speed_Actual_RPM')
+                    fans[f"{key}_target"] = value.get('PVAC_Fan_Speed_Target_RPM')
+                message = json.dumps(fans)
+            else:
+                message = '{}'
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1

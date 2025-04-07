@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t71 (6 Apr 2025)
+
+* Add routes for fan speeds: `/fans` and `/fans/pw` (simple enumerated values for dashboard)
+
 ### Proxy t70 (25 Mar 2025)
 
 pyPowerwall v0.12.9:
