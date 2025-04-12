@@ -12,3 +12,11 @@ class PyPowerwallTEDAPINotImplemented(Exception):
 
 class PyPowerwallTEDAPIInvalidPayload(Exception):
     pass
+
+
+class PyPowerwallTEDAPIThrottleException(Exception):
+    pass
+
+
+class PyPowerwallTEDAPIException(Exception):
+    pass
