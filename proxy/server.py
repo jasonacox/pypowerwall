@@ -68,6 +68,33 @@ ALLOWLIST = [
 DISABLED = [
     '/api/customer/registration',
 ]
+PW_ALLOWLIST = [
+    '/pw/level',
+    '/pw/power',
+    '/pw/site',
+    '/pw/solar',
+    '/pw/battery',
+    '/pw/battery_blocks',
+    '/pw/load',
+    '/pw/grid',
+    '/pw/home',
+    '/pw/vitals',
+    '/pw/aggregates',
+    '/pw/temps',
+    '/pw/strings',
+    '/pw/din',
+    '/pw/uptime',
+    '/pw/version',
+    '/pw/status',
+    '/pw/system_status',
+    '/pw/grid_status',
+    '/pw/site_name',
+    '/pw/alerts',
+    '/pw/is_connected',
+    '/pw/get_reserve',
+    '/pw/get_mode',
+    '/pw/get_time_remaining',
+]
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
 # Configuration for Proxy - Check for environmental variables
@@ -730,6 +757,81 @@ class Handler(BaseHTTPRequestHandler):
                 message = json.dumps(fans)
             else:
                 message = '{}'
+        elif self.path in PW_ALLOWLIST:
+            # Allowed API Calls - Proxy to Powerwall
+            ftype = 'application/json'
+            if self.path == '/pw/level':
+                powerwall_level_doc = {}
+                powerwall_level_doc["level"] = pw.level()
+                message = json.dumps(powerwall_level_doc)
+            elif self.path == '/pw/power':
+                message = json.dumps(pw.power())
+            elif self.path == '/pw/site':
+                message = json.dumps(pw.site(True))
+            elif self.path == '/pw/solar':
+                message = json.dumps(pw.solar(True))
+            elif self.path == '/pw/battery':
+                message = json.dumps(pw.battery(True))
+            elif self.path == '/pw/battery_blocks':
+                message = json.dumps(pw.battery_blocks())
+            elif self.path == '/pw/load':
+                message = json.dumps(pw.load(True))
+            elif self.path == '/pw/grid':
+                message = json.dumps(pw.grid(True))
+            elif self.path == '/pw/home':
+                message = json.dumps(pw.home(True))
+            elif self.path == '/pw/vitals':
+                message = json.dumps(pw.vitals())
+            elif self.path == '/pw/temps':
+                message = json.dumps(pw.temps())
+            elif self.path == '/pw/strings':
+                message = json.dumps(pw.strings(False, True))
+            elif self.path == '/pw/din':
+                powerwall_din_doc = {}
+                powerwall_din_doc["din"] = pw.din()
+                message = json.dumps(powerwall_din_doc)
+            elif self.path == '/pw/uptime':
+                powerwall_uptime_doc = {}
+                powerwall_uptime_doc["uptime"] = pw.uptime()
+                message = json.dumps(powerwall_uptime_doc)
+            elif self.path == '/pw/version':
+                powerwall_version_doc = {}
+                powerwall_version_doc["version"] = pw.version()
+                message = json.dumps(powerwall_version_doc)
+            elif self.path == '/pw/status':
+                message = json.dumps(pw.status())
+            elif self.path == '/pw/system_status':
+                message = json.dumps(pw.system_status(False))
+            elif self.path == '/pw/grid_status':
+                grid_status_str = pw.grid_status(type="json")
+                message = json.loads(grid_status_str)
+                message = grid_status_str
+            elif self.path == '/pw/aggregates':
+                message = json.dumps(pw.poll('/api/meters/aggregates', False))
+            elif self.path == '/pw/site_name':
+                powerwall_site_name_doc = {}
+                powerwall_site_name_doc["site_name"] = pw.site_name()
+                message = json.dumps(powerwall_site_name_doc)
+            elif self.path == '/pw/alerts':
+                powerwall_alerts_doc = {}
+                powerwall_alerts_doc["alerts"] = pw.alerts()
+                message = json.dumps(powerwall_alerts_doc)
+            elif self.path == '/pw/is_connected':
+                powerwall_connected_doc = {}
+                powerwall_connected_doc["is_connected"] = pw.is_connected()
+                message = json.dumps(powerwall_connected_doc)
+            elif self.path == '/pw/get_reserve':
+                powerwall_reserve_doc = {}
+                powerwall_reserve_doc["reserve"] = pw.get_reserve()
+                message = json.dumps(powerwall_reserve_doc)
+            elif self.path == '/pw/get_mode':
+                powerwall_mode_doc = {}
+                powerwall_mode_doc["mode"] = pw.get_mode()
+                message = json.dumps(powerwall_mode_doc)
+            elif self.path == '/pw/get_time_remaining':
+                powerwall_time_remaining_doc = {}
+                powerwall_time_remaining_doc["time_remaining"] = pw.get_time_remaining()
+                message = json.dumps(powerwall_time_remaining_doc)
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1
