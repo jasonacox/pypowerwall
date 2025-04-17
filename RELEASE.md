@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.12.10 - Power Flow and Other Fixes
+
+* Add PROXY_BASE_URL option for reverse proxying by @mccahan in https://github.com/jasonacox/pypowerwall/pull/155
+* Fix issue with power flow animation showing blank when opened more than once by @mccahan in https://github.com/jasonacox/pypowerwall/pull/156
+* Add fan speed routes and update proxy version to t71 by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/161
+* Fix for
+TypeError: PyPowerwallTEDAPI.vitals() got an unexpected keyword argument 'force' by @F1p in https://github.com/jasonacox/pypowerwall/pull/164
+* Catch error condition when components payload is empty or malformed. Bug in extract_fan_speeds() reported by by @jgleigh in jasonacox/Powerwall-Dashboard#392 and https://github.com/jasonacox/pypowerwall/issues/167
+
 ## v0.12.9 - Fan Speeds
 
 * Add PVAC fan speeds to TEDAPI vitals monitoring (PVAC_Fan_Speed_Actual_RPM and PVAC_Fan_Speed_Target_RPM).
