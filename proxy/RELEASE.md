@@ -3,6 +3,7 @@
 ### Proxy t71 (6 Apr 2025)
 
 * Add routes for fan speeds: `/fans` and `/fans/pw` (simple enumerated values for dashboard)
+* Add API routes /pw/* to expose Powerwall() API methods (e.g. /pw/power) by @JohnJ9ml in https://github.com/jasonacox/pypowerwall/pull/166
 
 ### Proxy t70 (25 Mar 2025)
 
