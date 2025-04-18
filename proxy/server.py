@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t71"
+BUILD = "t72"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -730,6 +730,42 @@ class Handler(BaseHTTPRequestHandler):
                 message = json.dumps(fans)
             else:
                 message = '{}'
+        elif self.path.startswith('/pw/'):
+            # Map library functions into /pw/ API calls
+            path = self.path[4:]  # Remove '/pw/' prefix
+            simple_mappings = {
+                'level': lambda: {'level': pw.level()},
+                'power': pw.power,
+                'site': lambda: pw.site(True),
+                'solar': lambda: pw.solar(True),
+                'battery': lambda: pw.battery(True), 
+                'battery_blocks': pw.battery_blocks,
+                'load': lambda: pw.load(True),
+                'grid': lambda: pw.grid(True),
+                'home': lambda: pw.home(True),
+                'vitals': pw.vitals,
+                'temps': pw.temps,
+                'strings': lambda: pw.strings(False, True),
+                'din': lambda: {'din': pw.din()},
+                'uptime': lambda: {'uptime': pw.uptime()},
+                'version': lambda: {'version': pw.version()},
+                'status': pw.status,
+                'system_status': lambda: pw.system_status(False),  
+                'grid_status': lambda: json.loads(pw.grid_status(type="json")),
+                'aggregates': lambda: pw.poll('/api/meters/aggregates', False),
+                'site_name': lambda: {'site_name': pw.site_name()},
+                'alerts': lambda: {'alerts': pw.alerts()},
+                'is_connected': lambda: {'is_connected': pw.is_connected()},
+                'get_reserve': lambda: {'reserve': pw.get_reserve()},
+                'get_mode': lambda: {'mode': pw.get_mode()},
+                'get_time_remaining': lambda: {'time_remaining': pw.get_time_remaining()}
+            }
+            # Check if the path is in the simple mappings
+            if path in simple_mappings:
+                result = simple_mappings[path]()
+            else:
+                result = {"error": "Invalid Request"}
+            message = json.dumps(result)
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1

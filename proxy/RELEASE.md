@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t72 (16 Apr 2025)
+
+* Add routes to map library functions into `/pw/` APIs (e.g. /pw/power)
+
 ### Proxy t71 (6 Apr 2025)
 
 * Add routes for fan speeds: `/fans` and `/fans/pw` (simple enumerated values for dashboard)
