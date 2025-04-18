@@ -935,13 +935,17 @@ class TEDAPI:
 
     # Helper Function
     def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
+        if not isinstance(data, dict):
+            return {}
+
         fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
 
-        # List to store the valid fan speed values
+        # List to store the valid fan speed values  
         result = {}
 
         # Iterate over each component in the "msa" list
-        for component in data.get("components", {}).get("msa", []):
+        components = data.get("components", {})
+        for component in components.get("msa", []):
             signals = component.get("signals", [])
             fan_speeds = {
                 signal["name"]: signal["value"]
