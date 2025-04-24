@@ -1,7 +1,7 @@
 # pyPowerWall - Tesla TEDAPI Class
 # -*- coding: utf-8 -*-
 """
- Tesla TEADAPI Class
+ Tesla TEDAPI Class
 
  This module allows you to access the Tesla Powerwall Gateway
  TEDAPI on 192.168.91.1 as used by the Tesla One app.
@@ -44,13 +44,9 @@
  For more information see https://github.com/jasonacox/pypowerwall
 """
 
-import json
 import logging
-import math
 import sys
-import threading
 import time
-from functools import wraps
 from http import HTTPStatus
 from typing import Dict, List
 
@@ -59,9 +55,12 @@ import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
 from pypowerwall import __version__
-from pypowerwall.api_lock import acquire_lock_with_backoff
 
-from . import tedapi_pb2
+from pypowerwall.tedapi.ted_api_messages import BatteryComponentsMessage, ConfigMessage, ComponentsMessage, DeviceControllerMessage, FirmwareMessage, GatewayStatusMessage, TEDAPIMessage
+
+from .decorators import uses_api_lock, uses_cache, uses_connection_required
+from .exceptions import PyPowerwallTEDAPIThrottleException
+from .vitals import Vitals
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -89,17 +88,6 @@ def lookup(data, keylist):
         else:
             return None
     return data
-
-def uses_api_lock(func):
-    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
-    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
-        func.api_lock = threading.Lock()
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Inject the function object itself into kwargs.
-        kwargs['self_function'] = func
-        return func(*args, **kwargs)
-    return wrapper
 
 # TEDAPI Class
 class TEDAPI:
@@ -137,43 +125,84 @@ class TEDAPI:
         else:
             log.setLevel(logging.NOTSET)
 
+    def __run_request(self, url, method='get', payload=None):
+        """
+        Run a request to the Powerwall Gateway
+
+        Args:
+            url (str): The URL to send the request to.
+            method (str): The HTTP method to use ('get' or 'post'). Default is 'get'.
+            payload (protobuf.Message): The payload to send with the request (for 'post' method).
+
+        Returns:
+            The requests.Response object or the Protobuf payload data (for Message types).
+        """
+        if self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            raise PyPowerwallTEDAPIThrottleException('Rate limit cooldown period - Pausing API calls')
+        try:
+            if method.lower() == 'post':
+                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
+                                  headers={'Content-type': 'application/octet-string'},
+                                  data=payload.SerializeToString() if payload else None, timeout=self.timeout)
+            elif method.lower() == 'get':
+                r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False, timeout=self.timeout)
+            else:
+                log.error(f"Unsupported HTTP method: {method}")
+                raise ValueError(f"Unsupported HTTP method: {method}")
+
+            log.debug(f"Response Code: {r.status_code}")
+            if r.status_code in BUSY_CODES:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                raise PyPowerwallTEDAPIThrottleException("Rate limited by Powerwall")
+            if r.status_code == HTTPStatus.FORBIDDEN:
+                log.error("Access Denied: Check your Gateway Password")
+                raise requests.RequestException("Access Denied: Check your Gateway Password", response=r)
+            if r.status_code != HTTPStatus.OK:
+                log.error(f"Request failed with code: {r.status_code}")
+                raise requests.RequestException(f"Request failed with code: {r.status_code}", response=r)
+
+            # If it's a Protobuf payload, we can just hydrate it and return it for convenience
+            if isinstance(payload, TEDAPIMessage):
+                data = payload.ParseFromString(r.content)
+                return data
+
+            return r
+
+        # Log request exceptions but bubble them anyway
+        except requests.RequestException as e:
+            log.error(f"Request failed: {e}")
+            raise e
+
+    @uses_cache('din')
     def get_din(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the DIN from the Powerwall Gateway
         """
-        # Check Cache
-        if not force and "din" in self.pwcachetime:
-            if time.time() - self.pwcachetime["din"] < self.pwcacheexpire:
-                log.debug("Using Cached DIN")
-                return self.pwcache["din"]
-        if not force and self.pwcooldown > time.perf_counter():
-            # Rate limited - return None
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-        # Fetch DIN from Powerwall
         log.debug("Fetching DIN from Powerwall...")
         url = f'https://{self.gw_ip}/tedapi/din'
-        r = requests.get(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False, timeout=self.timeout)
-        if r.status_code in BUSY_CODES:
-            # Rate limited - Switch to cooldown mode for 5 minutes
-            self.pwcooldown = time.perf_counter() + 300
-            log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-            return None
-        if r.status_code == HTTPStatus.FORBIDDEN:
-            log.error("Access Denied: Check your Gateway Password")
-            return None
-        if r.status_code != HTTPStatus.OK:
-            log.error(f"Error fetching DIN: {r.status_code}")
-            return None
-        din = r.text
-        log.debug(f"Connected: Powerwall Gateway DIN: {din}")
-        self.pwcachetime["din"] = time.time()
-        self.pwcache["din"] = din
-        return din
+        try:
+            r = self.__run_request(url, 'get')
 
+            data = r.text if r and hasattr(r, 'text') else None
+            if data:
+                log.debug(f"Connected: Powerwall Gateway DIN: {data}")
+                return data
+            else:
+                log.error("No response text found in the request.")
+                return None
+        except Exception as e:
+            log.error(f"Error fetching DIN: {e}")
+            return None
 
-    @uses_api_lock
-    def get_config(self, self_function, force=False):
+    @uses_connection_required
+    @uses_cache('config')
+    @uses_api_lock # Applies lock to the entire function
+    def get_config(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall Gateway Configuration
 
@@ -204,67 +233,23 @@ class TEDAPI:
             "vin": "1232100-00-E--TG11234567890"
         }
         """
-        # Check for lock and wait if api request already sent
-        data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
-            if not force and "config" in self.pwcachetime:
-                if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
-                    log.debug("Using Cached Payload")
-                    return self.pwcache["config"]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get configuration")
-                    return None
-            # Fetch Configuration from Powerwall
-            log.debug("Get Configuration from Powerwall")
-            # Build Protobuf to fetch config
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.config.send.num = 1
-            pb.message.config.send.file = "config.json"
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching config: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                payload = tedapi.message.config.recv.file.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
-                    data = {}
-                log.debug(f"Configuration: {data}")
-                self.pwcachetime["config"] = time.time()
-                self.pwcache["config"] = data
-            except Exception as e:
-                log.error(f"Error fetching config: {e}")
-                data = None
-        return data
+        # Fetch Configuration from Powerwall
+        log.debug("Get Configuration from Powerwall")
+        pb = ConfigMessage(self.din)
+        url = f'https://{self.gw_ip}/tedapi/v1'
+        try:
+            data = self.__run_request(url, method='post', payload=pb)
+            log.debug(f"Configuration: {data}")
+            return data
+        except Exception as e:
+            log.error(f"Error fetching config: {e}")
+            return None
 
-
-    @uses_api_lock
-    def get_status(self, self_function, force=False):
+    @uses_connection_required
+    @uses_cache('status')
+    @uses_api_lock # Applies lock to the entire function
+    def get_status(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall Gateway Status
 
@@ -304,71 +289,25 @@ class TEDAPI:
             "system": {}
         }
         """
-        # Check for lock and wait if api request already sent
-        data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
-            if not force and "status" in self.pwcachetime:
-                if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
-                    log.debug("Using Cached Payload")
-                    return self.pwcache["status"]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get status")
-                    return None
-            # Fetch Current Status from Powerwall
-            log.debug("Get Status from Powerwall")
-            # Build Protobuf to fetch status
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = " query DeviceControllerQuery {\n  control {\n    systemStatus {\n        nominalFullPackEnergyWh\n        nominalEnergyRemainingWh\n    }\n    islanding {\n        customerIslandMode\n        contactorClosed\n        microGridOK\n        gridOK\n    }\n    meterAggregates {\n      location\n      realPowerW\n    }\n    alerts {\n      active\n    },\n    siteShutdown {\n      isShutDown\n      reasons\n    }\n    batteryBlocks {\n      din\n      disableReasons\n    }\n    pvInverters {\n      din\n      disableReasons\n    }\n  }\n  system {\n    time\n    sitemanagerStatus {\n      isRunning\n    }\n    updateUrgencyCheck  {\n      urgency\n      version {\n        version\n        gitHash\n      }\n      timestamp\n    }\n  }\n  neurio {\n    isDetectingWiredMeters\n    readings {\n      serial\n      dataRead {\n        voltageV\n        realPowerW\n        reactivePowerVAR\n        currentA\n      }\n      timestamp\n    }\n    pairings {\n      serial\n      shortId\n      status\n      errors\n      macAddress\n      isWired\n      modbusPort\n      modbusId\n      lastUpdateTimestamp\n    }\n  }\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  esCan {\n    bus {\n      PVAC {\n        packagePartNumber\n        packageSerialNumber\n        subPackagePartNumber\n        subPackageSerialNumber\n        PVAC_Status {\n          isMIA\n          PVAC_Pout\n          PVAC_State\n          PVAC_Vout\n          PVAC_Fout\n        }\n        PVAC_InfoMsg {\n          PVAC_appGitHash\n        }\n        PVAC_Logging {\n          isMIA\n          PVAC_PVCurrent_A\n          PVAC_PVCurrent_B\n          PVAC_PVCurrent_C\n          PVAC_PVCurrent_D\n          PVAC_PVMeasuredVoltage_A\n          PVAC_PVMeasuredVoltage_B\n          PVAC_PVMeasuredVoltage_C\n          PVAC_PVMeasuredVoltage_D\n          PVAC_VL1Ground\n          PVAC_VL2Ground\n        }\n        alerts {\n          isComplete\n          isMIA\n          active\n        }\n      }\n      PINV {\n        PINV_Status {\n          isMIA\n          PINV_Fout\n          PINV_Pout\n          PINV_Vout\n          PINV_State\n          PINV_GridState\n        }\n        PINV_AcMeasurements {\n          isMIA\n          PINV_VSplit1\n          PINV_VSplit2\n        }\n        PINV_PowerCapability {\n          isComplete\n          isMIA\n          PINV_Pnom\n        }\n        alerts {\n          isComplete\n          isMIA\n          active\n        }\n      }\n      PVS {\n        PVS_Status {\n          isMIA\n          PVS_State\n          PVS_vLL\n          PVS_StringA_Connected\n          PVS_StringB_Connected\n          PVS_StringC_Connected\n          PVS_StringD_Connected\n          PVS_SelfTestState\n        }\n        alerts {\n          isComplete\n          isMIA\n          active\n        }\n      }\n      THC {\n        packagePartNumber\n        packageSerialNumber\n        THC_InfoMsg {\n          isComplete\n          isMIA\n          THC_appGitHash\n        }\n        THC_Logging {\n          THC_LOG_PW_2_0_EnableLineState\n        }\n      }\n      POD {\n        POD_EnergyStatus {\n          isMIA\n          POD_nom_energy_remaining\n          POD_nom_full_pack_energy\n        }\n        POD_InfoMsg {\n            POD_appGitHash\n        }\n      }\n      MSA {\n        packagePartNumber\n        packageSerialNumber\n        MSA_InfoMsg {\n          isMIA\n          MSA_appGitHash\n          MSA_assemblyId\n        }\n        METER_Z_AcMeasurements {\n          isMIA\n          lastRxTime\n          METER_Z_CTA_InstRealPower\n          METER_Z_CTA_InstReactivePower\n          METER_Z_CTA_I\n          METER_Z_VL1G\n          METER_Z_CTB_InstRealPower\n          METER_Z_CTB_InstReactivePower\n          METER_Z_CTB_I\n          METER_Z_VL2G\n        }\n        MSA_Status {\n          lastRxTime\n        }\n      }\n      SYNC {\n        packagePartNumber\n        packageSerialNumber\n        SYNC_InfoMsg {\n          isMIA\n          SYNC_appGitHash\n        }\n        METER_X_AcMeasurements {\n          isMIA\n          isComplete\n          lastRxTime\n          METER_X_CTA_InstRealPower\n          METER_X_CTA_InstReactivePower\n          METER_X_CTA_I\n          METER_X_VL1N\n          METER_X_CTB_InstRealPower\n          METER_X_CTB_InstReactivePower\n          METER_X_CTB_I\n          METER_X_VL2N\n          METER_X_CTC_InstRealPower\n          METER_X_CTC_InstReactivePower\n          METER_X_CTC_I\n          METER_X_VL3N\n        }\n        METER_Y_AcMeasurements {\n          isMIA\n          isComplete\n          lastRxTime\n          METER_Y_CTA_InstRealPower\n          METER_Y_CTA_InstReactivePower\n          METER_Y_CTA_I\n          METER_Y_VL1N\n          METER_Y_CTB_InstRealPower\n          METER_Y_CTB_InstReactivePower\n          METER_Y_CTB_I\n          METER_Y_VL2N\n          METER_Y_CTC_InstRealPower\n          METER_Y_CTC_InstReactivePower\n          METER_Y_CTC_I\n          METER_Y_VL3N\n        }\n        SYNC_Status {\n          lastRxTime\n        }\n      }\n      ISLANDER {\n        ISLAND_GridConnection {\n          ISLAND_GridConnected\n          isComplete\n        }\n        ISLAND_AcMeasurements {\n          ISLAND_VL1N_Main\n          ISLAND_FreqL1_Main\n          ISLAND_VL2N_Main\n          ISLAND_FreqL2_Main\n          ISLAND_VL3N_Main\n          ISLAND_FreqL3_Main\n          ISLAND_VL1N_Load\n          ISLAND_FreqL1_Load\n          ISLAND_VL2N_Load\n          ISLAND_FreqL2_Load\n          ISLAND_VL3N_Load\n          ISLAND_FreqL3_Load\n          ISLAND_GridState\n          lastRxTime\n          isComplete\n          isMIA\n        }\n      }\n    }\n    enumeration {\n      inProgress\n      numACPW\n      numPVI\n    }\n    firmwareUpdate {\n      isUpdating\n      powerwalls {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n      msa {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n      sync {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n      pvInverters {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n    }\n    phaseDetection {\n      inProgress\n      lastUpdateTimestamp\n      powerwalls {\n        din\n        progress\n        phase\n      }\n    }\n    inverterSelfTests {\n      isRunning\n      isCanceled\n      pinvSelfTestsResults {\n        din\n        overall {\n          status\n          test\n          summary\n          setMagnitude\n          setTime\n          tripMagnitude\n          tripTime\n          accuracyMagnitude\n          accuracyTime\n          currentMagnitude\n          timestamp\n          lastError\n        }\n        testResults {\n          status\n          test\n          summary\n          setMagnitude\n          setTime\n          tripMagnitude\n          tripTime\n          accuracyMagnitude\n          accuracyTime\n          currentMagnitude\n          timestamp\n          lastError\n        }\n      }\n    }\n  }\n}\n"
-            pb.message.payload.send.code = b'0\201\206\002A\024\261\227\245\177\255\265\272\321r\032\250\275j\305\030\2300\266\022B\242\264pO\262\024vd\267\316\032\f\376\322V\001\f\177*\366\345\333g_/`\v\026\225_qc\023$\323\216y\276~\335A1\022x\002Ap\a_\264\037]\304>\362\356\005\245V\301\177*\b\307\016\246]\037\202\242\353I~\332\317\021\336\006\033q\317\311\264\315\374\036\365s\272\225\215#o!\315z\353\345z\226\365\341\f\265\256r\373\313/\027\037'
-            pb.message.payload.send.b.value = "{}"
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                # Set lock
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching status: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                payload = tedapi.message.payload.recv.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
-                    data = {}
-                log.debug(f"Status: {data}")
-                self.pwcachetime["status"] = time.time()
-                self.pwcache["status"] = data
-            except Exception as e:
-                log.error(f"Error fetching status: {e}")
-                data = None
-        return data
+        # Fetch Current Status from Powerwall
+        log.debug("Get Status from Powerwall")
+        # Build Protobuf to fetch status
+        pb = GatewayStatusMessage(self.din)
+        url = f'https://{self.gw_ip}/tedapi/v1'
+        try:
+            data = self.__run_request(url, method='post', payload=pb)
+            return data
+
+        except Exception as e:
+            log.error(f"Error fetching status: {e}")
+            return None
 
 
-    @uses_api_lock
-    def get_device_controller(self, self_function, force=False):
+    @uses_connection_required
+    #@uses_cache('device_controller')
+    @uses_api_lock # Applies lock to the entire function
+    def get_device_controller(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall Device Controller Status
 
@@ -386,72 +325,21 @@ class TEDAPI:
 
         TODO: Refactor to combine tedapi queries
         """
-        # Check for lock and wait if api request already sent
-        data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
-            if not force and "controller" in self.pwcachetime:
-                if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
-                    log.debug("Using Cached Payload")
-                    return self.pwcache["controller"]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get controller data")
-                    return None
-            # Fetch Current Status from Powerwall
-            log.debug("Get controller data from Powerwall")
-            # Build Protobuf to fetch controller data
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = 'query DeviceControllerQuery($msaComp:ComponentFilter$msaSignals:[String!]){control{systemStatus{nominalFullPackEnergyWh nominalEnergyRemainingWh}islanding{customerIslandMode contactorClosed microGridOK gridOK disableReasons}meterAggregates{location realPowerW}alerts{active}siteShutdown{isShutDown reasons}batteryBlocks{din disableReasons}pvInverters{din disableReasons}}system{time supportMode{remoteService{isEnabled expiryTime sessionId}}sitemanagerStatus{isRunning}updateUrgencyCheck{urgency version{version gitHash}timestamp}}neurio{isDetectingWiredMeters readings{firmwareVersion serial dataRead{voltageV realPowerW reactivePowerVAR currentA}timestamp}pairings{serial shortId status errors macAddress hostname isWired modbusPort modbusId lastUpdateTimestamp}}teslaRemoteMeter{meters{din reading{timestamp firmwareVersion ctReadings{voltageV realPowerW reactivePowerVAR energyExportedWs energyImportedWs currentA}}firmwareUpdate{updating numSteps currentStep currentStepProgress progress}}detectedWired{din serialPort}}pw3Can{firmwareUpdate{isUpdating progress{updating numSteps currentStep currentStepProgress progress}}enumeration{inProgress}}esCan{bus{PVAC{packagePartNumber packageSerialNumber subPackagePartNumber subPackageSerialNumber PVAC_Status{isMIA PVAC_Pout PVAC_State PVAC_Vout PVAC_Fout}PVAC_InfoMsg{PVAC_appGitHash}PVAC_Logging{isMIA PVAC_PVCurrent_A PVAC_PVCurrent_B PVAC_PVCurrent_C PVAC_PVCurrent_D PVAC_PVMeasuredVoltage_A PVAC_PVMeasuredVoltage_B PVAC_PVMeasuredVoltage_C PVAC_PVMeasuredVoltage_D PVAC_VL1Ground PVAC_VL2Ground}alerts{isComplete isMIA active}}PINV{PINV_Status{isMIA PINV_Fout PINV_Pout PINV_Vout PINV_State PINV_GridState}PINV_AcMeasurements{isMIA PINV_VSplit1 PINV_VSplit2}PINV_PowerCapability{isComplete isMIA PINV_Pnom}alerts{isComplete isMIA active}}PVS{PVS_Status{isMIA PVS_State PVS_vLL PVS_StringA_Connected PVS_StringB_Connected PVS_StringC_Connected PVS_StringD_Connected PVS_SelfTestState}PVS_Logging{PVS_numStringsLockoutBits PVS_sbsComplete}alerts{isComplete isMIA active}}THC{packagePartNumber packageSerialNumber THC_InfoMsg{isComplete isMIA THC_appGitHash}THC_Logging{THC_LOG_PW_2_0_EnableLineState}}POD{POD_EnergyStatus{isMIA POD_nom_energy_remaining POD_nom_full_pack_energy}POD_InfoMsg{POD_appGitHash}}SYNC{packagePartNumber packageSerialNumber SYNC_InfoMsg{isMIA SYNC_appGitHash SYNC_assemblyId}METER_X_AcMeasurements{isMIA isComplete METER_X_CTA_InstRealPower METER_X_CTA_InstReactivePower METER_X_CTA_I METER_X_VL1N METER_X_CTB_InstRealPower METER_X_CTB_InstReactivePower METER_X_CTB_I METER_X_VL2N METER_X_CTC_InstRealPower METER_X_CTC_InstReactivePower METER_X_CTC_I METER_X_VL3N}METER_Y_AcMeasurements{isMIA isComplete METER_Y_CTA_InstRealPower METER_Y_CTA_InstReactivePower METER_Y_CTA_I METER_Y_VL1N METER_Y_CTB_InstRealPower METER_Y_CTB_InstReactivePower METER_Y_CTB_I METER_Y_VL2N METER_Y_CTC_InstRealPower METER_Y_CTC_InstReactivePower METER_Y_CTC_I METER_Y_VL3N}}ISLANDER{ISLAND_GridConnection{ISLAND_GridConnected isComplete}ISLAND_AcMeasurements{ISLAND_VL1N_Main ISLAND_FreqL1_Main ISLAND_VL2N_Main ISLAND_FreqL2_Main ISLAND_VL3N_Main ISLAND_FreqL3_Main ISLAND_VL1N_Load ISLAND_FreqL1_Load ISLAND_VL2N_Load ISLAND_FreqL2_Load ISLAND_VL3N_Load ISLAND_FreqL3_Load ISLAND_GridState isComplete isMIA}}}enumeration{inProgress numACPW numPVI}firmwareUpdate{isUpdating powerwalls{updating numSteps currentStep currentStepProgress progress}msa{updating numSteps currentStep currentStepProgress progress}msa1{updating numSteps currentStep currentStepProgress progress}sync{updating numSteps currentStep currentStepProgress progress}pvInverters{updating numSteps currentStep currentStepProgress progress}}phaseDetection{inProgress lastUpdateTimestamp powerwalls{din progress phase}}inverterSelfTests{isRunning isCanceled pinvSelfTestsResults{din overall{status test summary setMagnitude setTime tripMagnitude tripTime accuracyMagnitude accuracyTime currentMagnitude timestamp lastError}testResults{status test summary setMagnitude setTime tripMagnitude tripTime accuracyMagnitude accuracyTime currentMagnitude timestamp lastError}}}}components{msa:components(filter:$msaComp){partNumber serialNumber signals(names:$msaSignals){name value textValue boolValue timestamp}activeAlerts{name}}}ieee20305{longFormDeviceID polledResources{url name pollRateSeconds lastPolledTimestamp}controls{defaultControl{mRID setGradW opModEnergize opModMaxLimW opModImpLimW opModExpLimW opModGenLimW opModLoadLimW}activeControls{opModEnergize opModMaxLimW opModImpLimW opModExpLimW opModGenLimW opModLoadLimW}}registration{dateTimeRegistered pin}}}'
-            pb.message.payload.send.code = b'0\x81\x87\x02B\x01A\x95\x12\xe3B\xd1\xca\x1a\xd3\x00\xf6}\x0bE@/\x9a\x9f\xc0\r\x06%\xac,\x0ej!)\nd\xef\xe67\x8b\xafb\xd7\xf8&\x0b.\xc1\xac\xd9!\x1f\xd6\x83\xffkIm\xf3\\J\xd8\xeeiTY\xde\x7f\xc5xR\x02A\x1dC\x03H\xfb8"\xb0\xe4\xd6\x18\xde\x11\xc45\xb2\xa9VB\xa6J\x8f\x08\x9d\xba\x86\xf1 W\xcdJ\x8c\x02*\x05\x12\xcb{<\x9b\xc8g\xc9\x9d9\x8bR\xb3\x89\xb8\xf1\xf1\x0f\x0e\x16E\xed\xd7\xbf\xd5&)\x92.\x12'
-            pb.message.payload.send.b.value = '{"msaComp":{"types" :["PVS","PVAC", "TESYNC", "TEPINV", "TETHC", "STSTSM",  "TEMSA", "TEPINV" ]},\n\t"msaSignals":[\n\t"MSA_pcbaId",\n\t"MSA_usageId",\n\t"MSA_appGitHash",\n\t"PVAC_Fan_Speed_Actual_RPM",\n\t"PVAC_Fan_Speed_Target_RPM",\n\t"MSA_HeatingRateOccurred",\n\t"THC_AmbientTemp",\n\t"METER_Z_CTA_InstRealPower",\n\t"METER_Z_CTA_InstReactivePower",\n\t"METER_Z_CTA_I",\n\t"METER_Z_VL1G",\n\t"METER_Z_CTB_InstRealPower",\n\t"METER_Z_CTB_InstReactivePower",\n\t"METER_Z_CTB_I",\n\t"METER_Z_VL2G"]}'
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                # Set lock
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching controller data: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                payload = tedapi.message.payload.recv.text
-                log.debug(f"Payload: {payload}")
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
-                    data = {}
-                log.debug(f"Status: {data}")
-                self.pwcachetime["controller"] = time.time()
-                self.pwcache["controller"] = data
-            except Exception as e:
-                log.error(f"Error fetching controller data: {e}")
-                data = None
-        return data
+        # Fetch Current Status from Powerwall
+        log.debug("Get controller data from Powerwall")
+        # Build Protobuf to fetch controller data
+        pb = DeviceControllerMessage(self.din)
+        url = f'https://{self.gw_ip}/tedapi/v1'
+        try:
+            data = self.__run_request(url, method='post', payload=pb)
+            return data
 
+        except Exception as e:
+            log.error(f"Error fetching device controller status: {e}")
+            return None
 
-    @uses_api_lock
-    def get_firmware_version(self, self_function, force=False, details=False):
+    @uses_connection_required
+    def get_firmware_version(self, force=False, details=False):
         """
         Get the Powerwall Firmware Version
 
@@ -460,156 +348,54 @@ class TEDAPI:
             details (bool): Return additional system information including
                             gateway part number, serial number, and wireless devices
         """
-        payload = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get firmware version")
-                    return None
-            # Check Cache
-            if not force and "firmware" in self.pwcachetime:
-                if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
-                    log.debug("Using Cached Firmware")
-                    return self.pwcache["firmware"]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Fetch Current Status from Powerwall
-            log.debug("Get Firmware Version from Powerwall")
-            # Build Protobuf to fetch status
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.firmware.request = ""
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching firmware version: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                firmware_version = tedapi.message.firmware.system.version.text
-                if details:
-                    payload = {
-                        "system": {
-                            "gateway": {
-                                "partNumber": tedapi.message.firmware.system.gateway.partNumber,
-                                "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
-                            },
-                            "din": tedapi.message.firmware.system.din,
-                            "version": {
-                                "text": tedapi.message.firmware.system.version.text,
-                                "githash": tedapi.message.firmware.system.version.githash
-                            },
-                            "five": tedapi.message.firmware.system.five,
-                            "six": tedapi.message.firmware.system.six,
-                            "wireless": {
-                                "device": []
-                            }
-                        }
-                    }
-                    try:
-                        for device in tedapi.message.firmware.system.wireless.device:
-                            payload["system"]["wireless"]["device"].append({
-                                "company": device.company.value,
-                                "model": device.model.value,
-                                "fcc_id": device.fcc_id.value,
-                                "ic": device.ic.value
-                            })
-                    except Exception as e:
-                        log.debug(f"Error parsing wireless devices: {e}")
-                    log.debug(f"Firmware Version: {payload}")
-                else:
-                    payload = firmware_version
-                log.debug(f"Firmware Version: {firmware_version}")
-                self.pwcachetime["firmware"] = time.time()
-                self.pwcache["firmware"] = firmware_version
-            except Exception as e:
-                log.error(f"Error fetching firmware version: {e}")
-                payload = None
-        return payload
+        try:
+            data = self.__get_firmware_data(force)
+            log.debug(f"Firmware Version: {data}")
+            if details:
+                return data
+            else:
+                return data["system"]["version"]["text"]
+        except Exception as e:
+            log.error(f"Error fetching firmware version: {e}")
+            return None
 
+    @uses_cache('firmware')
+    @uses_api_lock # Applies lock to the entire function
+    def __get_firmware_data(self, force=False):
+        # pylint: disable=unused-argument
+        """
+        Get the firmware data with full details so we can cache the entire payload. The get_firmware_version()
+        function will make the decision whether to show the full details or just the main PW version text.
+        """
+        log.debug("Get Firmware Version from Powerwall")
+        pb = FirmwareMessage(self.din)
+        url = f'https://{self.gw_ip}/tedapi/v1'
+        data = self.__run_request(url, method='post', payload=pb)
+        return data
 
-    @uses_api_lock
-    def get_components(self, self_function, force=False):
+    @uses_connection_required
+    @uses_cache('components')
+    @uses_api_lock # Applies lock to the entire function
+    def get_components(self, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall 3 Device Information
 
         Note: Provides empty response for previous Powerwall versions
         """
-        components = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get configuration")
-                    return None
-            # Check Cache
-            if not force and "components" in self.pwcachetime:
-                if time.time() - self.pwcachetime["components"] < self.pwconfigexpire:
-                    log.debug("Using Cached Components")
-                    return self.pwcache["components"]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Fetch Configuration from Powerwall
-            log.debug("Get PW3 Components from Powerwall")
-            # Build Protobuf to fetch config
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
-            pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
-            pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching components: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                payload = tedapi.message.payload.recv.text
-                log.debug(f"Payload (len={len(payload)}): {payload}")
-                # Append payload to components
-                components = json.loads(payload)
-                log.debug(f"Components: {components}")
-                self.pwcachetime["components"] = time.time()
-                self.pwcache["components"] = components
-            except Exception as e:
-                log.error(f"Error fetching components: {e}")
-                components = None
-        return components
+        log.debug("Get components from Powerwall")
+        pb = ComponentsMessage(self.din)
+        url = f'https://{self.gw_ip}/tedapi/v1'
+        try:
+            data = self.__run_request(url, method='post', payload=pb)
+            return data
+        except Exception as e:
+            log.error(f"Error fetching device controller status: {e}")
+            return None
 
-
+    @uses_connection_required
+    @uses_cache('pw3_vitals')
+    @uses_api_lock # Applies lock to the entire function
     def get_pw3_vitals(self, force=False):
         """
         Get Powerwall 3 Battery Vitals Data
@@ -646,20 +432,6 @@ class TEDAPI:
             }
         }
         """
-        # Check Connection
-        if not self.din:
-            if not self.connect():
-                log.error("Not Connected - Unable to get configuration")
-                return None
-        # Check Cache
-        if not force and "pw3_vitals" in self.pwcachetime:
-            if time.time() - self.pwcachetime["pw3_vitals"] < self.pwconfigexpire:
-                log.debug("Using Cached Components")
-                return self.pwcache["pw3_vitals"]
-        if not force and self.pwcooldown > time.perf_counter():
-            # Rate limited - return None
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
         components = self.get_components(force=force)
         din = self.din
         if not components:
@@ -677,108 +449,88 @@ class TEDAPI:
             battery_type = battery['type']
             if "Powerwall3" not in battery_type:
                 continue
-            # Fetch Device ComponentsQuery from each Powerwall
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.sender.din = din  # DIN of Primary Powerwall 3 / System
-            pb.message.recipient.din = pw_din  # DIN of Powerwall of Interest
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
-            pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
-            pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
-            pb.tail.value = 2
-            url = f'https://{self.gw_ip}/tedapi/device/{pw_din}/v1'
-            r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                            headers={'Content-type': 'application/octet-string'},
-                            data=pb.SerializeToString(), timeout=self.timeout)
-            if r.status_code == HTTPStatus.OK:
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                payload = tedapi.message.payload.recv.text
-                if payload:
-                    data = json.loads(payload)
-                    # TEDPOD
-                    alerts = []
-                    components = data['components']
-                    for component in components:
-                        if components[component]:
-                            for alert in components[component][0]['activeAlerts']:
-                                if alert['name'] not in alerts:
-                                    alerts.append(alert['name'])
-                    bms_component = data['components']['bms'][0] # TODO: Process all BMS components
-                    signals = bms_component['signals']
-                    nom_energy_remaining = 0
-                    nom_full_pack_energy = 0
-                    for signal in signals:
-                        if "BMS_nominalEnergyRemaining" == signal['name']:
-                            nom_energy_remaining = int(signal['value'] * 1000) # Convert to Wh
-                        elif "BMS_nominalFullPackEnergy" == signal['name']:
-                            nom_full_pack_energy = int(signal['value'] * 1000) # Convert to Wh
-                    response[f"TEPOD--{pw_din}"] = {
-                        "alerts": alerts,
-                        "POD_nom_energy_remaining": nom_energy_remaining,
-                        "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
-                        "POD_nom_full_pack_energy": nom_full_pack_energy,
-                    }
-                    # PVAC, PVS and TEPINV
-                    response[f"PVAC--{pw_din}"] = {}
-                    response[f"PVS--{pw_din}"] = {}
-                    response[f"TEPINV--{pw_din}"] = {}
-                    pch_components = data['components']['pch']
-                    # pch_components contain:
-                    #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
-                    #   PCH_PvVoltageA through F - value
-                    #   PCH_PvCurrentA through F - value
-                    # Loop through and find all the strings - PW3 has 6 strings A-F
-                    for n in ["A", "B", "C", "D", "E", "F"]:
-                        pv_state = "Unknown"
-                        pv_voltage = 0
-                        pv_current = 0
-                        for component in pch_components: # TODO: Probably better way to do this
-                            signals = component['signals']
-                            for signal in signals:
-                                if f'PCH_PvState_{n}' == signal['name']:
-                                    pv_state = signal['textValue']
-                                elif f'PCH_PvVoltage{n}' == signal['name']:
-                                    pv_voltage = signal['value'] if signal['value'] > 0 else 0
-                                elif f'PCH_PvCurrent{n}' == signal['name']:
-                                    pv_current = signal['value'] if signal['value'] > 0 else 0
-                                elif 'PCH_AcFrequency' == signal['name']:
-                                    response[f"PVAC--{pw_din}"]["PVAC_Fout"] = signal['value']
-                                    response[f"TEPINV--{pw_din}"]["PINV_Fout"] = signal['value']
-                                elif 'PCH_AcVoltageAN' == signal['name']:
-                                    response[f"PVAC--{pw_din}"]["PVAC_VL1Ground"] = signal['value']
-                                    response[f"TEPINV--{pw_din}"]["PINV_VSplit1"] = signal['value']
-                                elif 'PCH_AcVoltageBN' == signal['name']:
-                                    response[f"PVAC--{pw_din}"]["PVAC_VL2Ground"] = signal['value']
-                                    response[f"TEPINV--{pw_din}"]["PINV_VSplit2"] = signal['value']
-                                elif 'PCH_AcVoltageAB' == signal['name']:
-                                    response[f"PVAC--{pw_din}"]["PVAC_Vout"] = signal['value']
-                                    response[f"TEPINV--{pw_din}"]["PINV_Vout"] = signal['value']
-                                elif 'PCH_AcRealPowerAB' == signal['name']:
-                                    response[f"PVAC--{pw_din}"]["PVAC_Pout"] = signal['value']
-                                    response[f"TEPINV--{pw_din}"]["PINV_Pout"] = (signal['value'] or 0) / 1000
-                                elif 'PCH_AcMode' == signal['name']:
-                                    response[f"PVAC--{pw_din}"]["PVAC_State"] = signal['textValue']
-                                    response[f"TEPINV--{pw_din}"]["PINV_State"] = signal['textValue']
-                        pv_power = pv_voltage * pv_current # Calculate power
-                        response[f"PVAC--{pw_din}"][f"PVAC_PvState_{n}"] = pv_state
-                        response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredVoltage_{n}"] = pv_voltage
-                        response[f"PVAC--{pw_din}"][f"PVAC_PVCurrent_{n}"] = pv_current
-                        response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredPower_{n}"] = pv_power
-                        response[f"PVAC--{pw_din}"]["manufacturer"] = "TESLA"
-                        response[f"PVAC--{pw_din}"]["partNumber"] = pw_part
-                        response[f"PVAC--{pw_din}"]["serialNumber"] = pw_serial
-                        response[f"PVS--{pw_din}"][f"PVS_String{n}_Connected"] = ("Pv_Active" in pv_state)
-                else:
-                    log.debug(f"No payload for {pw_din}")
-            else:
-                log.debug(f"Error fetching components: {r.status_code}")
-        return response
 
+            data = self.get_battery_block(pw_din)
+
+            # Collect alerts for the top level response
+            alerts = []
+            if data is None:
+                log.error(f"No data returned for battery block {pw_din}")
+                raise ValueError(f"No data returned for battery block {pw_din}")
+            
+            components = data['components']
+            for component in components:
+                if components[component]:
+                    for alert in components[component][0]['activeAlerts']:
+                        if alert['name'] not in alerts:
+                            alerts.append(alert['name'])
+
+            bms_component = data['components']['bms'][0] # TODO: Process all BMS components
+            signals = bms_component['signals']
+            nom_energy_remaining = 0
+            nom_full_pack_energy = 0
+            for signal in signals:
+                if "BMS_nominalEnergyRemaining" == signal['name']:
+                    nom_energy_remaining = int(signal['value'] * 1000) # Convert to Wh
+                elif "BMS_nominalFullPackEnergy" == signal['name']:
+                    nom_full_pack_energy = int(signal['value'] * 1000) # Convert to Wh
+            response[f"TEPOD--{pw_din}"] = {
+                "alerts": alerts,
+                "POD_nom_energy_remaining": nom_energy_remaining,
+                "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
+                "POD_nom_full_pack_energy": nom_full_pack_energy,
+            }
+            # PVAC, PVS and TEPINV
+            response[f"PVAC--{pw_din}"] = {}
+            response[f"PVS--{pw_din}"] = {}
+            response[f"TEPINV--{pw_din}"] = {}
+            pch_components = data['components']['pch']
+            # pch_components contain:
+            #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
+            #   PCH_PvVoltageA through F - value
+            #   PCH_PvCurrentA through F - value
+            # Loop through and find all the strings - PW3 has 6 strings A-F
+            for n in ["A", "B", "C", "D", "E", "F"]:
+                pv_state = "Unknown"
+                pv_voltage = 0
+                pv_current = 0
+                for component in pch_components: # TODO: Probably better way to do this
+                    signals = component['signals']
+                    for signal in signals:
+                        if f'PCH_PvState_{n}' == signal['name']:
+                            pv_state = signal['textValue']
+                        elif f'PCH_PvVoltage{n}' == signal['name']:
+                            pv_voltage = signal['value'] if signal['value'] > 0 else 0
+                        elif f'PCH_PvCurrent{n}' == signal['name']:
+                            pv_current = signal['value'] if signal['value'] > 0 else 0
+                        elif 'PCH_AcFrequency' == signal['name']:
+                            response[f"PVAC--{pw_din}"]["PVAC_Fout"] = signal['value']
+                            response[f"TEPINV--{pw_din}"]["PINV_Fout"] = signal['value']
+                        elif 'PCH_AcVoltageAN' == signal['name']:
+                            response[f"PVAC--{pw_din}"]["PVAC_VL1Ground"] = signal['value']
+                            response[f"TEPINV--{pw_din}"]["PINV_VSplit1"] = signal['value']
+                        elif 'PCH_AcVoltageBN' == signal['name']:
+                            response[f"PVAC--{pw_din}"]["PVAC_VL2Ground"] = signal['value']
+                            response[f"TEPINV--{pw_din}"]["PINV_VSplit2"] = signal['value']
+                        elif 'PCH_AcVoltageAB' == signal['name']:
+                            response[f"PVAC--{pw_din}"]["PVAC_Vout"] = signal['value']
+                            response[f"TEPINV--{pw_din}"]["PINV_Vout"] = signal['value']
+                        elif 'PCH_AcRealPowerAB' == signal['name']:
+                            response[f"PVAC--{pw_din}"]["PVAC_Pout"] = signal['value']
+                            response[f"TEPINV--{pw_din}"]["PINV_Pout"] = (signal['value'] or 0) / 1000
+                        elif 'PCH_AcMode' == signal['name']:
+                            response[f"PVAC--{pw_din}"]["PVAC_State"] = signal['textValue']
+                            response[f"TEPINV--{pw_din}"]["PINV_State"] = signal['textValue']
+                pv_power = pv_voltage * pv_current # Calculate power
+                response[f"PVAC--{pw_din}"][f"PVAC_PvState_{n}"] = pv_state
+                response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredVoltage_{n}"] = pv_voltage
+                response[f"PVAC--{pw_din}"][f"PVAC_PVCurrent_{n}"] = pv_current
+                response[f"PVAC--{pw_din}"][f"PVAC_PVMeasuredPower_{n}"] = pv_power
+                response[f"PVAC--{pw_din}"]["manufacturer"] = "TESLA"
+                response[f"PVAC--{pw_din}"]["partNumber"] = pw_part
+                response[f"PVAC--{pw_din}"]["serialNumber"] = pw_serial
+                response[f"PVS--{pw_din}"][f"PVS_String{n}_Connected"] = ("Pv_Active" in pv_state)
+        return response
 
     def get_battery_blocks(self, force=False):
         """
@@ -788,9 +540,11 @@ class TEDAPI:
         battery_blocks = config.get('battery_blocks') or []
         return battery_blocks
 
-
-    @uses_api_lock
-    def get_battery_block(self, self_function, din=None, force=False):
+    @uses_connection_required
+    @uses_cache('battery-[args-din]')
+    @uses_api_lock # Applies lock to the entire function
+    def get_battery_block(self, din=None, force=False):
+        # pylint: disable=unused-argument
         """
         Get the Powerwall 3 Battery Block Information
 
@@ -804,64 +558,19 @@ class TEDAPI:
         if not din:
             log.error("No DIN specified - Unable to get battery block")
             return None
-        data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
-            if not force and din in self.pwcachetime:
-                if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
-                    log.debug("Using Cached Battery Block")
-                    return self.pwcache[din]
-            if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
-                log.debug('Rate limit cooldown period - Pausing API calls')
-                return None
-            # Fetch Battery Block from Powerwall
-            log.debug(f"Get Battery Block from Powerwall ({din})")
-            # Build Protobuf to fetch config
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.sender.din = self.din  # DIN of Primary Powerwall 3 / System
-            pb.message.recipient.din = din  # DIN of Powerwall of Interest
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
-            pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
-            pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
-            pb.tail.value = 2
-            url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
-            try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code == 404:
-                    log.debug(f"Device not found: {din}")
-                    return None
-                if r.status_code != 200:
-                    log.error(f"Error fetching config: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
-                payload = tedapi.message.config.recv.file.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
-                    data = {}
-                log.debug(f"Configuration: {data}")
-                self.pwcachetime[din] = time.time()
-                self.pwcache[din] = data
-            except Exception as e:
-                log.error(f"Error fetching device: {e}")
-                data = None
-        return data
+        log.debug(f"Get Battery Block from Powerwall ({din})")
+
+        pb = BatteryComponentsMessage(self.din, din)
+        url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
+        log.debug(f"Fetching components from {din}")
+
+        try:
+            data = self.__run_request(url, method='post', payload=pb)
+            log.debug(f"Configuration: {data}")
+            return data
+        except Exception as e:
+            log.error(f"Error fetching battery block: {e}")
+            return None
 
     def connect(self):
         """
@@ -885,7 +594,7 @@ class TEDAPI:
         return self.din
 
     # Handy Function to access Powerwall Status
-
+    
     def current_power(self, location=None, force=False):
         """
         Get the current power in watts for a location:
@@ -971,16 +680,6 @@ class TEDAPI:
         """
         Use tedapi data to create a vitals API dictionary
         """
-        def calculate_ac_power(Vpeak, Ipeak):
-            Vrms = Vpeak / math.sqrt(2)
-            Irms = Ipeak / math.sqrt(2)
-            power = Vrms * Irms
-            return power
-
-        def calculate_dc_power(V, I):
-            power = V * I
-            return power
-
         # status = self.get_status(force)
         config = self.get_config(force=force)
         status = self.get_device_controller(force=force)
@@ -988,432 +687,15 @@ class TEDAPI:
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
 
-        # Build meter Lookup if available
-        meter_config = {}
-        if "meters" in config:
-            # Loop through each meter and use device_serial as the key
-            for meter in config['meters']:
-                if meter.get('type') == "neurio_w2_tcp":
-                    device_serial = lookup(meter, ['connection', 'device_serial'])
-                    if device_serial:
-                        # Check to see if we already have this meter in meter_config
-                        if device_serial in meter_config:
-                            cts = meter.get('cts', [False] * 4)
-                            if not isinstance(cts, list):
-                                cts = [False] * 4
-                            for i, ct in enumerate(cts):
-                                if ct:
-                                    meter_config[device_serial]['cts'][i] = True
-                                    meter_config[device_serial]['location'][i] = meter.get('location', "")
-                        else:
-                            # New meter, add to meter_config
-                            cts = meter.get('cts', [False] * 4)
-                            if not isinstance(cts, list):
-                                cts = [False] * 4
-                            location = meter.get('location', "")
-                            meter_config[device_serial] = {
-                                "type": meter.get('type'),
-                                "location": [location] * 4,
-                                "cts": cts,
-                                "inverted": meter.get('inverted'),
-                                "connection": meter.get('connection'),
-                                "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
-                            }
-
-        # Create Header
-        tesla = {}
-        header = {}
-        header["VITALS"] = {
-            "text": "Device vitals generated from Tesla Powerwall Gateway TEDAPI",
-            "timestamp": time.time(),
-            "gateway": self.gw_ip,
-            "pyPowerwall": __version__,
-        }
-
-        # Create NEURIO block
-        neurio = {}
-        c = 1000
-        # Loop through each Neurio device serial number
-        for n in lookup(status, ['neurio', 'readings']) or {}:
-            # Loop through each CT on the Neurio device
-            sn = n.get('serial', str(c))
-            cts = {}
-            c = c + 1
-            for i, ct in enumerate(n['dataRead'] or {}):
-                # Only show if we have a meter configuration and cts[i] is true
-                cts_bool = lookup(meter_config, [sn, 'cts'])
-                if isinstance(cts_bool, list) and i < len(cts_bool):
-                    if not cts_bool[i]:
-                        # Skip this CT
-                        continue
-                factor = lookup(meter_config, [sn, 'real_power_scale_factor']) or 1
-                device = f"NEURIO_CT{i}_"
-                cts[device + "InstRealPower"] = lookup(ct, ['realPowerW']) * factor
-                cts[device + "InstReactivePower"] = lookup(ct, ['reactivePowerVAR'])
-                cts[device + "InstVoltage"] = lookup(ct, ['voltageV'])
-                cts[device + "InstCurrent"] = lookup(ct, ['currentA'])
-                location = lookup(meter_config, [sn, 'location'])
-                cts[device + "Location"] = location[i] if len(location) > i else None
-            meter_manufacturer = None
-            if lookup(meter_config, [sn, 'type']) == "neurio_w2_tcp":
-                meter_manufacturer = "NEURIO"
-            rest = {
-                "componentParentDin": lookup(config, ['vin']),
-                "firmwareVersion": None,
-                "lastCommunicationTime": lookup(n, ['timestamp']),
-                "manufacturer": meter_manufacturer,
-                "meterAttributes": {
-                    "meterLocation": []
-                },
-                "serialNumber": sn
-            }
-            neurio[f"NEURIO--{sn}"] = {**cts, **rest}
-
-        # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
-        pvac = {}
-        pvs = {}
-        tesla = {}
+        # Create PVAC, PVS, and TESLA blocks - Assume they are aligned
         num = len(lookup(status, ['esCan', 'bus', 'PVAC']) or {})
         if num != len(lookup(status, ['esCan', 'bus', 'PVS']) or {}):
             log.debug("PVAC and PVS device count mismatch in TEDAPI")
-        # Loop through each device serial number
-        fan_speeds = self.extract_fan_speeds(status)
-        for i, p in enumerate(lookup(status, ['esCan', 'bus', 'PVAC']) or {}):
-            if not p['packageSerialNumber']:
-                continue
-            packagePartNumber = p.get('packagePartNumber', str(i))
-            packageSerialNumber = p.get('packageSerialNumber', str(i))
-            pvac_name = f"PVAC--{packagePartNumber}--{packageSerialNumber}"
-            pvac_logging = p['PVAC_Logging']
-            V_A = pvac_logging['PVAC_PVMeasuredVoltage_A']
-            V_B = pvac_logging['PVAC_PVMeasuredVoltage_B']
-            V_C = pvac_logging['PVAC_PVMeasuredVoltage_C']
-            V_D = pvac_logging['PVAC_PVMeasuredVoltage_D']
-            I_A = pvac_logging['PVAC_PVCurrent_A']
-            I_B = pvac_logging['PVAC_PVCurrent_B']
-            I_C = pvac_logging['PVAC_PVCurrent_C']
-            I_D = pvac_logging['PVAC_PVCurrent_D']
-            P_A = calculate_dc_power(V_A, I_A)
-            P_B = calculate_dc_power(V_B, I_B)
-            P_C = calculate_dc_power(V_C, I_C)
-            P_D = calculate_dc_power(V_D, I_D)
-            pvac[pvac_name] = {
-                "PVAC_Fout": lookup(p, ['PVAC_Status', 'PVAC_Fout']),
-                "PVAC_GridState": None,
-                "PVAC_InvState": None,
-                "PVAC_Iout": None,
-                "PVAC_LifetimeEnergyPV_Total": None,
-                "PVAC_PVCurrent_A": I_A,
-                "PVAC_PVCurrent_B": I_B,
-                "PVAC_PVCurrent_C": I_C,
-                "PVAC_PVCurrent_D": I_D,
-                "PVAC_PVMeasuredPower_A": P_A, # computed
-                "PVAC_PVMeasuredPower_B": P_B, # computed
-                "PVAC_PVMeasuredPower_C": P_C, # computed
-                "PVAC_PVMeasuredPower_D": P_D, # computed
-                "PVAC_PVMeasuredVoltage_A": V_A,
-                "PVAC_PVMeasuredVoltage_B": V_B,
-                "PVAC_PVMeasuredVoltage_C": V_C,
-                "PVAC_PVMeasuredVoltage_D": V_D,
-                "PVAC_Pout": lookup(p, ['PVAC_Status', 'PVAC_Pout']),
-                "PVAC_PvState_A": None, # These are placeholders
-                "PVAC_PvState_B": None, # Compute from PVS below
-                "PVAC_PvState_C": None, # PV_Disabled, PV_Active, PV_Active_Parallel
-                "PVAC_PvState_D": None, # Not available in TEDAPI
-                "PVAC_Qout": None,
-                "PVAC_State": lookup(p, ['PVAC_Status', 'PVAC_State']),
-                "PVAC_VHvMinusChassisDC": None,
-                "PVAC_VL1Ground": lookup(p, ['PVAC_Logging', 'PVAC_VL1Ground']),
-                "PVAC_VL2Ground": lookup(p, ['PVAC_Logging', 'PVAC_VL2Ground']),
-                "PVAC_Vout": lookup(p, ['PVAC_Status', 'PVAC_Vout']),
-                "alerts": lookup(p, ['alerts', 'active']) or [],
-                "PVI-PowerStatusSetpoint": None,
-                "componentParentDin": None, # TODO: map to TETHC
-                "firmwareVersion": None,
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "partNumber": packagePartNumber,
-                "serialNumber": packageSerialNumber,
-                "teslaEnergyEcuAttributes": {
-                    "ecuType": 296
-                }
-            }
-            pvac_fans = fan_speeds.get(pvac_name, {})
-            if pvac_fans:
-                pvac[pvac_name].update({
-                    "PVAC_Fan_Speed_Actual_RPM": pvac_fans["PVAC_Fan_Speed_Actual_RPM"],
-                    "PVAC_Fan_Speed_Target_RPM": pvac_fans["PVAC_Fan_Speed_Target_RPM"]
-                })
-
-            pvs_name = f"PVS--{packagePartNumber}--{packageSerialNumber}"
-            pvs_data = lookup(status, ['esCan', 'bus', 'PVS'])
-            if i < len(pvs_data):
-                pvs_data = pvs_data[i]
-                # Set String Connected states
-                string_a = lookup(pvs_data, ['PVS_Status', 'PVS_StringA_Connected'])
-                string_b = lookup(pvs_data, ['PVS_Status', 'PVS_StringB_Connected'])
-                string_c = lookup(pvs_data, ['PVS_Status', 'PVS_StringC_Connected'])
-                string_d = lookup(pvs_data, ['PVS_Status', 'PVS_StringD_Connected'])
-                # Set PVAC PvState based on PVS String Connected states
-                pvac[pvac_name]["PVAC_PvState_A"] = "PV_Active" if string_a else "PV_Disabled"
-                pvac[pvac_name]["PVAC_PvState_B"] = "PV_Active" if string_b else "PV_Disabled"
-                pvac[pvac_name]["PVAC_PvState_C"] = "PV_Active" if string_c else "PV_Disabled"
-                pvac[pvac_name]["PVAC_PvState_D"] = "PV_Active" if string_d else "PV_Disabled"
-                pvs[pvs_name] = {
-                    "PVS_EnableOutput": None,
-                    "PVS_SelfTestState": lookup(pvs_data, ['PVS_Status', 'PVS_SelfTestState']),
-                    "PVS_State": lookup(pvs_data, ['PVS_Status', 'PVS_State']),
-                    "PVS_StringA_Connected": string_a,
-                    "PVS_StringB_Connected": string_b,
-                    "PVS_StringC_Connected": string_c,
-                    "PVS_StringD_Connected": string_d,
-                    "PVS_vLL": lookup(pvs_data, ['PVS_Status', 'PVS_vLL']),
-                    "alerts": lookup(pvs_data, ['alerts', 'active']) or [],
-                    "componentParentDin": pvac_name,
-                    "firmwareVersion": None,
-                    "lastCommunicationTime": None,
-                    "manufacturer": "TESLA",
-                    "partNumber": packagePartNumber,
-                    "serialNumber": packageSerialNumber,
-                    "teslaEnergyEcuAttributes": {
-                        "ecuType": 297
-                    }
-                }
-            tesla_name = f"TESLA--{packagePartNumber}--{packageSerialNumber}"
-            if "solars" in config and i < len(config.get('solars', [{}])):
-                tesla_nameplate = config['solars'][i].get('power_rating_watts', None)
-                brand = config['solars'][i].get('brand', None)
-            else:
-                tesla_nameplate = None
-                brand = None
-            tesla[tesla_name] = {
-                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
-                "firmwareVersion": None,
-                "lastCommunicationTime": None,
-                "manufacturer": brand.upper() if brand else "TESLA",
-                "pvInverterAttributes": {
-                    "nameplateRealPowerW": tesla_nameplate,
-                },
-                "serialNumber": f"{packagePartNumber}--{packageSerialNumber}",
-            }
-
-        # Create STSTSM block
-        name = f"STSTSM--{lookup(config, ['vin'])}"
-        ststsm = {}
-        ststsm[name] =  {
-            "STSTSM-Location": "Gateway",
-            "alerts": lookup(status, ['control', 'alerts', 'active']) or [],
-            "firmwareVersion": None,
-            "lastCommunicationTime": None,
-            "manufacturer": "TESLA",
-            "partNumber": lookup(config, ['vin']).split('--')[0],
-            "serialNumber": lookup(config, ['vin']).split('--')[-1],
-            "teslaEnergyEcuAttributes": {
-                "ecuType": 207
-            }
-        }
-
-        # Get Dictionary of Powerwall Temperatures
-        temp_sensors = {}
-        for i in lookup(status, ['components', 'msa']) or []:
-            if "signals" in i and "serialNumber" in i and i["serialNumber"]:
-                for s in i["signals"]:
-                    if "name" in s and s["name"] == "THC_AmbientTemp" and "value" in s:
-                        temp_sensors[i["serialNumber"]] = s["value"]
-
-        # Create TETHC, TEPINV and TEPOD blocks
-        tethc = {} # parent
-        tepinv = {}
-        tepod = {}
-        # Loop through each THC device serial number
-        for i, p in enumerate(lookup(status, ['esCan', 'bus', 'THC']) or {}):
-            if not p['packageSerialNumber']:
-                continue
-            packagePartNumber = p.get('packagePartNumber', str(i))
-            packageSerialNumber = p.get('packageSerialNumber', str(i))
-            # TETHC block
-            parent_name = f"TETHC--{packagePartNumber}--{packageSerialNumber}"
-            tethc[parent_name] = {
-                "THC_AmbientTemp": temp_sensors.get(packageSerialNumber, None),
-                "THC_State": None,
-                "alerts": lookup(p, ['alerts', 'active']) or [],
-                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
-                "firmwareVersion": None,
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "partNumber": packagePartNumber,
-                "serialNumber": packageSerialNumber,
-                "teslaEnergyEcuAttributes": {
-                    "ecuType": 224
-                }
-            }
-            # TEPOD block
-            name = f"TEPOD--{packagePartNumber}--{packageSerialNumber}"
-            pod = lookup(status, ['esCan', 'bus', 'POD'])[i]
-            energy_remaining = lookup(pod, ['POD_EnergyStatus', 'POD_nom_energy_remaining'])
-            full_pack_energy = lookup(pod, ['POD_EnergyStatus', 'POD_nom_full_pack_energy'])
-            if energy_remaining and full_pack_energy:
-                energy_to_be_charged = full_pack_energy - energy_remaining
-            else:
-                energy_to_be_charged = None
-            tepod[name] = {
-                "POD_ActiveHeating": None,
-                "POD_CCVhold": None,
-                "POD_ChargeComplete": None,
-                "POD_ChargeRequest": None,
-                "POD_DischargeComplete": None,
-                "POD_PermanentlyFaulted": None,
-                "POD_PersistentlyFaulted": None,
-                "POD_available_charge_power": None,
-                "POD_available_dischg_power": None,
-                "POD_enable_line": None,
-                "POD_nom_energy_remaining": energy_remaining,
-                "POD_nom_energy_to_be_charged": energy_to_be_charged, #computed
-                "POD_nom_full_pack_energy": full_pack_energy,
-                "POD_state": None,
-                "alerts": lookup(p, ['alerts', 'active']) or [],
-                "componentParentDin": parent_name,
-                "firmwareVersion": None,
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "partNumber": packagePartNumber,
-                "serialNumber": packageSerialNumber,
-                "teslaEnergyEcuAttributes": {
-                    "ecuType": 226
-                }
-            }
-            # TEPINV block
-            name = f"TEPINV--{packagePartNumber}--{packageSerialNumber}"
-            pinv = lookup(status, ['esCan', 'bus', 'PINV'])[i]
-            tepinv[name] = {
-                "PINV_EnergyCharged": None,
-                "PINV_EnergyDischarged": None,
-                "PINV_Fout": lookup(pinv, ['PINV_Status', 'PINV_Fout']),
-                "PINV_GridState": lookup(p, ['PINV_Status', 'PINV_GridState']),
-                "PINV_HardwareEnableLine": None,
-                "PINV_PllFrequency": None,
-                "PINV_PllLocked": None,
-                "PINV_Pnom": lookup(pinv, ['PINV_PowerCapability', 'PINV_Pnom']),
-                "PINV_Pout": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
-                "PINV_PowerLimiter": None,
-                "PINV_Qout": None,
-                "PINV_ReadyForGridForming": None,
-                "PINV_State": lookup(pinv, ['PINV_Status', 'PINV_State']),
-                "PINV_VSplit1": lookup(pinv, ['PINV_AcMeasurements', 'PINV_VSplit1']),
-                "PINV_VSplit2": lookup(pinv, ['PINV_AcMeasurements', 'PINV_VSplit2']),
-                "PINV_Vout": lookup(pinv, ['PINV_Status', 'PINV_Vout']),
-                "alerts": lookup(pinv, ['alerts', 'active']) or [],
-                "componentParentDin": parent_name,
-                "firmwareVersion": None,
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "partNumber": packagePartNumber,
-                "serialNumber": packageSerialNumber,
-                "teslaEnergyEcuAttributes": {
-                    "ecuType": 253
-                }
-            }
-
-        # Create TESYNC block
-        tesync = {}
-        sync = lookup(status, ['esCan', 'bus', 'SYNC']) or {}
-        islander = lookup(status, ['esCan', 'bus', 'ISLANDER']) or {}
-        packagePartNumber = sync.get('packagePartNumber', None)
-        packageSerialNumber = sync.get('packageSerialNumber', None)
-        name = f"TESYNC--{packagePartNumber}--{packageSerialNumber}"
-        tesync[name] = {
-            "ISLAND_FreqL1_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL1_Load']),
-            "ISLAND_FreqL1_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL1_Main']),
-            "ISLAND_FreqL2_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL2_Load']),
-            "ISLAND_FreqL2_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL2_Main']),
-            "ISLAND_FreqL3_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL3_Load']),
-            "ISLAND_FreqL3_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_FreqL3_Main']),
-            "ISLAND_GridConnected": lookup(islander, ['ISLAND_GridConnection', 'ISLAND_GridConnected']),
-            "ISLAND_GridState": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_GridState']),
-            "ISLAND_L1L2PhaseDelta":lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L1L2PhaseDelta']),
-            "ISLAND_L1L3PhaseDelta": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L1L3PhaseDelta']),
-            "ISLAND_L1MicrogridOk": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L1MicrogridOk']),
-            "ISLAND_L2L3PhaseDelta": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L2L3PhaseDelta']),
-            "ISLAND_L2MicrogridOk": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L2MicrogridOk']),
-            "ISLAND_L3MicrogridOk": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_L3MicrogridOk']),
-            "ISLAND_PhaseL1_Main_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_PhaseL1_Main_Load']),
-            "ISLAND_PhaseL2_Main_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_PhaseL2_Main_Load']),
-            "ISLAND_PhaseL3_Main_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_PhaseL3_Main_Load']),
-            "ISLAND_ReadyForSynchronization": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_ReadyForSynchronization']),
-            "ISLAND_VL1N_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL1N_Load']),
-            "ISLAND_VL1N_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL1N_Main']),
-            "ISLAND_VL2N_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL2N_Load']),
-            "ISLAND_VL2N_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL2N_Main']),
-            "ISLAND_VL3N_Load": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL3N_Load']),
-            "ISLAND_VL3N_Main": lookup(islander, ['ISLAND_AcMeasurements', 'ISLAND_VL3N_Main']),
-            "METER_X_CTA_I": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTA_I']),
-            "METER_X_CTA_InstReactivePower": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTA_InstReactivePower']),
-            "METER_X_CTA_InstRealPower": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTA_InstRealPower']),
-            "METER_X_CTB_I": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTB_I']),
-            "METER_X_CTB_InstReactivePower": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTB_InstReactivePower']),
-            "METER_X_CTB_InstRealPower": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTB_InstRealPower']),
-            "METER_X_CTC_I": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTC_I']),
-            "METER_X_CTC_InstReactivePower": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTC_InstReactivePower']),
-            "METER_X_CTC_InstRealPower": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_CTC_InstRealPower']),
-            "METER_X_LifetimeEnergyExport": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_LifetimeEnergyExport']),
-            "METER_X_LifetimeEnergyImport": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_LifetimeEnergyImport']),
-            "METER_X_VL1N": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_VL1N']),
-            "METER_X_VL2N": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_VL2N']),
-            "METER_X_VL3N": lookup(sync, ['METER_X_AcMeasurements', 'METER_X_VL3N']),
-            "METER_Y_CTA_I": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTA_I']),
-            "METER_Y_CTA_InstReactivePower": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTA_InstReactivePower']),
-            "METER_Y_CTA_InstRealPower": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTA_InstRealPower']),
-            "METER_Y_CTB_I": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTB_I']),
-            "METER_Y_CTB_InstReactivePower": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTB_InstReactivePower']),
-            "METER_Y_CTB_InstRealPower": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTB_InstRealPower']),
-            "METER_Y_CTC_I": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTC_I']),
-            "METER_Y_CTC_InstReactivePower": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTC_InstReactivePower']),
-            "METER_Y_CTC_InstRealPower": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_CTC_InstRealPower']),
-            "METER_Y_LifetimeEnergyExport": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_LifetimeEnergyExport']),
-            "METER_Y_LifetimeEnergyImport": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_LifetimeEnergyImport']),
-            "METER_Y_VL1N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL1N']),
-            "METER_Y_VL2N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL2N']),
-            "METER_Y_VL3N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL3N']),
-            "SYNC_ExternallyPowered": None,
-            "SYNC_SiteSwitchEnabled": None,
-            "alerts": lookup(sync, ['alerts', 'active']) or [],
-            "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
-            "firmwareVersion": None,
-            "manufacturer": "TESLA",
-            "partNumber": packagePartNumber,
-            "serialNumber": packageSerialNumber,
-            "teslaEnergyEcuAttributes": {
-                "ecuType": 259
-            }
-        }
-
-        # Create TESLA block - tied to TESYNC
-        name = f"TESLA--{packageSerialNumber}"
-        tesla[name] = {
-                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
-                "lastCommunicationTime": None,
-                "manufacturer": "TESLA",
-                "meterAttributes": {
-                    "meterLocation": [
-                        1
-                    ]
-                },
-                "serialNumber": packageSerialNumber
-            }
 
         # Create Vitals Dictionary
-        vitals = {
-            **header,
-            **neurio,
-            **pvac,
-            **pvs,
-            **ststsm,
-            **tepinv,
-            **tepod,
-            **tesla,
-            **tesync,
-            **tethc,
-        }
+        vitals_dictionary = Vitals(config, status, self.gw_ip)
+        vitals = vitals_dictionary.get_vitals()
+
         # Merge in the Powerwall 3 data if available
         if self.pw3:
             pw3_data = self.get_pw3_vitals(force) or {}
