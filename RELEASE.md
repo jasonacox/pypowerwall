@@ -9,6 +9,7 @@
 TypeError: PyPowerwallTEDAPI.vitals() got an unexpected keyword argument 'force' by @F1p in https://github.com/jasonacox/pypowerwall/pull/164
 * Catch error condition when components payload is empty or malformed. Bug in extract_fan_speeds() reported by by @jgleigh in jasonacox/Powerwall-Dashboard#392 and https://github.com/jasonacox/pypowerwall/issues/167
 * Issue #162: add /pw/XXX endpoints to expose Powerwall() API methods by @JohnJ9ml in https://github.com/jasonacox/pypowerwall/pull/166
+* PW3 Vitals Fix - Switch from using device specific URI https://{GW_IP}/tedapi/device/{pw_din}/v1 to https://{GW_IP}/tedapi/v1 - Corrects 502 error condition on some Powerwall 3 systems by @johncuthbertuk in https://github.com/jasonacox/pypowerwall/pull/169
 
 ## v0.12.9 - Fan Speeds
 
