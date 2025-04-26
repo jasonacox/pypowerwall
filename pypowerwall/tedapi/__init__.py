@@ -943,18 +943,19 @@ class TEDAPI:
 
         # Iterate over each component in the "msa" list
         components = data.get("components", {})
-        for component in components.get("msa", []):
-            signals = component.get("signals", [])
-            fan_speeds = {
-                signal["name"]: signal["value"]
-                for signal in signals
-                if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
-            }
-            if not fan_speeds:
-                continue
-            componentPartNumber = component.get("partNumber")
-            componentSerialNumber = component.get("serialNumber")
-            result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
+        if components:
+            for component in components.get("msa", []):
+                signals = component.get("signals", [])
+                fan_speeds = {
+                    signal["name"]: signal["value"]
+                    for signal in signals
+                    if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
+                }
+                if not fan_speeds:
+                    continue
+                componentPartNumber = component.get("partNumber")
+                componentSerialNumber = component.get("serialNumber")
+                result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
         return result
 
     def get_fan_speeds(self, force=False):

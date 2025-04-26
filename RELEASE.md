@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.11 - Error Handling
+
+* Fix error handling in component data handling in TEDAPI.
+
 ## v0.12.10 - Power Flow and Other Fixes
 
 * Add PROXY_BASE_URL option for reverse proxying by @mccahan in https://github.com/jasonacox/pypowerwall/pull/155
