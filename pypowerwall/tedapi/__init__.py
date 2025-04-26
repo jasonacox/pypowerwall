@@ -943,7 +943,7 @@ class TEDAPI:
 
         # Iterate over each component in the "msa" list
         components = data.get("components", {})
-        if components:
+        if isinstance(components, dict):
             for component in components.get("msa", []):
                 signals = component.get("signals", [])
                 fan_speeds = {
