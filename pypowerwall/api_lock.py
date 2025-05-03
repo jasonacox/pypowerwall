@@ -9,9 +9,9 @@ log = logging.getLogger(__name__)
 def acquire_with_exponential_backoff(
     lock: threading.Lock,
     timeout: float,
-    initial_delay: float = 0.1,
-    factor: int = 2,
-    max_delay: int = 2,
+    initial_delay: float = 0.2,
+    factor: int = 3,
+    max_delay: int = 5,
     jitter: float = 0.1
 ) -> bool:
     """

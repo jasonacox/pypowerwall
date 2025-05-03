@@ -218,6 +218,9 @@ class Powerwall(object):
         # Connect to Powerwall
         if not self.connect(self.retry_modes):
             log.error("Unable to connect to Powerwall.")
+        self.pw_din = self.din()
+        self.pw_din_suffix = self.pw_din[-3:]
+
 
     def connect(self, retry=False) -> bool:
         """

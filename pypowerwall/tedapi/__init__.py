@@ -667,7 +667,7 @@ class TEDAPI:
 
         response = {}
         config = self.get_config(force=force)
-        battery_blocks = config['battery_blocks']
+        battery_blocks = config.get('battery_blocks', {}) or {}
 
         # Loop through all the battery blocks (Powerwalls)
         for battery in battery_blocks:
@@ -932,26 +932,39 @@ class TEDAPI:
         return battery_level
 
 
+    # Helper Function
     def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
+        if not isinstance(data, dict):
+            return {}
+
         fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
 
         # List to store the valid fan speed values
         result = {}
 
         # Iterate over each component in the "msa" list
-        for component in data.get("components", {}).get("msa", []):
-            signals = component.get("signals", [])
-            fan_speeds = {
-                signal["name"]: signal["value"]
-                for signal in signals
-                if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
-            }
-            if not fan_speeds:
-                continue
-            componentPartNumber = component.get("partNumber")
-            componentSerialNumber = component.get("serialNumber")
-            result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
+        components = data.get("components", {})
+        if isinstance(components, dict):
+            for component in components.get("msa", []):
+                signals = component.get("signals", [])
+                fan_speeds = {
+                    signal["name"]: signal["value"]
+                    for signal in signals
+                    if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
+                }
+                if not fan_speeds:
+                    continue
+                componentPartNumber = component.get("partNumber")
+                componentSerialNumber = component.get("serialNumber")
+                result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
         return result
+
+
+    def get_fan_speeds(self, force=False):
+         """
+         Get the fan speeds for the Powerwall / Inverter
+         """
+         return self.extract_fan_speeds(self.get_device_controller(force=force))
 
 
     def derive_meter_config(self, config) -> dict:
@@ -1009,7 +1022,7 @@ class TEDAPI:
                     if not cts_bool[i]:
                         # Skip this CT
                         continue
-                factor = lookup(meter_config_data, [sn, 'real_power_scale_factor']) or 1                
+                factor = lookup(meter_config_data, [sn, 'real_power_scale_factor']) or 1
                 location = lookup(meter_config_data, [sn, 'location'])
                 ct_hierarchy = {
                     "Index": i,

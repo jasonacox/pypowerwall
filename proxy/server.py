@@ -482,7 +482,7 @@ class Handler(BaseHTTPRequestHandler):
                 site = aggregates.get("site", {})
                 if site:
                     site["instant_power"] = abs(site.get("instant_power"))
-        appended = {f"{self.pw.din()[-3:]}_{key}": value for key, value in aggregates.items()}
+        appended = {f"{self.pw.pw_din_suffix}_{key}": value for key, value in aggregates.items()}
         return self.send_json_response(appended)
 
 
@@ -617,8 +617,7 @@ class Handler(BaseHTTPRequestHandler):
         strings = self.pw.strings(jsonformat=True) or {}
         output = json.loads(strings)
         if len(self.all_pws) > 1:
-            din_suffix = self.pw.din()[-3:]
-            output = {f"{key}_{din_suffix}":value for key, value in output.items()}
+            output = {f"{key}_{self.pw.pw_din_suffix}":value for key, value in output.items()}
         return self.send_json_response(output)
 
 
@@ -665,16 +664,14 @@ class Handler(BaseHTTPRequestHandler):
         alerts = self.pw.alerts(jsonformat=True) or []
         output = json.loads(alerts)
         if len(self.all_pws) > 1:
-            din_suffix = self.pw.din()[-3:]
-            output = [f"{din_suffix}_{alert}" for alert in output]
+            output = [f"{self.pw.pw_din_suffix}_{alert}" for alert in output]
         return self.send_json_response(output)
 
 
     def handle_alerts_pw(self) -> str:
         alerts = self.pw.alerts() or []
         if len(self.all_pws) > 1:
-            din_suffix = self.pw.din()[-3:]
-            alerts = {f"{din_suffix}_{alert}": 1 for alert in alerts}
+            alerts = {f"{self.pw.pw_din_suffix}_{alert}": 1 for alert in alerts}
         return self.send_json_response(alerts)
 
 
@@ -697,7 +694,7 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_i_out": get_value(block, "i_out"),
             })
         vitals = self.pw.vitals() or {}
-        din_suffix = self.pw.din()[-3:] if len(self.all_pws) > 1 else None
+        din_suffix = self.pw.pw_din_suffix if len(self.all_pws) > 1 else None
         for idx, (device, data) in enumerate(vitals.items()):
             if device.startswith('TEPINV'):
                 fcv.update({
@@ -1050,7 +1047,7 @@ def read_env_configs() -> List[PROXY_CONFIG]:
             CONFIG_TYPE.PW_AUTH_PATH: get_env_value(CONFIG_TYPE.PW_AUTH_PATH, ""),
             CONFIG_TYPE.PW_BIND_ADDRESS: get_env_value(CONFIG_TYPE.PW_BIND_ADDRESS, ""),
             CONFIG_TYPE.PW_BROWSER_CACHE: int(get_env_value(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
-            CONFIG_TYPE.PW_CACHE_EXPIRE: int(get_env_value(CONFIG_TYPE.PW_CACHE_EXPIRE, "5")),
+            CONFIG_TYPE.PW_CACHE_EXPIRE: int(get_env_value(CONFIG_TYPE.PW_CACHE_EXPIRE, "10")),
             CONFIG_TYPE.PW_CACHE_FILE: get_env_value(CONFIG_TYPE.PW_CACHE_FILE, ""),
             CONFIG_TYPE.PW_CONTROL_SECRET: get_env_value(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
             CONFIG_TYPE.PW_EMAIL: get_env_value(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
