@@ -1,13 +1,21 @@
 FROM python:3.13-alpine
-RUN apk add gcc python3-dev musl-dev linux-headers
+
 WORKDIR /app
-COPY ./proxy/requirements.txt /app/requirements.txt
-RUN pip3 install --upgrade pip
-RUN pip3 install -r requirements.txt
-COPY pypowerwall /app/pypowerwall/pypowerwall/
-COPY setup.py requirements.txt README.md /app/pypowerwall/
-RUN pip3 install /app/pypowerwall
-COPY ./proxy .
+
+# 1) copy in all the things that affect pip
+COPY proxy/requirements.txt .
+COPY setup.py requirements.txt README.md pypowerwall/ ./pypowerwall/
+
+# 2) install build deps, upgrade pip, install everything, then remove build deps
+RUN apk add --no-cache --virtual .build-deps \
+        gcc musl-dev python3-dev linux-headers \
+    && python3 -m pip install --root-user-action ignore --upgrade pip \
+    && python3 -m pip install --no-cache-dir --root-user-action ignore -r requirements.txt \
+    && python3 -m pip install --no-cache-dir --root-user-action ignore ./pypowerwall \
+    && apk del .build-deps
+
+# 3) finally copy your proxy/server code
+COPY proxy .
+
+EXPOSE 8675 8685
 CMD ["python3", "server.py"]
-EXPOSE 8675
-EXPOSE 8685
