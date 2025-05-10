@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t73 (10 May 2025)
+
+* Add `/json` route to return basic metrics (Grid,Home,Solar,Battery,Level,GridStatus,Reserve)
+
 ### Proxy t72 (16 Apr 2025)
 
 * Add routes to map library functions into `/pw/` APIs (e.g. /pw/power)
