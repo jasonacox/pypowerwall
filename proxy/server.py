@@ -586,6 +586,22 @@ class Handler(BaseHTTPRequestHandler):
             pod["time_remaining_hours"] = pw.get_time_remaining()
             pod["backup_reserve_percent"] = pw.get_reserve()
             message: str = json.dumps(pod)
+        elif request_path == '/json':
+            # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
+            values = {
+                'grid': pw.grid() or 0,
+                'home': pw.home() or 0, 
+                'solar': pw.solar() or 0,
+                'battery': pw.battery() or 0,
+                'soc': pw.level() or 0,
+                'grid_status': int(pw.grid_status() == 'UP'),
+                'reserve': pw.get_reserve() or 0
+            }
+            if not neg_solar and values['solar'] < 0:
+                # Shift negative solar to load
+                values['home'] -= values['solar']
+                values['solar'] = 0
+            message: str = json.dumps(values)			
         elif request_path == '/version':
             # Firmware Version
             version = pw.version()
