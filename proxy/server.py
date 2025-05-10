@@ -596,7 +596,7 @@ class Handler(BaseHTTPRequestHandler):
                 'soc': pw.level() or 0,
                 'grid_status': int(pw.grid_status() == 'UP'),
                 'reserve': pw.get_reserve() or 0,
-				'time_remaining_hours': pw.get_time_remaining() or 0
+		'time_remaining_hours': pw.get_time_remaining() or 0
             }
             if not neg_solar and values['solar'] < 0:
                 # Shift negative solar to load
