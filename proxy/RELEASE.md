@@ -10,7 +10,7 @@
 "home": 917.5,
 "solar": 5930,
 "battery": -5030,
-"soc": 61.391932759907306,
+"soe": 61.391932759907306,
 "grid_status": 1,
 "reserve": 20,
 "time_remaining_hours": 17.03651226158038
