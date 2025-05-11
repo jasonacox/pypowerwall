@@ -600,7 +600,7 @@ class Handler(BaseHTTPRequestHandler):
                 'time_remaining_hours': pw.get_time_remaining() or 0,
                 'full_pack_energy': get_value(d, 'nominal_full_pack_energy') or 0,
                 'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0,
-				'strings': pw.strings(jsonformat=True) or {}
+                'strings': pw.strings(jsonformat=True) or {}
             }
             if not neg_solar and values['solar'] < 0:
                 # Shift negative solar to load
