@@ -588,6 +588,7 @@ class Handler(BaseHTTPRequestHandler):
             message: str = json.dumps(pod)
         elif request_path == '/json':
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
+            d = pw.system_status() or {}
             values = {
                 'grid': pw.grid() or 0,
                 'home': pw.home() or 0, 
@@ -596,7 +597,9 @@ class Handler(BaseHTTPRequestHandler):
                 'soe': pw.level() or 0,
                 'grid_status': int(pw.grid_status() == 'UP'),
                 'reserve': pw.get_reserve() or 0,
-		'time_remaining_hours': pw.get_time_remaining() or 0
+                'time_remaining_hours': pw.get_time_remaining() or 0,
+                'full_pack_energy': get_value(d, 'nominal_full_pack_energy') or 0,
+                'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0
             }
             if not neg_solar and values['solar'] < 0:
                 # Shift negative solar to load
