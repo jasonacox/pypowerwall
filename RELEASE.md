@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.12.12 - Multiple PW3 Fix
+
+* Bug Fix - Logic added in https://github.com/jasonacox/pypowerwall/pull/169 does not iterate through all PW3 strings. This adds logic to handle multiple PW3 string sets. Reported in https://github.com/jasonacox/pypowerwall/issues/172. 
+
 ## v0.12.11 - Error Handling
 
 * Fix error handling in component data handling in TEDAPI.
