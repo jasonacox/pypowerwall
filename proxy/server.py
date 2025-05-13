@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t73"
+BUILD = "t74"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -587,7 +587,8 @@ class Handler(BaseHTTPRequestHandler):
             pod["backup_reserve_percent"] = pw.get_reserve()
             message: str = json.dumps(pod)
         elif request_path == '/json':
-            # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
+            # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
+            d = pw.system_status() or {}
             values = {
                 'grid': pw.grid() or 0,
                 'home': pw.home() or 0, 
@@ -596,7 +597,10 @@ class Handler(BaseHTTPRequestHandler):
                 'soe': pw.level() or 0,
                 'grid_status': int(pw.grid_status() == 'UP'),
                 'reserve': pw.get_reserve() or 0,
-		'time_remaining_hours': pw.get_time_remaining() or 0
+                'time_remaining_hours': pw.get_time_remaining() or 0,
+                'full_pack_energy': get_value(d, 'nominal_full_pack_energy') or 0,
+                'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0,
+                'strings': pw.strings(jsonformat=False) or {}
             }
             if not neg_solar and values['solar'] < 0:
                 # Shift negative solar to load
