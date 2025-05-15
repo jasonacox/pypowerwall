@@ -55,6 +55,7 @@ from typing import Dict, List, Tuple
 
 import requests
 import urllib3
+from requests.adapters import HTTPAdapter
 from urllib3.exceptions import InsecureRequestWarning
 
 from pypowerwall import __version__
@@ -232,9 +233,7 @@ class TEDAPI:
             pb.tail.value = 1
             url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
+                r = self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
                 log.debug(f"Response Code: {r.status_code}")
                 if r.status_code in BUSY_CODES:
                     # Rate limited - Switch to cooldown mode for 5 minutes
@@ -335,10 +334,7 @@ class TEDAPI:
             pb.tail.value = 1
             url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                # Set lock
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
+                r = self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
                 log.debug(f"Response Code: {r.status_code}")
                 if r.status_code in BUSY_CODES:
                     # Rate limited - Switch to cooldown mode for 5 minutes
@@ -417,10 +413,7 @@ class TEDAPI:
             pb.tail.value = 1
             url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                # Set lock
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
+                r= self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
                 log.debug(f"Response Code: {r.status_code}")
                 if r.status_code in BUSY_CODES:
                     # Rate limited - Switch to cooldown mode for 5 minutes
@@ -486,9 +479,7 @@ class TEDAPI:
             pb.tail.value = 1
             url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
+                r = self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
                 log.debug(f"Response Code: {r.status_code}")
                 if r.status_code in BUSY_CODES:
                     # Rate limited - Switch to cooldown mode for 5 minutes
@@ -581,9 +572,7 @@ class TEDAPI:
             pb.tail.value = 1
             url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
+                r = self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
                 log.debug(f"Response Code: {r.status_code}")
                 if r.status_code in BUSY_CODES:
                     # Rate limited - Switch to cooldown mode for 5 minutes
@@ -689,9 +678,7 @@ class TEDAPI:
             pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
             pb.tail.value = 2
             url = f'https://{self.gw_ip}/tedapi/device/{pw_din}/v1'
-            r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                            headers={'Content-type': 'application/octet-string'},
-                            data=pb.SerializeToString(), timeout=self.timeout)
+            r = self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
             if r.status_code == HTTPStatus.OK:
                 # Decode response
                 tedapi = tedapi_pb2.Message()
@@ -830,9 +817,7 @@ class TEDAPI:
             pb.tail.value = 2
             url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
             try:
-                r = requests.post(url, auth=('Tesla_Energy_Device', self.gw_pwd), verify=False,
-                                            headers={'Content-type': 'application/octet-string'},
-                                            data=pb.SerializeToString(), timeout=self.timeout)
+                r = self.session.post(url, verify=False, data=pb.SerializeToString(), timeout=self.timeout)
                 log.debug(f"Response Code: {r.status_code}")
                 if r.status_code in BUSY_CODES:
                     # Rate limited - Switch to cooldown mode for 5 minutes
@@ -862,6 +847,38 @@ class TEDAPI:
                 data = None
         return data
 
+    def _init_session(self):
+        session = requests.Session()
+        retries = urllib3.Retry(
+            total=5,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            raise_on_status=False
+        )
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=5, pool_maxsize=5)
+        session.mount("https://", adapter)
+        session.auth = ('Tesla_Energy_Device', self.gw_pwd)
+        session.headers.update({'Content-type': 'application/octet-string'})
+        return session
+
+    # def _post_tedapi(self, url, payload: bytes, timeout: Tuple[int, int] = (10, 5)):
+    #     try:
+    #         r = self.session.post(url, data=payload, verify=False, timeout=timeout)
+    #         log.debug(f"Response Code: {r.status_code}")
+    #         return r
+    #     except requests.exceptions.RequestException as e:
+    #         log.error(f"HTTP error during POST to {url}: {e}")
+    #         return None
+
+    # def _get_tedapi(self, url, timeout: Tuple[int, int] = (10, 5)):
+    #     try:
+    #         r = self.session.get(url, verify=False, timeout=timeout)
+    #         log.debug(f"GET {url} -> {r.status_code}")
+    #         return r
+    #     except requests.exceptions.RequestException as e:
+    #         log.error(f"HTTP error during GET to {url}: {e}")
+    #         return None
+
     def connect(self):
         """
         Connect to the Powerwall Gateway
@@ -871,7 +888,8 @@ class TEDAPI:
         url = f'https://{self.gw_ip}'
         self.din = None
         try:
-            resp = requests.get(url, verify=False, timeout=5)
+            self.session = self._init_session()
+            resp = self.session.get(url, verify=False, timeout=5)
             if resp.status_code != HTTPStatus.OK:
                 # Connected but appears to be Powerwall 3
                 log.debug("Detected Powerwall 3 Gateway")
