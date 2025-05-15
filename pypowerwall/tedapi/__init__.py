@@ -855,7 +855,7 @@ class TEDAPI:
             status_forcelist=[429, 500, 502, 503, 504],
             raise_on_status=False
         )
-        adapter = HTTPAdapter(max_retries=retries, pool_connections=2, pool_maxsize=2)
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=2, pool_maxsize=2, pool_block=True)
         session.verify = False
         session.mount("https://", adapter)
         session.auth = ('Tesla_Energy_Device', self.gw_pwd)
