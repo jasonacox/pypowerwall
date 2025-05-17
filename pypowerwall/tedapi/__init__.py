@@ -51,7 +51,7 @@ import threading
 import time
 from functools import wraps
 from http import HTTPStatus
-from typing import Dict, List, Tuple
+from typing import Dict, Final, List, Tuple
 
 import requests
 import urllib3
@@ -855,7 +855,8 @@ class TEDAPI:
             status_forcelist=[429, 500, 502, 503, 504],
             raise_on_status=False
         )
-        adapter = HTTPAdapter(max_retries=retries, pool_connections=2, pool_maxsize=2, pool_block=True)
+        POOL_SIZE: Final[int] = 1
+        adapter = HTTPAdapter(max_retries=retries, pool_connections=POOL_SIZE, pool_maxsize=POOL_SIZE, pool_block=True)
         session.verify = False
         session.mount("https://", adapter)
         session.auth = ('Tesla_Energy_Device', self.gw_pwd)
