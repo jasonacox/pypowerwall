@@ -1,5 +1,94 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t74 (12 May 2025)
+
+* Add additional data elements to `/json` route:
+
+```json
+{
+  "grid": 2423,
+  "home": 3708.5000000000005,
+  "solar": 1307,
+  "battery": -26,
+  "soe": 70.88757396449705,
+  "grid_status": 1,
+  "reserve": 70.0,
+  "time_remaining_hours": 8.076041526223541,
+  "full_pack_energy": 42250,
+  "energy_remaining": 29950.000000000004,
+  "strings": {
+    "A": {
+      "State": "Pv_Active",
+      "Voltage": 188,
+      "Current": 1.5999999999999996,
+      "Power": 300.79999999999995,
+      "Connected": true
+    },
+    "B": {
+      "State": "Pv_Active",
+      "Voltage": 318,
+      "Current": 1.2999999999999998,
+      "Power": 413.3999999999999,
+      "Connected": true
+    },
+    "C": {
+      "State": "Pv_Active",
+      "Voltage": 152,
+      "Current": 1.7499999999999998,
+      "Power": 265.99999999999994,
+      "Connected": true
+    },
+    "D": {
+      "State": "Pv_Active",
+      "Voltage": 190,
+      "Current": 1.7499999999999998,
+      "Power": 332.49999999999994,
+      "Connected": true
+    },
+    "E": {
+      "State": "Pv_Active",
+      "Voltage": 0,
+      "Current": 0.09999999999999964,
+      "Power": 0.0,
+      "Connected": true
+    },
+    "F": {
+      "State": "Pv_Active_Parallel",
+      "Voltage": 0,
+      "Current": 0,
+      "Power": 0,
+      "Connected": true
+    }
+  }
+}
+```
+
+### Proxy t73 (10 May 2025)
+
+* Add `/json` route to return basic metrics:
+
+```json
+{
+    "grid": -3,
+    "home": 917.5,
+    "solar": 5930,
+    "battery": -5030,
+    "soe": 61.391932759907306,
+    "grid_status": 1,
+    "reserve": 20,
+    "time_remaining_hours": 17.03651226158038
+}
+```
+
+### Proxy t72 (16 Apr 2025)
+
+* Add routes to map library functions into `/pw/` APIs (e.g. /pw/power)
+
+### Proxy t71 (6 Apr 2025)
+
+* Add routes for fan speeds: `/fans` and `/fans/pw` (simple enumerated values for dashboard)
+* Add API routes /pw/* to expose Powerwall() API methods (e.g. /pw/power) by @JohnJ9ml in https://github.com/jasonacox/pypowerwall/pull/166
+
 ### Proxy t70 (25 Mar 2025)
 
 pyPowerwall v0.12.9:

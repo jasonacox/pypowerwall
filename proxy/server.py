@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t70"
+BUILD = "t74"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -586,6 +586,27 @@ class Handler(BaseHTTPRequestHandler):
             pod["time_remaining_hours"] = pw.get_time_remaining()
             pod["backup_reserve_percent"] = pw.get_reserve()
             message: str = json.dumps(pod)
+        elif request_path == '/json':
+            # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
+            d = pw.system_status() or {}
+            values = {
+                'grid': pw.grid() or 0,
+                'home': pw.home() or 0, 
+                'solar': pw.solar() or 0,
+                'battery': pw.battery() or 0,
+                'soe': pw.level() or 0,
+                'grid_status': int(pw.grid_status() == 'UP'),
+                'reserve': pw.get_reserve() or 0,
+                'time_remaining_hours': pw.get_time_remaining() or 0,
+                'full_pack_energy': get_value(d, 'nominal_full_pack_energy') or 0,
+                'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0,
+                'strings': pw.strings(jsonformat=False) or {}
+            }
+            if not neg_solar and values['solar'] < 0:
+                # Shift negative solar to load
+                values['home'] -= values['solar']
+                values['solar'] = 0
+            message: str = json.dumps(values)			
         elif request_path == '/version':
             # Firmware Version
             version = pw.version()
@@ -716,6 +737,56 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
                 message = '{"mode": "%s"}' % pw_control.get_mode()
+        elif request_path == '/fans':
+            # Fan speeds in raw format
+            message = json.dumps(pw.tedapi.get_fan_speeds() if pw.tedapi else {})
+        elif request_path.startswith('/fans/pw'):
+            # Fan speeds in simplified format (e.g. FAN1_actual, FAN1_target)
+            if pw.tedapi:
+                fans = {}
+                for i, (_, value) in enumerate(sorted(pw.tedapi.get_fan_speeds().items())):
+                    key = f"FAN{i+1}"
+                    fans[f"{key}_actual"] = value.get('PVAC_Fan_Speed_Actual_RPM')
+                    fans[f"{key}_target"] = value.get('PVAC_Fan_Speed_Target_RPM')
+                message = json.dumps(fans)
+            else:
+                message = '{}'
+        elif self.path.startswith('/pw/'):
+            # Map library functions into /pw/ API calls
+            path = self.path[4:]  # Remove '/pw/' prefix
+            simple_mappings = {
+                'level': lambda: {'level': pw.level()},
+                'power': pw.power,
+                'site': lambda: pw.site(True),
+                'solar': lambda: pw.solar(True),
+                'battery': lambda: pw.battery(True), 
+                'battery_blocks': pw.battery_blocks,
+                'load': lambda: pw.load(True),
+                'grid': lambda: pw.grid(True),
+                'home': lambda: pw.home(True),
+                'vitals': pw.vitals,
+                'temps': pw.temps,
+                'strings': lambda: pw.strings(False, True),
+                'din': lambda: {'din': pw.din()},
+                'uptime': lambda: {'uptime': pw.uptime()},
+                'version': lambda: {'version': pw.version()},
+                'status': pw.status,
+                'system_status': lambda: pw.system_status(False),  
+                'grid_status': lambda: json.loads(pw.grid_status(type="json")),
+                'aggregates': lambda: pw.poll('/api/meters/aggregates', False),
+                'site_name': lambda: {'site_name': pw.site_name()},
+                'alerts': lambda: {'alerts': pw.alerts()},
+                'is_connected': lambda: {'is_connected': pw.is_connected()},
+                'get_reserve': lambda: {'reserve': pw.get_reserve()},
+                'get_mode': lambda: {'mode': pw.get_mode()},
+                'get_time_remaining': lambda: {'time_remaining': pw.get_time_remaining()}
+            }
+            # Check if the path is in the simple mappings
+            if path in simple_mappings:
+                result = simple_mappings[path]()
+            else:
+                result = {"error": "Invalid Request"}
+            message = json.dumps(result)
         else:
             # Everything else - Set auth headers required for web application
             proxystats['gets'] = proxystats['gets'] + 1

@@ -1,5 +1,24 @@
 # RELEASE NOTES
 
+## v0.12.12 - Multiple PW3 Fix
+
+* Bug Fix - Logic added in https://github.com/jasonacox/pypowerwall/pull/169 does not iterate through all PW3 strings. This adds logic to handle multiple PW3 string sets. Reported in https://github.com/jasonacox/pypowerwall/issues/172. 
+
+## v0.12.11 - Error Handling
+
+* Fix error handling in component data handling in TEDAPI.
+
+## v0.12.10 - Power Flow and Other Fixes
+
+* Add PROXY_BASE_URL option for reverse proxying by @mccahan in https://github.com/jasonacox/pypowerwall/pull/155
+* Fix issue with power flow animation showing blank when opened more than once by @mccahan in https://github.com/jasonacox/pypowerwall/pull/156
+* Add fan speed routes and update proxy version to t71 by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/161
+* Fix for
+TypeError: PyPowerwallTEDAPI.vitals() got an unexpected keyword argument 'force' by @F1p in https://github.com/jasonacox/pypowerwall/pull/164
+* Catch error condition when components payload is empty or malformed. Bug in extract_fan_speeds() reported by by @jgleigh in jasonacox/Powerwall-Dashboard#392 and https://github.com/jasonacox/pypowerwall/issues/167
+* Issue #162: add /pw/XXX endpoints to expose Powerwall() API methods by @JohnJ9ml in https://github.com/jasonacox/pypowerwall/pull/166
+* PW3 Vitals Fix - Switch from using device specific URI https://{GW_IP}/tedapi/device/{pw_din}/v1 to https://{GW_IP}/tedapi/v1 - Corrects 502 error condition on some Powerwall 3 systems by @johncuthbertuk in https://github.com/jasonacox/pypowerwall/pull/169
+
 ## v0.12.9 - Fan Speeds
 
 * Add PVAC fan speeds to TEDAPI vitals monitoring (PVAC_Fan_Speed_Actual_RPM and PVAC_Fan_Speed_Target_RPM).

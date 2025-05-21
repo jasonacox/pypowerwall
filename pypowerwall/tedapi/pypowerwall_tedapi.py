@@ -560,7 +560,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def close_session(self):
         return True
 
-    def vitals(self) -> Optional[dict]:
+    def vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return self.tedapi.vitals()
 
     def post_api_operation(self, **kwargs):
