@@ -245,12 +245,13 @@ class Powerwall(object):
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         pwconfigexpire=self.pwcacheexpire,
+                                                        poolmaxsize=self.poolmaxsize,
                                                         timeout=self.timeout, host=self.host)
                     else:
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
-                                               self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
-                                               self.gw_pwd)
+                                                       self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
+                                                       self.gw_pwd)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = False
                     self.tedapi = self.client.tedapi
