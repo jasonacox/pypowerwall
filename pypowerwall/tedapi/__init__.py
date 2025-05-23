@@ -69,7 +69,14 @@ urllib3.disable_warnings(InsecureRequestWarning)
 GW_IP = "192.168.91.1"
 
 # Rate Limit Codes
-BUSY_CODES: List[HTTPStatus] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
+BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
+RETRY_FORCE_CODES: Final[List[int]] = [int(i) for i in [
+    HTTPStatus.BAD_GATEWAY,
+    HTTPStatus.GATEWAY_TIMEOUT,
+    HTTPStatus.INTERNAL_SERVER_ERROR,
+    HTTPStatus.SERVICE_UNAVAILABLE,
+    HTTPStatus.TOO_MANY_REQUESTS
+]]
 
 # Setup Logging
 log = logging.getLogger(__name__)
@@ -103,12 +110,13 @@ def uses_api_lock(func):
 
 # TEDAPI Class
 class TEDAPI:
-    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-                 pwconfigexpire: int = 5, host: str = GW_IP) -> None:
+    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, poolmaxsize: int = 10,
+                 timeout: int = 5, pwconfigexpire: int = 5, host: str = GW_IP) -> None:
         self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
         self.pwconfigexpire = pwconfigexpire  # seconds to expire config cache
+        self.poolmaxsize = poolmaxsize # maximum size of the connection
         self.pwcache = {}  # holds the cached data for api
         self.timeout = timeout
         self.pwcooldown = 0
@@ -849,16 +857,18 @@ class TEDAPI:
 
     def _init_session(self):
         session = requests.Session()
-        retries = urllib3.Retry(
-            total=5,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            raise_on_status=False
-        )
-        POOL_SIZE: Final[int] = 1
-        adapter = HTTPAdapter(max_retries=retries, pool_connections=POOL_SIZE, pool_maxsize=POOL_SIZE, pool_block=True)
+        if self.poolmaxsize > 0:
+            retries = urllib3.Retry(
+                total=5,
+                backoff_factor=1,
+                status_forcelist=RETRY_FORCE_CODES,
+                raise_on_status=False
+            )
+            adapter = HTTPAdapter(max_retries=retries, pool_connections=self.poolmaxsize, pool_maxsize=self.poolmaxsize, pool_block=True)
+            session.mount("https://", adapter)
+        else:
+            session.headers.update({'Connection': 'close'})  # This disables keep-alive
         session.verify = False
-        session.mount("https://", adapter)
         session.auth = ('Tesla_Energy_Device', self.gw_pwd)
         session.headers.update({'Content-type': 'application/octet-string'})
         return session
@@ -889,8 +899,8 @@ class TEDAPI:
         log.debug(f"Testing Connection to Powerwall Gateway: {self.gw_ip}")
         url = f'https://{self.gw_ip}'
         self.din = None
+        self.session = self._init_session()
         try:
-            self.session = self._init_session()
             resp = self.session.get(url, timeout=5)
             if resp.status_code != HTTPStatus.OK:
                 # Connected but appears to be Powerwall 3
@@ -904,7 +914,6 @@ class TEDAPI:
         return self.din
 
     # Handy Function to access Powerwall Status
-
     def current_power(self, location=None, force=False):
         """
         Get the current power in watts for a location:
