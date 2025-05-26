@@ -52,7 +52,7 @@ import threading
 import time
 from functools import wraps
 from http import HTTPStatus
-from typing import Dict, List
+from typing import Dict, List, Optional, Union
 
 import requests
 import urllib3
@@ -264,7 +264,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_status(self, self_function, force=False):
+    def get_status(self, self_function=None, force=False):
         """
         Get the Powerwall Gateway Status
 
@@ -895,26 +895,36 @@ class TEDAPI:
         return self.din
 
     # Handy Function to access Powerwall Status
-
-    def current_power(self, location=None, force=False):
+    def current_power(self, location: Optional[str] = None, force: bool = False) -> Optional[Union[float, Dict[str, float]]]:
         """
-        Get the current power in watts for a location:
-            BATTERY, SITE, LOAD, SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR
+        Get the current power in watts for a specific location or all locations.
+
+        Args:
+            location: Power location to query. Valid values: BATTERY, SITE, LOAD,
+                    SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR. Case-insensitive.
+            force: Force refresh of status data
+
+        Returns:
+            If location specified: Real power in watts (float) or None if not found
+            If no location: Dictionary mapping locations to power values
         """
         status = self.get_status(force=force)
-        power = lookup(status, ['control', 'meterAggregates'])
-        if not isinstance(power, list):
+        meter_aggregates = lookup(status, ['control', 'meterAggregates'])
+
+        if not isinstance(meter_aggregates, list):
             return None
-        if location:
-            for p in power:
-                if p.get('location') == location.upper():
-                    return p.get('realPowerW')
-        else:
-            # Build a dictionary of all locations
-            power = {}
-            for p in power:
-                power[p.get('location')] = p.get('realPowerW')
-        return power
+
+        # Create mapping of location -> power for efficiency
+        power_map = {
+            meter.get('location', '').upper(): meter.get('realPowerW')
+            for meter in meter_aggregates
+            if meter.get('location') is not None
+        }
+
+        if location is None:
+            return power_map
+
+        return power_map.get(location.upper())
 
 
     def backup_time_remaining(self, force=False):
