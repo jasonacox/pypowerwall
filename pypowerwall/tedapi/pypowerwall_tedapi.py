@@ -351,7 +351,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 status_data=status,
                 meter_config_data=self.tedapi.derive_meter_config(config)
             )
-            for i, data in enumerate(neurio_data[1].values()):
+            i = 1
+            for data in neurio_data[1].values():
                 if data["Location"] != "site":
                     continue
                 current = math.copysign(data.get("InstCurrent", 0), data.get("InstRealPower", 0))
@@ -365,6 +366,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 elif i == 3:
                     i3 = current
                     v3n = voltage
+                i += 1
             nonzero = [x for x in (i1, i2, i3) if x != 0]
             i_site = sum(nonzero) / len(nonzero) if nonzero else 0
             vll_site = compute_LL_voltage(
