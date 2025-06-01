@@ -1,4 +1,4 @@
-# Baisc test for pypowerwall module
+# Basic test for pypowerwall module
 
 import pypowerwall
 
