@@ -343,7 +343,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             i1 = meter_x.get("METER_X_CTA_I", 0)
             i2 = meter_x.get("METER_X_CTB_I", 0)
             i3 = meter_x.get("METER_X_CTC_I", 0)
-            i_site = i1 + i2 + i3
+            i_site = sum(x for x in (i1, i2, i3) if x is not None)
         elif neurio_readings and len(neurio_readings) > 0:
             vll_site = v1n = v2n = v3n = 0
             neurio_data = self.tedapi.aggregate_neurio_data(
