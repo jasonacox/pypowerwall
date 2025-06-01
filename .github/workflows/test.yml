@@ -26,8 +26,11 @@ jobs:
           set -xe
           python -VV
           python -m site
-          python -m pip install --upgrade pip setuptools wheel
-          pip install --upgrade requests protobuf teslapy
+          python -m pip install --upgrade pip
+          pip install --upgrade protobuf pytest requests setuptools teslapy wheel
+
+      - name: "Run unit tests"
+        run: "pytest"
 
       - name: "Run test.py on ${{ matrix.python-version }}"
         run: "python test.py"

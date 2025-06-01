@@ -52,7 +52,7 @@ import threading
 import time
 from functools import wraps
 from http import HTTPStatus
-from typing import Dict, Final, List
+from typing import Dict, Final, List, Optional, Union, Tuple
 
 import requests
 import urllib3
@@ -271,7 +271,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_status(self, self_function, force=False):
+    def get_status(self, self_function=None, force=False):
         """
         Get the Powerwall Gateway Status
 
@@ -907,26 +907,36 @@ class TEDAPI:
         return self.din
 
     # Handy Function to access Powerwall Status
-
-    def current_power(self, location=None, force=False):
+    def current_power(self, location: Optional[str] = None, force: bool = False) -> Optional[Union[float, Dict[str, float]]]:
         """
-        Get the current power in watts for a location:
-            BATTERY, SITE, LOAD, SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR
+        Get the current power in watts for a specific location or all locations.
+
+        Args:
+            location: Power location to query. Valid values: BATTERY, SITE, LOAD,
+                    SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR. Case-insensitive.
+            force: Force refresh of status data
+
+        Returns:
+            If location specified: Real power in watts (float) or None if not found
+            If no location: Dictionary mapping locations to power values
         """
         status = self.get_status(force=force)
-        power = lookup(status, ['control', 'meterAggregates'])
-        if not isinstance(power, list):
+        meter_aggregates = lookup(status, ['control', 'meterAggregates'])
+
+        if not isinstance(meter_aggregates, list):
             return None
-        if location:
-            for p in power:
-                if p.get('location') == location.upper():
-                    return p.get('realPowerW')
-        else:
-            # Build a dictionary of all locations
-            power = {}
-            for p in power:
-                power[p.get('location')] = p.get('realPowerW')
-        return power
+
+        # Create mapping of location -> power for efficiency
+        power_map = {
+            meter.get('location', '').upper(): meter.get('realPowerW')
+            for meter in meter_aggregates
+            if meter.get('location') is not None
+        }
+
+        if location is None:
+            return power_map
+
+        return power_map.get(location.upper())
 
 
     def backup_time_remaining(self, force=False):
@@ -987,7 +997,88 @@ class TEDAPI:
         Get the fan speeds for the Powerwall / Inverter
         """
         return self.extract_fan_speeds(self.get_device_controller(force=force))
+      
 
+    def derive_meter_config(self, config) -> dict:
+        # Build meter Lookup if available
+        meter_config = {}
+        if not "meters" in config:
+            return meter_config
+        # Loop through each meter and use device_serial as the key
+        for meter in config['meters']:
+            if meter.get('type') != "neurio_w2_tcp":
+                continue
+            device_serial = lookup(meter, ['connection', 'device_serial'])
+            if not device_serial:
+                continue
+            # Check to see if we already have this meter in meter_config
+            if device_serial in meter_config:
+                cts = meter.get('cts', [False] * 4)
+                if not isinstance(cts, list):
+                    cts = [False] * 4
+                for i, ct in enumerate(cts):
+                    if not ct:
+                        continue
+                    meter_config[device_serial]['cts'][i] = True
+                    meter_config[device_serial]['location'][i] = meter.get('location', "")
+            else:
+                # New meter, add to meter_config
+                cts = meter.get('cts', [False] * 4)
+                if not isinstance(cts, list):
+                    cts = [False] * 4
+                location = meter.get('location', "")
+                meter_config[device_serial] = {
+                    "type": meter.get('type'),
+                    "location": [location] * 4,
+                    "cts": cts,
+                    "inverted": meter.get('inverted'),
+                    "connection": meter.get('connection'),
+                    "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
+                }
+        return meter_config
+
+
+    def aggregate_neurio_data(self, config_data, status_data, meter_config_data) -> Tuple[dict, dict]:
+        # Create NEURIO block
+        neurio_flat = {}
+        neurio_hierarchy = {}
+        # Loop through each Neurio device serial number
+        for c, n in enumerate(lookup(status_data, ['neurio', 'readings']) or {}, start=1000):
+            # Loop through each CT on the Neurio device
+            sn = n.get('serial', str(c))
+            cts_flat = {}
+            for i, ct in enumerate(n['dataRead'] or {}):
+                # Only show if we have a meter configuration and cts[i] is true
+                cts_bool = lookup(meter_config_data, [sn, 'cts'])
+                if isinstance(cts_bool, list) and i < len(cts_bool):
+                    if not cts_bool[i]:
+                        # Skip this CT
+                        continue
+                factor = lookup(meter_config_data, [sn, 'real_power_scale_factor']) or 1
+                location = lookup(meter_config_data, [sn, 'location'])
+                ct_hierarchy = {
+                    "Index": i,
+                    "InstRealPower": ct.get('realPowerW', 0) * factor,
+                    "InstReactivePower": ct.get('reactivePowerVAR'),
+                    "InstVoltage": ct.get('voltageV'),
+                    "InstCurrent": ct.get('currentA'),
+                    "Location": location[i] if location and len(location) > i else None
+                }
+                neurio_hierarchy[f"CT{i}"] = ct_hierarchy
+                cts_flat.update({f"NEURIO_CT{i}_" + key: value for key, value in ct_hierarchy.items() if key != "Index"})
+            meter_manufacturer = "NEURIO" if lookup(meter_config_data, [sn, "type"]) == "neurio_w2_tcp" else None
+            rest = {
+                "componentParentDin": lookup(config_data, ['vin']),
+                "firmwareVersion": None,
+                "lastCommunicationTime": lookup(n, ['timestamp']),
+                "manufacturer": meter_manufacturer,
+                "meterAttributes": {
+                    "meterLocation": []
+                },
+                "serialNumber": sn
+            }
+            neurio_flat[f"NEURIO--{sn}"] = {**cts_flat, **rest}
+        return (neurio_flat, neurio_hierarchy)
 
     # Vitals API Mapping Function
     def vitals(self, force=False):
@@ -1011,38 +1102,6 @@ class TEDAPI:
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
 
-        # Build meter Lookup if available
-        meter_config = {}
-        if "meters" in config:
-            # Loop through each meter and use device_serial as the key
-            for meter in config['meters']:
-                if meter.get('type') == "neurio_w2_tcp":
-                    device_serial = lookup(meter, ['connection', 'device_serial'])
-                    if device_serial:
-                        # Check to see if we already have this meter in meter_config
-                        if device_serial in meter_config:
-                            cts = meter.get('cts', [False] * 4)
-                            if not isinstance(cts, list):
-                                cts = [False] * 4
-                            for i, ct in enumerate(cts):
-                                if ct:
-                                    meter_config[device_serial]['cts'][i] = True
-                                    meter_config[device_serial]['location'][i] = meter.get('location', "")
-                        else:
-                            # New meter, add to meter_config
-                            cts = meter.get('cts', [False] * 4)
-                            if not isinstance(cts, list):
-                                cts = [False] * 4
-                            location = meter.get('location', "")
-                            meter_config[device_serial] = {
-                                "type": meter.get('type'),
-                                "location": [location] * 4,
-                                "cts": cts,
-                                "inverted": meter.get('inverted'),
-                                "connection": meter.get('connection'),
-                                "real_power_scale_factor": meter.get('real_power_scale_factor', 1)
-                            }
-
         # Create Header
         tesla = {}
         header = {}
@@ -1052,45 +1111,11 @@ class TEDAPI:
             "gateway": self.gw_ip,
             "pyPowerwall": __version__,
         }
-
-        # Create NEURIO block
-        neurio = {}
-        c = 1000
-        # Loop through each Neurio device serial number
-        for n in lookup(status, ['neurio', 'readings']) or {}:
-            # Loop through each CT on the Neurio device
-            sn = n.get('serial', str(c))
-            cts = {}
-            c = c + 1
-            for i, ct in enumerate(n['dataRead'] or {}):
-                # Only show if we have a meter configuration and cts[i] is true
-                cts_bool = lookup(meter_config, [sn, 'cts'])
-                if isinstance(cts_bool, list) and i < len(cts_bool):
-                    if not cts_bool[i]:
-                        # Skip this CT
-                        continue
-                factor = lookup(meter_config, [sn, 'real_power_scale_factor']) or 1
-                device = f"NEURIO_CT{i}_"
-                cts[device + "InstRealPower"] = lookup(ct, ['realPowerW']) * factor
-                cts[device + "InstReactivePower"] = lookup(ct, ['reactivePowerVAR'])
-                cts[device + "InstVoltage"] = lookup(ct, ['voltageV'])
-                cts[device + "InstCurrent"] = lookup(ct, ['currentA'])
-                location = lookup(meter_config, [sn, 'location'])
-                cts[device + "Location"] = location[i] if len(location) > i else None
-            meter_manufacturer = None
-            if lookup(meter_config, [sn, 'type']) == "neurio_w2_tcp":
-                meter_manufacturer = "NEURIO"
-            rest = {
-                "componentParentDin": lookup(config, ['vin']),
-                "firmwareVersion": None,
-                "lastCommunicationTime": lookup(n, ['timestamp']),
-                "manufacturer": meter_manufacturer,
-                "meterAttributes": {
-                    "meterLocation": []
-                },
-                "serialNumber": sn
-            }
-            neurio[f"NEURIO--{sn}"] = {**cts, **rest}
+        neurio = self.aggregate_neurio_data(
+            config_data=config,
+            status_data=status,
+            meter_config_data=self.derive_meter_config(config)
+        )[0]
 
         # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
         pvac = {}
