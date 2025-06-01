@@ -102,6 +102,16 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 
 By contributing, you agree that your contributions will be licensed under the same license as the rest of the project (see `LICENSE`).
 
+## Versioning Policy
+
+This project follows [Semantic Versioning](https://semver.org/). Version numbers are in the format MAJOR.MINOR.PATCH:
+
+- **MAJOR** version when you make incompatible API changes,
+- **MINOR** version when you add functionality in a backwards-compatible manner, and
+- **PATCH** version when you make backwards-compatible bug fixes.
+
+Please update the version number appropriately in your pull request if your change warrants it, and describe the change in `RELEASE.md`.
+
 ## Questions
 
 If you have any questions or need clarification, feel free to open an issue or start a discussion.
