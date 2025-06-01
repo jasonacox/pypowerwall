@@ -46,7 +46,7 @@ def compute_LL_voltage(v1n, v2n, v3n=None):
 # noinspection PyMethodMayBeStatic
 class PyPowerwallTEDAPI(PyPowerwallBase):
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-                 pwconfigexpire: int = 5, poolmaxsize: int = 10, host: str = GW_IP) -> None:
+                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout

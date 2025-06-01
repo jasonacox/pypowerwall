@@ -245,8 +245,8 @@ class Powerwall(object):
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         pwconfigexpire=self.pwcacheexpire,
-                                                        poolmaxsize=self.poolmaxsize,
-                                                        timeout=self.timeout, host=self.host)
+                                                        timeout=self.timeout, host=self.host,
+                                                        poolmaxsize=self.poolmaxsize)
                     else:
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
