@@ -34,14 +34,29 @@ Thank you for your interest in contributing to PyPowerwall! We welcome contribut
   python3 -m venv venv
   source venv/bin/activate
   ```
-- Install dependencies:
+- Install runtime dependencies (required to run the package):
   ```
   pip install -r requirements.txt
   ```
+- (For contributors running tests) Install test dependencies (required to execute unit tests):
+  ```
+  pip install -r test_requirements.txt
+  ```
+
+## Dependency Files: requirements.txt vs. test_requirements.txt
+
+- `requirements.txt` lists the dependencies required to run the PyPowerwall package itself. Install these to use the library or run the main application.
+- `test_requirements.txt` lists additional dependencies needed only for running the unit tests (e.g., pytest, mock libraries). Install these if you plan to run or write tests:
+  ```
+  pip install -r test_requirements.txt
+  ```
+- You typically need both files for full development and testing, but end users only need `requirements.txt`.
 
 ## How to Run Tests
 
+- **Note:** The following applies to the Python library only. The proxy server and other tools have their own testing and validation processes.
 - Tests are located in the `pypowerwall/tests/` directory.
+- Before running tests, ensure you have installed both `requirements.txt` and `test_requirements.txt` dependencies (see above).
 - Run all tests with:
   ```
   pytest
@@ -74,9 +89,17 @@ Thank you for your interest in contributing to PyPowerwall! We welcome contribut
 6. **Submit a Pull Request**  
    Push your branch to your fork and open a pull request against the main repository. Provide a clear description of your changes and reference any related issues.
 
-## Issue Reporting and Feature Requests
+## Issues vs. Discussions
 
-If you find a bug or have a feature request, please [open an issue](https://github.com/jasonacox/pypowerwall/issues) first to discuss your idea before submitting a pull request.
+- **Issues** are for reporting bugs, requesting features, or tracking specific tasks that require action or resolution. Use an issue when you have a concrete problem, bug, or enhancement to propose. Issues should be closed when the problem is resolved, the feature is implemented, or the task is complete.
+
+- **Discussions** are for open-ended conversations, brainstorming, questions, or general feedback that may not require direct action or a code change. Use a discussion when you want to ask for advice, share ideas, or start a broader conversation. Discussions can be closed when the conversation has naturally concluded, a consensus is reached, or the topic is no longer active.
+
+> These are guidelines, not strict rules. If you're unsure, start a discussion—maintainers can help move it to an issue if needed.
+
+## Flexibility and Exceptions
+
+While the guidelines above are generally adhered to, the maintainers are not strict rules lawyers. We value thoughtful contributions and are always open to reasonable exceptions or nuanced cases. If you have a good reason to diverge from a guideline, or if your situation doesn't fit neatly into the rules, please start a conversation—collaboration and flexibility are encouraged.
 
 ## Branch Naming and Commit Messages
 
@@ -100,7 +123,7 @@ Please note that this project is released with a [Contributor Code of Conduct](C
 
 ## Licensing
 
-By contributing, you agree that your contributions will be licensed under the same license as the rest of the project (see `LICENSE`).
+By contributing, you agree that your contributions will be licensed under the same license as the rest of the project (see [`LICENSE`](LICENSE)).
 
 ## Versioning Policy
 
@@ -111,6 +134,14 @@ This project follows [Semantic Versioning](https://semver.org/). Version numbers
 - **PATCH** version when you make backwards-compatible bug fixes.
 
 Please update the version number appropriately in your pull request if your change warrants it, and describe the change in `RELEASE.md`.
+
+## Relationship to Powerwall-Dashboard
+
+PyPowerwall is closely linked with the [Powerwall-Dashboard](https://github.com/jasonacox/powerwall-dashboard) project. Most users will use both together, and many features, bug reports, and enhancements may span both projects. If you encounter an issue or have a suggestion that could affect both, please mention it in your issue or discussion. Maintainers may move or cross-reference issues between the two repositories as needed.
+
+- If you are not sure which project your issue or idea belongs to, start a discussion or open an issue in either repository. The maintainers will help triage and direct it appropriately.
+- When submitting a pull request or issue, please check if a related issue or PR exists in the sister project and reference it if relevant.
+- Bugs and features may migrate between the two projects; collaboration and cross-linking are encouraged.
 
 ## Questions
 
