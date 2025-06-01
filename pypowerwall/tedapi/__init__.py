@@ -1435,6 +1435,39 @@ class TEDAPI:
             }
         }
 
+        # Create TEMSA block - Backup Switch
+        temsa = {}
+        msa = lookup(status, ['esCan', 'bus', 'MSA']) or {}
+        packagePartNumber = msa.get('packagePartNumber', None)
+        packageSerialNumber = msa.get('packageSerialNumber', None)
+        if packageSerialNumber:
+            name = f"TEMSA--{packagePartNumber}--{packageSerialNumber}"
+            temsa[name] = {
+                "METER_Z_CTA_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_I']),
+                "METER_Z_CTA_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_InstReactivePower']),
+                "METER_Z_CTA_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_InstRealPower']),
+                "METER_Z_CTB_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_I']),
+                "METER_Z_CTB_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_InstReactivePower']),
+                "METER_Z_CTB_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_InstRealPower']),
+                "METER_Z_CTC_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_I']),
+                "METER_Z_CTC_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_InstReactivePower']),
+                "METER_Z_CTC_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_InstRealPower']),
+                "METER_Z_LifetimeEnergyExport": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_LifetimeEnergyExport']),
+                "METER_Z_LifetimeEnergyImport": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_LifetimeEnergyImport']),
+                "METER_Z_VL1N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL1N']),
+                "METER_Z_VL2N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL2N']),
+                "METER_Z_VL3N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL3N']),
+                "alerts": lookup(msa, ['alerts', 'active']) or [],
+                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
+                "firmwareVersion": None,
+                "manufacturer": "TESLA",
+                "partNumber": packagePartNumber,
+                "serialNumber": packageSerialNumber,
+                "teslaEnergyEcuAttributes": {
+                    "ecuType": 300
+                }
+            }
+
         # Create TESLA block - tied to TESYNC
         name = f"TESLA--{packageSerialNumber}"
         tesla[name] = {
@@ -1461,6 +1494,7 @@ class TEDAPI:
             **tesla,
             **tesync,
             **tethc,
+            **temsa,
         }
         # Merge in the Powerwall 3 data if available
         if self.pw3:

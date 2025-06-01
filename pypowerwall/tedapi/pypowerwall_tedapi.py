@@ -342,11 +342,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         i_site = i1 = i2 = i3 = 0
         neurio_readings = lookup(status, ("neurio", "readings"))
         if meter_x and not meter_x["isMIA"]:
+            # Meter X: Primary CT measurement
             i1 = meter_x.get("METER_X_CTA_I", 0)
             i2 = meter_x.get("METER_X_CTB_I", 0)
             i3 = meter_x.get("METER_X_CTC_I", 0)
             i_site = sum(x for x in (i1, i2, i3) if x is not None)
         elif neurio_readings and len(neurio_readings) > 0:
+            # Neurio readings - use Neurio data if Meter X is not available
             vll_site = v1n = v2n = v3n = 0
             neurio_data = self.tedapi.aggregate_neurio_data(
                 config_data=config,
@@ -387,11 +389,17 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 sum_vll_solar += v
                 count_solar += 1
         vll_solar = sum_vll_solar / count_solar if count_solar else 0
-        # External PV meter current
+        # Meter Y: External PV meter current
         meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
         yi1 = meter_y.get("METER_Y_CTA_I", 0)
         yi2 = meter_y.get("METER_Y_CTB_I", 0)
         yi3 = meter_y.get("METER_Y_CTC_I", 0)
+        # Meter Z: Backup Switch Transformer (CT) measurement
+        meter_z = lookup(status, ("esCan","bus","SYNC","METER_Z_AcMeasurements")) or {}
+        zi1 = meter_z.get("METER_Z_CTA_I", 0)
+        zi2 = meter_z.get("METER_Z_CTB_I", 0)
+        zi3 = meter_z.get("METER_Z_CTC_I", 0)
+        zi_site = sum(x for x in (zi1, zi2, zi3) if x is not None)
         # Compute battery voltages
         v_battery = lookup(status, ("esCan","bus","PINV")) or []
         sum_vll_battery = 0
@@ -403,16 +411,17 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 count_battery += 1
         vll_battery = sum_vll_battery / count_battery if count_battery else 0
         # Load payload template
+        # TODO: Fix current and voltage calculations
         data = API_METERS_AGGREGATES_STUB
         data['site'].update({
             "last_communication_time": timestamp,
             "instant_power": grid_power,
             "instant_average_voltage": vll_site,
             "instant_average_current": i_site,
-            "i_a_current": i1,
-            "i_b_current": i2,
-            "i_c_current": i3,
-            "instant_total_current": i_site,
+            "i_a_current": (i1 or 0) + (zi1 or 0),
+            "i_b_current": (i2 or 0) + (zi2 or 0),
+            "i_c_current": (i3 or 0) + (zi3 or 0),
+            "instant_total_current": (i_site or 0) + (zi_site or 0),
             "num_meters_aggregated": 1,
             "disclaimer": "voltage and current calculated from tedapi data",
         })

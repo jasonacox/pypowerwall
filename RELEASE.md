@@ -6,6 +6,7 @@
 * Use Neurio for TEDAPI data when Tesla Remote Meter is not present by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/157
 * Initial simple unit test by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/181
 * Add connection pool to TEDAPI by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/177
+* Add METER_Z (Backup Switch) data to vitals and aggregates data.
 
 ## v0.12.12 - Multiple PW3 Fix
 
