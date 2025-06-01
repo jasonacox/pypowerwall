@@ -395,7 +395,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         yi2 = meter_y.get("METER_Y_CTB_I", 0)
         yi3 = meter_y.get("METER_Y_CTC_I", 0)
         # Meter Z: Backup Switch Transformer (CT) measurement
-        meter_z = lookup(status, ("esCan","bus","SYNC","METER_Z_AcMeasurements")) or {}
+        meter_z = lookup(status, ("esCan","bus","MSA","METER_Z_AcMeasurements")) or {}
         zi1 = meter_z.get("METER_Z_CTA_I", 0)
         zi2 = meter_z.get("METER_Z_CTB_I", 0)
         zi3 = meter_z.get("METER_Z_CTC_I", 0)
