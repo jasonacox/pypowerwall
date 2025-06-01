@@ -17,7 +17,7 @@ Thank you for your interest in contributing to PyPowerwall! We welcome contribut
   Use clear, descriptive names for variables, functions, and classes. Add comments where necessary, especially for non-obvious logic.
 
 - **Testing:**  
-  All new features and bug fixes should include appropriate unit tests. Make sure all tests pass before submitting your PR. PRs without tests may not be accepted.
+  We recommend that you thoroughly test your changes before submitting a PR. While unit tests are not strictly required, contributions that include appropriate unit tests are highly appreciated and will receive extra consideration. Make sure all existing tests pass before submitting your PR. PRs without tests may still be accepted if they are well-tested and documented.
 
 - **Release Notes:**  
   For any user-facing changes, please add a summary to the `RELEASE.md` file describing what changed and why.
