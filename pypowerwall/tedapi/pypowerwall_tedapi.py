@@ -418,7 +418,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if v3n == 0:
             v3n = None
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
-        i_site = grid_power / vll_site if vll_site else 0
+        if vll_site == 0:
+            vll_site = None
+        i_site = grid_power / vll_site if vll_site else None
         return {
             "instant_power": grid_power,
             "instant_average_voltage": vll_site,
@@ -439,7 +441,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         v2n = v_load.get("ISLAND_VL2N_Main", 0)
         v3n = v_load.get("ISLAND_VL3N_Main", 0)
         vll_load = compute_LL_voltage(v1n, v2n, v3n)
-        i_load = load_power / vll_load if vll_load else 0
+        if vll_load == 0:
+            vll_load = None
+        i_load = load_power / vll_load if vll_load else None
         return {
             "instant_power": load_power,
             "instant_average_voltage": vll_load,
@@ -464,7 +468,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 sum_vll_solar += v
                 count_solar += 1
         vll_solar = sum_vll_solar / count_solar if count_solar else 0
-        i_solar = solar_power / vll_solar if vll_solar else 0
+        if vll_solar == 0:
+            vll_solar = None
+        i_solar = solar_power / vll_solar if vll_solar else None
         meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
         yi1 = meter_y.get("METER_Y_CTA_I", 0)
         yi2 = meter_y.get("METER_Y_CTB_I", 0)
@@ -493,7 +499,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 sum_vll_battery += v
                 count_battery += 1
         vll_battery = sum_vll_battery / count_battery if count_battery else 0
-        i_battery = battery_power / vll_battery if vll_battery else 0
+        if vll_battery == 0:
+            vll_battery = None
+        i_battery = battery_power / vll_battery if vll_battery else None
         return {
             "instant_power": battery_power,
             "instant_average_voltage": vll_battery,
