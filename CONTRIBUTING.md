@@ -137,11 +137,26 @@ Please update the version number appropriately in your pull request if your chan
 
 ## Relationship to Powerwall-Dashboard
 
-PyPowerwall is closely linked with the [Powerwall-Dashboard](https://github.com/jasonacox/powerwall-dashboard) project. Most users will use both together, and many features, bug reports, and enhancements may span both projects. If you encounter an issue or have a suggestion that could affect both, please mention it in your issue or discussion. Maintainers may move or cross-reference issues between the two repositories as needed.
+PyPowerwall focuses on providing core Python functionality to access Tesla Powerwall and Tesla Solar systems. This repository contains the Python library and proxy server for programmatic and easy access to Powerwall data and control features.
 
-- If you are not sure which project your issue or idea belongs to, start a discussion or open an issue in either repository. The maintainers will help triage and direct it appropriately.
-- When submitting a pull request or issue, please check if a related issue or PR exists in the sister project and reference it if relevant.
-- Bugs and features may migrate between the two projects; collaboration and cross-linking are encouraged.
+The [Powerwall-Dashboard](https://github.com/jasonacox/powerwall-dashboard) project provides a Grafana dashboard for visualizing Powerwall data. It uses PyPowerwall to collect data, stores it in InfluxDB, and displays it in Grafana. Powerwall-Dashboard also manages the container stack needed for the dashboard setup.
+
+Since PyPowerwall and [Powerwall-Dashboard](https://github.com/jasonacox/powerwall-dashboard) work closely together, many features, bugs, and enhancements may affect both projects. Please mention this in your issue or discussion if applicable. Maintainers may move or cross-reference issues between repositories as needed.
+
+**Where to contribute:**
+- PyPowerwall: Changes related to the Python library, API, or proxy server (e.g., new endpoints, bug fixes, data collection improvements)
+- Powerwall-Dashboard: Changes related to dashboard setup, Grafana dashboards, InfluxDB configuration, or container stack management. Additionally, users are encouraged to start or join discussions about the Powerwall system itself or Powerwall Firmware updates (including problems) to that project first.
+- Not sure? Start a discussion in either repository - maintainers will help direct it appropriately
+- When submitting PRs or issues, check for and reference any related items in the sister project
+- Issues may move between projects as needed; cross-project collaboration is encouraged
+
+## Platform and Compatibility Notes
+
+- **Backward Compatibility:**
+  We strive to maintain backward compatibility and avoid breaking existing installations whenever possible. If your contribution introduces a breaking change, please clearly document it and discuss with the maintainers before submitting your PR.
+
+- **Multi-Platform Support:**
+  PyPowerwall aims to support a wide range of platforms, including Raspberry Pi, Linux, Windows, macOS, and appliance-based compute platforms (such as Synology). Contributors are encouraged to consider cross-platform compatibility and, where possible, test changes on multiple platforms. Please note any platform-specific considerations or limitations in your PR description.
 
 ## Questions
 
