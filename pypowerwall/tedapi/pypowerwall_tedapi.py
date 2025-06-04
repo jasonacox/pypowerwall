@@ -437,9 +437,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         """Extract load (home) section using only ISLAND_AcMeasurements for voltage. No per-phase current available."""
         load_power = self.tedapi.current_power(force=force, location="load")
         v_load = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
-        v1n = v_load.get("ISLAND_VL1N_Main", 0)
-        v2n = v_load.get("ISLAND_VL2N_Main", 0)
-        v3n = v_load.get("ISLAND_VL3N_Main", 0)
+        v1n = v_load.get("ISLAND_VL1N_Load", 0)
+        v2n = v_load.get("ISLAND_VL2N_Load", 0)
+        v3n = v_load.get("ISLAND_VL3N_Load", 0)
         vll_load = compute_LL_voltage(v1n, v2n, v3n)
         if vll_load == 0:
             vll_load = None
@@ -453,7 +453,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "i_c_current": 0,
             "instant_total_current": i_load,
             "num_meters_aggregated": 1,
-            "disclaimer": "load: voltage from ISLAND_AcMeasurements, per-phase current unavailable"
+            "disclaimer": "load: voltage from ISLAND_AcMeasurements, current calculated from power",
         }
 
     def _extract_solar_section(self, status, config, force):
@@ -462,11 +462,11 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         v_solar = lookup(status, ("esCan","bus","PVS")) or []
         sum_vll_solar = 0
         count_solar = 0
-        for i in range(len(v_solar)):
-            v = lookup(v_solar[i], ("PVS_Status", "PVS_vLL")) or 0
-            if v:
-                sum_vll_solar += v
-                count_solar += 1
+        for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
+            if not p['packageSerialNumber']:
+                continue
+            sum_vll_solar += lookup(p, ['PVAC_Status', 'PVAC_Vout'])
+            count_solar += 1
         vll_solar = sum_vll_solar / count_solar if count_solar else 0
         if vll_solar == 0:
             vll_solar = None
@@ -484,7 +484,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "i_c_current": yi3,
             "instant_total_current": i_solar,
             "num_meters_aggregated": count_solar,
-            "disclaimer": "solar: voltage from PVS, current from Meter Y"
+            "disclaimer": "solar: voltage from PVAC, calculated current from power",
         }
 
     def _extract_battery_section(self, status, config, force):
@@ -508,7 +508,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "instant_average_current": i_battery,
             "instant_total_current": i_battery,
             "num_meters_aggregated": count_battery,
-            "disclaimer": "battery: voltage from PINV, current calculated"
+            "disclaimer": "battery: voltage from PINV, calculated current from power",
         }
 
     def get_api_operation(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
