@@ -459,39 +459,37 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def _extract_solar_section(self, status, config, force):
         """Extract solar section using PVAC for voltage and current."""
         solar_power = self.tedapi.current_power(force=force, location="solar")
+        v_solar_sum = 0
+        count_solar = 0
+        # Check for PW3 data first
         if self.tedapi.pw3:
-            # PW3 mode - use pw3 vitals data
             pw3_data = self.tedapi.get_pw3_vitals()
-            v_solar_sum = 0
-            count_solar = 0
             for p in pw3_data:
                 if p.startswith("PVAC--"):
                     v = pw3_data[p].get("PVAC_Vout")
                     if v:
                         v_solar_sum += v
                         count_solar += 1
-            vll_solar = v_solar_sum / count_solar if count_solar else 0
-            if vll_solar == 0:
-                vll_solar = None
-            i_solar = solar_power / vll_solar if vll_solar else None
-            yi1 = yi2 = yi3 = 0
-        else:
-            # Non-PW3 mode - use esCan bus data
-            sum_vll_solar = 0
-            count_solar = 0
-            for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
-                if not p['packageSerialNumber']:
-                    continue
-                sum_vll_solar += lookup(p, ['PVAC_Status', 'PVAC_Vout'])
-                count_solar += 1
-            vll_solar = sum_vll_solar / count_solar if count_solar else 0
-            if vll_solar == 0:
-                vll_solar = None
-            i_solar = solar_power / vll_solar if vll_solar else None
-            meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
-            yi1 = meter_y.get("METER_Y_CTA_I", 0)
-            yi2 = meter_y.get("METER_Y_CTB_I", 0)
-            yi3 = meter_y.get("METER_Y_CTC_I", 0)
+        # Check for legacy PVAC data
+        for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
+            if not p['packageSerialNumber']:
+                continue
+            v_solar_sum += lookup(p, ['PVAC_Status', 'PVAC_Vout'])
+            count_solar += 1
+        vll_solar = v_solar_sum / count_solar if count_solar else 0
+        meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
+        yi1 = meter_y.get("METER_Y_CTA_I", 0)
+        yi2 = meter_y.get("METER_Y_CTB_I", 0)
+        yi3 = meter_y.get("METER_Y_CTC_I", 0)
+        # If no voltage data check METER_Y_AcMeasurements
+        if not vll_solar:
+            yv1 = meter_y.get("METER_Y_VL1N", 0)
+            yv2 = meter_y.get("METER_Y_VL2N", 0)
+            yv3 = meter_y.get("METER_Y_VL3N", 0)
+            vll_solar = compute_LL_voltage(yv1, yv2, yv3)
+        if vll_solar == 0:
+            vll_solar = None
+        i_solar = solar_power / vll_solar if vll_solar else None
         return {
             "instant_power": solar_power,
             "instant_average_voltage": vll_solar,
