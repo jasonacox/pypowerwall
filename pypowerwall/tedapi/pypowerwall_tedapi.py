@@ -505,11 +505,21 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def _extract_battery_section(self, status, config, force):
         """Extract battery section using PINV."""
         battery_power = self.tedapi.current_power(force=force, location="battery")
-        v_battery = lookup(status, ("esCan","bus","PINV")) or []
         sum_vll_battery = 0
         count_battery = 0
-        for i in range(len(v_battery)):
-            v = lookup(v_battery[i], ("PINV_Status", "PINV_Vout")) or 0
+        # Check for PW3 data first
+        if self.tedapi.pw3:
+            pw3_data = self.tedapi.get_pw3_vitals()
+            for p in pw3_data:
+                if p.startswith("TEPINV--"):
+                    v = pw3_data[p].get("PINV_Vout")
+                    if v:
+                        sum_vll_battery += v
+                        count_battery += 1
+        # Check for legacy PINV data
+        v_battery = lookup(status, ("esCan","bus","PINV")) or []
+        for p in range(len(v_battery)):
+            v = lookup(v_battery[p], ("PINV_Status", "PINV_Vout")) or 0
             if v:
                 sum_vll_battery += v
                 count_battery += 1
