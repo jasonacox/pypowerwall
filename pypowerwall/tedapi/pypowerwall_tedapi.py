@@ -314,51 +314,95 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return self.tedapi.vitals(force=kwargs.get('force', False))
 
     def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """
+        Return Powerwall-style /api/meters/aggregates using TEDAPI data.
+        Each section (site, load, solar, battery) is handled by a helper for clarity.
+        """
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
         status = self.tedapi.get_status(force=force)
-        # ensure both are dictionary objects
         if not isinstance(config, dict) or not isinstance(status, dict):
             return None
         timestamp = lookup(status, ("system", "time"))
-        solar_power = self.tedapi.current_power(force=force, location="solar")
-        battery_power = self.tedapi.current_power(force=force, location="battery")
-        load_power = self.tedapi.current_power(force=force, location="load")
-        grid_power = self.tedapi.current_power(force=force, location="site")
-        # Compute load (home) voltages
-        v_load = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
-        v1n = v_load.get("ISLAND_VL1N_Main", 0)
-        v2n = v_load.get("ISLAND_VL2N_Main", 0)
-        v3n = v_load.get("ISLAND_VL3N_Main", 0)
-        vll_load = compute_LL_voltage(v1n, v2n, v3n)
-        # Compute site (grid) voltages and current
-        v_site = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
-        v1n = v_site.get("ISLAND_VL1N_Main", 0)
-        v2n = v_site.get("ISLAND_VL2N_Main", 0)
-        v3n = v_site.get("ISLAND_VL3N_Main", 0)
-        vll_site = compute_LL_voltage(v1n, v2n, v3n)
+        data = API_METERS_AGGREGATES_STUB
 
+        # --- Site (Grid) ---
+        site_vals = self._extract_site_section(status, config, force)
+        data['site'].update(site_vals)
+
+        # --- Load (Home) ---
+        load_vals = self._extract_load_section(status, config, force)
+        data['load'].update(load_vals)
+
+        # --- Solar ---
+        solar_vals = self._extract_solar_section(status, config, force)
+        data['solar'].update(solar_vals)
+
+        # --- Battery ---
+        battery_vals = self._extract_battery_section(status, config, force)
+        data['battery'].update(battery_vals)
+
+        # Add timestamp to all
+        for section in (data['site'], data['load'], data['solar'], data['battery']):
+            section['last_communication_time'] = timestamp
+
+        return data
+
+    def _extract_site_section(self, status, config, force):
+        """Extract site (grid) section using Meter X, then Meter Z, then Neurio. Handles 2-phase and 3-phase setups. Sets i_a_current/i_b_current negative if InstRealPower is negative."""
+        grid_power = self.tedapi.current_power(force=force, location="site")
         meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
-        i_site = i1 = i2 = i3 = 0
+        meter_z = lookup(status, ("esCan","bus","MSA","METER_Z_AcMeasurements")) or {}
         neurio_readings = lookup(status, ("neurio", "readings"))
-        if meter_x and not meter_x["isMIA"]:
+        v1n = v2n = v3n = 0
+        i1 = i2 = i3 = 0
+        used_meter = None
+        # Prefer Meter X
+        if meter_x and not meter_x.get("isMIA", False):
+            v_site = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
+            v1n = v_site.get("ISLAND_VL1N_Main", 0)
+            v2n = v_site.get("ISLAND_VL2N_Main", 0)
+            v3n = v_site.get("ISLAND_VL3N_Main", 0)
             i1 = meter_x.get("METER_X_CTA_I", 0)
             i2 = meter_x.get("METER_X_CTB_I", 0)
             i3 = meter_x.get("METER_X_CTC_I", 0)
-            i_site = sum(x for x in (i1, i2, i3) if x is not None)
+            # Set i1 negative if real power is negative
+            inst_real_power_a = meter_x.get("METER_X_CTA_InstRealPower")
+            if inst_real_power_a is not None and inst_real_power_a < 0:
+                i1 = -abs(i1)
+            inst_real_power_b = meter_x.get("METER_X_CTB_InstRealPower")
+            if inst_real_power_b is not None and inst_real_power_b < 0:
+                i2 = -abs(i2)
+            used_meter = "Meter X"
+        # Fallback to Meter Z
+        elif meter_z and not meter_z.get("isMIA", False):
+            v_site = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
+            v1n = v_site.get("ISLAND_VL1N_Main", 0)
+            v2n = v_site.get("ISLAND_VL2N_Main", 0)
+            v3n = v_site.get("ISLAND_VL3N_Main", 0)
+            i1 = meter_z.get("METER_Z_CTA_I", 0)
+            i2 = meter_z.get("METER_Z_CTB_I", 0)
+            i3 = meter_z.get("METER_Z_CTC_I", 0)
+            inst_real_power_a = meter_z.get("METER_Z_CTA_InstRealPower")
+            if inst_real_power_a is not None and inst_real_power_a < 0:
+                i1 = -abs(i1)
+            inst_real_power_b = meter_z.get("METER_Z_CTB_InstRealPower")
+            if inst_real_power_b is not None and inst_real_power_b < 0:
+                i2 = -abs(i2)
+            used_meter = "Meter Z"
+        # Fallback to Neurio
         elif neurio_readings and len(neurio_readings) > 0:
-            vll_site = v1n = v2n = v3n = 0
             neurio_data = self.tedapi.aggregate_neurio_data(
                 config_data=config,
                 status_data=status,
                 meter_config_data=self.tedapi.derive_meter_config(config)
             )
             i = 1
-            for data in neurio_data[1].values():
-                if data["Location"] != "site":
+            for d in neurio_data[1].values():
+                if d["Location"] != "site":
                     continue
-                current = math.copysign(data.get("InstCurrent", 0), data.get("InstRealPower", 0))
-                voltage = data.get("InstVoltage", 0)
+                current = math.copysign(d.get("InstCurrent", 0), d.get("InstRealPower", 0))
+                voltage = d.get("InstVoltage", 0)
                 if i == 1:
                     i1 = current
                     v1n = voltage
@@ -369,43 +413,15 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                     i3 = current
                     v3n = voltage
                 i += 1
-            nonzero = [x for x in (i1, i2, i3) if x != 0]
-            i_site = sum(nonzero) / len(nonzero) if nonzero else 0
-            vll_site = compute_LL_voltage(
-                v1n = v1n,
-                v2n = v2n,
-                v3n = v3n if i == 3 else None
-            )
-
-        # Compute solar (pv) voltages and current
-        v_solar = lookup(status, ("esCan","bus","PVS")) or []
-        sum_vll_solar = 0
-        count_solar = 0
-        for i in range(len(v_solar)):
-            v = lookup(v_solar[i], ("PVS_Status", "PVS_vLL")) or 0
-            if v:
-                sum_vll_solar += v
-                count_solar += 1
-        vll_solar = sum_vll_solar / count_solar if count_solar else 0
-        # External PV meter current
-        meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
-        yi1 = meter_y.get("METER_Y_CTA_I", 0)
-        yi2 = meter_y.get("METER_Y_CTB_I", 0)
-        yi3 = meter_y.get("METER_Y_CTC_I", 0)
-        # Compute battery voltages
-        v_battery = lookup(status, ("esCan","bus","PINV")) or []
-        sum_vll_battery = 0
-        count_battery = 0
-        for i in range(len(v_battery)):
-            v = lookup(v_battery[i], ("PINV_Status", "PINV_Vout")) or 0
-            if v:
-                sum_vll_battery += v
-                count_battery += 1
-        vll_battery = sum_vll_battery / count_battery if count_battery else 0
-        # Load payload template
-        data = API_METERS_AGGREGATES_STUB
-        data['site'].update({
-            "last_communication_time": timestamp,
+            used_meter = "Neurio"
+        # Handle 2-phase (single phase) vs 3-phase
+        if v3n == 0:
+            v3n = None
+        vll_site = compute_LL_voltage(v1n, v2n, v3n)
+        if vll_site == 0:
+            vll_site = None
+        i_site = grid_power / vll_site if vll_site else None
+        return {
             "instant_power": grid_power,
             "instant_average_voltage": vll_site,
             "instant_average_current": i_site,
@@ -414,31 +430,111 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "i_c_current": i3,
             "instant_total_current": i_site,
             "num_meters_aggregated": 1,
-            "disclaimer": "voltage and current calculated from tedapi data",
-        })
-        data['battery'].update({
-            "last_communication_time": timestamp,
-            "instant_power": battery_power,
-            "num_meters_aggregated": count_battery,
-            "instant_average_voltage": vll_battery,
-        })
-        data['load'].update({
-            "last_communication_time": timestamp,
+            "disclaimer": f"site: voltage/current from {used_meter or 'unknown'}"
+        }
+
+    def _extract_load_section(self, status, config, force):
+        """Extract load (home) section using only ISLAND_AcMeasurements for voltage. No per-phase current available."""
+        load_power = self.tedapi.current_power(force=force, location="load")
+        v_load = lookup(status, ("esCan","bus","ISLANDER", "ISLAND_AcMeasurements")) or {}
+        v1n = v_load.get("ISLAND_VL1N_Load", 0)
+        v2n = v_load.get("ISLAND_VL2N_Load", 0)
+        v3n = v_load.get("ISLAND_VL3N_Load", 0)
+        vll_load = compute_LL_voltage(v1n, v2n, v3n)
+        if vll_load == 0:
+            vll_load = None
+        i_load = load_power / vll_load if vll_load else None
+        return {
             "instant_power": load_power,
             "instant_average_voltage": vll_load,
-            "disclaimer": "voltage calculated from tedapi data",
-        })
-        data['solar'].update({
-            "last_communication_time": timestamp,
+            "instant_average_current": i_load,
+            "i_a_current": 0,
+            "i_b_current": 0,
+            "i_c_current": 0,
+            "instant_total_current": i_load,
+            "num_meters_aggregated": 1,
+            "disclaimer": "load: voltage from ISLAND_AcMeasurements, current calculated from power",
+        }
+
+    def _extract_solar_section(self, status, config, force):
+        """Extract solar section using PVAC for voltage and current."""
+        solar_power = self.tedapi.current_power(force=force, location="solar")
+        v_solar_sum = 0
+        count_solar = 0
+        # Check for PW3 data first
+        if self.tedapi.pw3:
+            pw3_data = self.tedapi.get_pw3_vitals()
+            for p in pw3_data:
+                if p.startswith("PVAC--"):
+                    v = pw3_data[p].get("PVAC_Vout")
+                    if v:
+                        v_solar_sum += v
+                        count_solar += 1
+        # Check for legacy PVAC data
+        for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
+            if not p['packageSerialNumber']:
+                continue
+            v_solar_sum += lookup(p, ['PVAC_Status', 'PVAC_Vout'])
+            count_solar += 1
+        vll_solar = v_solar_sum / count_solar if count_solar else 0
+        meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
+        yi1 = meter_y.get("METER_Y_CTA_I", 0)
+        yi2 = meter_y.get("METER_Y_CTB_I", 0)
+        yi3 = meter_y.get("METER_Y_CTC_I", 0)
+        # If no voltage data check METER_Y_AcMeasurements
+        if not vll_solar:
+            yv1 = meter_y.get("METER_Y_VL1N", 0)
+            yv2 = meter_y.get("METER_Y_VL2N", 0)
+            yv3 = meter_y.get("METER_Y_VL3N", 0)
+            vll_solar = compute_LL_voltage(yv1, yv2, yv3)
+        if vll_solar == 0:
+            vll_solar = None
+        i_solar = solar_power / vll_solar if vll_solar else None
+        return {
             "instant_power": solar_power,
-            "num_meters_aggregated": count_solar,
             "instant_average_voltage": vll_solar,
+            "instant_average_current": i_solar,
             "i_a_current": yi1,
             "i_b_current": yi2,
             "i_c_current": yi3,
-            "disclaimer": "voltage and current calculated from tedapi data",
-        })
-        return data
+            "instant_total_current": i_solar,
+            "num_meters_aggregated": count_solar,
+            "disclaimer": "solar: voltage from PVAC, calculated current from power",
+        }
+
+    def _extract_battery_section(self, status, config, force):
+        """Extract battery section using PINV."""
+        battery_power = self.tedapi.current_power(force=force, location="battery")
+        sum_vll_battery = 0
+        count_battery = 0
+        # Check for PW3 data first
+        if self.tedapi.pw3:
+            pw3_data = self.tedapi.get_pw3_vitals()
+            for p in pw3_data:
+                if p.startswith("TEPINV--"):
+                    v = pw3_data[p].get("PINV_Vout")
+                    if v:
+                        sum_vll_battery += v
+                        count_battery += 1
+        # Check for legacy PINV data
+        v_battery = lookup(status, ("esCan","bus","PINV")) or []
+        for p in range(len(v_battery)):
+            v = lookup(v_battery[p], ("PINV_Status", "PINV_Vout")) or 0
+            if v:
+                sum_vll_battery += v
+                count_battery += 1
+        vll_battery = sum_vll_battery / count_battery if count_battery else 0
+        if vll_battery == 0:
+            vll_battery = None
+        i_battery = battery_power / vll_battery if vll_battery else None
+        return {
+            "instant_power": battery_power,
+            "instant_average_voltage": vll_battery,
+            "instant_average_current": i_battery,
+            "instant_total_current": i_battery,
+            "num_meters_aggregated": count_battery,
+            "disclaimer": "battery: voltage from PINV, calculated current from power",
+        }
 
     def get_api_operation(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
@@ -447,7 +543,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             return None
         else:
             default_real_mode = config.get("default_real_mode")
-            backup = lookup(config, ["site_info", "backup_reserve_percent"]) or 0
+            backup = lookup(config, ["site_info", "backup_reserve_percent"])
             data = {
                 "real_mode": default_real_mode,
                 "backup_reserve_percent": backup
@@ -462,10 +558,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             return None
         status = self.tedapi.get_status(force=force)
         grid_status = self.extract_grid_status(status)
-        total_pack_energy = lookup(status, ["control", "systemStatus", "nominalFullPackEnergyWh"]) or 0
-        energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"]) or 0
+        total_pack_energy = lookup(status, ["control", "systemStatus", "nominalFullPackEnergyWh"])
+        energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
         batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
-        battery_count = len(batteryBlocks) or 0
+        battery_count = len(batteryBlocks)
         data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force)
         b = []
