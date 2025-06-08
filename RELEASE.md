@@ -1,5 +1,13 @@
 # RELEASE NOTES
 
+## v0.13.0 - TEDAPI Connection Pool
+
+* Additional values /json endpoint by @erikgieseler in https://github.com/jasonacox/pypowerwall/pull/176
+* Use Neurio for TEDAPI data when Tesla Remote Meter is not present by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/157
+* Initial simple unit test by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/181
+* Add connection pool to TEDAPI by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/177
+* Add METER_Z (Backup Switch) data to vitals and aggregates data.
+
 ## v0.12.12 - Multiple PW3 Fix
 
 * Bug Fix - Logic added in https://github.com/jasonacox/pypowerwall/pull/169 does not iterate through all PW3 strings. This adds logic to handle multiple PW3 string sets. Reported in https://github.com/jasonacox/pypowerwall/issues/172. 

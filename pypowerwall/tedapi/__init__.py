@@ -113,6 +113,7 @@ def uses_api_lock(func):
 class TEDAPI:
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5, 
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,) -> None:
+        """Initialize the TEDAPI client for Powerwall Gateway communication."""
         self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
@@ -135,7 +136,7 @@ class TEDAPI:
 
     # TEDAPI Functions
     def set_debug(self, toggle=True, color=True):
-        """Enable verbose logging"""
+        """Enable or disable verbose logging for TEDAPI."""
         if toggle:
             if color:
                 logging.basicConfig(format='\x1b[31;1m%(levelname)s:%(message)s\x1b[0m', level=logging.DEBUG)
@@ -147,9 +148,7 @@ class TEDAPI:
             log.setLevel(logging.NOTSET)
 
     def get_din(self, force=False):
-        """
-        Get the DIN from the Powerwall Gateway
-        """
+        """Get the Device Identification Number (DIN) from the Powerwall Gateway."""
         # Check Cache
         if not force and "din" in self.pwcachetime:
             if time.time() - self.pwcachetime["din"] < self.pwcacheexpire:
@@ -374,8 +373,7 @@ class TEDAPI:
     @uses_api_lock
     def get_device_controller(self, self_function, force=False):
         """
-        Get the Powerwall Device Controller Status
-
+        Get the Powerwall Device Controller Status.
         Similar to get_status but with additional data:
         {
             "components": {}, // Additional data
@@ -454,12 +452,18 @@ class TEDAPI:
     @uses_api_lock
     def get_firmware_version(self, self_function, force=False, details=False):
         """
-        Get the Powerwall Firmware Version
-
+        Get the Powerwall Firmware Version.
         Args:
             force (bool): Force a refresh of the firmware version
             details (bool): Return additional system information including
                             gateway part number, serial number, and wireless devices
+        Example payload (details=True):
+            {
+                "system": {
+                    "gateway": {"partNumber": ..., "serialNumber": ...},
+                    "din": ..., "version": {"text": ..., "githash": ...}, ...
+                }
+            }
         """
         payload = None
         with acquire_lock_with_backoff(self_function, self.timeout):
@@ -546,9 +550,15 @@ class TEDAPI:
     @uses_api_lock
     def get_components(self, self_function, force=False):
         """
-        Get the Powerwall 3 Device Information
-
-        Note: Provides empty response for previous Powerwall versions
+        Get Powerwall 3 device component information.
+        Example payload:
+            {
+                "components": {
+                    "pch": [...],
+                    "bms": [...],
+                    ...
+                }
+            }
         """
         components = None
         with acquire_lock_with_backoff(self_function, self.timeout):
@@ -609,8 +619,7 @@ class TEDAPI:
 
     def get_pw3_vitals(self, force=False):
         """
-        Get Powerwall 3 Battery Vitals Data
-
+        Get Powerwall 3 Battery Vitals Data.
         Returns:
         {
             "PVAC--{part}--{sn}" {
@@ -786,9 +795,7 @@ class TEDAPI:
 
 
     def get_battery_blocks(self, force=False):
-        """
-        Return Powerwall Battery Blocks
-        """
+        """Return Powerwall battery blocks from configuration."""
         config = self.get_config(force=force)
         battery_blocks = config.get('battery_blocks') or []
         return battery_blocks
@@ -797,12 +804,10 @@ class TEDAPI:
     @uses_api_lock
     def get_battery_block(self, self_function, din=None, force=False):
         """
-        Get the Powerwall 3 Battery Block Information
-
+        Get the Powerwall 3 Battery Block Information.
         Args:
             din (str): DIN of Powerwall 3 to query
             force (bool): Force a refresh of the battery block
-
         Note: Provides 404 response for previous Powerwall versions
         """
         # Make sure we have a DIN
@@ -867,6 +872,7 @@ class TEDAPI:
         return data
 
     def _init_session(self):
+        """Initialize and return a requests.Session for TEDAPI communication."""
         session = requests.Session()
         if self.poolmaxsize > 0:
             retries = urllib3.Retry(
@@ -885,9 +891,7 @@ class TEDAPI:
         return session
 
     def connect(self):
-        """
-        Connect to the Powerwall Gateway
-        """
+        """Connect to the Powerwall Gateway and retrieve the DIN."""
         # Test IP Connection to Powerwall Gateway
         log.debug(f"Testing Connection to Powerwall Gateway: {self.gw_ip}")
         url = f'https://{self.gw_ip}'
@@ -910,12 +914,10 @@ class TEDAPI:
     def current_power(self, location: Optional[str] = None, force: bool = False) -> Optional[Union[float, Dict[str, float]]]:
         """
         Get the current power in watts for a specific location or all locations.
-
         Args:
             location: Power location to query. Valid values: BATTERY, SITE, LOAD,
                     SOLAR, SOLAR_RGM, GENERATOR, CONDUCTOR. Case-insensitive.
             force: Force refresh of status data
-
         Returns:
             If location specified: Real power in watts (float) or None if not found
             If no location: Dictionary mapping locations to power values
@@ -940,9 +942,7 @@ class TEDAPI:
 
 
     def backup_time_remaining(self, force=False):
-        """
-        Get the time remaining in hours
-        """
+        """Get the time remaining in hours."""
         status = self.get_status(force=force)
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
         load = self.current_power('LOAD', force)
@@ -953,9 +953,7 @@ class TEDAPI:
 
 
     def battery_level(self, force=False):
-        """
-        Get the battery level as a percentage
-        """
+        """Get the battery level as a percentage."""
         status = self.get_status(force=force)
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
         nominalFullPackEnergyWh = lookup(status, ['control', 'systemStatus', 'nominalFullPackEnergyWh'])
@@ -967,6 +965,7 @@ class TEDAPI:
 
     # Helper Function
     def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
+        """Extract fan speed signals from device controller data."""
         if not isinstance(data, dict):
             return {}
 
@@ -993,13 +992,12 @@ class TEDAPI:
         return result
 
     def get_fan_speeds(self, force=False):
-        """
-        Get the fan speeds for the Powerwall / Inverter
-        """
+        """Get the fan speeds for the Powerwall or inverter."""
         return self.extract_fan_speeds(self.get_device_controller(force=force))
       
 
     def derive_meter_config(self, config) -> dict:
+        """Build a lookup dictionary for Neurio meter configuration from config."""
         # Build meter Lookup if available
         meter_config = {}
         if not "meters" in config:
@@ -1024,6 +1022,7 @@ class TEDAPI:
             else:
                 # New meter, add to meter_config
                 cts = meter.get('cts', [False] * 4)
+
                 if not isinstance(cts, list):
                     cts = [False] * 4
                 location = meter.get('location', "")
@@ -1039,6 +1038,7 @@ class TEDAPI:
 
 
     def aggregate_neurio_data(self, config_data, status_data, meter_config_data) -> Tuple[dict, dict]:
+        """Aggregate Neurio data from status and config into flat and hierarchical forms."""
         # Create NEURIO block
         neurio_flat = {}
         neurio_hierarchy = {}
@@ -1082,9 +1082,7 @@ class TEDAPI:
 
     # Vitals API Mapping Function
     def vitals(self, force=False):
-        """
-        Use tedapi data to create a vitals API dictionary
-        """
+        """Create a vitals API dictionary using TEDAPI data."""
         def calculate_ac_power(Vpeak, Ipeak):
             Vrms = Vpeak / math.sqrt(2)
             Irms = Ipeak / math.sqrt(2)
@@ -1435,6 +1433,39 @@ class TEDAPI:
             }
         }
 
+        # Create TEMSA block - Backup Switch
+        temsa = {}
+        msa = lookup(status, ['esCan', 'bus', 'MSA']) or {}
+        packagePartNumber = msa.get('packagePartNumber', None)
+        packageSerialNumber = msa.get('packageSerialNumber', None)
+        if packageSerialNumber:
+            name = f"TEMSA--{packagePartNumber}--{packageSerialNumber}"
+            temsa[name] = {
+                "METER_Z_CTA_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_I']),
+                "METER_Z_CTA_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_InstReactivePower']),
+                "METER_Z_CTA_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_InstRealPower']),
+                "METER_Z_CTB_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_I']),
+                "METER_Z_CTB_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_InstReactivePower']),
+                "METER_Z_CTB_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_InstRealPower']),
+                "METER_Z_CTC_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_I']),
+                "METER_Z_CTC_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_InstReactivePower']),
+                "METER_Z_CTC_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_InstRealPower']),
+                "METER_Z_LifetimeEnergyExport": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_LifetimeEnergyExport']),
+                "METER_Z_LifetimeEnergyImport": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_LifetimeEnergyImport']),
+                "METER_Z_VL1N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL1N']),
+                "METER_Z_VL2N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL2N']),
+                "METER_Z_VL3N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL3N']),
+                "alerts": lookup(msa, ['alerts', 'active']) or [],
+                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
+                "firmwareVersion": None,
+                "manufacturer": "TESLA",
+                "partNumber": packagePartNumber,
+                "serialNumber": packageSerialNumber,
+                "teslaEnergyEcuAttributes": {
+                    "ecuType": 300
+                }
+            }
+
         # Create TESLA block - tied to TESYNC
         name = f"TESLA--{packageSerialNumber}"
         tesla[name] = {
@@ -1461,6 +1492,7 @@ class TEDAPI:
             **tesla,
             **tesync,
             **tethc,
+            **temsa,
         }
         # Merge in the Powerwall 3 data if available
         if self.pw3:

@@ -2,7 +2,7 @@
 
 ![Docker Pulls](https://img.shields.io/docker/pulls/jasonacox/pypowerwall)
 
-This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway and will proxy API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level), and many others (see [HELP](https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md) for full list). With the instructions below, you can containerize this proxy and run it as an endpoint for tools like telegraf to pull metrics without needing to authenticate.
+This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway and will proxy API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level), and many others (see [API](https://github.com/jasonacox/pypowerwall/blob/main/proxy/API.md) for full list). With the instructions below, you can containerize this proxy and run it as an endpoint for tools like telegraf to pull metrics without needing to authenticate.
 
 **Cache**: Because pyPowerwall is designed to cache the auth and high frequency API calls and use HTTP persistent connections. This will help reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway. Logic in pypowerwall will also activate cooldown modes if the Gateway responds with errors indicating overload.
 
@@ -134,7 +134,7 @@ The Proxy will pass authenticated calls through to the Powerwall Web Interface a
 
 [![flow.png](https://raw.githubusercontent.com/jasonacox/pypowerwall/main/docs/flow.png)](https://raw.githubusercontent.com/jasonacox/pypowerwall/main/docs/flow.png)
 
-This is available by directly accessing the proxy endpoint, https://localhost:8675 (replace localhost with the address of host running pyPowerwall Proxy). You can embed this animation within an iFrame. See [web/example.html](web/example.html).
+This is available by directly accessing the proxy endpoint, https://localhost:8675 (replace localhost with the address of host running pyPowerWall Proxy). You can embed this animation within an iFrame. See [web/example.html](web/example.html).
 
 ## Browser Cache Control
 
@@ -178,7 +178,7 @@ Content does not render in iFrame or prompts you for a login:
 
 ## API Help
 
-Documentation for using the API is located in [HELP.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md#release-notes).
+Documentation for using the API is located in [API.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/API.md#release-notes).
 
 ## Environmental Settings
 

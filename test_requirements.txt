@@ -1,0 +1,3 @@
+# Additional dependencies required for running tests only
+pytest
+# Add any other test-only dependencies below
