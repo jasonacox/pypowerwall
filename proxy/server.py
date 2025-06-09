@@ -54,7 +54,7 @@ from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 
-BUILD = "t74"
+BUILD = "t75"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -161,11 +161,6 @@ else:
 log = logging.getLogger("proxy")
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 log.setLevel(logging.INFO)
-
-# Ensure api_base_url ends with a /
-if not api_base_url.endswith('/'):
-    log.error("PROXY_BASE_URL must end with a '/'. Current value: '%s'" % api_base_url)
-    sys.exit(1)
 
 if debugmode:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d - DEBUG" %
