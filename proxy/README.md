@@ -218,7 +218,7 @@ Proxy Settings
 
 ## Control Mode
 
-If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will attempt to connect to the cloud in addition to local mode setup (if you are using local mode). The `PW_EMAIL` must match your Tesla account and you need to run **cloud setup** before using this mode.
+If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will attempt to connect to the cloud in addition to local mode setup (if you are using local mode). The `PW_EMAIL` must match your Tesla account and you need to **Setup Cloud** (see details below in script) before using this mode.
 
 _WARNING_: Activating control mode means that the proxy can make changes to your system. This will be available to anyone who can access the proxy. For safety reasons, this mode is disabled by default and should be used with caution.
 
