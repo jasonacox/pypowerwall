@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t75 (12 Jun 2025)
+
+* Fix errant API base URL check - This PR fixes an API base URL check by removing an unreachable validation branch.
+
 ### Proxy t74 (12 May 2025)
 
 * Add additional data elements to `/json` route:
