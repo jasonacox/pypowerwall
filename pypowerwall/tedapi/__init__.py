@@ -1506,61 +1506,60 @@ class TEDAPI:
         """
         Get the list of battery blocks from the Powerwall Gateway
         """
-        status = self.get_status(force=force)
-        config = self.get_config(force=force)
-
-        if not isinstance(status, dict) or not isinstance(config, dict):
+        vitals = self.vitals(force=force)
+        if not isinstance(vitals, dict):
             return None
         block = {}
-        # Loop through each THC device serial number
-        for i, p in enumerate(lookup(status, ['esCan', 'bus', 'THC']) or {}):
-            if not p['packageSerialNumber']:
-                continue
-            packagePartNumber = p.get('packagePartNumber', str(i))
-            packageSerialNumber = p.get('packageSerialNumber', str(i))
-            # THC block
-            name = f"{packagePartNumber}--{packageSerialNumber}"
-            block[name] = {
-                "Type": "",
-                "PackagePartNumber": packagePartNumber,
-                "PackageSerialNumber": packageSerialNumber,
-                "disabled_reasons": [],
-                "pinv_state": None,
-                "pinv_grid_state": None,
-                "nominal_energy_remaining": None,
-                "nominal_full_pack_energy": None,
-                "p_out": None,
-                "q_out": None,
-                "v_out": None,
-                "f_out": None,
-                "i_out": None,
-                "energy_charged": None,
-                "energy_discharged": None,
-                "off_grid": None,
-                "vf_mode": None,
-                "wobble_detected": None,
-                "charge_power_clamped": None,
-                "backup_ready": None,
-                "OpSeqState": None,
-                "version": None
-            }
-            # POD block
-            pod = lookup(status, ['esCan', 'bus', 'POD'])[i]
-            energy_remaining = lookup(pod, ['POD_EnergyStatus', 'POD_nom_energy_remaining'])
-            full_pack_energy = lookup(pod, ['POD_EnergyStatus', 'POD_nom_full_pack_energy'])
-            block[name].update({
-                "nominal_energy_remaining": energy_remaining,
-                "nominal_full_pack_energy": full_pack_energy,
-            })
-            # INV block
-            pinv = lookup(status, ['esCan', 'bus', 'PINV'])[i]
-            block[name].update({
-                "f_out": lookup(pinv, ['PINV_Status', 'PINV_Fout']),
-                "pinv_state": lookup(p, ['PINV_Status', 'PINV_State']),
-                "pinv_grid_state": lookup(p, ['PINV_Status', 'PINV_GridState']),
-                "p_out": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
-                "v_out": lookup(pinv, ['PINV_Status', 'PINV_Vout']),
-            })
+
+        # Walk through the vitals dictionary and create blocks
+        for key, _ in vitals.items():
+            if key.startswith("TEPINV--"):
+                # Extract the part and serial numbers from the key
+                parts = key.split("--")
+                if len(parts) < 3:
+                    continue
+                packagePartNumber = parts[1]
+                packageSerialNumber = parts[2]
+                name = f"{packagePartNumber}--{packageSerialNumber}"
+                # Extract key information from TEPINV
+                f_out = lookup(vitals, [key, 'PINV_Fout'])
+                pinv_state = lookup(vitals, [key, 'PINV_State'])
+                pinv_grid_state = lookup(vitals, [key, 'PINV_GridState'])
+                p_out = lookup(vitals, [key, 'PINV_Pout'])
+                v_out = lookup(vitals, [key, 'PINV_Vout'])
+                block[name] = {
+                    "Type": "",
+                    "PackagePartNumber": packagePartNumber,
+                    "PackageSerialNumber": packageSerialNumber,
+                    "disabled_reasons": [],
+                    "pinv_state": pinv_state,
+                    "pinv_grid_state": pinv_grid_state,
+                    "nominal_energy_remaining": None,
+                    "nominal_full_pack_energy": None,
+                    "p_out": p_out,
+                    "q_out": None,
+                    "v_out": v_out,
+                    "f_out": f_out,
+                    "i_out": None,
+                    "energy_charged": None,
+                    "energy_discharged": None,
+                    "off_grid": None,
+                    "vf_mode": None,
+                    "wobble_detected": None,
+                    "charge_power_clamped": None,
+                    "backup_ready": None,
+                    "OpSeqState": None,
+                    "version": None
+                }
+                # See if there is a TEPOD block for this TEPINV
+                tepod_key = f"TEPOD--{packagePartNumber}--{packageSerialNumber}"
+                if tepod_key in vitals:
+                    nominal_energy_remaining = lookup(vitals, [tepod_key, 'POD_nom_energy_remaining'])
+                    nominal_full_pack_energy = lookup(vitals, [tepod_key, 'POD_nom_full_pack_energy'])
+                    block[name].update({
+                        "nominal_energy_remaining": nominal_energy_remaining,
+                        "nominal_full_pack_energy": nominal_full_pack_energy,
+                    })
         return block
 
     # End of TEDAPI Class

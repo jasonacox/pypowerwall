@@ -373,6 +373,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             inst_real_power_b = meter_x.get("METER_X_CTB_InstRealPower")
             if inst_real_power_b is not None and inst_real_power_b < 0:
                 i2 = -abs(i2)
+            inst_real_power_c = meter_x.get("METER_X_CTC_InstRealPower")
+            if inst_real_power_c is not None and inst_real_power_c < 0:
+                i3 = -abs(i3)
             used_meter = "Meter X"
         # Fallback to Meter Z
         elif meter_z and not meter_z.get("isMIA", False):
@@ -389,6 +392,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             inst_real_power_b = meter_z.get("METER_Z_CTB_InstRealPower")
             if inst_real_power_b is not None and inst_real_power_b < 0:
                 i2 = -abs(i2)
+            inst_real_power_c = meter_z.get("METER_Z_CTC_InstRealPower")
+            if inst_real_power_c is not None and inst_real_power_c < 0:
+                i3 = -abs(i3)
             used_meter = "Meter Z"
         # Fallback to Neurio
         elif neurio_readings and len(neurio_readings) > 0:
