@@ -3,6 +3,8 @@
 ## v0.13.1 - TEDAPI Battery Blocks
 
 * Fix missing battery_blocks data on PW3 with Multiple Powerwalls in Local Mode in https://github.com/jasonacox/pypowerwall/issues/131
+* Fix errant API base URL check. by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/185
+* Update TEDAPI to pull battery blocks from vitals for PW3 Systems by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/184
 
 ## v0.13.0 - TEDAPI Updates
 
