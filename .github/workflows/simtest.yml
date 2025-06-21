@@ -36,5 +36,5 @@ jobs:
           pip install --upgrade -r requirements.txt
           pip install --upgrade -r test_requirements.txt
 
-      - name: "Run test.py on ${{ matrix.python-version }}"
+      - name: "Run example.py on ${{ matrix.python-version }}"
         run: "python example.py"
