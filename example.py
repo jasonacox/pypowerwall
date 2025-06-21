@@ -102,29 +102,31 @@ system_status = pw.system_status()
 print("System Status: %r\n" % system_status)
 
 # --- Key System Status Data ---
-print("Battery Capacity: %0.2f kWh" % (system_status.get('nominal_full_pack_energy', 0) / 1000.0))
-print("Battery Energy Remaining: %0.2f kWh" % (system_status.get('nominal_energy_remaining', 0) / 1000.0))
-print("Max Charge Power: %0.2f kW" % (system_status.get('max_charge_power', 0) / 1000.0))
-print("Max Discharge Power: %0.2f kW" % (system_status.get('max_discharge_power', 0) / 1000.0))
-print("Grid Status: %s" % system_status.get('system_island_state', ''))
-print("Available Battery Blocks: %d" % system_status.get('available_blocks', 0))
-
-# Print per-battery block details if present
-battery_blocks = system_status.get('battery_blocks', [])
-if battery_blocks:
-    print("\nBattery Blocks:")
-    for i, block in enumerate(battery_blocks, 1):
-        print(f" Block {i}:")
-        print(f"   Serial: {block.get('PackageSerialNumber', '')}")
-        print(f"   Nominal Full Pack Energy: {block.get('nominal_full_pack_energy', 0)/1000.0:.2f} kWh")
-        print(f"   Nominal Energy Remaining: {block.get('nominal_energy_remaining', 0)/1000.0:.2f} kWh")
-        print(f"   Power Output: {block.get('p_out', 0)} W")
-        print(f"   Voltage Output: {block.get('v_out', 0)} V")
-        print(f"   Frequency Output: {block.get('f_out', 0)} Hz")
-        print(f"   Inverter State: {block.get('pinv_state', '')}")
-        print(f"   Grid State: {block.get('pinv_grid_state', '')}")
-        print(f"   Backup Ready: {block.get('backup_ready', False)}")
-        print(f"   Version: {block.get('version', '')}")
+if system_status:
+    print("Battery Capacity: %0.2f kWh" % (system_status.get('nominal_full_pack_energy', 0) / 1000.0))
+    print("Battery Energy Remaining: %0.2f kWh" % (system_status.get('nominal_energy_remaining', 0) / 1000.0))
+    print("Max Charge Power: %0.2f kW" % (system_status.get('max_charge_power', 0) / 1000.0))
+    print("Max Discharge Power: %0.2f kW" % (system_status.get('max_discharge_power', 0) / 1000.0))
+    print("Grid Status: %s" % system_status.get('system_island_state', ''))
+    print("Available Battery Blocks: %d" % system_status.get('available_blocks', 0))
+    # Print per-battery block details if present
+    battery_blocks = system_status.get('battery_blocks', [])
+    if battery_blocks:
+        print("\nBattery Blocks:")
+        for i, block in enumerate(battery_blocks, 1):
+            print(f" Block {i}:")
+            print(f"   Serial: {block.get('PackageSerialNumber', '')}")
+            print(f"   Nominal Full Pack Energy: {block.get('nominal_full_pack_energy', 0)/1000.0:.2f} kWh")
+            print(f"   Nominal Energy Remaining: {block.get('nominal_energy_remaining', 0)/1000.0:.2f} kWh")
+            print(f"   Power Output: {block.get('p_out', 0)} W")
+            print(f"   Voltage Output: {block.get('v_out', 0)} V")
+            print(f"   Frequency Output: {block.get('f_out', 0)} Hz")
+            print(f"   Inverter State: {block.get('pinv_state', '')}")
+            print(f"   Grid State: {block.get('pinv_grid_state', '')}")
+            print(f"   Backup Ready: {block.get('backup_ready', False)}")
+            print(f"   Version: {block.get('version', '')}")
+else:
+    print("System Status unavailable. Skipping battery details.")
 
 # --- Explore Further ---
 # Uncomment below to see all available methods and attributes:
