@@ -127,71 +127,86 @@ Note: pyPowerwall installation will attempt to install these required python pac
 ## Programming with pyPowerwall
 
 After importing pypowerwall, you simply create a handle for your Powerwall device 
-and call function to poll data.  Here is an example:
+and call function to poll data. A simple examples is below or see [example.py](example.py) for an extended version:
 
 ```python
-    import pypowerwall
+import pypowerwall
 
-    # Optional: Turn on Debug Mode
-    # pypowerwall.set_debug(True)
+# Optional: Turn on Debug Mode
+# pypowerwall.set_debug(True)
 
-    # Option 1 - LOCAL MODE - Customer Login (Powerwall 2 and + only)
-    password="password"
-    email="email@example.com"
-    host = "10.0.1.123"               # Address of your Powerwall Gateway
-    timezone = "America/Los_Angeles"  # Your local timezone
+# Select option you wish to use.
+OPTION = 4
 
-    # Option 2 - FLEETAPI MODE - Requires Setup (Powerwall & Solar-Only)
-    host = password = email = ""
-    timezone = "America/Los_Angeles" 
+# Connect to Powerwall based on selected option
+if OPTION == 1:
+   # Option 1 - LOCAL MODE - Customer Login (Powerwall 2 and + only)
+   password="password"
+   email="email@example.com"
+   host = "10.0.1.123"               # Address of your Powerwall Gateway
+   timezone = "America/Los_Angeles"  # Your local timezone
+   gw_pwd = None
 
-    # Option 3 - CLOUD MODE - Requires Setup (Powerwall & Solar-Only)
-    host = password = ""
-    email='email@example.com'
-    timezone = "America/Los_Angeles"
+if OPTION == 2:
+   # Option 2 - FLEETAPI MODE - Requires Setup (Powerwall & Solar-Only)
+   host = password = email = ""
+   timezone = "America/Los_Angeles"
+   gw_pwd = None 
 
-    # Option 4 - TEDAPI MODE - Requires access to Gateway (Powerwall 2, + and 3)
-    host = "192.168.91.1"
-    gw_pw = "ABCDEFGHIJ"
-    # Uncomment the following for hybrid mode (Powerwall 2 and +)
-    #password="password"
-    #email="email@example.com"
+if OPTION == 3:
+   # Option 3 - CLOUD MODE - Requires Setup (Powerwall & Solar-Only)
+   host = password = ""
+   email='email@example.com'
+   timezone = "America/Los_Angeles"
+   gw_pwd = None
 
-    # Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
-    pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd, auto_select=True)
+if OPTION == 4:
+   # Option 4 - TEDAPI MODE - Requires access to Gateway (Powerwall 2, + and 3)
+   host = "192.168.91.1"
+   gw_pwd = "ABCDEFGHIJ"
+   password = email = ""
+   timezone = "America/Los_Angeles"
+   # Uncomment the following for hybrid mode (Powerwall 2 and +)
+   #password="password"
+   #email="email@example.com"
 
-    # Some System Info
-    print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
-    print("System Uptime: %s\n" % pw.uptime())
+# Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
+pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd, auto_select=True)
 
-    # Pull Sensor Power Data
-    grid = pw.grid()
-    solar = pw.solar()
-    battery = pw.battery()
-    home = pw.home()
+# Some System Info
+print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
+print("System Uptime: %s\n" % pw.uptime())
 
-    # Display Data
-    print("Battery power level: %0.0f%%" % pw.level())
-    print("Combined power metrics: %r" % pw.power())
-    print("")
+# Pull Sensor Power Data
+grid = pw.grid()
+solar = pw.solar()
+battery = pw.battery()
+home = pw.home()
 
-    # Display Power in kW
-    print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
-    print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
-    print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
-    print("Home Power: %0.2fkW" % (float(home)/1000.0))
-    print("")
+# Display Data
+print("Battery power level: %0.0f%%" % pw.level())
+print("Combined power metrics: %r" % pw.power())
+print("")
 
-    # Raw JSON Payload Examples
-    print("Grid raw: %r\n" % pw.grid(verbose=True))
-    print("Solar raw: %r\n" % pw.solar(verbose=True))
+# Display Power in kW
+print("Grid Power: %0.2fkW" % (float(grid)/1000.0))
+print("Solar Power: %0.2fkW" % (float(solar)/1000.0))
+print("Battery Power: %0.2fkW" % (float(battery)/1000.0))
+print("Home Power: %0.2fkW" % (float(home)/1000.0))
+print("")
 
-    # Display Device Vitals
-    print("Vitals: %r\n" % pw.vitals())
+# Raw JSON Payload Examples
+print("Grid raw: %r\n" % pw.grid(verbose=True))
+print("Solar raw: %r\n" % pw.solar(verbose=True))
 
-    # Display String Data
-    print("String Data: %r\n" % pw.strings())
+# Display Device Vitals
+print("Vitals: %r\n" % pw.vitals())
 
+# Display String Data
+print("String Data: %r\n" % pw.strings())
+
+# Display System Status (e.g. Battery Capacity)
+print("System Status: %r\n" % pw.system_status())
 ```
 
 ### pyPowerwall Module Class and Functions 
