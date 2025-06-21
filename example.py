@@ -29,7 +29,7 @@ mode = os.getenv('POWERWALL_MODE', 'local')
 if mode == "local":
     password = "password"
     email = "email@example.com"
-    host = "10.0.1.123"               # Address of your Powerwall Gateway
+    host = "localhost"                # Address of your Powerwall Gateway
     timezone = "America/Los_Angeles"  # Your local timezone
     gw_pwd = None
 
@@ -37,7 +37,7 @@ if mode == "local":
 if mode == "fleetapi":
     host = password = email = ""
     timezone = "America/Los_Angeles"
-    gw_pwd = None 
+    gw_pwd = None
 
 # Option 3 - CLOUD MODE - Requires Setup (Powerwall & Solar-Only)
 if mode == "cloud":
