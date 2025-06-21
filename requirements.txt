@@ -2,3 +2,7 @@
 requests
 protobuf>=3.20.0
 teslapy
+python-dotenv
+pyroute2
+bs4
+python-dateutil

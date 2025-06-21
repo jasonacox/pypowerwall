@@ -26,8 +26,8 @@ jobs:
           set -xe
           python -VV
           python -m site
-          python -m pip install --upgrade pip
-          pip install --upgrade protobuf pytest requests setuptools teslapy wheel
+          python -m pip install --upgrade pip setuptools wheel
+          pip install --upgrade -r requirements.txt
 
       - name: "Run unit tests"
         run: "pytest"
