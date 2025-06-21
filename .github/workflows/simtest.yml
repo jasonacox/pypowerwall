@@ -34,6 +34,7 @@ jobs:
           python -m site
           python -m pip install --upgrade pip setuptools wheel
           pip install --upgrade -r requirements.txt
+          pip install --upgrade -r test_requirements.txt
 
       - name: "Run test.py on ${{ matrix.python-version }}"
         run: "python example.py"
