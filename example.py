@@ -103,12 +103,16 @@ print("System Status: %r\n" % system_status)
 
 # --- Key System Status Data ---
 if system_status:
-    print("Battery Capacity: %0.2f kWh" % (system_status.get('nominal_full_pack_energy', 0) / 1000.0))
-    print("Battery Energy Remaining: %0.2f kWh" % (system_status.get('nominal_energy_remaining', 0) / 1000.0))
-    print("Max Charge Power: %0.2f kW" % (system_status.get('max_charge_power', 0) / 1000.0))
-    print("Max Discharge Power: %0.2f kW" % (system_status.get('max_discharge_power', 0) / 1000.0))
+    def safe_get(key, default=0):
+        value = system_status.get(key, default)
+        return value if value is not None else default
+
+    print("Battery Capacity: %0.2f kWh" % (safe_get('nominal_full_pack_energy') / 1000.0))
+    print("Battery Energy Remaining: %0.2f kWh" % (safe_get('nominal_energy_remaining') / 1000.0))
+    print("Max Charge Power: %0.2f kW" % (safe_get('max_charge_power') / 1000.0))
+    print("Max Discharge Power: %0.2f kW" % (safe_get('max_discharge_power') / 1000.0))
     print("Grid Status: %s" % system_status.get('system_island_state', ''))
-    print("Available Battery Blocks: %d" % system_status.get('available_blocks', 0))
+    print("Available Battery Blocks: %d" % safe_get('available_blocks'))
     # Print per-battery block details if present
     battery_blocks = system_status.get('battery_blocks', [])
     if battery_blocks:
