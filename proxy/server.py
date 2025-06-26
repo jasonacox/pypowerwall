@@ -35,6 +35,13 @@
     is disabled by default and should be used with caution.
     Set: PW_CONTROL_SECRET to enable this mode.
 
+ Error Handling
+    Global exception handling has been implemented for all pypowerwall 
+    function calls to provide clean error logging instead of deep stack 
+    traces. Connection errors, API errors, and unexpected exceptions are 
+    caught and logged with descriptive messages while maintaining API 
+    functionality through graceful error responses.
+
 """
 import datetime
 import json
@@ -53,8 +60,11 @@ from urllib.parse import urlparse, parse_qs
 from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
+from pypowerwall.exceptions import *
+from pypowerwall.tedapi.exceptions import *
+from pypowerwall.fleetapi.exceptions import *
 
-BUILD = "t75"
+BUILD = "t76"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -172,6 +182,40 @@ else:
              (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
 
+# Global wrapper for pypowerwall function calls
+def safe_pw_call(pw_func, *args, **kwargs):
+    """
+    Safely call a pypowerwall function with global exception handling.
+    Returns None on any exception and logs a clean error message.
+    """
+    global proxystats
+    try:
+        return pw_func(*args, **kwargs)
+    except (PyPowerwallInvalidConfigurationParameter, 
+            InvalidBatteryReserveLevelException,
+            PyPowerwallTEDAPINoTeslaAuthFile,
+            PyPowerwallTEDAPITeslaNotConnected, 
+            PyPowerwallTEDAPINotImplemented,
+            PyPowerwallTEDAPIInvalidPayload,
+            PyPowerwallFleetAPINoTeslaAuthFile,
+            PyPowerwallFleetAPITeslaNotConnected,
+            PyPowerwallFleetAPINotImplemented,
+            PyPowerwallFleetAPIInvalidPayload) as e:
+        func_name = getattr(pw_func, '__name__', str(pw_func))
+        log.error(f"Powerwall API Error in {func_name}: {str(e)}")
+        proxystats['errors'] = proxystats['errors'] + 1
+        return None
+    except (ConnectionError, TimeoutError, OSError) as e:
+        func_name = getattr(pw_func, '__name__', str(pw_func))
+        log.error(f"Connection Error in {func_name}: {str(e)}")
+        proxystats['timeout'] = proxystats['timeout'] + 1
+        return None
+    except Exception as e:
+        func_name = getattr(pw_func, '__name__', str(pw_func))
+        log.error(f"Unexpected error in {func_name}: {type(e).__name__}: {str(e)}")
+        proxystats['errors'] = proxystats['errors'] + 1
+        return None
+
 # Ensure api_base_url ends with a /
 if not api_base_url.endswith('/'):
     api_base_url += '/'
@@ -208,7 +252,7 @@ try:
                                cachefile=cachefile, auto_select=True,
                                retry_modes=True, gw_pwd=gw_pwd)
 except Exception as e:
-    log.error(e)
+    log.error(f"Powerwall Connection Error: {str(e)}")
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
     while True:
         try:
@@ -216,7 +260,7 @@ except Exception as e:
         except (KeyboardInterrupt, SystemExit):
             sys.exit(0)
 
-site_name = pw.site_name() or "Unknown"
+site_name = safe_pw_call(pw.site_name) or "Unknown"
 if pw.cloudmode or pw.fleetapi:
     if pw.fleetapi:
         proxystats['mode'] = "FleetAPI"
@@ -320,18 +364,20 @@ class Handler(BaseHTTPRequestHandler):
                                 # ensure value is an integer
                                 if not value:
                                     # return current reserve level in json string
-                                    message = '{"reserve": %s}' % pw_control.get_reserve()
+                                    message = '{"reserve": %s}' % (safe_pw_call(pw_control.get_reserve) or 0)
                                 elif value.isdigit():
-                                    message = json.dumps(pw_control.set_reserve(int(value)))
+                                    result = safe_pw_call(pw_control.set_reserve, int(value))
+                                    message = json.dumps(result if result is not None else {"error": "Failed to set reserve"})
                                     log.info(f"Control Command: Set Reserve to {value}")
                                 else:
                                     message = '{"error": "Control Command Value Invalid"}'
                             elif action == 'mode':
                                 if not value:
                                     # return current mode in json string
-                                    message = '{"mode": "%s"}' % pw_control.get_mode()
+                                    message = '{"mode": "%s"}' % (safe_pw_call(pw_control.get_mode) or "unknown")
                                 elif value in ['self_consumption', 'backup', 'autonomous']:
-                                    message = json.dumps(pw_control.set_mode(value))
+                                    result = safe_pw_call(pw_control.set_mode, value)
+                                    message = json.dumps(result if result is not None else {"error": "Failed to set mode"})
                                     log.info(f"Control Command: Set Mode to {value}")
                                 else:
                                     message = '{"error": "Control Command Value Invalid"}'
@@ -367,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if request_path == '/aggregates' or request_path == '/api/meters/aggregates':
             # Meters - JSON
-            aggregates = pw.poll('/api/meters/aggregates')
+            aggregates = safe_pw_call(pw.poll, '/api/meters/aggregates')
             if not neg_solar and aggregates and 'solar' in aggregates:
                 solar = aggregates['solar']
                 if solar and 'instant_power' in solar and solar['instant_power'] < 0:
@@ -382,31 +428,31 @@ class Handler(BaseHTTPRequestHandler):
                 message = None
         elif request_path == '/soe':
             # Battery Level - JSON
-            message: str = pw.poll('/api/system_status/soe', jsonformat=True)
+            message: str = safe_pw_call(pw.poll, '/api/system_status/soe', jsonformat=True)
         elif request_path == '/api/system_status/soe':
             # Force 95% Scale
-            level = pw.level(scale=True)
-            message: str = json.dumps({"percentage": level})
+            level = safe_pw_call(pw.level, scale=True)
+            message: str = json.dumps({"percentage": level}) if level is not None else json.dumps({"percentage": 0})
         elif request_path == '/api/system_status/grid_status':
             # Grid Status - JSON
-            message: str = pw.poll('/api/system_status/grid_status', jsonformat=True)
+            message: str = safe_pw_call(pw.poll, '/api/system_status/grid_status', jsonformat=True)
         elif request_path.startswith('/csv') or request_path.startswith('/csv/v2'):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = 'text/plain; charset=utf-8'
-            batterylevel = pw.level() or 0
-            grid = pw.grid() or 0
-            solar = pw.solar() or 0
-            battery = pw.battery() or 0
-            home = pw.home() or 0
+            batterylevel = safe_pw_call(pw.level) or 0
+            grid = safe_pw_call(pw.grid) or 0
+            solar = safe_pw_call(pw.solar) or 0
+            battery = safe_pw_call(pw.battery) or 0
+            home = safe_pw_call(pw.home) or 0
             if not neg_solar and solar < 0:
                 solar = 0
                 # Shift energy from solar to load
                 home -= solar
             if request_path.startswith('/csv/v2'):
-                gridstatus = 1 if pw.grid_status() == 'UP' else 0
-                reserve = pw.get_reserve() or 0
+                gridstatus = 1 if safe_pw_call(pw.grid_status) == 'UP' else 0
+                reserve = safe_pw_call(pw.get_reserve) or 0
                 message = ""
                 if "headers" in request_path:
                     message += "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
@@ -421,17 +467,17 @@ class Handler(BaseHTTPRequestHandler):
                     % (grid, home, solar, battery, batterylevel)
         elif request_path == '/vitals':
             # Vitals Data - JSON
-            message: str = pw.vitals(jsonformat=True) or json.dumps({})
+            message: str = safe_pw_call(pw.vitals, jsonformat=True) or json.dumps({})
         elif request_path == '/strings':
             # Strings Data - JSON
-            message: str = pw.strings(jsonformat=True) or json.dumps({})
+            message: str = safe_pw_call(pw.strings, jsonformat=True) or json.dumps({})
         elif request_path == '/stats':
             # Give Internal Stats
             proxystats['ts'] = int(time.time())
             delta = proxystats['ts'] - proxystats['start']
             proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats['site_name'] = pw.site_name()
+            proxystats['site_name'] = safe_pw_call(pw.site_name)
             proxystats['cloudmode'] = pw.cloudmode
             proxystats['fleetapi'] = pw.fleetapi
             if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
@@ -448,24 +494,25 @@ class Handler(BaseHTTPRequestHandler):
             message: str = json.dumps(proxystats)
         elif request_path == '/temps':
             # Temps of Powerwalls
-            message: str = pw.temps(jsonformat=True) or json.dumps({})
+            message: str = safe_pw_call(pw.temps, jsonformat=True) or json.dumps({})
         elif request_path == '/temps/pw':
             # Temps of Powerwalls with Simple Keys
             pwtemp = {}
             idx = 1
-            temps = pw.temps()
-            for i in temps:
-                key = "PW%d_temp" % idx
-                pwtemp[key] = temps[i]
-                idx = idx + 1
+            temps = safe_pw_call(pw.temps)
+            if temps:
+                for i in temps:
+                    key = "PW%d_temp" % idx
+                    pwtemp[key] = temps[i]
+                    idx = idx + 1
             message: str = json.dumps(pwtemp)
         elif request_path == '/alerts':
             # Alerts
-            message: str = pw.alerts(jsonformat=True) or json.dumps([])
+            message: str = safe_pw_call(pw.alerts, jsonformat=True) or json.dumps([])
         elif request_path == '/alerts/pw':
             # Alerts in dictionary/object format
             pwalerts = {}
-            alerts = pw.alerts()
+            alerts = safe_pw_call(pw.alerts)
             if alerts is None:
                 message: Optional[str] = None
             else:
@@ -477,7 +524,7 @@ class Handler(BaseHTTPRequestHandler):
             fcv = {}
             idx = 1
             # Pull freq, current, voltage of each Powerwall via system_status
-            d = pw.system_status() or {}
+            d = safe_pw_call(pw.system_status) or {}
             if "battery_blocks" in d:
                 for block in d["battery_blocks"]:
                     fcv["PW%d_name" % idx] = None  # Placeholder for vitals
@@ -493,7 +540,7 @@ class Handler(BaseHTTPRequestHandler):
                     fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
                     idx = idx + 1
             # Pull freq, current, voltage of each Powerwall via vitals if available
-            vitals = pw.vitals() or {}
+            vitals = safe_pw_call(pw.vitals) or {}
             idx = 1
             for device in vitals:
                 d = vitals[device]
@@ -509,13 +556,13 @@ class Handler(BaseHTTPRequestHandler):
                     for i in d:
                         if i.startswith('ISLAND') or i.startswith('METER'):
                             fcv[i] = d[i]
-            fcv["grid_status"] = pw.grid_status(type="numeric")
+            fcv["grid_status"] = safe_pw_call(pw.grid_status, type="numeric")
             message: str = json.dumps(fcv)
         elif request_path == '/pod':
             # Powerwall Battery Data
             pod = {}
             # Get Individual Powerwall Battery Data
-            d = pw.system_status() or {}
+            d = safe_pw_call(pw.system_status) or {}
             if "battery_blocks" in d:
                 idx = 1
                 for block in d["battery_blocks"]:
@@ -556,7 +603,7 @@ class Handler(BaseHTTPRequestHandler):
                     pod["PW%d_version" % idx] = get_value(block, "version")
                     idx = idx + 1
             # Augment with Vitals Data if available
-            vitals = pw.vitals() or {}
+            vitals = safe_pw_call(pw.vitals) or {}
             idx = 1
             for device in vitals:
                 v = vitals[device]
@@ -578,24 +625,24 @@ class Handler(BaseHTTPRequestHandler):
             # Aggregate data
             pod["nominal_full_pack_energy"] = get_value(d, 'nominal_full_pack_energy')
             pod["nominal_energy_remaining"] = get_value(d, 'nominal_energy_remaining')
-            pod["time_remaining_hours"] = pw.get_time_remaining()
-            pod["backup_reserve_percent"] = pw.get_reserve()
+            pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
+            pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
             message: str = json.dumps(pod)
         elif request_path == '/json':
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
-            d = pw.system_status() or {}
+            d = safe_pw_call(pw.system_status) or {}
             values = {
-                'grid': pw.grid() or 0,
-                'home': pw.home() or 0, 
-                'solar': pw.solar() or 0,
-                'battery': pw.battery() or 0,
-                'soe': pw.level() or 0,
-                'grid_status': int(pw.grid_status() == 'UP'),
-                'reserve': pw.get_reserve() or 0,
-                'time_remaining_hours': pw.get_time_remaining() or 0,
+                'grid': safe_pw_call(pw.grid) or 0,
+                'home': safe_pw_call(pw.home) or 0, 
+                'solar': safe_pw_call(pw.solar) or 0,
+                'battery': safe_pw_call(pw.battery) or 0,
+                'soe': safe_pw_call(pw.level) or 0,
+                'grid_status': int(safe_pw_call(pw.grid_status) == 'UP'),
+                'reserve': safe_pw_call(pw.get_reserve) or 0,
+                'time_remaining_hours': safe_pw_call(pw.get_time_remaining) or 0,
                 'full_pack_energy': get_value(d, 'nominal_full_pack_energy') or 0,
                 'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0,
-                'strings': pw.strings(jsonformat=False) or {}
+                'strings': safe_pw_call(pw.strings, jsonformat=False) or {}
             }
             if not neg_solar and values['solar'] < 0:
                 # Shift negative solar to load
@@ -604,7 +651,7 @@ class Handler(BaseHTTPRequestHandler):
             message: str = json.dumps(values)			
         elif request_path == '/version':
             # Firmware Version
-            version = pw.version()
+            version = safe_pw_call(pw.version)
             v = {}
             if version is None:
                 v["version"] = "SolarOnly"
@@ -620,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
             delta = proxystats['ts'] - proxystats['start']
             proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
             proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats['site_name'] = pw.site_name()
+            proxystats['site_name'] = safe_pw_call(pw.site_name)
             proxystats['cloudmode'] = pw.cloudmode
             proxystats['fleetapi'] = pw.fleetapi
             if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
@@ -719,27 +766,28 @@ class Handler(BaseHTTPRequestHandler):
             message = '{"status": "404 Response - API Disabled"}'
         elif request_path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
-            message: str = pw.poll(request_path, jsonformat=True)
+            message: str = safe_pw_call(pw.poll, request_path, jsonformat=True)
         elif request_path.startswith('/control/reserve'):
             # Current battery reserve level
             if not pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
-                message = '{"reserve": %s}' % pw_control.get_reserve()
+                message = '{"reserve": %s}' % (safe_pw_call(pw_control.get_reserve) or 0)
         elif request_path.startswith('/control/mode'):
             # Current operating mode
             if not pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
-                message = '{"mode": "%s"}' % pw_control.get_mode()
+                message = '{"mode": "%s"}' % (safe_pw_call(pw_control.get_mode) or "unknown")
         elif request_path == '/fans':
             # Fan speeds in raw format
-            message = json.dumps(pw.tedapi.get_fan_speeds() if pw.tedapi else {})
+            message = json.dumps(safe_pw_call(pw.tedapi.get_fan_speeds) if pw.tedapi else {})
         elif request_path.startswith('/fans/pw'):
             # Fan speeds in simplified format (e.g. FAN1_actual, FAN1_target)
             if pw.tedapi:
                 fans = {}
-                for i, (_, value) in enumerate(sorted(pw.tedapi.get_fan_speeds().items())):
+                fan_speeds = safe_pw_call(pw.tedapi.get_fan_speeds) or {}
+                for i, (_, value) in enumerate(sorted(fan_speeds.items())):
                     key = f"FAN{i+1}"
                     fans[f"{key}_actual"] = value.get('PVAC_Fan_Speed_Actual_RPM')
                     fans[f"{key}_target"] = value.get('PVAC_Fan_Speed_Target_RPM')
@@ -750,31 +798,31 @@ class Handler(BaseHTTPRequestHandler):
             # Map library functions into /pw/ API calls
             path = self.path[4:]  # Remove '/pw/' prefix
             simple_mappings = {
-                'level': lambda: {'level': pw.level()},
-                'power': pw.power,
-                'site': lambda: pw.site(True),
-                'solar': lambda: pw.solar(True),
-                'battery': lambda: pw.battery(True), 
-                'battery_blocks': pw.battery_blocks,
-                'load': lambda: pw.load(True),
-                'grid': lambda: pw.grid(True),
-                'home': lambda: pw.home(True),
-                'vitals': pw.vitals,
-                'temps': pw.temps,
-                'strings': lambda: pw.strings(False, True),
-                'din': lambda: {'din': pw.din()},
-                'uptime': lambda: {'uptime': pw.uptime()},
-                'version': lambda: {'version': pw.version()},
-                'status': pw.status,
-                'system_status': lambda: pw.system_status(False),  
-                'grid_status': lambda: json.loads(pw.grid_status(type="json")),
-                'aggregates': lambda: pw.poll('/api/meters/aggregates', False),
-                'site_name': lambda: {'site_name': pw.site_name()},
-                'alerts': lambda: {'alerts': pw.alerts()},
-                'is_connected': lambda: {'is_connected': pw.is_connected()},
-                'get_reserve': lambda: {'reserve': pw.get_reserve()},
-                'get_mode': lambda: {'mode': pw.get_mode()},
-                'get_time_remaining': lambda: {'time_remaining': pw.get_time_remaining()}
+                'level': lambda: {'level': safe_pw_call(pw.level)},
+                'power': lambda: safe_pw_call(pw.power),
+                'site': lambda: safe_pw_call(pw.site, True),
+                'solar': lambda: safe_pw_call(pw.solar, True),
+                'battery': lambda: safe_pw_call(pw.battery, True), 
+                'battery_blocks': lambda: safe_pw_call(pw.battery_blocks),
+                'load': lambda: safe_pw_call(pw.load, True),
+                'grid': lambda: safe_pw_call(pw.grid, True),
+                'home': lambda: safe_pw_call(pw.home, True),
+                'vitals': lambda: safe_pw_call(pw.vitals),
+                'temps': lambda: safe_pw_call(pw.temps),
+                'strings': lambda: safe_pw_call(pw.strings, False, True),
+                'din': lambda: {'din': safe_pw_call(pw.din)},
+                'uptime': lambda: {'uptime': safe_pw_call(pw.uptime)},
+                'version': lambda: {'version': safe_pw_call(pw.version)},
+                'status': lambda: safe_pw_call(pw.status),
+                'system_status': lambda: safe_pw_call(pw.system_status, False),  
+                'grid_status': lambda: json.loads(safe_pw_call(pw.grid_status, type="json") or "{}"),
+                'aggregates': lambda: safe_pw_call(pw.poll, '/api/meters/aggregates', False),
+                'site_name': lambda: {'site_name': safe_pw_call(pw.site_name)},
+                'alerts': lambda: {'alerts': safe_pw_call(pw.alerts)},
+                'is_connected': lambda: {'is_connected': safe_pw_call(pw.is_connected)},
+                'get_reserve': lambda: {'reserve': safe_pw_call(pw.get_reserve)},
+                'get_mode': lambda: {'mode': safe_pw_call(pw.get_mode)},
+                'get_time_remaining': lambda: {'time_remaining': safe_pw_call(pw.get_time_remaining)}
             }
             # Check if the path is in the simple mappings
             if path in simple_mappings:
@@ -799,7 +847,7 @@ class Handler(BaseHTTPRequestHandler):
                 request_path = "/index.html"
                 fcontent, ftype = get_static(web_root, request_path)
                 # Replace {VARS} with current data
-                status = pw.status()
+                status = safe_pw_call(pw.status) or {}
                 # convert fcontent to string
                 fcontent = fcontent.decode("utf-8")
                 # fix the following variables that if they are None, return ""

@@ -1,5 +1,16 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t76 (25 Jun 2025)
+
+* **Enhanced Error Handling**: Implemented global exception handling for all pypowerwall function calls to provide clean error logging instead of deep stack traces.
+  - Added `safe_pw_call()` wrapper function that catches and handles pypowerwall-specific exceptions
+  - Catches connection errors (ConnectionError, TimeoutError, OSError) and logs descriptive messages
+  - Catches pypowerwall API exceptions (InvalidConfigurationParameter, TEDAPI, FleetAPI errors)
+  - Maintains API functionality through graceful error responses (returns "TIMEOUT!" for failed calls)
+  - Improves debugging with clean, descriptive error messages identifying the failing function
+  - Error Statistics: Automatically increments `proxystats['errors']` for API errors and `proxystats['timeout']` for connection/timeout errors
+  - Example log messages: `"Powerwall API Error in poll: Connection timeout"`, `"Connection Error in vitals: Network unreachable"`
+
 ### Proxy t75 (12 Jun 2025)
 
 * Fix errant API base URL check - This PR fixes an API base URL check by removing an unreachable validation branch.
