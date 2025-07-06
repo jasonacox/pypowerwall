@@ -101,9 +101,22 @@ import urllib3
 from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
-from pypowerwall.exceptions import *
-from pypowerwall.tedapi.exceptions import *
-from pypowerwall.fleetapi.exceptions import *
+from pypowerwall.exceptions import (
+    PyPowerwallInvalidConfigurationParameter,
+    InvalidBatteryReserveLevelException
+)
+from pypowerwall.tedapi.exceptions import (
+    PyPowerwallTEDAPINoTeslaAuthFile,
+    PyPowerwallTEDAPITeslaNotConnected,
+    PyPowerwallTEDAPINotImplemented,
+    PyPowerwallTEDAPIInvalidPayload
+)
+from pypowerwall.fleetapi.exceptions import (
+    PyPowerwallFleetAPINoTeslaAuthFile,
+    PyPowerwallFleetAPITeslaNotConnected,
+    PyPowerwallFleetAPINotImplemented,
+    PyPowerwallFleetAPIInvalidPayload
+)
 
 BUILD = "t76"
 ALLOWLIST = [
