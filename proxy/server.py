@@ -334,7 +334,6 @@ _last_good_responses_lock = threading.RLock()
 # Health thresholds
 HEALTH_FAILURE_THRESHOLD = 5  # consecutive failures before degraded mode
 HEALTH_RECOVERY_THRESHOLD = 3  # consecutive successes to exit degraded mode
-CACHE_TTL_DEGRADED = 300  # 5 minutes TTL for cached responses in degraded mode (legacy, unused)
 
 def update_connection_health(success=True):
     """Update connection health metrics and degraded mode status."""
@@ -506,9 +505,7 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
         result = safe_pw_call(pw_func, *args, **kwargs)
     
     if result is not None:
-        # Success - cache the response and update health
-        if health_check_enabled:
-            update_connection_health(success=True)
+        # Success - cache the response (health already updated in safe_pw_call)
         cache_response(endpoint_name, result)
         return result
     
