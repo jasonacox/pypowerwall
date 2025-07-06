@@ -1,6 +1,63 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t76 (25 Jun 2025)
+### Proxy t76 (6 Jul 2025)
+
+* **Advanced Network Robustness Features**: Added comprehensive connection health monitoring and graceful degradation for improved reliability under poor network conditions, especially for frequent polling scenarios (e.g., telegraf every 5s).
+
+  - **Connection Health Monitoring** (`PW_HEALTH_CHECK=yes`, default enabled):
+    - Tracks consecutive failures, total error/success counts, and connection status
+    - Automatically enters "degraded mode" after 5 consecutive failures
+    - Exits degraded mode after 3 consecutive successes
+    - Provides health status via `/health` endpoint for external monitoring
+
+  - **Fail-Fast Mode** (`PW_FAIL_FAST=yes`, default disabled):
+    - When connection is in degraded state, immediately returns cached/empty data
+    - Prevents timeout delays for rapid polling scenarios
+    - Reduces system load during extended network outages
+
+  - **Graceful Degradation** (`PW_GRACEFUL_DEGRADATION=yes`, default enabled):
+    - Maintains cache of last successful responses (TTL: 5 minutes)
+    - Returns cached data when fresh data is unavailable
+    - Ensures telegraf and other pollers receive valid data structures even during outages
+    - Automatic cache size management (max 50 entries)
+
+  - **Telegraf-Optimized Fallbacks**:
+    - `/aggregates` returns minimal valid power structure on failure
+    - `/soe` returns `{"percentage": 0}` on failure
+    - CSV endpoints return zero values instead of empty responses
+    - Maintains data type consistency for monitoring tools
+
+  - **Enhanced API Endpoints**:
+    - `/health` - Connection health status and feature configuration
+    - `/health/reset` - Reset health counters and clear cache
+    - `/stats` - Now includes connection health metrics when enabled
+
+  - **Improved Error Handling**:
+    - Enhanced `safe_pw_call()` with health tracking integration
+    - New `safe_endpoint_call()` wrapper with automatic caching for JSON endpoints
+    - Better separation of network vs API errors for targeted handling
+
+  - **Configuration Options**:
+    - `PW_FAIL_FAST=yes/no` - Enable fail-fast mode (default: no)
+    - `PW_GRACEFUL_DEGRADATION=yes/no` - Enable cached fallbacks (default: yes)  
+    - `PW_HEALTH_CHECK=yes/no` - Enable health monitoring (default: yes)
+
+  - **Operational Benefits**:
+    - Reduced timeout delays during network issues (fail-fast mode)
+    - Improved telegraf reliability with consistent data structures
+    - Better visibility into connection issues via health endpoints
+    - Automatic recovery detection and logging
+    - Memory-efficient caching with automatic cleanup
+
+* **Weak WiFi / Network Error Optimization**: Added specialized handling for environments with poor network connectivity.
+  - **Enhanced Exception Coverage**: Now catches all requests and urllib3 timeout/connection exceptions (ReadTimeout, ConnectTimeout, MaxRetryError, etc.)
+  - **Rate Limiting**: Network errors are rate-limited to prevent log spam (default: 5 errors per minute per function)
+  - **Summary Reporting**: Periodic summary reports (every 5 minutes) show network error counts instead of individual error logs
+  - **Configurable Suppression**: 
+    - `PW_SUPPRESS_NETWORK_ERRORS=yes` - Completely suppress individual network error logs (summary only)
+    - `PW_NETWORK_ERROR_RATE_LIMIT=N` - Set max network errors logged per minute per function (default: 5)
+  - **Thread Safety**: Added proper locking for all global statistics and error tracking
+  - **Log Level Optimization**: Network errors use INFO level, API errors use WARNING level to reduce noise
 
 * **Enhanced Error Handling**: Implemented global exception handling for all pypowerwall function calls to provide clean error logging instead of deep stack traces.
   - Added `safe_pw_call()` wrapper function that catches and handles pypowerwall-specific exceptions
