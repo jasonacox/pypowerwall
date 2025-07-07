@@ -832,7 +832,9 @@ class Handler(BaseHTTPRequestHandler):
                 'cache_ttl_seconds': cache_ttl_seconds,
                 'graceful_degradation': graceful_degradation,
                 'fail_fast_mode': fail_fast_mode,
-                'health_check_enabled': health_check_enabled
+                'health_check_enabled': health_check_enabled,
+                'startup_time': datetime.datetime.fromtimestamp(proxystats['start']).isoformat(),
+                'current_time': datetime.datetime.now().isoformat()
             }
             
             if health_check_enabled:
