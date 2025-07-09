@@ -35,6 +35,50 @@
     is disabled by default and should be used with caution.
     Set: PW_CONTROL_SECRET to enable this mode.
 
+ Error Handling
+    Global exception handling has been implemented for all pypowerwall 
+    function calls to provide clean error logging instead of deep stack 
+    traces. Connection errors, API errors, and unexpected exceptions are 
+    caught and logged with descriptive messages while maintaining API 
+    functionality through graceful error responses.
+
+ Weak WiFi / Network Error Handling
+    For environments with weak WiFi or unstable network connections, use:
+    - PW_SUPPRESS_NETWORK_ERRORS=yes to completely suppress individual 
+      network error logs (summary reports every 5 minutes)
+    - PW_NETWORK_ERROR_RATE_LIMIT=N to limit network errors to N per 
+      minute per function (default: 5)
+    - PW_FAIL_FAST=yes to return immediately when connection is degraded
+      instead of attempting new requests (reduces timeout delays)
+    - PW_GRACEFUL_DEGRADATION=yes to return cached data when fresh data
+      is unavailable (default: yes, improves telegraf reliability)
+    - PW_HEALTH_CHECK=yes to enable connection health monitoring and
+      automatic degraded mode detection (default: yes)
+    - PW_CACHE_TTL=N to set maximum age in seconds for cached data before
+      returning null instead of stale data (default: 30)
+    - Consider reducing PW_TIMEOUT to fail faster (e.g., PW_TIMEOUT=3)
+
+ Monitoring & Health Endpoints
+    - /health - returns connection health status and feature configuration
+    - /health/reset - resets health counters and clears cache
+    - /stats - includes connection health metrics when enabled
+
+ Data Freshness & Cache Behavior
+    The proxy prioritizes data freshness over availability. When fresh data
+    cannot be retrieved and cached data exceeds PW_CACHE_TTL seconds old,
+    endpoints return null instead of stale/zero values. This ensures 
+    monitoring systems like telegraf can distinguish between actual zero
+    values and missing/stale data, preventing false alerts and misleading
+    metrics.
+
+ Telegraf Compatibility
+    Key endpoints return null when no fresh or reasonably recent cached
+    data is available, allowing telegraf to handle missing data appropriately:
+    - /aggregates returns null when no power data is available
+    - /soe returns null when battery level data is unavailable  
+    - /vitals and /strings return null when device data is unavailable
+    - CSV endpoints continue to return zero values for backwards compatibility
+
 """
 import datetime
 import json
@@ -45,16 +89,36 @@ import signal
 import ssl
 import sys
 import time
+import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
 
+import requests
+import urllib3
+
 from transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
+from pypowerwall.exceptions import (
+    PyPowerwallInvalidConfigurationParameter,
+    InvalidBatteryReserveLevelException
+)
+from pypowerwall.tedapi.exceptions import (
+    PyPowerwallTEDAPINoTeslaAuthFile,
+    PyPowerwallTEDAPITeslaNotConnected,
+    PyPowerwallTEDAPINotImplemented,
+    PyPowerwallTEDAPIInvalidPayload
+)
+from pypowerwall.fleetapi.exceptions import (
+    PyPowerwallFleetAPINoTeslaAuthFile,
+    PyPowerwallFleetAPITeslaNotConnected,
+    PyPowerwallFleetAPINotImplemented,
+    PyPowerwallFleetAPIInvalidPayload
+)
 
-BUILD = "t75"
+BUILD = "t76"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -96,6 +160,16 @@ control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 api_base_url = os.getenv("PROXY_BASE_URL", "/") # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
+
+# Network error handling configuration for weak WiFi scenarios
+suppress_network_errors = os.getenv("PW_SUPPRESS_NETWORK_ERRORS", "no").lower() == "yes"
+network_error_rate_limit = int(os.getenv("PW_NETWORK_ERROR_RATE_LIMIT", "5"))  # errors per minute per function
+
+# Additional robustness features for poor network conditions
+fail_fast_mode = os.getenv("PW_FAIL_FAST", "no").lower() == "yes"  # Return cached/empty data instead of retrying
+graceful_degradation = os.getenv("PW_GRACEFUL_DEGRADATION", "yes").lower() == "yes"  # Return partial data on errors
+health_check_enabled = os.getenv("PW_HEALTH_CHECK", "yes").lower() == "yes"  # Track connection health
+cache_ttl_seconds = int(os.getenv("PW_CACHE_TTL", "30"))  # Maximum age for cached data before returning None
 
 # Global Stats
 proxystats = {
@@ -140,9 +214,16 @@ proxystats = {
         'PW_CACHE_FILE': cachefile,
         'PW_CONTROL_SECRET': '*' * len(control_secret) if control_secret else None,
         'PW_GW_PWD': '*' * len(gw_pwd) if gw_pwd else None,
-        'PW_NEG_SOLAR': neg_solar
+        'PW_NEG_SOLAR': neg_solar,
+        'PW_SUPPRESS_NETWORK_ERRORS': suppress_network_errors,
+        'PW_NETWORK_ERROR_RATE_LIMIT': network_error_rate_limit,
+        'PW_FAIL_FAST': fail_fast_mode,
+        'PW_GRACEFUL_DEGRADATION': graceful_degradation,
+        'PW_HEALTH_CHECK': health_check_enabled,
+        'PW_CACHE_TTL': cache_ttl_seconds
     }
 }
+proxystats_lock = threading.RLock()
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -171,6 +252,270 @@ else:
     log.info("pyPowerwall [%s] Proxy Server [%s] - %s Port %d" %
              (pypowerwall.version, BUILD, httptype, port))
 log.info("pyPowerwall Proxy Started")
+
+# Log network error handling configuration
+if suppress_network_errors:
+    log.info("Network error logging suppressed (PW_SUPPRESS_NETWORK_ERRORS=yes)")
+else:
+    log.info(f"Network error rate limiting: {network_error_rate_limit} errors/minute per function")
+
+# Log additional robustness features
+if fail_fast_mode:
+    log.info("Fail-fast mode enabled (PW_FAIL_FAST=yes) - degraded connections return immediately")
+if graceful_degradation:
+    log.info(f"Graceful degradation enabled (PW_GRACEFUL_DEGRADATION=yes) - cached data TTL: {cache_ttl_seconds}s")
+if health_check_enabled:
+    log.info("Connection health monitoring enabled (PW_HEALTH_CHECK=yes)")
+
+# Rate limiter for network error logging to prevent spam
+_error_counts = {}
+_error_counts_lock = threading.RLock()
+_network_error_summary = {}
+_last_summary_time = time.time()
+
+def should_log_network_error(func_name, max_per_minute=5):
+    """
+    Rate limit network error logging to prevent log spam.
+    Allow max_per_minute errors per function per minute.
+    """
+    current_time = time.time()
+    minute_bucket = int(current_time // 60)
+    key = f"{func_name}_{minute_bucket}"
+    
+    with _error_counts_lock:
+        _error_counts[key] = _error_counts.get(key, 0) + 1
+        
+        # Clean up old entries (keep only current and previous minute)
+        current_keys = {f"{func_name}_{minute_bucket}", f"{func_name}_{minute_bucket-1}"}
+        keys_to_remove = [k for k in _error_counts.keys() if k not in current_keys and k.startswith(f"{func_name}_")]
+        for k in keys_to_remove:
+            del _error_counts[k]
+            
+        return _error_counts[key] <= max_per_minute
+
+def track_network_error(func_name, error_type):
+    """Track network errors for summary reporting."""
+    global _network_error_summary, _last_summary_time
+    
+    with _error_counts_lock:
+        if func_name not in _network_error_summary:
+            _network_error_summary[func_name] = {}
+        
+        if error_type not in _network_error_summary[func_name]:
+            _network_error_summary[func_name][error_type] = 0
+        
+        _network_error_summary[func_name][error_type] += 1
+        
+        # Log summary every 5 minutes if there are errors
+        current_time = time.time()
+        if current_time - _last_summary_time > 300:  # 5 minutes
+            if _network_error_summary:
+                log.warning("Network Error Summary (last 5 minutes):")
+                for func, errors in _network_error_summary.items():
+                    for error_type, count in errors.items():
+                        log.warning(f"  {func}: {count} {error_type} errors")
+                _network_error_summary.clear()
+            _last_summary_time = current_time
+
+# Connection health tracking and caching for graceful degradation
+_connection_health = {
+    'consecutive_failures': 0,
+    'last_success_time': time.time(),
+    'total_failures': 0,
+    'total_successes': 0,
+    'is_degraded': False
+}
+_connection_health_lock = threading.RLock()
+
+# Cache for last known good responses (graceful degradation)
+_last_good_responses = {}
+_last_good_responses_lock = threading.RLock()
+
+# Health thresholds
+HEALTH_FAILURE_THRESHOLD = 5  # consecutive failures before degraded mode
+HEALTH_RECOVERY_THRESHOLD = 3  # consecutive successes to exit degraded mode
+
+def update_connection_health(success=True):
+    """Update connection health metrics and degraded mode status."""
+    global _connection_health
+    
+    with _connection_health_lock:
+        if success:
+            _connection_health['consecutive_failures'] = 0
+            _connection_health['last_success_time'] = time.time()
+            _connection_health['total_successes'] += 1
+            
+            # Check if we should exit degraded mode
+            if _connection_health['is_degraded']:
+                if _connection_health['total_successes'] % HEALTH_RECOVERY_THRESHOLD == 0:
+                    _connection_health['is_degraded'] = False
+                    if not suppress_network_errors:
+                        log.info("Connection health recovered - exiting degraded mode")
+        else:
+            _connection_health['consecutive_failures'] += 1
+            _connection_health['total_failures'] += 1
+            
+            # Check if we should enter degraded mode
+            if not _connection_health['is_degraded']:
+                if _connection_health['consecutive_failures'] >= HEALTH_FAILURE_THRESHOLD:
+                    _connection_health['is_degraded'] = True
+                    if not suppress_network_errors:
+                        log.warning(f"Connection health degraded after {HEALTH_FAILURE_THRESHOLD} consecutive failures - entering graceful degradation mode")
+
+def get_cached_response(endpoint):
+    """Get cached response for graceful degradation."""
+    if not graceful_degradation:
+        return None
+        
+    with _last_good_responses_lock:
+        if endpoint in _last_good_responses:
+            cached_data, timestamp = _last_good_responses[endpoint]
+            age = time.time() - timestamp
+            if age < cache_ttl_seconds:
+                if debugmode:
+                    log.debug(f"Using cached response for {endpoint} (age: {age:.1f}s)")
+                return cached_data
+            else:
+                # Cache expired - remove entry and return None
+                if debugmode:
+                    log.debug(f"Cache expired for {endpoint} (age: {age:.1f}s > {cache_ttl_seconds}s)")
+                del _last_good_responses[endpoint]
+    return None
+
+def cache_response(endpoint, response):
+    """Cache successful response for graceful degradation."""
+    if not graceful_degradation or response is None:
+        return
+        
+    with _last_good_responses_lock:
+        _last_good_responses[endpoint] = (response, time.time())
+        
+        # Limit cache size to prevent memory growth
+        if len(_last_good_responses) > 50:
+            # Remove oldest entries
+            oldest_key = min(_last_good_responses.keys(), 
+                           key=lambda k: _last_good_responses[k][1])
+            del _last_good_responses[oldest_key]
+# Global wrapper for pypowerwall function calls
+def safe_pw_call(pw_func, *args, **kwargs):
+    """
+    Safely call a pypowerwall function with global exception handling.
+    Returns None on any exception and logs a clean error message.
+    Optimized for weak WiFi connections with fast failure and concise logging.
+    Includes health tracking and graceful degradation support.
+    """
+    global proxystats
+    
+    # In fail-fast mode with degraded connection, return None immediately
+    if fail_fast_mode and health_check_enabled:
+        with _connection_health_lock:
+            if _connection_health['is_degraded']:
+                return None
+    
+    try:
+        result = pw_func(*args, **kwargs)
+        
+        # Update health tracking on success
+        if health_check_enabled:
+            update_connection_health(success=True)
+            
+        return result
+    except (PyPowerwallInvalidConfigurationParameter, 
+            InvalidBatteryReserveLevelException,
+            PyPowerwallTEDAPINoTeslaAuthFile,
+            PyPowerwallTEDAPITeslaNotConnected, 
+            PyPowerwallTEDAPINotImplemented,
+            PyPowerwallTEDAPIInvalidPayload,
+            PyPowerwallFleetAPINoTeslaAuthFile,
+            PyPowerwallFleetAPITeslaNotConnected,
+            PyPowerwallFleetAPINotImplemented,
+            PyPowerwallFleetAPIInvalidPayload) as e:
+        func_name = getattr(pw_func, '__name__', str(pw_func))
+        log.warning(f"Powerwall API Error in {func_name}: {str(e)}")
+        with proxystats_lock:
+            proxystats['errors'] = proxystats['errors'] + 1
+        return None
+    except (ConnectionError, 
+            TimeoutError, 
+            OSError,
+            requests.exceptions.RequestException,
+            requests.exceptions.Timeout,
+            requests.exceptions.ReadTimeout,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ConnectionError,
+            urllib3.exceptions.ReadTimeoutError,
+            urllib3.exceptions.ConnectTimeoutError,
+            urllib3.exceptions.TimeoutError,
+            urllib3.exceptions.MaxRetryError) as e:
+        func_name = getattr(pw_func, '__name__', str(pw_func))
+        error_type = type(e).__name__
+        
+        # Update health tracking on network failure
+        if health_check_enabled:
+            update_connection_health(success=False)
+        
+        # Track error for summary reporting
+        track_network_error(func_name, error_type)
+        
+        # Rate limit individual error logging to prevent spam
+        if not suppress_network_errors and should_log_network_error(func_name, network_error_rate_limit):
+            if "timeout" in error_type.lower():
+                log.info(f"Network timeout in {func_name}: {error_type}")
+            else:
+                log.info(f"Network error in {func_name}: {error_type}")
+        
+        with proxystats_lock:
+            proxystats['timeout'] = proxystats['timeout'] + 1
+        return None
+    except Exception as e:
+        func_name = getattr(pw_func, '__name__', str(pw_func))
+        error_type = type(e).__name__
+        
+        # Update health tracking on unexpected failure
+        if health_check_enabled:
+            update_connection_health(success=False)
+            
+        # Log unexpected errors but keep it concise
+        if debugmode:
+            log.error(f"Unexpected error in {func_name}: {error_type}: {str(e)}")
+        else:
+            log.warning(f"Unexpected error in {func_name}: {error_type}")
+        with proxystats_lock:
+            proxystats['errors'] = proxystats['errors'] + 1
+        return None
+
+def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs):
+    """
+    Safely call a pypowerwall function for an endpoint with caching and graceful degradation.
+    
+    Args:
+        endpoint_name: Name of the endpoint for caching (e.g., '/aggregates')
+        pw_func: The pypowerwall function to call
+        *args: Arguments to pass to the function
+        jsonformat: Whether to return JSON formatted response (default True)
+        **kwargs: Keyword arguments to pass to the function
+    
+    Returns:
+        Response data on success, cached data if available and fresh enough, None if no data available
+    """
+    # Try to get fresh data
+    if jsonformat:
+        result = safe_pw_call(pw_func, *args, jsonformat=True, **kwargs)
+    else:
+        result = safe_pw_call(pw_func, *args, **kwargs)
+    
+    if result is not None:
+        # Success - cache the response (health already updated in safe_pw_call)
+        cache_response(endpoint_name, result)
+        return result
+    
+    # Failed to get fresh data - try cached response
+    cached_result = get_cached_response(endpoint_name)
+    if cached_result is not None:
+        return cached_result
+    
+    # No fresh or cached data available
+    return None
 
 # Ensure api_base_url ends with a /
 if not api_base_url.endswith('/'):
@@ -208,7 +553,7 @@ try:
                                cachefile=cachefile, auto_select=True,
                                retry_modes=True, gw_pwd=gw_pwd)
 except Exception as e:
-    log.error(e)
+    log.error(f"Powerwall Connection Error: {str(e)}")
     log.error("Fatal Error: Unable to connect. Please fix config and restart.")
     while True:
         try:
@@ -216,7 +561,7 @@ except Exception as e:
         except (KeyboardInterrupt, SystemExit):
             sys.exit(0)
 
-site_name = pw.site_name() or "Unknown"
+site_name = safe_pw_call(pw.site_name) or "Unknown"
 if pw.cloudmode or pw.fleetapi:
     if pw.fleetapi:
         proxystats['mode'] = "FleetAPI"
@@ -320,18 +665,20 @@ class Handler(BaseHTTPRequestHandler):
                                 # ensure value is an integer
                                 if not value:
                                     # return current reserve level in json string
-                                    message = '{"reserve": %s}' % pw_control.get_reserve()
+                                    message = '{"reserve": %s}' % (safe_pw_call(pw_control.get_reserve) or 0)
                                 elif value.isdigit():
-                                    message = json.dumps(pw_control.set_reserve(int(value)))
+                                    result = safe_pw_call(pw_control.set_reserve, int(value))
+                                    message = json.dumps(result if result is not None else {"error": "Failed to set reserve"})
                                     log.info(f"Control Command: Set Reserve to {value}")
                                 else:
                                     message = '{"error": "Control Command Value Invalid"}'
                             elif action == 'mode':
                                 if not value:
                                     # return current mode in json string
-                                    message = '{"mode": "%s"}' % pw_control.get_mode()
+                                    message = '{"mode": "%s"}' % (safe_pw_call(pw_control.get_mode) or "unknown")
                                 elif value in ['self_consumption', 'backup', 'autonomous']:
-                                    message = json.dumps(pw_control.set_mode(value))
+                                    result = safe_pw_call(pw_control.set_mode, value)
+                                    message = json.dumps(result if result is not None else {"error": "Failed to set mode"})
                                     log.info(f"Control Command: Set Mode to {value}")
                                 else:
                                     message = '{"error": "Control Command Value Invalid"}'
@@ -341,12 +688,14 @@ class Handler(BaseHTTPRequestHandler):
                             message = '{"unauthorized": "Control Command Token Invalid"}'
         if "error" in message:
             self.send_response(400)
-            proxystats['errors'] = proxystats['errors'] + 1
+            with proxystats_lock:
+                proxystats['errors'] = proxystats['errors'] + 1
         elif "unauthorized" in message:
             self.send_response(401)
         else:
             self.send_response(200)
-            proxystats['posts'] = proxystats['posts'] + 1
+            with proxystats_lock:
+                proxystats['posts'] = proxystats['posts'] + 1
         self.send_header('Content-type', contenttype)
         self.send_header('Content-Length', str(len(message)))
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -367,46 +716,60 @@ class Handler(BaseHTTPRequestHandler):
 
         if request_path == '/aggregates' or request_path == '/api/meters/aggregates':
             # Meters - JSON
-            aggregates = pw.poll('/api/meters/aggregates')
-            if not neg_solar and aggregates and 'solar' in aggregates:
+            aggregates = safe_endpoint_call('/aggregates', pw.poll, '/api/meters/aggregates')
+            
+            # Parse aggregates if it's a JSON string
+            if isinstance(aggregates, str):
+                try:
+                    aggregates = json.loads(aggregates)
+                except (json.JSONDecodeError, TypeError):
+                    aggregates = None
+            
+            if aggregates and not neg_solar and 'solar' in aggregates:
                 solar = aggregates['solar']
                 if solar and 'instant_power' in solar and solar['instant_power'] < 0:
                     solar['instant_power'] = 0
                     # Shift energy from solar to load
                     if 'load' in aggregates and 'instant_power' in aggregates['load']:
                         aggregates['load']['instant_power'] -= solar['instant_power']
+            
             try:
-                message = json.dumps(aggregates)
+                if aggregates:
+                    message = json.dumps(aggregates)
+                else:
+                    # No data available - return None to indicate stale/missing data
+                    message = None
             except:
                 log.error(f"JSON encoding error in payload: {aggregates}")
                 message = None
         elif request_path == '/soe':
             # Battery Level - JSON
-            message: str = pw.poll('/api/system_status/soe', jsonformat=True)
+            message: str = safe_endpoint_call('/soe', pw.poll, '/api/system_status/soe', jsonformat=True)
+            # Return None if no current data available (better than fake 0%)
         elif request_path == '/api/system_status/soe':
             # Force 95% Scale
-            level = pw.level(scale=True)
-            message: str = json.dumps({"percentage": level})
+            level = safe_pw_call(pw.level, scale=True)
+            message: str = json.dumps({"percentage": level}) if level is not None else None
         elif request_path == '/api/system_status/grid_status':
             # Grid Status - JSON
-            message: str = pw.poll('/api/system_status/grid_status', jsonformat=True)
+            message: str = safe_pw_call(pw.poll, '/api/system_status/grid_status', jsonformat=True)
         elif request_path.startswith('/csv') or request_path.startswith('/csv/v2'):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = 'text/plain; charset=utf-8'
-            batterylevel = pw.level() or 0
-            grid = pw.grid() or 0
-            solar = pw.solar() or 0
-            battery = pw.battery() or 0
-            home = pw.home() or 0
+            batterylevel = safe_pw_call(pw.level) or 0
+            grid = safe_pw_call(pw.grid) or 0
+            solar = safe_pw_call(pw.solar) or 0
+            battery = safe_pw_call(pw.battery) or 0
+            home = safe_pw_call(pw.home) or 0
             if not neg_solar and solar < 0:
                 solar = 0
                 # Shift energy from solar to load
                 home -= solar
             if request_path.startswith('/csv/v2'):
-                gridstatus = 1 if pw.grid_status() == 'UP' else 0
-                reserve = pw.get_reserve() or 0
+                gridstatus = 1 if safe_pw_call(pw.grid_status) == 'UP' else 0
+                reserve = safe_pw_call(pw.get_reserve) or 0
                 message = ""
                 if "headers" in request_path:
                     message += "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
@@ -421,51 +784,131 @@ class Handler(BaseHTTPRequestHandler):
                     % (grid, home, solar, battery, batterylevel)
         elif request_path == '/vitals':
             # Vitals Data - JSON
-            message: str = pw.vitals(jsonformat=True) or json.dumps({})
+            message: str = safe_endpoint_call('/vitals', pw.vitals, jsonformat=True)
+            # Return None if no cached data available
         elif request_path == '/strings':
             # Strings Data - JSON
-            message: str = pw.strings(jsonformat=True) or json.dumps({})
+            message: str = safe_endpoint_call('/strings', pw.strings, jsonformat=True)
+            # Return None if no cached data available
         elif request_path == '/stats':
             # Give Internal Stats
-            proxystats['ts'] = int(time.time())
-            delta = proxystats['ts'] - proxystats['start']
-            proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
-            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats['site_name'] = pw.site_name()
-            proxystats['cloudmode'] = pw.cloudmode
-            proxystats['fleetapi'] = pw.fleetapi
-            if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                proxystats['siteid'] = pw.client.siteid
-                proxystats['counter'] = pw.client.counter
-            message: str = json.dumps(proxystats)
+            with proxystats_lock:
+                proxystats['ts'] = int(time.time())
+                delta = proxystats['ts'] - proxystats['start']
+                proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
+                proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                proxystats['site_name'] = safe_pw_call(pw.site_name)
+                proxystats['cloudmode'] = pw.cloudmode
+                proxystats['fleetapi'] = pw.fleetapi
+                if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
+                    proxystats['siteid'] = pw.client.siteid
+                    proxystats['counter'] = pw.client.counter
+                
+                # Add connection health stats if enabled
+                if health_check_enabled:
+                    with _connection_health_lock:
+                        proxystats['connection_health'] = {
+                            'consecutive_failures': _connection_health['consecutive_failures'],
+                            'total_failures': _connection_health['total_failures'],
+                            'total_successes': _connection_health['total_successes'],
+                            'is_degraded': _connection_health['is_degraded'],
+                            'last_success_time': _connection_health['last_success_time'],
+                            'cache_size': len(_last_good_responses) if graceful_degradation else 0
+                        }
+                
+                message: str = json.dumps(proxystats)
         elif request_path == '/stats/clear':
             # Clear Internal Stats
             log.debug("Clear internal stats")
-            proxystats['gets'] = 0
-            proxystats['errors'] = 0
-            proxystats['uri'] = {}
-            proxystats['clear'] = int(time.time())
+            with proxystats_lock:
+                proxystats['gets'] = 0
+                proxystats['errors'] = 0
+                proxystats['uri'] = {}
+                proxystats['clear'] = int(time.time())
             message: str = json.dumps(proxystats)
+        elif request_path == '/health':
+            # Connection Health and Cache Status
+            health_info = {
+                'cache_ttl_seconds': cache_ttl_seconds,
+                'graceful_degradation': graceful_degradation,
+                'fail_fast_mode': fail_fast_mode,
+                'health_check_enabled': health_check_enabled,
+                'startup_time': datetime.datetime.fromtimestamp(proxystats['start']).isoformat(),
+                'current_time': datetime.datetime.now().isoformat()
+            }
+            
+            if health_check_enabled:
+                with _connection_health_lock:
+                    health_info['connection_health'] = {
+                        'consecutive_failures': _connection_health['consecutive_failures'],
+                        'total_failures': _connection_health['total_failures'],
+                        'total_successes': _connection_health['total_successes'],
+                        'is_degraded': _connection_health['is_degraded'],
+                        'last_success_time': _connection_health['last_success_time'],
+                        'last_success_age_seconds': time.time() - _connection_health['last_success_time']
+                    }
+            
+            if graceful_degradation:
+                with _last_good_responses_lock:
+                    cached_endpoints = {}
+                    current_time = time.time()
+                    for endpoint, (data, timestamp) in _last_good_responses.items():
+                        age = current_time - timestamp
+                        cached_endpoints[endpoint] = {
+                            'age_seconds': age,
+                            'is_expired': age >= cache_ttl_seconds
+                        }
+                    health_info['cached_data'] = {
+                        'cache_size': len(_last_good_responses),
+                        'endpoints': cached_endpoints
+                    }
+            
+            message: str = json.dumps(health_info)
+        elif request_path == '/health/reset':
+            # Reset Health Counters and Clear Cache
+            cache_size_before = 0
+            
+            if health_check_enabled:
+                with _connection_health_lock:
+                    _connection_health['consecutive_failures'] = 0
+                    _connection_health['total_failures'] = 0
+                    _connection_health['total_successes'] = 0
+                    _connection_health['is_degraded'] = False
+                    _connection_health['last_success_time'] = time.time()
+            
+            if graceful_degradation:
+                with _last_good_responses_lock:
+                    cache_size_before = len(_last_good_responses)
+                    _last_good_responses.clear()
+            
+            log.info("Health counters and cache reset via /health/reset endpoint")
+            message: str = json.dumps({
+                'status': 'reset_complete',
+                'health_counters_reset': health_check_enabled,
+                'cache_cleared': graceful_degradation,
+                'cache_entries_removed': cache_size_before if graceful_degradation else 0
+            })
         elif request_path == '/temps':
             # Temps of Powerwalls
-            message: str = pw.temps(jsonformat=True) or json.dumps({})
+            message: str = safe_pw_call(pw.temps, jsonformat=True) or json.dumps({})
         elif request_path == '/temps/pw':
             # Temps of Powerwalls with Simple Keys
             pwtemp = {}
             idx = 1
-            temps = pw.temps()
-            for i in temps:
-                key = "PW%d_temp" % idx
-                pwtemp[key] = temps[i]
-                idx = idx + 1
+            temps = safe_pw_call(pw.temps)
+            if temps:
+                for i in temps:
+                    key = "PW%d_temp" % idx
+                    pwtemp[key] = temps[i]
+                    idx = idx + 1
             message: str = json.dumps(pwtemp)
         elif request_path == '/alerts':
             # Alerts
-            message: str = pw.alerts(jsonformat=True) or json.dumps([])
+            message: str = safe_pw_call(pw.alerts, jsonformat=True) or json.dumps([])
         elif request_path == '/alerts/pw':
             # Alerts in dictionary/object format
             pwalerts = {}
-            alerts = pw.alerts()
+            alerts = safe_pw_call(pw.alerts)
             if alerts is None:
                 message: Optional[str] = None
             else:
@@ -477,7 +920,7 @@ class Handler(BaseHTTPRequestHandler):
             fcv = {}
             idx = 1
             # Pull freq, current, voltage of each Powerwall via system_status
-            d = pw.system_status() or {}
+            d = safe_pw_call(pw.system_status) or {}
             if "battery_blocks" in d:
                 for block in d["battery_blocks"]:
                     fcv["PW%d_name" % idx] = None  # Placeholder for vitals
@@ -493,7 +936,7 @@ class Handler(BaseHTTPRequestHandler):
                     fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
                     idx = idx + 1
             # Pull freq, current, voltage of each Powerwall via vitals if available
-            vitals = pw.vitals() or {}
+            vitals = safe_pw_call(pw.vitals) or {}
             idx = 1
             for device in vitals:
                 d = vitals[device]
@@ -509,13 +952,13 @@ class Handler(BaseHTTPRequestHandler):
                     for i in d:
                         if i.startswith('ISLAND') or i.startswith('METER'):
                             fcv[i] = d[i]
-            fcv["grid_status"] = pw.grid_status(type="numeric")
+            fcv["grid_status"] = safe_pw_call(pw.grid_status, type="numeric")
             message: str = json.dumps(fcv)
         elif request_path == '/pod':
             # Powerwall Battery Data
             pod = {}
             # Get Individual Powerwall Battery Data
-            d = pw.system_status() or {}
+            d = safe_pw_call(pw.system_status) or {}
             if "battery_blocks" in d:
                 idx = 1
                 for block in d["battery_blocks"]:
@@ -556,7 +999,7 @@ class Handler(BaseHTTPRequestHandler):
                     pod["PW%d_version" % idx] = get_value(block, "version")
                     idx = idx + 1
             # Augment with Vitals Data if available
-            vitals = pw.vitals() or {}
+            vitals = safe_pw_call(pw.vitals) or {}
             idx = 1
             for device in vitals:
                 v = vitals[device]
@@ -578,24 +1021,24 @@ class Handler(BaseHTTPRequestHandler):
             # Aggregate data
             pod["nominal_full_pack_energy"] = get_value(d, 'nominal_full_pack_energy')
             pod["nominal_energy_remaining"] = get_value(d, 'nominal_energy_remaining')
-            pod["time_remaining_hours"] = pw.get_time_remaining()
-            pod["backup_reserve_percent"] = pw.get_reserve()
+            pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
+            pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
             message: str = json.dumps(pod)
         elif request_path == '/json':
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
-            d = pw.system_status() or {}
+            d = safe_pw_call(pw.system_status) or {}
             values = {
-                'grid': pw.grid() or 0,
-                'home': pw.home() or 0, 
-                'solar': pw.solar() or 0,
-                'battery': pw.battery() or 0,
-                'soe': pw.level() or 0,
-                'grid_status': int(pw.grid_status() == 'UP'),
-                'reserve': pw.get_reserve() or 0,
-                'time_remaining_hours': pw.get_time_remaining() or 0,
+                'grid': safe_pw_call(pw.grid) or 0,
+                'home': safe_pw_call(pw.home) or 0, 
+                'solar': safe_pw_call(pw.solar) or 0,
+                'battery': safe_pw_call(pw.battery) or 0,
+                'soe': safe_pw_call(pw.level) or 0,
+                'grid_status': int(safe_pw_call(pw.grid_status) == 'UP'),
+                'reserve': safe_pw_call(pw.get_reserve) or 0,
+                'time_remaining_hours': safe_pw_call(pw.get_time_remaining) or 0,
                 'full_pack_energy': get_value(d, 'nominal_full_pack_energy') or 0,
                 'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0,
-                'strings': pw.strings(jsonformat=False) or {}
+                'strings': safe_pw_call(pw.strings, jsonformat=False) or {}
             }
             if not neg_solar and values['solar'] < 0:
                 # Shift negative solar to load
@@ -604,7 +1047,7 @@ class Handler(BaseHTTPRequestHandler):
             message: str = json.dumps(values)			
         elif request_path == '/version':
             # Firmware Version
-            version = pw.version()
+            version = safe_pw_call(pw.version)
             v = {}
             if version is None:
                 v["version"] = "SolarOnly"
@@ -616,17 +1059,18 @@ class Handler(BaseHTTPRequestHandler):
                 message: str = json.dumps(v)
         elif request_path == '/help':
             # Display friendly help screen link and stats
-            proxystats['ts'] = int(time.time())
-            delta = proxystats['ts'] - proxystats['start']
-            proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
-            proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            proxystats['site_name'] = pw.site_name()
-            proxystats['cloudmode'] = pw.cloudmode
-            proxystats['fleetapi'] = pw.fleetapi
-            if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                proxystats['siteid'] = pw.client.siteid
-                proxystats['counter'] = pw.client.counter
-            proxystats['authmode'] = pw.authmode
+            with proxystats_lock:
+                proxystats['ts'] = int(time.time())
+                delta = proxystats['ts'] - proxystats['start']
+                proxystats['uptime'] = str(datetime.timedelta(seconds=delta))
+                proxystats['mem'] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                proxystats['site_name'] = safe_pw_call(pw.site_name)
+                proxystats['cloudmode'] = pw.cloudmode
+                proxystats['fleetapi'] = pw.fleetapi
+                if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
+                    proxystats['siteid'] = pw.client.siteid
+                    proxystats['counter'] = pw.client.counter
+                proxystats['authmode'] = pw.authmode
             contenttype = 'text/html'
             message: str = """
             <html>\n<head><meta http-equiv="refresh" content="5" />\n
@@ -638,11 +1082,12 @@ class Handler(BaseHTTPRequestHandler):
             <table>\n<tr><th align ="left">Stat</th><th align ="left">Value</th></tr>
             """
             message = message.replace('%VER%', pypowerwall.version).replace('%BUILD%', BUILD)
-            for i in proxystats:
-                if i != 'uri' and i != 'config':
-                    message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
-            for i in proxystats['uri']:
-                message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats["uri"][i]}</td></tr>\n'
+            with proxystats_lock:
+                for i in proxystats:
+                    if i != 'uri' and i != 'config':
+                        message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
+                for i in proxystats['uri']:
+                    message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats["uri"][i]}</td></tr>\n'
             message += """
             <tr>
                 <td align="left">Config:</td>
@@ -651,8 +1096,9 @@ class Handler(BaseHTTPRequestHandler):
                         <summary>Click to view</summary>
                         <table>
             """
-            for i in proxystats['config']:
-                message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats["config"][i]}</td></tr>\n'
+            with proxystats_lock:
+                for i in proxystats['config']:
+                    message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats["config"][i]}</td></tr>\n'
             message += """
                         </table>
                     </details>
@@ -719,27 +1165,28 @@ class Handler(BaseHTTPRequestHandler):
             message = '{"status": "404 Response - API Disabled"}'
         elif request_path in ALLOWLIST:
             # Allowed API Calls - Proxy to Powerwall
-            message: str = pw.poll(request_path, jsonformat=True)
+            message: str = safe_pw_call(pw.poll, request_path, jsonformat=True)
         elif request_path.startswith('/control/reserve'):
             # Current battery reserve level
             if not pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
-                message = '{"reserve": %s}' % pw_control.get_reserve()
+                message = '{"reserve": %s}' % (safe_pw_call(pw_control.get_reserve) or 0)
         elif request_path.startswith('/control/mode'):
             # Current operating mode
             if not pw_control:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
-                message = '{"mode": "%s"}' % pw_control.get_mode()
+                message = '{"mode": "%s"}' % (safe_pw_call(pw_control.get_mode) or "unknown")
         elif request_path == '/fans':
             # Fan speeds in raw format
-            message = json.dumps(pw.tedapi.get_fan_speeds() if pw.tedapi else {})
+            message = json.dumps(safe_pw_call(pw.tedapi.get_fan_speeds) if pw.tedapi else {})
         elif request_path.startswith('/fans/pw'):
             # Fan speeds in simplified format (e.g. FAN1_actual, FAN1_target)
             if pw.tedapi:
                 fans = {}
-                for i, (_, value) in enumerate(sorted(pw.tedapi.get_fan_speeds().items())):
+                fan_speeds = safe_pw_call(pw.tedapi.get_fan_speeds) or {}
+                for i, (_, value) in enumerate(sorted(fan_speeds.items())):
                     key = f"FAN{i+1}"
                     fans[f"{key}_actual"] = value.get('PVAC_Fan_Speed_Actual_RPM')
                     fans[f"{key}_target"] = value.get('PVAC_Fan_Speed_Target_RPM')
@@ -750,31 +1197,31 @@ class Handler(BaseHTTPRequestHandler):
             # Map library functions into /pw/ API calls
             path = self.path[4:]  # Remove '/pw/' prefix
             simple_mappings = {
-                'level': lambda: {'level': pw.level()},
-                'power': pw.power,
-                'site': lambda: pw.site(True),
-                'solar': lambda: pw.solar(True),
-                'battery': lambda: pw.battery(True), 
-                'battery_blocks': pw.battery_blocks,
-                'load': lambda: pw.load(True),
-                'grid': lambda: pw.grid(True),
-                'home': lambda: pw.home(True),
-                'vitals': pw.vitals,
-                'temps': pw.temps,
-                'strings': lambda: pw.strings(False, True),
-                'din': lambda: {'din': pw.din()},
-                'uptime': lambda: {'uptime': pw.uptime()},
-                'version': lambda: {'version': pw.version()},
-                'status': pw.status,
-                'system_status': lambda: pw.system_status(False),  
-                'grid_status': lambda: json.loads(pw.grid_status(type="json")),
-                'aggregates': lambda: pw.poll('/api/meters/aggregates', False),
-                'site_name': lambda: {'site_name': pw.site_name()},
-                'alerts': lambda: {'alerts': pw.alerts()},
-                'is_connected': lambda: {'is_connected': pw.is_connected()},
-                'get_reserve': lambda: {'reserve': pw.get_reserve()},
-                'get_mode': lambda: {'mode': pw.get_mode()},
-                'get_time_remaining': lambda: {'time_remaining': pw.get_time_remaining()}
+                'level': lambda: {'level': safe_pw_call(pw.level)},
+                'power': lambda: safe_pw_call(pw.power),
+                'site': lambda: safe_pw_call(pw.site, True),
+                'solar': lambda: safe_pw_call(pw.solar, True),
+                'battery': lambda: safe_pw_call(pw.battery, True), 
+                'battery_blocks': lambda: safe_pw_call(pw.battery_blocks),
+                'load': lambda: safe_pw_call(pw.load, True),
+                'grid': lambda: safe_pw_call(pw.grid, True),
+                'home': lambda: safe_pw_call(pw.home, True),
+                'vitals': lambda: safe_pw_call(pw.vitals),
+                'temps': lambda: safe_pw_call(pw.temps),
+                'strings': lambda: safe_pw_call(pw.strings, False, True),
+                'din': lambda: {'din': safe_pw_call(pw.din)},
+                'uptime': lambda: {'uptime': safe_pw_call(pw.uptime)},
+                'version': lambda: {'version': safe_pw_call(pw.version)},
+                'status': lambda: safe_pw_call(pw.status),
+                'system_status': lambda: safe_pw_call(pw.system_status, False),  
+                'grid_status': lambda: json.loads(safe_pw_call(pw.grid_status, type="json") or "{}"),
+                'aggregates': lambda: safe_pw_call(pw.poll, '/api/meters/aggregates', False),
+                'site_name': lambda: {'site_name': safe_pw_call(pw.site_name)},
+                'alerts': lambda: {'alerts': safe_pw_call(pw.alerts)},
+                'is_connected': lambda: {'is_connected': safe_pw_call(pw.is_connected)},
+                'get_reserve': lambda: {'reserve': safe_pw_call(pw.get_reserve)},
+                'get_mode': lambda: {'mode': safe_pw_call(pw.get_mode)},
+                'get_time_remaining': lambda: {'time_remaining': safe_pw_call(pw.get_time_remaining)}
             }
             # Check if the path is in the simple mappings
             if path in simple_mappings:
@@ -799,7 +1246,7 @@ class Handler(BaseHTTPRequestHandler):
                 request_path = "/index.html"
                 fcontent, ftype = get_static(web_root, request_path)
                 # Replace {VARS} with current data
-                status = pw.status()
+                status = safe_pw_call(pw.status) or {}
                 # convert fcontent to string
                 fcontent = fcontent.decode("utf-8")
                 # fix the following variables that if they are None, return ""
@@ -881,17 +1328,24 @@ class Handler(BaseHTTPRequestHandler):
 
         # Count
         if message is None:
-            proxystats['timeout'] = proxystats['timeout'] + 1
-            message = "TIMEOUT!"
+            with proxystats_lock:
+                proxystats['timeout'] = proxystats['timeout'] + 1
+            # Return null/empty response instead of timeout message for API endpoints
+            if request_path.startswith('/api/') or request_path in ['/aggregates', '/soe', '/vitals', '/strings']:
+                message = "null"  # JSON null for API endpoints
+            else:
+                message = "TIMEOUT!"
         elif message == "ERROR!":
-            proxystats['errors'] = proxystats['errors'] + 1
+            with proxystats_lock:
+                proxystats['errors'] = proxystats['errors'] + 1
             message = "ERROR!"
         else:
-            proxystats['gets'] = proxystats['gets'] + 1
-            if request_path in proxystats['uri']:
-                proxystats['uri'][request_path] = proxystats['uri'][request_path] + 1
-            else:
-                proxystats['uri'][request_path] = 1
+            with proxystats_lock:
+                proxystats['gets'] = proxystats['gets'] + 1
+                if request_path in proxystats['uri']:
+                    proxystats['uri'][request_path] = proxystats['uri'][request_path] + 1
+                else:
+                    proxystats['uri'][request_path] = 1
 
         # Send headers and payload
         try:
@@ -923,3 +1377,5 @@ with ThreadingHTTPServer((bind_address, port), Handler) as server:
 
     log.info("pyPowerwall Proxy Stopped")
     sys.exit(0)
+
+

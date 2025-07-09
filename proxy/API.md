@@ -35,6 +35,8 @@ The proxy server exposes a RESTful API for accessing Powerwall data, including s
 | `/alerts/pw`                    | Alerts (JSON object)                             |
 | `/stats`                        | Internal proxy stats (JSON)                      |
 | `/stats/clear`                  | Clear internal stats (JSON)                      |
+| `/health`                       | Connection health status and cache info (JSON)   |
+| `/health/reset`                 | Reset health counters and clear cache (JSON)     |
 | `/freq`                         | Frequency, current, voltage, grid status (JSON)  |
 | `/pod`                          | Powerwall battery data (JSON)                    |
 | `/json`                         | Combined metrics and status (JSON)               |
@@ -107,6 +109,19 @@ _These endpoints require specific configuration to be enabled._
 
 ---
 
+## Cache and Error Handling
+
+The proxy server implements robust error handling and caching:
+
+- **Cached Responses**: Key endpoints (`/aggregates`, `/soe`, `/vitals`, `/strings`) cache responses for improved reliability
+- **TTL Behavior**: After cache TTL expires (default 30 seconds), endpoints return `null` instead of stale data
+- **Network Resilience**: Graceful handling of network errors with configurable retry and fallback behavior
+- **Health Monitoring**: Track connection health and cache status via `/health` endpoint
+
+For configuration options, see [proxy/README.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/README.md).
+
+---
+
 ## Example Usage
 
 **Get site aggregates:**
@@ -124,6 +139,11 @@ curl http://localhost:8675/soe
 curl http://localhost:8675/vitals
 ```
 
+**Check connection health and cache status:**
+```sh
+curl http://localhost:8675/health
+```
+
 **Get alerts:**
 ```sh
 curl http://localhost:8675/alerts
@@ -138,5 +158,6 @@ curl -X POST -d "value=20&token=<secret>" http://localhost:8675/control/reserve
 
 ## Notes
 - All endpoints return JSON unless otherwise noted.
+- Key metric endpoints (`/aggregates`, `/soe`, `/vitals`, `/strings`) return `null` when no fresh or valid cached data is available (after TTL expiry).
 - Some endpoints require local mode or specific configuration (see server documentation).
 - For more details, see the main project [README.md](https://github.com/jasonacox/pypowerwall/blob/main/README.md).

@@ -156,6 +156,54 @@ There are three settings for PW_HTTPS:
 * PW_HTTPS='http' - Run in HTTP mode but simulate HTTPS when behind https proxy.
 * PW_HTTPS='yes' - Run in HTTPS mode using self-signed certificate.
 
+## Network Robustness for Weak WiFi
+
+The proxy includes advanced network error handling designed for environments with weak WiFi or unstable network connections. These features help ensure reliable operation with monitoring tools like Telegraf:
+
+### Cache and Health Features
+
+* **Graceful Degradation** (PW_GRACEFUL_DEGRADATION=yes): Returns cached data when fresh data is unavailable, improving reliability for monitoring systems
+* **Health Monitoring** (PW_HEALTH_CHECK=yes): Tracks connection health and automatically enters degraded mode after consecutive failures  
+* **Data Freshness** (PW_CACHE_TTL=30): Controls maximum age for cached data - returns null instead of stale data after TTL expires
+* **Fail-Fast Mode** (PW_FAIL_FAST=no): When enabled, returns immediately in degraded mode instead of waiting for timeouts
+
+### Error Handling
+
+* **Error Suppression** (PW_SUPPRESS_NETWORK_ERRORS=no): Suppresses individual network error logs, showing summary reports every 5 minutes instead
+* **Rate Limiting** (PW_NETWORK_ERROR_RATE_LIMIT=5): Limits network error logging to N errors per minute per function
+
+### Health Monitoring Endpoints
+
+* **`/health`** - Returns connection health status, cache information, and feature configuration
+* **`/health/reset`** - Resets health counters and clears cached data
+* **`/stats`** - Includes connection health metrics when health monitoring is enabled
+
+### Example Configuration for Poor Network Conditions
+
+```bash
+docker run \
+    -d \
+    -p 8675:8675 \
+    -e PW_HOST='192.168.91.1' \
+    -e PW_GW_PWD='Gateway_Password' \
+    -e PW_TIMEOUT='3' \
+    -e PW_SUPPRESS_NETWORK_ERRORS='yes' \
+    -e PW_FAIL_FAST='yes' \
+    -e PW_CACHE_TTL='60' \
+    --name pypowerwall \
+    --restart unless-stopped \
+    jasonacox/pypowerwall
+```
+
+### Data Quality Guarantees
+
+The proxy prioritizes data freshness over availability. Key endpoints (`/aggregates`, `/soe`, `/vitals`, `/strings`) return:
+- Fresh data when available
+- Cached data if recent (within PW_CACHE_TTL)  
+- `null` when no fresh or recent cached data exists (never returns fake/zero values)
+
+This ensures monitoring systems can distinguish between actual zero values and missing/stale data.
+
 ## Troubleshooting Help
 
 If you see python errors, make sure you entered your credentials correctly in `docker run`.
@@ -203,6 +251,17 @@ Proxy Settings
 * PW_TIMEOUT - Timeout waiting for Powerwall to respond in sec ("10")
 * PW_POOL_MAXSIZE - Concurrent connections to Powerwall ("15")
 * PW_HTTPS - Set https mode - see HTTPS section above ("no")
+
+Network Robustness Settings
+
+* PW_SUPPRESS_NETWORK_ERRORS - Suppress individual network error logs ("no") - When enabled, shows summary reports every 5 minutes instead
+* PW_NETWORK_ERROR_RATE_LIMIT - Limit network errors logged per minute per function ("5")
+* PW_FAIL_FAST - Return immediately when connection is degraded ("no") - Reduces timeout delays in poor network conditions
+* PW_GRACEFUL_DEGRADATION - Return cached data when fresh data unavailable ("yes") - Improves reliability for monitoring tools
+* PW_HEALTH_CHECK - Enable connection health monitoring and degraded mode detection ("yes")
+* PW_CACHE_TTL - Maximum age in seconds for cached data before returning null ("30") - Ensures data freshness over availability
+
+UI and Advanced Settings
 * PW_STYLE - Background color style for iframe [animation](http://localhost:8675/example.html) ("clear") - options:
     * clear (uses `transparent`)
     * black or dakboard (uses `#000` ![#000](https://via.placeholder.com/12/000/000000.png?text=+))
