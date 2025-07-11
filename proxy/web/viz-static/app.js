@@ -17064,7 +17064,20 @@
         e.exports = i.p + "43b51e1b10d9be72e3f138207d0dcb50.png";
     },
     function (e, t, i) {
-        e.exports = i.p + "cb0da8a8999c06735455bf5056a5cd78.png";
+        fetch('/stats')
+        .then(response => response.json())
+        .then(data => {
+            const isPW3 = data.pw3;
+            if (isPW3 == true) {
+                e.exports = i.p + "2cd211ee063a3608ab501624f326d61e.png";
+            } else {
+                e.exports = i.p + "cb0da8a8999c06735455bf5056a5cd78.png";
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching /stats:', error);
+            e.exports = i.p + "cb0da8a8999c06735455bf5056a5cd78.png";
+        });
     },
     function (e, t, i) {},
     function (e, t, i) {},
