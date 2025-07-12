@@ -393,6 +393,13 @@ def cache_response(endpoint, response):
         
     with _last_good_responses_lock:
         _last_good_responses[endpoint] = (response, time.time())
+        
+        # Limit cache size to prevent memory growth
+        if len(_last_good_responses) > 50:
+            # Remove oldest entries
+            oldest_key = min(_last_good_responses.keys(), 
+                           key=lambda k: _last_good_responses[k][1])
+            del _last_good_responses[oldest_key]
 
 def track_endpoint_call(endpoint, success=True):
     """Track endpoint call success/failure statistics."""
@@ -416,12 +423,13 @@ def track_endpoint_call(endpoint, success=True):
             _endpoint_stats[endpoint]['failed_calls'] += 1
             _endpoint_stats[endpoint]['last_failure_time'] = current_time
         
-        # Limit cache size to prevent memory growth
-        if len(_last_good_responses) > 50:
-            # Remove oldest entries
-            oldest_key = min(_last_good_responses.keys(), 
-                           key=lambda k: _last_good_responses[k][1])
-            del _last_good_responses[oldest_key]
+        # Limit endpoint stats size to prevent memory growth
+        if len(_endpoint_stats) > 100:
+            # Remove oldest entries (by last activity)
+            oldest_endpoint = min(_endpoint_stats.keys(), 
+                                key=lambda k: max(_endpoint_stats[k]['last_success_time'] or 0,
+                                                _endpoint_stats[k]['last_failure_time'] or 0))
+            del _endpoint_stats[oldest_endpoint]
 
 # Global wrapper for pypowerwall function calls
 def safe_pw_call(pw_func, *args, **kwargs):
