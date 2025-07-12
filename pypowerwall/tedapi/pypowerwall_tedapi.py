@@ -562,7 +562,6 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         config = self.tedapi.get_config(force=force)
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
-        status = self.tedapi.get_status(force=force)
         grid_status = self.extract_grid_status(status)
         total_pack_energy = lookup(status, ["control", "systemStatus", "nominalFullPackEnergyWh"])
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])

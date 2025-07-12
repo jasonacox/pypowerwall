@@ -1,5 +1,25 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t77 (11 Jul 2025)
+
+* **TEDAPI Lock Optimization and Error Handling**: Enhanced proxy stability and performance with comprehensive fixes for TEDAPI-related issues.
+  - **Fixed KeyError exceptions** in proxy server when status response missing `version` or `git_hash` keys by implementing defensive key access with `.get()` method
+  - **Fixed KeyError exceptions** when auth dictionary missing `AuthCookie` or `UserRecord` keys in cookie mode, now uses safe fallbacks
+  - **TEDAPI Performance Improvements**: Optimized core TEDAPI functions (`get_config`, `get_status`, `get_device_controller`, `get_firmware_version`, `get_components`, `get_battery_block`) with cache-before-lock pattern to reduce lock contention
+  - **Removed redundant API calls** in TEDAPI wrapper functions to improve response times
+  - **Enhanced multi-threading support** for concurrent proxy requests with reduced lock timeout errors
+  - **Improved error resilience** for different connection modes (local vs TEDAPI) that return varying data structures
+
+* **Enhanced Health Monitoring**: Added comprehensive endpoint statistics tracking for better observability and debugging.
+  - **Endpoint Call Statistics**: Added tracking of successful and failed API calls per endpoint with success rate calculations
+  - **Enhanced `/health` endpoint**: Now includes detailed statistics showing:
+    - Total calls, successful calls, and failed calls per endpoint
+    - Success rate percentage for each endpoint
+    - Time since last success and last failure for each endpoint
+    - Overall proxy response counters (total_gets, total_posts, total_errors, total_timeouts)
+  - **Improved `/health/reset` endpoint**: Now also clears endpoint statistics along with health counters and cache
+  - **Automatic tracking**: All endpoints using `safe_endpoint_call()` automatically tracked (includes `/aggregates`, `/soe`, `/vitals`, `/strings`, etc.)
+
 ### Proxy t76 (6 Jul 2025)
 
 * **Advanced Network Robustness Features**: Added comprehensive connection health monitoring and graceful degradation for improved reliability under poor network conditions, especially for frequent polling scenarios (e.g., telegraf every 5s).

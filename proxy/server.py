@@ -118,7 +118,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload
 )
 
-BUILD = "t76"
+BUILD = "t77"
 ALLOWLIST = [
     '/api/status', '/api/site_info/site_name', '/api/meters/site',
     '/api/meters/solar', '/api/sitemaster', '/api/powerwalls',
@@ -331,6 +331,10 @@ _connection_health_lock = threading.RLock()
 _last_good_responses = {}
 _last_good_responses_lock = threading.RLock()
 
+# Endpoint call tracking for success/failure statistics
+_endpoint_stats = {}
+_endpoint_stats_lock = threading.RLock()
+
 # Health thresholds
 HEALTH_FAILURE_THRESHOLD = 5  # consecutive failures before degraded mode
 HEALTH_RECOVERY_THRESHOLD = 3  # consecutive successes to exit degraded mode
@@ -389,6 +393,28 @@ def cache_response(endpoint, response):
         
     with _last_good_responses_lock:
         _last_good_responses[endpoint] = (response, time.time())
+
+def track_endpoint_call(endpoint, success=True):
+    """Track endpoint call success/failure statistics."""
+    with _endpoint_stats_lock:
+        if endpoint not in _endpoint_stats:
+            _endpoint_stats[endpoint] = {
+                'total_calls': 0,
+                'successful_calls': 0,
+                'failed_calls': 0,
+                'last_success_time': None,
+                'last_failure_time': None
+            }
+        
+        _endpoint_stats[endpoint]['total_calls'] += 1
+        current_time = time.time()
+        
+        if success:
+            _endpoint_stats[endpoint]['successful_calls'] += 1
+            _endpoint_stats[endpoint]['last_success_time'] = current_time
+        else:
+            _endpoint_stats[endpoint]['failed_calls'] += 1
+            _endpoint_stats[endpoint]['last_failure_time'] = current_time
         
         # Limit cache size to prevent memory growth
         if len(_last_good_responses) > 50:
@@ -396,6 +422,7 @@ def cache_response(endpoint, response):
             oldest_key = min(_last_good_responses.keys(), 
                            key=lambda k: _last_good_responses[k][1])
             del _last_good_responses[oldest_key]
+
 # Global wrapper for pypowerwall function calls
 def safe_pw_call(pw_func, *args, **kwargs):
     """
@@ -505,11 +532,15 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
         result = safe_pw_call(pw_func, *args, **kwargs)
     
     if result is not None:
-        # Success - cache the response (health already updated in safe_pw_call)
+        # Success - cache the response and track success
         cache_response(endpoint_name, result)
+        track_endpoint_call(endpoint_name, success=True)
         return result
     
-    # Failed to get fresh data - try cached response
+    # Failed to get fresh data - track failure
+    track_endpoint_call(endpoint_name, success=False)
+    
+    # Try cached response
     cached_result = get_cached_response(endpoint_name)
     if cached_result is not None:
         return cached_result
@@ -837,6 +868,15 @@ class Handler(BaseHTTPRequestHandler):
                 'current_time': datetime.datetime.now().isoformat()
             }
             
+            # Add overall proxy response counters
+            with proxystats_lock:
+                health_info['proxy_stats'] = {
+                    'total_gets': proxystats['gets'],
+                    'total_posts': proxystats['posts'],
+                    'total_errors': proxystats['errors'],
+                    'total_timeouts': proxystats['timeout']
+                }
+            
             if health_check_enabled:
                 with _connection_health_lock:
                     health_info['connection_health'] = {
@@ -863,6 +903,29 @@ class Handler(BaseHTTPRequestHandler):
                         'endpoints': cached_endpoints
                     }
             
+            # Add endpoint call statistics
+            with _endpoint_stats_lock:
+                endpoint_stats = {}
+                current_time = time.time()
+                for endpoint, stats in _endpoint_stats.items():
+                    success_rate = (stats['successful_calls'] / stats['total_calls'] * 100) if stats['total_calls'] > 0 else 0
+                    endpoint_info = {
+                        'total_calls': stats['total_calls'],
+                        'successful_calls': stats['successful_calls'],
+                        'failed_calls': stats['failed_calls'],
+                        'success_rate_percent': round(success_rate, 2)
+                    }
+                    
+                    if stats['last_success_time']:
+                        endpoint_info['last_success_age_seconds'] = current_time - stats['last_success_time']
+                    if stats['last_failure_time']:
+                        endpoint_info['last_failure_age_seconds'] = current_time - stats['last_failure_time']
+                    
+                    endpoint_stats[endpoint] = endpoint_info
+                
+                if endpoint_stats:
+                    health_info['endpoint_statistics'] = endpoint_stats
+            
             message: str = json.dumps(health_info)
         elif request_path == '/health/reset':
             # Reset Health Counters and Clear Cache
@@ -881,12 +944,19 @@ class Handler(BaseHTTPRequestHandler):
                     cache_size_before = len(_last_good_responses)
                     _last_good_responses.clear()
             
-            log.info("Health counters and cache reset via /health/reset endpoint")
+            # Reset endpoint statistics
+            endpoint_stats_count = 0
+            with _endpoint_stats_lock:
+                endpoint_stats_count = len(_endpoint_stats)
+                _endpoint_stats.clear()
+            
+            log.info("Health counters, cache, and endpoint statistics reset via /health/reset endpoint")
             message: str = json.dumps({
                 'status': 'reset_complete',
                 'health_counters_reset': health_check_enabled,
                 'cache_cleared': graceful_degradation,
-                'cache_entries_removed': cache_size_before if graceful_degradation else 0
+                'cache_entries_removed': cache_size_before if graceful_degradation else 0,
+                'endpoint_stats_cleared': endpoint_stats_count
             })
         elif request_path == '/temps':
             # Temps of Powerwalls
@@ -1237,8 +1307,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Set-Cookie", f"AuthCookie=1234567890;{cookiesuffix}")
                 self.send_header("Set-Cookie", f"UserRecord=1234567890;{cookiesuffix}")
             else:
-                self.send_header("Set-Cookie", f"AuthCookie={pw.client.auth['AuthCookie']};{cookiesuffix}")
-                self.send_header("Set-Cookie", f"UserRecord={pw.client.auth['UserRecord']};{cookiesuffix}")
+                # Safely access auth cookies with fallback
+                auth_cookie = pw.client.auth.get('AuthCookie', '1234567890') if pw.client.auth else '1234567890'
+                user_record = pw.client.auth.get('UserRecord', '1234567890') if pw.client.auth else '1234567890'
+                self.send_header("Set-Cookie", f"AuthCookie={auth_cookie};{cookiesuffix}")
+                self.send_header("Set-Cookie", f"UserRecord={user_record};{cookiesuffix}")
 
             # Serve static assets from web root first, if found.
             # pylint: disable=attribute-defined-outside-init
@@ -1250,8 +1323,8 @@ class Handler(BaseHTTPRequestHandler):
                 # convert fcontent to string
                 fcontent = fcontent.decode("utf-8")
                 # fix the following variables that if they are None, return ""
-                fcontent = fcontent.replace("{VERSION}", status["version"] or "")
-                fcontent = fcontent.replace("{HASH}", status["git_hash"] or "")
+                fcontent = fcontent.replace("{VERSION}", status.get("version", "") or "")
+                fcontent = fcontent.replace("{HASH}", status.get("git_hash", "") or "")
                 fcontent = fcontent.replace("{EMAIL}", email)
 
                 static_asset_prefix = api_base_url + "viz-static/" # prefix for static files so they can be detected by a reverse proxy easily
