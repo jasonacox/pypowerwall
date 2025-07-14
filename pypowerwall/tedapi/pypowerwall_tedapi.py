@@ -25,15 +25,45 @@ def set_debug(debug=False, quiet=False, color=True):
     else:
         log.setLevel(logging.NOTSET)
 
-# Compute the line-to-line voltage of two and three phase legs
-def compute_LL_voltage(v1n, v2n, v3n=None):
+# Compute the line-to-line voltage of single, two and three phase legs
+def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
     """
-    Compute the line-to-line voltage of two and three phase legs
-    Args: v1n, v2n, v3n - line-to-neutral voltages
+    Compute the line-to-line voltage for various electrical system configurations.
+    
+    This function handles single-phase, split-phase, and three-phase electrical systems
+    by analyzing voltage magnitudes and applying appropriate calculations based on the
+    number of legs with significant voltage (above 100V threshold).
+    
+    Args:
+        v1n (float): Line 1 to neutral voltage (default: 0)
+        v2n (float): Line 2 to neutral voltage (default: 0) 
+        v3n (float): Line 3 to neutral voltage (default: 0)
+    
+    Returns:
+        float: Calculated line-to-line voltage based on system configuration:
+               - Sum of all 3 if no significant voltages detected (low voltage scenario)
+               - Single voltage value for single-phase systems (one active leg)
+               - Sum of voltages for split-phase systems (two active legs, 180° out of phase)
+               - Average of all line-to-line voltages for three-phase systems (120° out of phase)
+    
+    Note:
+        Uses 100V threshold to distinguish significant voltages from residual voltages
+        that may appear on inactive legs in single-phase systems.
     """
-    if not v3n:
-        # single phase voltage - 180 degrees out of phase
-        return v1n + v2n
+    # Define a threshold for significant voltage
+    SIGNIFICANT_VOLTAGE = 100
+
+    # Check for single leg line voltage (UK)
+    active_voltages = [v for v in (v1n, v2n, v3n) if v and abs(v) > SIGNIFICANT_VOLTAGE]
+    if not active_voltages:
+        # Low voltage scenario - return the sum of all voltages
+        return v1n + v2n + v3n
+    if len(active_voltages) == 1:
+        # single phase voltage - one leg, active leg
+        return active_voltages[0]
+    if len(active_voltages) == 2:
+        # split phase voltage - two legs, 180 degrees out of phase
+        return active_voltages[0] + active_voltages[1]
     else:
         # three phase voltage - 120 degrees out of phase
         v12 = math.sqrt(v1n**2 + v2n**2 + v1n * v2n)

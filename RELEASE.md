@@ -8,6 +8,7 @@
 * Fix proxy server KeyError when status response missing version or git_hash keys by using defensive key access
 * Fix proxy server KeyError when auth dictionary missing AuthCookie or UserRecord keys in cookie mode
 * Improve performance and reduce lock timeout errors in multi-threaded environments like the pypowerwall proxy server
+* Enhance `compute_LL_voltage()` function with voltage threshold detection (100V) to better handle single-phase systems with residual voltages on inactive legs, as well as split- and three-phase systems.
 * These optimizations benefit all methods that depend on the core TEDAPI functions, including `vitals()`, `get_blocks()`, and `get_battery_blocks()`
 
 ## v0.13.1 - TEDAPI Battery Blocks
