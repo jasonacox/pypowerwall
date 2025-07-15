@@ -212,16 +212,28 @@ class TEDAPI:
             "vin": "1232100-00-E--TG11234567890"
         }
         """
-        # Check for lock and wait if api request already sent
+        # Check Cache BEFORE acquiring lock
+        if not force and "config" in self.pwcachetime:
+            if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
+                log.debug("Using Cached Payload")
+                return self.pwcache["config"]
+        
+        # Check cooldown BEFORE acquiring lock
+        if not force and self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        
+        # Only acquire lock if we need to make an API call
         data = None
         with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
+            # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "config" in self.pwcachetime:
                 if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
-                    log.debug("Using Cached Payload")
+                    log.debug("Using Cached Payload (double-check)")
                     return self.pwcache["config"]
+            
+            # Re-check cooldown after acquiring lock
             if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
             # Check Connection
@@ -310,16 +322,28 @@ class TEDAPI:
             "system": {}
         }
         """
-        # Check for lock and wait if api request already sent
+        # Check Cache BEFORE acquiring lock
+        if not force and "status" in self.pwcachetime:
+            if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
+                log.debug("Using Cached Payload")
+                return self.pwcache["status"]
+        
+        # Check cooldown BEFORE acquiring lock
+        if not force and self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        
+        # Only acquire lock if we need to make an API call
         data = None
         with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
+            # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "status" in self.pwcachetime:
                 if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
-                    log.debug("Using Cached Payload")
+                    log.debug("Using Cached Payload (double-check)")
                     return self.pwcache["status"]
+            
+            # Re-check cooldown after acquiring lock
             if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
             # Check Connection
@@ -388,16 +412,28 @@ class TEDAPI:
 
         TODO: Refactor to combine tedapi queries
         """
-        # Check for lock and wait if api request already sent
+        # Check Cache BEFORE acquiring lock
+        if not force and "controller" in self.pwcachetime:
+            if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
+                log.debug("Using Cached Payload")
+                return self.pwcache["controller"]
+        
+        # Check cooldown BEFORE acquiring lock
+        if not force and self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        
+        # Only acquire lock if we need to make an API call
         data = None
         with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
+            # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "controller" in self.pwcachetime:
                 if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
-                    log.debug("Using Cached Payload")
+                    log.debug("Using Cached Payload (double-check)")
                     return self.pwcache["controller"]
+            
+            # Re-check cooldown after acquiring lock
             if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
             # Check Connection
@@ -465,20 +501,27 @@ class TEDAPI:
                 }
             }
         """
+        # Check Cache BEFORE acquiring lock
+        if not force and "firmware" in self.pwcachetime:
+            if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
+                log.debug("Using Cached Firmware")
+                return self.pwcache["firmware"]
+        
+        # Check cooldown BEFORE acquiring lock
+        if not force and self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        
         payload = None
         with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get firmware version")
-                    return None
-            # Check Cache
+            # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "firmware" in self.pwcachetime:
                 if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
-                    log.debug("Using Cached Firmware")
+                    log.debug("Using Cached Firmware (double-check)")
                     return self.pwcache["firmware"]
+            
+            # Re-check cooldown after acquiring lock
             if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
             # Fetch Current Status from Powerwall
@@ -560,20 +603,27 @@ class TEDAPI:
                 }
             }
         """
+        # Check Cache BEFORE acquiring lock
+        if not force and "components" in self.pwcachetime:
+            if time.time() - self.pwcachetime["components"] < self.pwconfigexpire:
+                log.debug("Using Cached Components")
+                return self.pwcache["components"]
+        
+        # Check cooldown BEFORE acquiring lock
+        if not force and self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        
         components = None
         with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Connection
-            if not self.din:
-                if not self.connect():
-                    log.error("Not Connected - Unable to get configuration")
-                    return None
-            # Check Cache
+            # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "components" in self.pwcachetime:
                 if time.time() - self.pwcachetime["components"] < self.pwconfigexpire:
-                    log.debug("Using Cached Components")
+                    log.debug("Using Cached Components (double-check)")
                     return self.pwcache["components"]
+            
+            # Re-check cooldown after acquiring lock
             if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
             # Fetch Configuration from Powerwall
@@ -814,15 +864,28 @@ class TEDAPI:
         if not din:
             log.error("No DIN specified - Unable to get battery block")
             return None
+        
+        # Check Cache BEFORE acquiring lock
+        if not force and din in self.pwcachetime:
+            if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
+                log.debug("Using Cached Battery Block")
+                return self.pwcache[din]
+        
+        # Check cooldown BEFORE acquiring lock
+        if not force and self.pwcooldown > time.perf_counter():
+            log.debug('Rate limit cooldown period - Pausing API calls')
+            return None
+        
         data = None
         with acquire_lock_with_backoff(self_function, self.timeout):
-            # Check Cache
+            # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and din in self.pwcachetime:
                 if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
-                    log.debug("Using Cached Battery Block")
+                    log.debug("Using Cached Battery Block (double-check)")
                     return self.pwcache[din]
+            
+            # Re-check cooldown after acquiring lock
             if not force and self.pwcooldown > time.perf_counter():
-                # Rate limited - return None
                 log.debug('Rate limit cooldown period - Pausing API calls')
                 return None
             # Fetch Battery Block from Powerwall
