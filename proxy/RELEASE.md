@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t78 (14 Jul 2025)
+
+* Power flow animation update: Show an image of a Powerwall 3 instead of a Powerwall 2 if it is a PW3 by @JEMcats in https://github.com/jasonacox/pypowerwall/pull/193
+
 ### Proxy t77 (11 Jul 2025)
 
 * **TEDAPI Lock Optimization and Error Handling**: Enhanced proxy stability and performance with comprehensive fixes for TEDAPI-related issues.
