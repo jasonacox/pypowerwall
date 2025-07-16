@@ -1,5 +1,7 @@
 #!/bin/bash
 echo "Build and Push jasonacox/pypowerwall to Docker Hub"
+echo "Usage: $0 [beta_number]"
+echo "  If beta_number is not provided, auto-increments from last beta version"
 echo ""
 
 last_path=$(basename $PWD)
@@ -12,10 +14,29 @@ if [ "$last_path" == "proxy" ]; then
   PROXY=`grep "BUILD = " server.py | cut -d\" -f2`
   PYPOWERWALL=`echo -n "import pypowerwall
 print(pypowerwall.version)" | (cd ..; python3)`
-  VER="${PYPOWERWALL}${PROXY}-beta${1}"
+  
+  # Handle beta numbering
+  BETA_FILE=".beta_version"
+  if [ -n "$1" ]; then
+    # Use provided beta number
+    BETA_NUM="$1"
+    echo "$BETA_NUM" > "$BETA_FILE"
+  else
+    # Auto-increment beta number
+    if [ -f "$BETA_FILE" ]; then
+      BETA_NUM=$(cat "$BETA_FILE")
+      BETA_NUM=$((BETA_NUM + 1))
+    else
+      BETA_NUM=1
+    fi
+    echo "$BETA_NUM" > "$BETA_FILE"
+  fi
+  
+  VER="${PYPOWERWALL}${PROXY}-beta${BETA_NUM}"
 
   # Check with user before proceeding
   echo "Build and push jasonacox/pypowerwall:${VER} to Docker Hub?"
+  echo "Beta version: ${BETA_NUM} (stored in ${BETA_FILE})"
   read -p "Press [Enter] to continue or Ctrl-C to cancel..."
   
   # Build jasonacox/pypowerwall:x.y.z
