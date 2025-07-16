@@ -4,7 +4,9 @@ import logging
 from bs4 import BeautifulSoup as Soup
 
 logging.basicConfig(
-    format='%(asctime)s [%(name)s] [%(levelname)s] %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+    format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
 logger = logging.getLogger(os.path.basename(__file__))
 if os.environ.get("LOG_LEVEL", "").lower() == "debug":
     logger.setLevel(logging.DEBUG)
@@ -13,7 +15,7 @@ else:
 
 
 def get_static(web_root, fpath):
-    if fpath.split('?')[0] == "/":
+    if fpath.split("?")[0] == "/":
         fpath = "index.html"
     if fpath.startswith("/"):
         fpath = fpath[1:]
@@ -46,21 +48,21 @@ def get_static(web_root, fpath):
         else:
             ftype = "text/plain"
 
-        with open(freq, 'rb') as f:
+        with open(freq, "rb") as f:
             return f.read(), ftype
 
     return None, None
 
 
 def inject_js(htmlsrc, *args):
-    soup = Soup(htmlsrc, 'html.parser')
+    soup = Soup(htmlsrc, "html.parser")
 
     for fpath in args:
         logger.debug("Inserting Javascript file: {}".format(fpath))
 
-        script = soup.new_tag('script')
-        script['type'] = 'text/javascript'
-        script['src'] = fpath
+        script = soup.new_tag("script")
+        script["type"] = "text/javascript"
+        script["src"] = fpath
         soup.body.append(script)
 
     return str(soup)
