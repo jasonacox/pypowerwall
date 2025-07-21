@@ -9,6 +9,8 @@
 
 Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems.
 
+> ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's WiFi access point to access TEDAPI data.
+
 ## Description
 
 This python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  
