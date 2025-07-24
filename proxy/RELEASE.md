@@ -1,5 +1,14 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t79 (16 Jul 2025)
+
+* **Enhanced Health Endpoint**: Added pypowerwall version and proxy build information to `/health` endpoint for better version tracking and debugging
+  - Health response now includes: `"pypowerwall": "0.13.2 Proxy t79"` combining version and build info in consistent format
+
+* **Code Quality**: Added flake8 configuration (`.flake8`) and cleaned up trailing whitespace issues
+  - Configured to ignore common acceptable lint errors (E501, W503, E722)
+  - Fixed trailing whitespace issues throughout proxy codebase
+
 ### Proxy t78 (14 Jul 2025)
 
 * Power flow animation update: Show an image of a Powerwall 3 instead of a Powerwall 2 if it is a PW3 by @JEMcats in https://github.com/jasonacox/pypowerwall/pull/193
