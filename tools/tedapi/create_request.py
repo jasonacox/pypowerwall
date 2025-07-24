@@ -1,3 +1,26 @@
+#!/usr/bin/env python3
+"""
+create_request.py - Generate a TEDAPI protobuf request binary
+
+This script interactively builds a TEDAPI Message protobuf for 
+configuration delivery.
+
+Features:
+- Prompts for the recipient DIN (Device Identification Number)
+- Uses 'config.json' as the configuration file (can be edited in the script)
+- Prompts for the output binary file name (defaults to 'request.bin' if left blank)
+- Fills required fields for deliveryChannel, sender, recipient, config, and tail
+- Serializes the message to the specified binary file for use with TEDAPI tools
+
+Usage:
+    python3 create_request.py
+    # Follow prompts for DIN and output file name
+
+Example:
+   curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1
+
+"""
+
 import tedapi_pb2
 
 # Prompt for DIN and config file name
