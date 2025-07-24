@@ -25,7 +25,7 @@ with open(filename, 'rb') as f:
     data = f.read()
 
 # Decode protobuf data
-tedapi = tedapi_pb2.ParentMessage()
+tedapi = tedapi_pb2.Message()
 tedapi.ParseFromString(data)
 print(tedapi)
 

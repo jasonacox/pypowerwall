@@ -145,6 +145,10 @@ It only returns a simple string that contains the DIN:
 This appears to be the workhorse function. It uses basic auth that appears to be: `Tesla_Energy_Device:GW_PWD` where the GW_PWD is the password near the QR code on the Powerwall that you scan with the Tesla Pros app.
 
 ```bash
+# First you will need a request.bin - Create example:
+python create_request.py
+
+# Request config
 curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1
 ```
 
@@ -158,6 +162,9 @@ There appear to be different types of request sent. One is for `config` which ge
 #### CONFIG Example
 
 ```bash
+# First you will need a request.bin - Create example:
+python create_request.py
+
 # Request Config Data from Powerwall
 curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1 > response.bin
 
