@@ -118,7 +118,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t79"
+BUILD = "t80"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -520,8 +520,8 @@ def safe_pw_call(pw_func, *args, **kwargs):
     try:
         result = pw_func(*args, **kwargs)
 
-        # Update health tracking on success
-        if health_check_enabled:
+        # Only update health tracking on true, fresh connection success
+        if health_check_enabled and result is not None:
             update_connection_health(success=True)
 
         return result
@@ -616,8 +616,8 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
     else:
         result = safe_pw_call(pw_func, *args, **kwargs)
 
+    # Only treat as a true success if result is not None and is not a cached response
     if result is not None:
-        # Success - cache the response and track success
         cache_response(endpoint_name, result)
         track_endpoint_call(endpoint_name, success=True)
         return result
@@ -625,9 +625,10 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
     # Failed to get fresh data - track failure
     track_endpoint_call(endpoint_name, success=False)
 
-    # Try cached response
+    # Try cached response (do NOT reset consecutive_failures if using cache)
     cached_result = get_cached_response(endpoint_name)
     if cached_result is not None:
+        # Do not call update_connection_health(success=True) here
         return cached_result
 
     # No fresh or cached data available

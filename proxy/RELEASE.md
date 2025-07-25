@@ -1,5 +1,21 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t80 (24 Jul 2025)
+
+* **Connection Health Robustness Fix** ([#651](https://github.com/jasonacox/Powerwall-Dashboard/issues/651#issuecomment-3114228456)):
+  - Fixed issue where `consecutive_failures` in connection health tracking could reset to zero even when the Powerwall connection was not restored.
+  - Now, health tracking only resets on true, fresh connection success (not when returning cached or fallback responses).
+  - Prevents misleading health status and ensures degraded mode is only exited after real network/API recovery.
+  - Improves reliability of `/health` and monitoring endpoints under extended network outages or degraded conditions.
+
+* **Internal Refactoring**:
+  - Audited and updated health tracking logic in `safe_pw_call` and `safe_endpoint_call` wrappers to ensure correct behavior.
+  - No user-facing API changes, but improved accuracy for health metrics and logs.
+
+* **Documentation**:
+  - Updated release notes to clarify health tracking behavior and robustness improvements for network error handling.
+
+
 ### Proxy t79 (16 Jul 2025)
 
 * **Enhanced Health Endpoint**: Added pypowerwall version and proxy build information to `/health` endpoint for better version tracking and debugging

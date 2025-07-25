@@ -17,6 +17,7 @@
 import sys
 import json
 import argparse
+import os
 from .fleetapi import FleetAPI, CONFIGFILE
 
 # Display help if no arguments
@@ -70,8 +71,23 @@ if args.site:
 fleet = FleetAPI(configfile=settings_file, debug=settings_debug, site_id=settings_site)
 
 # Load Configuration
-if not fleet.load_config():
-    print(f"  Configuration file not found: {settings_file}")
+try:
+    config_loaded = fleet.load_config()
+except Exception as e:
+    print(f"Error loading configuration: {e}")
+    config_loaded = False
+    # Prompt user to remove config file
+    if os.path.exists(settings_file):
+        resp = input(f"Do you want to remove the FleetAPI config file '{settings_file}' and re-run setup? [y/N]: ").strip().lower()
+        if resp == 'y':
+            os.remove(settings_file)
+            print(f"Removed {settings_file}. Please re-run setup.")
+        else:
+            print("Config file not removed. Exiting...")
+    sys.exit(1)
+
+if not config_loaded:
+    print(f"  Configuration file not found or invalid: {settings_file}")
     if args.command != "setup":
         print("  Run setup to access Tesla FleetAPI.")
         sys.exit(1)
