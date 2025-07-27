@@ -1,5 +1,9 @@
-bs4==0.0.2
+# This file is used to install the necessary Python packages for the project.
 requests
-protobuf
-teslapy
-
+protobuf>=3.20.0
+bs4==0.0.2
+python-dotenv
+pyroute2
+python-dateutil
+## TEMPORARY: Use TeslaPy from GitHub at specific commit until next release is published to PyPI
+git+https://github.com/tdorssers/TeslaPy.git@0ac92964d9d0b4fe4764288f483e892b879d9ace

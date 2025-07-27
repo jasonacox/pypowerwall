@@ -288,7 +288,7 @@ The following are some useful tools based on pypowerwall:
 
 * [Powerwall Dashboard](https://github.com/jasonacox/Powerwall-Dashboard#powerwall-dashboard) - Monitoring Dashboard for the Tesla Powerwall using Grafana, InfluxDB, Telegraf and pyPowerwall.
 
-## Powerwall Command Line
+## pyPowerwall Command Line Interface (CLI)
 
 pyPowerwall has a built in feature to scan your network for available Powerwall gateways and set/get operational and reserve modes.
 

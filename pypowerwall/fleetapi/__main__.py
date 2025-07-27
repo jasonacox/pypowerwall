@@ -31,8 +31,8 @@ if len(sys.argv) == 1:
     print("    info                Display information about your site")
     print("    getmode             Get current operational mode setting")
     print("    getreserve          Get current battery reserve level setting")
-    print("    setmode             Set operatinoal mode (self_consumption or autonomous)")
-    print("    setreserve          Set battery reserve level (prcentage or 'current')\n")
+    print("    setmode             Set operational mode (self_consumption, backup, autonomous)")
+    print("    setreserve          Set battery reserve level (percentage or 'current')\n")
     print("options:")
     print("  --debug               Enable debug mode")
     print("  --config CONFIG       Specify alternate config file (default: .fleetapi.config)")
@@ -106,16 +106,24 @@ if args.command == "setup":
 # Command: List Sites
 if args.command == "sites":
     sites = fleet.getsites()
+    if not sites:
+        print("Error: Unable to retrieve sites (API error or authentication failure).")
+        sys.exit(1)
     if args.json:
         print(json.dumps(sites, indent=4))
     else:
         for site in sites:
-            print(f"  {site['energy_site_id']} - {site['site_name']}")
+            site_id = site.get('energy_site_id', None)
+            site_name = site.get('site_name', None)
+            print(f"  {site_id} - {site_name}")
     sys.exit(0)
 
 # Command: Status
 if args.command == "status":
     status = fleet.get_live_status()
+    if not status:
+        print("Error: Unable to retrieve live status (API error or authentication failure).")
+        sys.exit(1)
     if args.json:
         print(json.dumps(status, indent=4))
     else:
@@ -126,6 +134,9 @@ if args.command == "status":
 # Command: Site Info
 if args.command == "info":
     info = fleet.get_site_info()
+    if not info:
+        print("Error: Unable to retrieve site info (API error or authentication failure).")
+        sys.exit(1)
     if args.json:
         print(json.dumps(info, indent=4))
     else:
@@ -136,6 +147,9 @@ if args.command == "info":
 # Command: Get Operating Mode
 if args.command == "getmode":
     mode = fleet.get_operating_mode()
+    if mode is None:
+        print("Error: Unable to retrieve operating mode (API error or authentication failure).")
+        sys.exit(1)
     if args.json:
         print(json.dumps({"mode": mode}, indent=4))
     else:
@@ -145,6 +159,9 @@ if args.command == "getmode":
 # Command: Get Battery Reserve
 if args.command == "getreserve":
     reserve = fleet.get_battery_reserve()
+    if reserve is None:
+        print("Error: Unable to retrieve battery reserve (API error or authentication failure).")
+        sys.exit(1)
     if args.json:
         print(json.dumps({"reserve": reserve}, indent=4))
     else:
@@ -156,12 +173,18 @@ if args.command == "setmode":
     if args.argument:
         # autonomous or self_consumption
         if args.argument in ["self", "self_consumption"]:
-            print(fleet.set_operating_mode("self_consumption"))
+            result = fleet.set_operating_mode("self_consumption")
         elif args.argument in ["auto", "time", "autonomous"]:
-            print(fleet.set_operating_mode("autonomous"))
+            result = fleet.set_operating_mode("autonomous")
+        elif args.argument in ["backup"]:
+            result = fleet.set_operating_mode("backup")
         else:
-            print("Invalid mode, must be 'self' or 'auto'")
+            print("Invalid mode, must be 'self', 'backup' or 'auto'")
             sys.exit(1)
+        if not result:
+            print("Error: Unable to set operating mode (API error or authentication failure).")
+            sys.exit(1)
+        print(result)
     else:
         print("No mode specified, exiting...")
     sys.exit(0)
@@ -176,10 +199,17 @@ if args.command == "setreserve":
                 sys.exit(1)
         elif args.argument == "current":
             val = fleet.battery_level()
+            if val is None:
+                print("Error: Unable to retrieve current battery level (API error or authentication failure).")
+                sys.exit(1)
         else:
             print("Invalid reserve level, must be 0-100 or 'current' to set to current level.")
             sys.exit(1)
-        print(fleet.set_battery_reserve(int(val)))
+        result = fleet.set_battery_reserve(int(val))
+        if not result:
+            print("Error: Unable to set battery reserve (API error or authentication failure).")
+            sys.exit(1)
+        print(result)
     else:
         print("No reserve level specified, exiting...")
     sys.exit(0)
