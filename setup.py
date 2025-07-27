@@ -22,10 +22,8 @@ setuptools.setup(
         'pyroute2',
         'bs4',
         'python-dateutil',
-        # TeslaPy is installed via dependency_links below
-    ],
-    dependency_links=[
-        'git+https://github.com/tdorssers/TeslaPy.git@0ac92964d9d0b4fe4764288f483e892b879d9ace#egg=teslapy',
+        'requests-oauthlib',
+        'websocket-client>=0.59.0',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",

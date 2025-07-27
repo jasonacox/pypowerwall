@@ -4,7 +4,7 @@ import os
 import time
 from typing import Optional, Union, List
 
-from teslapy import Tesla, Battery, SolarPanel
+from pypowerwall.cloud.teslapy import Tesla, Battery, SolarPanel
 
 from pypowerwall.cloud.decorators import not_implemented_mock_data
 from pypowerwall.cloud.exceptions import * # pylint: disable=unused-wildcard-import
