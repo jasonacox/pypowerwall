@@ -528,9 +528,9 @@ class FleetAPI:
         return payload
 
     def set_operating_mode(self, mode: str):
-        """ Set operating mode (self_consumption or autonomous) """
+        """ Set operating mode (self_consumption, backup or autonomous) """
         data = {"default_real_mode": mode}
-        if mode not in ["self_consumption", "autonomous"]:
+        if mode not in ["self_consumption", "autonomous", "backup"]:
             log.debug(f"Invalid mode: {mode}")
             return False
         # 'https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/energy_sites/{energy_site_id}/operation'
@@ -822,27 +822,29 @@ class FleetAPI:
         print("Step 4 - Select site_id for your Tesla Powerwall...")
         if self.site_id:
             print(f"  Previous site_id: {self.site_id}")
-        # Get list of sites
-        sites = self.getsites()
+        # Get list of sites and filter out those without energy_site_id
+        sites = [s for s in self.getsites() if s.get('energy_site_id') is not None]
         sel = 0
         # If not set, pick first site
-        if not self.site_id:
+        if not self.site_id and sites:
             self.site_id = sites[0]['energy_site_id']
             sel = 1
         log.debug(sites)
         print("  Sites:")
         for i, site in enumerate(sites):
-            if self.site_id == site['energy_site_id']:
-                print(f"   * {i+1}. {site['energy_site_id']} - {site['site_name']} (current)")
+            site_id = site.get('energy_site_id', None)
+            site_name = site.get('site_name', None)
+            if self.site_id == site_id:
+                print(f"   * {i+1}. {site_id} - {site_name} (current)")
                 sel = i+1
             else:
-                print(f"     {i+1}. {site['energy_site_id']} - {site['site_name']}")
+                print(f"     {i+1}. {site_id} - {site_name}")
         # If only one site, use it
         if len(sites) == 1:
             print(f"  Using site: {sites[0]['energy_site_id']}")
             self.site_id = sites[0]['energy_site_id']
             sel = 1
-        else:
+        elif sites:
             site = input(f"  Enter Site ID [{sel}]: ")
             if site:
                 self.site_id = sites[int(site)-1]['energy_site_id']

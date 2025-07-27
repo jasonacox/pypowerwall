@@ -16,9 +16,16 @@ setuptools.setup(
     url='https://github.com/jasonacox/pypowerwall',
     packages=setuptools.find_packages(),
     install_requires=[
-        'requests',      
-        'protobuf>=3.20.0',        
-        'teslapy',     
+        'requests',
+        'protobuf>=3.20.0',
+        'python-dotenv',
+        'pyroute2',
+        'bs4',
+        'python-dateutil',
+        # TeslaPy is installed via dependency_links below
+    ],
+    dependency_links=[
+        'git+https://github.com/tdorssers/TeslaPy.git@0ac92964d9d0b4fe4764288f483e892b879d9ace#egg=teslapy',
     ],
     classifiers=[
         "Programming Language :: Python :: 3",
