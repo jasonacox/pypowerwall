@@ -25,6 +25,10 @@ setuptools.setup(
         'requests-oauthlib',
         'websocket-client>=0.59.0',
     ],
+    package_data={
+        'pypowerwall.cloud.teslapy': ['endpoints.json', 'option_codes.json'],
+    },
+    include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
