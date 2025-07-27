@@ -1,8 +1,8 @@
 # RELEASE NOTES
 
-## v0.13.3 - Fix for TeslaPy and FleetAPI
+## v0.14.0 - Fix for TeslaPy and FleetAPI
 
-* Pin TeslaPy to specific GitHub commit in requirements and setup.py to help address issue setting Powerwall Mode - see https://github.com/jasonacox/pypowerwall/issues/197
+* Pin and embed TeslaPy code patch directly into pyPowerwall to help address issue setting Powerwall Mode - see https://github.com/jasonacox/pypowerwall/issues/197
 * FleetAPI CLI: improved error handling, skips incomplete sites, clearer output to help address issue where token can't be refreshed due to missing energy_site_id key - see https://github.com/jasonacox/pypowerwall/issues/198
 
 ## v0.13.2 - TEDAPI Lock Optimization
