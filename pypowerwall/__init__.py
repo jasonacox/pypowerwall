@@ -88,7 +88,7 @@ import time
 from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 14, 0)
+version_tuple = (0, 14, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -825,6 +825,10 @@ class Powerwall(object):
                     'THC_State': devices[device]['THC_State'],
                     'temperature': devices[device]['THC_AmbientTemp']
                 }
+                # Some firmware or modes may return vitals entries before /api/system_status
+                # includes corresponding battery_blocks. Guard against missing keys.
+                if sn not in result:
+                    result[sn] = {}
                 result[sn].update(bat_res)
 
         if jsonformat:
