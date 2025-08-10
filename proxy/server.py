@@ -118,7 +118,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t80"
+BUILD = "t81"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -511,6 +511,19 @@ def safe_pw_call(pw_func, *args, **kwargs):
     """
     global proxystats
 
+    def get_descriptive_name():
+        """Build descriptive function name with arguments for better debugging."""
+        func_name = getattr(pw_func, "__name__", str(pw_func))
+        if func_name == "poll" and args:
+            # For poll() calls, include the URI endpoint being called
+            return f"{func_name}('{args[0]}')" if args[0] else func_name
+        elif args:
+            # For other functions, show first argument if it exists
+            first_arg = str(args[0])[:50]  # Limit to 50 chars to keep logs readable
+            return f"{func_name}({first_arg})"
+        else:
+            return func_name
+
     # In fail-fast mode with degraded connection, return None immediately
     if fail_fast_mode and health_check_enabled:
         with _connection_health_lock:
@@ -537,8 +550,8 @@ def safe_pw_call(pw_func, *args, **kwargs):
         PyPowerwallFleetAPINotImplemented,
         PyPowerwallFleetAPIInvalidPayload,
     ) as e:
-        func_name = getattr(pw_func, "__name__", str(pw_func))
-        log.warning(f"Powerwall API Error in {func_name}: {str(e)}")
+        descriptive_name = get_descriptive_name()
+        log.warning(f"Powerwall API Error in {descriptive_name}: {str(e)}")
         with proxystats_lock:
             proxystats["errors"] = proxystats["errors"] + 1
         return None
@@ -557,6 +570,7 @@ def safe_pw_call(pw_func, *args, **kwargs):
         urllib3.exceptions.MaxRetryError,
     ) as e:
         func_name = getattr(pw_func, "__name__", str(pw_func))
+        descriptive_name = get_descriptive_name()
         error_type = type(e).__name__
 
         # Update health tracking on network failure
@@ -571,26 +585,29 @@ def safe_pw_call(pw_func, *args, **kwargs):
             func_name, network_error_rate_limit
         ):
             if "timeout" in error_type.lower():
-                log.info(f"Network timeout in {func_name}: {error_type}")
+                log.info(f"Network timeout in {descriptive_name}: {error_type}")
             else:
-                log.info(f"Network error in {func_name}: {error_type}")
+                log.info(f"Network error in {descriptive_name}: {error_type}")
 
         with proxystats_lock:
             proxystats["timeout"] = proxystats["timeout"] + 1
         return None
     except Exception as e:
-        func_name = getattr(pw_func, "__name__", str(pw_func))
+        descriptive_name = get_descriptive_name()
         error_type = type(e).__name__
 
         # Update health tracking on unexpected failure
         if health_check_enabled:
             update_connection_health(success=False)
 
-        # Log unexpected errors but keep it concise
-        if debugmode:
-            log.error(f"Unexpected error in {func_name}: {error_type}: {str(e)}")
+        # Log unexpected errors - focus on function and likely payload issues
+        if error_type == "TypeError":
+            log.warning(f"Bad payload response in {descriptive_name} - likely null/malformed data from Powerwall")
         else:
-            log.warning(f"Unexpected error in {func_name}: {error_type}")
+            if debugmode:
+                log.error(f"Unexpected error in {descriptive_name}: {error_type}: {str(e)}")
+            else:
+                log.warning(f"Unexpected error in {descriptive_name}: {error_type}")
         with proxystats_lock:
             proxystats["errors"] = proxystats["errors"] + 1
         return None

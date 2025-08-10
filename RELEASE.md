@@ -1,5 +1,15 @@
 # RELEASE NOTES
 
+
+## v0.14.1 - Test Coverage & battery_blocks Fix
+
+* Add unit tests expanding coverage: version parsing, core Powerwall methods (poll json output, power aggregation, grid_status numeric/json, alerts fallback path, set_operation validation, reserve/mode helpers, temps, site_name)
+* Introduce stub client in tests for deterministic, offline execution
+* Fix `battery_blocks()` KeyError when vitals include a battery serial not present in `/api/system_status` `battery_blocks` (create entry lazily)
+* Harden battery temperature/state merge logic for mixed firmware/mode scenarios
+* No public API changes
+
+
 ## v0.14.0 - Fix for TeslaPy and FleetAPI
 
 * Pin and embed TeslaPy code patch directly into pyPowerwall to help address issue setting Powerwall Mode - see https://github.com/jasonacox/pypowerwall/issues/197

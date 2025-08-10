@@ -1,5 +1,13 @@
 ## pyPowerwall Proxy Release Notes
 
+
+### Proxy t81 (9 Aug 2025)
+
+* Improve error logging: show poll() target URI on bad payload (TypeError) instead of generic message.
+* Build descriptive function/endpoint name only when an error occurs (no added overhead on success path).
+* Refactor safe_pw_call exception handlers to remove redundant code. No API or config changes.
+
+
 ### Proxy t80 (24 Jul 2025)
 
 * **Connection Health Robustness Fix** ([#651](https://github.com/jasonacox/Powerwall-Dashboard/issues/651#issuecomment-3114228456)):
