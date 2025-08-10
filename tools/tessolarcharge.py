@@ -3,8 +3,9 @@ import datetime
 import logging
 import requests
 import sys
-# pip3 install teslapy
-import teslapy
+# pip3 install pypowerwall
+# Use patched teslapy from pypowerwall
+from pypowerwall.cloud import teslapy
 
 """
  Adapted by Nate Carroll 03/2023 from TesSense w/ SenseLink  -Randy Spencer 2023 Version 9.7

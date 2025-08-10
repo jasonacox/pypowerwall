@@ -8,7 +8,7 @@ This command line tool allows you to read and set the Powerwall minimum backup r
 
 ```bash
 # Install python modules
-pip install python-dateutil teslapy
+pip install python-dateutil pypowerwall
 
 # Login to Tesla account to set up token
 python3 set-reserve.py --login
@@ -106,7 +106,7 @@ This command line tool allows you to read and set the Powerwall operational mode
 
 ```bash
 # Install python modules
-pip install python-dateutil teslapy
+pip install python-dateutil pypowerwall
 
 # Login to Tesla account to set up token
 python3 set-mode.py --login
@@ -154,10 +154,10 @@ stop_charge_hour = 16 #hour of the day to stop charging (i.e. peak electricity r
 Install Python modules and try to authorize TeslaPy
 ```bash
 # Install python modules
-pip install teslapy
+pip install pypowerwall
 
 # Login to Tesla account to set up token
-python3 TesSolarCharge.py
+python3 tessolarcharge.py
 ```
 
 The first time you run the script if TeslaPy is not authorized, it should provide a Tesla website URL, where you can login with your Tesla account credentials.
@@ -193,4 +193,4 @@ After you have logged in successfully, the browser will show a 'Page Not Found' 
 
 These tools (set-reserve and set-mode) are based on the the amazing [tesla_history.py](https://github.com/jasonacox/Powerwall-Dashboard/tree/main/tools/tesla-history) tool by Michael Birse (@mcbirse) that imports Tesla cloud history into the [Powerwall-Dashboard](https://github.com/jasonacox/Powerwall-Dashboard).
 
-TesSolarCharge is based on TesSense w/ SenseLink  by Randy Spencer (https://github.com/israndy/TesSense), modified by Nate Carroll to work with PyPowerwall and add a few features. 
+TesSolarCharge is based on TesSense w/ SenseLink by Randy Spencer (https://github.com/israndy/TesSense), modified by Nate Carroll to work with PyPowerwall and add a few features. 

@@ -11,7 +11,7 @@
 
  Usage:
     * Install the required python modules:
-        pip install python-dateutil teslapy
+        pip install python-dateutil pypowerwall
 
     * To use this script:
 
@@ -34,19 +34,19 @@
         - For more usage options, run without arguments or --help:
             python3 set-reserve.py --help
 """
+import sys
 try:
     from dateutil.parser import isoparse
 except:
     sys.exit("ERROR: Missing python dateutil module. Run 'pip install python-dateutil'.")
-import sys
 import os
 import argparse
 import configparser
-
 try:
-    import teslapy
+    # Use the patched teslapy from pypowerwall
+    from pypowerwall.cloud import teslapy
 except:
-    sys.exit("ERROR: Missing python teslapy module. Run 'pip install teslapy'.")
+    sys.exit("ERROR: Missing python pypowerwall module. Run 'pip install pypowerwall -U'.")
 
 SCRIPTPATH = os.path.dirname(os.path.realpath(sys.argv[0]))
 SCRIPTNAME = os.path.basename(sys.argv[0]).split('.')[0]
