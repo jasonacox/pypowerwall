@@ -1,6 +1,10 @@
 # RELEASE NOTES
 
 
+## v0.14.2 - Misc
+
+* Move API lock timeout messages in exponential backoff mechanism to DEBUG logging to prevent noise for regular users.
+
 ## v0.14.1 - Test Coverage & battery_blocks Fix
 
 * Add unit tests expanding coverage: version parsing, core Powerwall methods (poll json output, power aggregation, grid_status numeric/json, alerts fallback path, set_operation validation, reserve/mode helpers, temps, site_name)
