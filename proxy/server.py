@@ -118,7 +118,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t81"
+BUILD = "t82"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -862,6 +862,58 @@ class Handler(BaseHTTPRequestHandler):
                                     message = (
                                         '{"error": "Control Command Value Invalid"}'
                                     )
+                            elif action == "grid_charging":
+                                # if empty or not a string, return current status
+                                if not value:
+                                    # return current grid_charging status in json string
+                                    message = '{"grid_charging": %s}' % (
+                                        str(
+                                            safe_pw_call(pw_control.get_grid_charging)
+                                        ).lower()
+                                        or "false"
+                                    )
+                                elif isinstance(value, str) and value.lower() in ["true", "false"]:
+                                    bool_value = value.lower() == "true"
+                                    result = safe_pw_call(
+                                        pw_control.set_grid_charging, bool_value
+                                    )
+                                    message = json.dumps(
+                                        result
+                                        if result is not None
+                                        else {"error": "Failed to set grid_charging"}
+                                    )
+                                    log.info(
+                                        f"Control Command: Set Grid Charging to {value}"
+                                    )
+                                else:
+                                    message = (
+                                        '{"error": "Control Command Value Invalid"}'
+                                    )
+                            elif action == "grid_export":
+                                if not value:
+                                    # return current grid_export status in json string
+                                    message = '{"grid_export": %s}' % (
+                                        str(
+                                            safe_pw_call(pw_control.get_grid_export)
+                                        ).lower()
+                                        or "false"
+                                    )
+                                elif isinstance(value, str) and value.lower() in ["battery_ok", "pv_only", "never"]:
+                                    result = safe_pw_call(
+                                        pw_control.set_grid_export, value.lower()
+                                    )
+                                    message = json.dumps(
+                                        result
+                                        if result is not None
+                                        else {"error": "Failed to set grid_export"}
+                                    )
+                                    log.info(
+                                        f"Control Command: Set Grid Export to {value}"
+                                    )
+                                else:
+                                    message = (
+                                        '{"error": "Control Command Value Invalid"}'
+                                    )
                             else:
                                 message = '{"error": "Invalid Command Action"}'
                         else:
@@ -1499,6 +1551,23 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 message = '{"mode": "%s"}' % (
                     safe_pw_call(pw_control.get_mode) or "unknown"
+                )
+        elif request_path.startswith("/control/grid_charging"):
+            # Current grid charging state
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                message = '{"grid_charging": %s}' % (
+                    "true" if safe_pw_call(pw_control.get_grid_charging) else "false"
+                )
+        elif request_path.startswith("/control/grid_export"):
+            # Current grid export state
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            else:
+                # battery_ok, pv_only, and never
+                message = '{"grid_export": "%s"}' % (
+                    safe_pw_call(pw_control.get_grid_export) or "unknown"
                 )
         elif request_path == "/fans":
             # Fan speeds in raw format
