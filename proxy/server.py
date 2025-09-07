@@ -867,10 +867,7 @@ class Handler(BaseHTTPRequestHandler):
                                 if not value:
                                     # return current grid_charging status in json string
                                     message = '{"grid_charging": %s}' % (
-                                        str(
-                                            safe_pw_call(pw_control.get_grid_charging)
-                                        ).lower()
-                                        or "false"
+                                        "true" if safe_pw_call(pw_control.get_grid_charging) else "false"
                                     )
                                 elif isinstance(value, str) and value.lower() in ["true", "false"]:
                                     bool_value = value.lower() == "true"
