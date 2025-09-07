@@ -321,9 +321,17 @@ curl -X POST -d "value=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/con
 # Set Reserve
 curl -X POST -d "value=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 
+# Enable Grid Charging (true/false)
+curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_charging
+
+# Set Grid Export (battery_ok, pv_only, or never)
+curl -X POST -d "value=battery_ok&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_export
+
 # Read Settings
 curl http://localhost:8675/control/mode
 curl http://localhost:8675/control/reserve
+curl http://localhost:8675/control/grid_charging
+curl http://localhost:8675/control/grid_export
 ```
 ```
 

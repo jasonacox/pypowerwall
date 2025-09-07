@@ -48,7 +48,7 @@ def acquire_with_exponential_backoff(
         sleep_time = min(delay, remaining_time) + random.uniform(0, jitter)
         time.sleep(sleep_time)
         delay = min(delay * factor, max_delay)
-        log.info(f"Timeout for {lock}")
+        log.debug(f"Timeout for {lock}")
         elapsed = time.perf_counter() - start_time
 
     return False

@@ -1,12 +1,20 @@
 ## pyPowerwall Proxy Release Notes
 
 
+### Proxy t82 (6 Sep 2025)
+
+* **Enhanced Control API**: Added new `/control` routes for grid charging and export management
+  - **GET `/control/grid_charging`**: Retrieve current grid charging configuration and status
+  - **POST `/control/grid_charging`**: Enable/disable grid charging with configurable parameters
+  - **GET `/control/grid_export`**: Get current grid export settings and state
+  - **POST `/control/grid_export`**: Control grid export behavior and limits
+  - Provides comprehensive control over Powerwall grid interaction modes for advanced energy management
+
 ### Proxy t81 (9 Aug 2025)
 
 * Improve error logging: show poll() target URI on bad payload (TypeError) instead of generic message.
 * Build descriptive function/endpoint name only when an error occurs (no added overhead on success path).
 * Refactor safe_pw_call exception handlers to remove redundant code. No API or config changes.
-
 
 ### Proxy t80 (24 Jul 2025)
 
