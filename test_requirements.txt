@@ -1,3 +1,4 @@
 # Additional dependencies required for running tests only
 pytest
+pytest-cov
 # Add any other test-only dependencies below
