@@ -1,6 +1,5 @@
 import pytest
 from unittest.mock import MagicMock
-import pypowerwall
 
 @pytest.fixture()
 def pw_fixture():
