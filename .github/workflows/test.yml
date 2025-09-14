@@ -5,22 +5,34 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
     name: "Python ${{ matrix.python-version }}"
     runs-on: ubuntu-latest
-    env:
-      USING_COVERAGE: '3.8'
 
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
-      - uses: "actions/checkout@v2"
-      - uses: "actions/setup-python@v2"
+      - uses: "actions/checkout@v4"
+        with:
+          fetch-depth: 0  # IMPORTANT: get full history so comparisons work
+          submodules: false
+
+      - uses: "actions/setup-python@v5"
         with:
           python-version: "${{ matrix.python-version }}"
+          cache: pip
+
       - name: "Install dependencies"
         run: |
           set -xe
@@ -30,8 +42,29 @@ jobs:
           pip install --upgrade -r requirements.txt
           pip install --upgrade -r test_requirements.txt
 
-      - name: "Run unit tests"
-        run: "pytest"
+      # Force branch + html+xml reports even if pytest.ini doesn't set them
+      - name: Run unit tests (with coverage)
+        env:
+          PYTEST_ADDOPTS: "--cov=pypowerwall --cov-branch --cov-report=xml --cov-report=html"
+        run: pytest
 
       - name: "Run test.py on ${{ matrix.python-version }}"
         run: "python test.py"
+
+      # Upload both XML (for services/badges) and HTML (for browsing)
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/**
+
+      - name: Upload to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.xml
+          flags: py${{ matrix.python-version }}
+          token: ${{ secrets.CODECOV_TOKEN }}
