@@ -4,6 +4,8 @@ This document describes the HTTP API endpoints provided by the PyPowerwall Proxy
 
 ---
 
+Jump To: [Quick Examples](#quick-examples) | [Control](#control-endpoints) | [Convenience /pw](#convenience-pw-endpoints) | [Fans](#fans-endpoints) | [Raw API](#powerwall-api-endpoints) | [Optional APIs](#optional-api-endpoints-tedapi-cloud-fleetapi) | [Cache](#cache-and-error-handling) | [Notes](#notes)
+
 ## Overview
 
 The proxy server exposes a RESTful API for accessing Powerwall data, including site, battery, solar, vitals, alerts, and more. It can be run locally or in a container, and supports both local gateway and cloud modes.
@@ -53,7 +55,37 @@ The proxy server exposes a RESTful API for accessing Powerwall data, including s
 
 _Add `?headers` to include CSV headers._
 
-### Control Endpoints
+**Aggregates Variants**
+- `/aggregates` Processed & cached combined metrics.
+- `/pw/aggregates` Same as above via convenience namespace.
+- `/api/meters/aggregates` Raw gateway API payload (unprocessed fields).
+
+### Quick Examples
+
+```bash
+# Get site aggregates
+curl http://localhost:8675/aggregates
+
+# Get battery state of energy
+curl http://localhost:8675/soe
+
+# Get device vitals
+curl http://localhost:8675/vitals
+
+# Check connection health and cache status
+curl http://localhost:8675/health
+
+# Get alerts
+curl http://localhost:8675/alerts
+
+# Get power summary (shortcut)
+curl http://localhost:8675/pw/power
+
+# CSV Examples
+curl "http://localhost:8675/csv/v2?headers"
+```
+
+## Control Endpoints
 
 | Endpoint                | Description                                      |
 |-------------------------|--------------------------------------------------|
@@ -62,9 +94,9 @@ _Add `?headers` to include CSV headers._
 | `/control/grid_charging`| Get/set grid charging enable (POST/GET)          |
 | `/control/grid_export`  | Get/set grid export policy (POST/GET)            |
 
-> **Note:** Control endpoints require `PW_CONTROL_SECRET` to be set.
+> **Note:** Control endpoints require `PW_CONTROL_SECRET` to be set. See [Control Examples](#control-examples) below.
 
-#### CONTROL API Usage & Security
+### Control API Usage & Security
 
 Control operations are DISABLED by default. To enable, set the environment variable `PW_CONTROL_SECRET` (any non-empty value). All control POST requests must include a `token` parameter matching this secret.
 
@@ -81,8 +113,9 @@ Supported control values:
 - Grid Charging: `true` or `false`
 - Grid Export: `battery_ok`, `pv_only`, `never`
 
-Example calls (replace `<secret>`):
-```
+### Control Examples
+
+```bash
 # Get current reserve
 curl 'http://localhost:8675/control/reserve?token=<secret>'
 
@@ -110,9 +143,14 @@ curl -X POST -d 'value=pv_only&token=<secret>' http://localhost:8675/control/gri
 
 POST success responses return a JSON object with the updated field, or an error object on failure. GET requests return the current setting. Missing or invalid `token` returns an authorization error.
 
+Mode clarification:
+- `self_consumption` / `autonomous`: Maximize local solar usage (firmware may use either term; treat as equivalent).
+- `backup`: Preserve charge for outage protection.
+- `time_of_use`: Optimize around configured TOU rates.
+
 ---
 
-### Convenience /pw Endpoints
+## Convenience /pw Endpoints
 
 The proxy provides shorthand endpoints under `/pw/` that map to common library calls. All return JSON.
 
@@ -146,7 +184,7 @@ The proxy provides shorthand endpoints under `/pw/` that map to common library c
 
 ---
 
-### Fans Endpoints
+## Fans Endpoints
 
 Available when TEDAPI provides fan telemetry (e.g., Powerwall 3 systems):
 
@@ -157,7 +195,9 @@ Available when TEDAPI provides fan telemetry (e.g., Powerwall 3 systems):
 
 If fan data is unavailable, these return an empty JSON object `{}`.
 
-### Powerwall API Endpoints
+Update interval: Fan metrics refresh with standard polling (same cadence as vitals/strings) and appear only when TEDAPI + compatible hardware (e.g., PW3) are present.
+
+## Powerwall API Endpoints
 
 | Endpoint                         | Description                                      |
 |-----------------------------------|--------------------------------------------------|
@@ -185,7 +225,7 @@ If fan data is unavailable, these return an empty JSON object `{}`.
 | `/api/system/networks`            | System network status                            |
 | `/api/meters/readings`            | Meter readings data                              |
 
-### Optional API Endpoints (TEDAPI, Cloud, FleetAPI)
+## Optional API Endpoints (TEDAPI, Cloud, FleetAPI)
 
 _These endpoints require specific configuration to be enabled._
 
@@ -212,42 +252,72 @@ The proxy server implements robust error handling and caching:
 - **TTL Behavior**: After cache TTL expires (default 30 seconds), endpoints return `null` instead of stale data
 - **Network Resilience**: Graceful handling of network errors with configurable retry and fallback behavior
 - **Health Monitoring**: Track connection health and cache status via `/health` endpoint
+- **SOE Scaling Note**: `/soe` reports true 0–100% whereas `/api/system_status/soe` reports a 0–95% firmware-limited scale.
+
+Environment Variables Influencing Behavior:
+- `PW_CACHE_TTL` Cache duration (seconds) for key endpoints (default 30).
+- `PW_GRACEFUL_DEGRADATION` If enabled, reduces hard failures under transient errors.
+- `PW_FAIL_FAST` Return quickly on errors instead of longer retries.
+- `PW_SUPPRESS_NETWORK_ERRORS` Suppress repetitive network error logs.
+- `PW_NETWORK_ERROR_RATE_LIMIT` Rate limit interval (seconds) for repeated network error messages.
+- `PW_CONTROL_SECRET` Enables control endpoints & required `token` value.
+
+Authentication Overview:
+- Read-only endpoints generally need no client token; underlying gateway/cloud auth is handled internally.
+- Control endpoints always require `token=<PW_CONTROL_SECRET>`.
+
+Error Responses (examples):
+| Scenario | HTTP | JSON |
+|----------|------|------|
+| Control disabled | 200 | `{ "error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable" }` |
+| Missing/invalid token | 403 | `{ "error": "Unauthorized" }` |
+| Invalid value | 400 | `{ "error": "Invalid Value" }` |
+| Upstream failure | 500 | `{ "error": "Request Failed" }` |
+
+Sample JSON Snippets:
+```json
+// /aggregates - abbreviated
+{
+    "site": {
+        "instant_power": -2626,
+    },
+    "battery": {
+        "instant_power": -2280.0000000000005,
+    },
+    "load": {
+        "instant_power": 946.25,
+    },
+    "solar": {
+        "instant_power": 5860,
+    }
+}
+
+// /health - abbreviated
+{
+    "pypowerwall": "0.14.1 Proxy t81",
+    "cache_ttl_seconds": 30,
+    "graceful_degradation": true,
+    "fail_fast_mode": false,
+    "health_check_enabled": true,
+    "startup_time": "2025-09-05T23:21:42",
+    "current_time": "2025-09-14T11:58:57.239988",
+    "proxy_stats": {},
+    "connection_health": {},
+    "cached_data": {},
+    "endpoint_statistics": {}
+}
+
+// POST /control/reserve success
+{"reserve": "Set Successfully"}
+
+// POST /control/reserve invalid token
+{"error": "Unauthorized"}
+
+// /fans/pw
+{"FAN1_actual": 1180, "FAN1_target": 1200, "FAN2_actual": 1175, "FAN2_target": 1200}
+```
 
 For configuration options, see [proxy/README.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/README.md).
-
----
-
-## Example Usage
-
-**Get site aggregates:**
-```sh
-curl http://localhost:8675/aggregates
-```
-
-**Get battery state of energy:**
-```sh
-curl http://localhost:8675/soe
-```
-
-**Get device vitals:**
-```sh
-curl http://localhost:8675/vitals
-```
-
-**Check connection health and cache status:**
-```sh
-curl http://localhost:8675/health
-```
-
-**Get alerts:**
-```sh
-curl http://localhost:8675/alerts
-```
-
-**Set battery reserve (requires control secret):**
-```sh
-curl -X POST -d "value=20&token=<secret>" http://localhost:8675/control/reserve
-```
 
 ---
 
@@ -256,3 +326,6 @@ curl -X POST -d "value=20&token=<secret>" http://localhost:8675/control/reserve
 - Key metric endpoints (`/aggregates`, `/soe`, `/vitals`, `/strings`) return `null` when no fresh or valid cached data is available (after TTL expiry).
 - Some endpoints require local mode or specific configuration (see server documentation).
 - For more details, see the main project [README.md](https://github.com/jasonacox/pypowerwall/blob/main/README.md).
+
+### API Changes
+Refer to `proxy/RELEASE.md` for history (e.g., t82 added `/control/grid_charging` & `/control/grid_export`).
