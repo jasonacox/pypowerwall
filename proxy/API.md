@@ -59,8 +59,103 @@ _Add `?headers` to include CSV headers._
 |-------------------------|--------------------------------------------------|
 | `/control/reserve`      | Get/set battery reserve (POST/GET)               |
 | `/control/mode`         | Get/set battery mode (POST/GET)                  |
+| `/control/grid_charging`| Get/set grid charging enable (POST/GET)          |
+| `/control/grid_export`  | Get/set grid export policy (POST/GET)            |
 
 > **Note:** Control endpoints require `PW_CONTROL_SECRET` to be set.
+
+#### CONTROL API Usage & Security
+
+Control operations are DISABLED by default. To enable, set the environment variable `PW_CONTROL_SECRET` (any non-empty value). All control POST requests must include a `token` parameter matching this secret.
+
+Security guidelines:
+1. Use HTTPS (terminate TLS at a reverse proxy like nginx, Caddy, Traefik) if exposing beyond localhost.
+2. Do not expose the control endpoints publicly unless necessary. Prefer firewall / VPN restrictions.
+3. Rotate the secret periodically; treat it like a password. A restart is required after changing it.
+4. Limit clients allowed to call these endpoints (IP allowlists, auth gateway, etc.).
+5. Log monitoring: watch for unusual spikes in control POST requests.
+
+Supported control values:
+- Reserve: integer 0–100 (% of battery to reserve)
+- Mode: `self_consumption`, `backup`, `autonomous`, `time_of_use`
+- Grid Charging: `true` or `false`
+- Grid Export: `battery_ok`, `pv_only`, `never`
+
+Example calls (replace <secret>):
+```
+# Get current reserve
+curl 'http://localhost:8675/control/reserve?token=<secret>'
+
+# Set reserve to 20%
+curl -X POST -d 'value=20&token=<secret>' http://localhost:8675/control/reserve
+
+# Get current operating mode
+curl 'http://localhost:8675/control/mode?token=<secret>'
+
+# Set operating mode
+curl -X POST -d 'value=backup&token=<secret>' http://localhost:8675/control/mode
+
+# Get grid charging state
+curl 'http://localhost:8675/control/grid_charging?token=<secret>'
+
+# Enable grid charging
+curl -X POST -d 'value=true&token=<secret>' http://localhost:8675/control/grid_charging
+
+# Get grid export policy
+curl 'http://localhost:8675/control/grid_export?token=<secret>'
+
+# Set grid export policy (options: battery_ok, pv_only, never)
+curl -X POST -d 'value=pv_only&token=<secret>' http://localhost:8675/control/grid_export
+```
+
+POST success responses return a JSON object with the updated field, or an error object on failure. GET requests return the current setting. Missing or invalid `token` returns an authorization error.
+
+---
+
+### Convenience /pw Endpoints
+
+The proxy provides shorthand endpoints under `/pw/` that map to common library calls. All return JSON.
+
+| Endpoint                  | Description                             |
+|---------------------------|-----------------------------------------|
+| `/pw/level`               | Battery state of energy (%)             |
+| `/pw/power`               | Site, solar, battery, load power (W)    |
+| `/pw/site`                | Site power data                         |
+| `/pw/solar`               | Solar power data                        |
+| `/pw/battery`             | Battery power data                      |
+| `/pw/battery_blocks`      | Battery block details                   |
+| `/pw/load`                | Load power data                         |
+| `/pw/grid`                | Grid power data                         |
+| `/pw/home`                | Home consumption data                   |
+| `/pw/vitals`              | Device vitals                           |
+| `/pw/temps`               | Temperature metrics                     |
+| `/pw/strings`             | Solar string data                       |
+| `/pw/din`                 | Device identifier                       |
+| `/pw/uptime`              | Uptime (seconds)                        |
+| `/pw/version`             | Firmware version                        |
+| `/pw/status`              | Status summary                          |
+| `/pw/system_status`       | System status                           |
+| `/pw/grid_status`         | Grid status                             |
+| `/pw/aggregates`          | Aggregated meter data                   |
+| `/pw/site_name`           | Site name                               |
+| `/pw/alerts`              | Alerts array/object                     |
+| `/pw/is_connected`        | Connection boolean                      |
+| `/pw/get_reserve`         | Current reserve setting (%)             |
+| `/pw/get_mode`            | Current operating mode                  |
+| `/pw/get_time_remaining`  | Estimated backup time remaining         |
+
+---
+
+### Fans Endpoints
+
+Available when TEDAPI provides fan telemetry (e.g., Powerwall 3 systems):
+
+| Endpoint     | Description                                         |
+|--------------|-----------------------------------------------------|
+| `/fans`      | Raw fan speed objects keyed by internal component   |
+| `/fans/pw`   | Simplified fan RPM (FANn_actual / FANn_target)      |
+
+If fan data is unavailable, these return an empty JSON object `{}`.
 
 ### Powerwall API Endpoints
 
