@@ -81,7 +81,7 @@ Supported control values:
 - Grid Charging: `true` or `false`
 - Grid Export: `battery_ok`, `pv_only`, `never`
 
-Example calls (replace <secret>):
+Example calls (replace `<secret>`):
 ```
 # Get current reserve
 curl 'http://localhost:8675/control/reserve?token=<secret>'
