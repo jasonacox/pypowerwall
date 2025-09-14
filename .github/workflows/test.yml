@@ -67,3 +67,4 @@ jobs:
         with:
           files: coverage.xml
           flags: py${{ matrix.python-version }}
+          token: ${{ secrets.CODECOV_TOKEN }}
