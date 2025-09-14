@@ -874,11 +874,10 @@ class Handler(BaseHTTPRequestHandler):
                                     result = safe_pw_call(
                                         pw_control.set_grid_charging, bool_value
                                     )
-                                    message = json.dumps(
-                                        result
-                                        if result is not None
-                                        else {"error": "Failed to set grid_charging"}
-                                    )
+                                    if result is not None:
+                                        message = '{"grid_charging": "Set Successfully"}'
+                                    else:
+                                        message = '{"error": "Failed to set grid_charging"}'
                                     log.info(
                                         f"Control Command: Set Grid Charging to {value}"
                                     )
@@ -899,11 +898,10 @@ class Handler(BaseHTTPRequestHandler):
                                     result = safe_pw_call(
                                         pw_control.set_grid_export, value.lower()
                                     )
-                                    message = json.dumps(
-                                        result
-                                        if result is not None
-                                        else {"error": "Failed to set grid_export"}
-                                    )
+                                    if result is not None:
+                                        message = '{"grid_export": "Set Successfully"}'
+                                    else:
+                                        message = '{"error": "Failed to set grid_export"}'
                                     log.info(
                                         f"Control Command: Set Grid Export to {value}"
                                     )
