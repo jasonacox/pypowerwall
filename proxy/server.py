@@ -98,7 +98,7 @@ from urllib.parse import urlparse, parse_qs
 import requests
 import urllib3
 
-from transform import get_static, inject_js
+from proxy.transform import get_static, inject_js
 import pypowerwall
 from pypowerwall import parse_version
 from pypowerwall.exceptions import (
@@ -1785,27 +1785,31 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
-
 # noinspection PyTypeChecker
-with ThreadingHTTPServer((bind_address, port), Handler) as server:
-    if https_mode == "yes":
-        # Activate HTTPS
-        log.debug("Activating HTTPS")
-        # pylint: disable=deprecated-method
-        server.socket = ssl.wrap_socket(
-            server.socket,
-            certfile=os.path.join(os.path.dirname(__file__), "localhost.pem"),
-            server_side=True,
-            ssl_version=ssl.PROTOCOL_TLSv1_2,
-            ca_certs=None,
-            do_handshake_on_connect=True,
-        )
+def main() -> None:
+    with ThreadingHTTPServer((bind_address, port), Handler) as server:
+        if https_mode == "yes":
+            # Activate HTTPS
+            log.debug("Activating HTTPS")
+            # pylint: disable=deprecated-method
+            server.socket = ssl.wrap_socket(
+                server.socket,
+                certfile=os.path.join(os.path.dirname(__file__), "localhost.pem"),
+                server_side=True,
+                ssl_version=ssl.PROTOCOL_TLSv1_2,
+                ca_certs=None,
+                do_handshake_on_connect=True,
+            )
 
-    # noinspection PyBroadException
-    try:
-        server.serve_forever()
-    except (Exception, KeyboardInterrupt, SystemExit):
-        print(" CANCEL \n")
+        # noinspection PyBroadException
+        try:
+            server.serve_forever()
+        except (Exception, KeyboardInterrupt, SystemExit):
+            print(" CANCEL \n")
 
-    log.info("pyPowerwall Proxy Stopped")
-    sys.exit(0)
+        log.info("pyPowerwall Proxy Stopped")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
