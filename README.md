@@ -13,7 +13,7 @@ Python module to interface with Tesla Energy Gateways for Powerwall and solar po
 
 ## Description
 
-This python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  
+This Python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  
 
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
@@ -26,7 +26,7 @@ pyPowerwall will cache the authentication headers and API call responses to help
 
 ## Setup
 
-You can clone this repo or install the package with pip.  Once installed, pyPowerwall can scan your local network to find th IP address of your Tesla Powerwall Gateway.
+You can clone this repo or install the package with pip.  Once installed, pyPowerwall can scan your local network to find the IP address of your Tesla Powerwall Gateway.
 
 ```bash
 # Install pyPowerwall
@@ -36,7 +36,7 @@ python3 -m pip install pypowerwall
 python3 -m pypowerwall scan
 
 # Option 2 - FLEETAPI MODE - Setup to use the official Tesla FleetAPI - See notes below.
-python3 -m pypowerwal fleetapi
+python3 -m pypowerwall fleetapi
 
 # Option 3 - CLOUD MODE - Setup to use Tesla Owners cloud API
 python3 -m pypowerwall setup
@@ -61,12 +61,12 @@ Step 1 - Tesla Partner Account - Sign in to Tesla Developer Portal and make an A
 
    * CLIENT_ID - This will be provided to you by Tesla when your request is approved.
    * CLIENT_SECRET - Same as above.
-   * DOMAIN - The domain name of a website your own and control.
-   * REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed during the pyPowerwall setup. You can use [index.html](./tools/fleetapi/index.html) on your site and update REDIRECT_URI with that url. Alternatively, you can just copy the URL from the 404 page during the authorization process (the code is in the URL).
+   * DOMAIN - The domain name of a website you own and control.
+   * REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed during the pyPowerwall setup. You can use [index.html](./tools/fleetapi/index.html) on your site and update REDIRECT_URI with that URL. Alternatively, you can just copy the URL from the 404 page during the authorization process (the code is in the URL).
 
 Step 2 - Run the [create_pem_key.py](./tools/fleetapi/create_pem_key.py) script and place the **public** key on your website at the URL: https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem
 
-Step 3 - Run `python3 -m pypowerwal fleetapi` - The credentials and tokens will be stored in the `.pypowerwall.fleetapi` file.
+Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will be stored in the `.pypowerwall.fleetapi` file.
 
 ### Cloud Mode - Option 3
 
@@ -75,6 +75,8 @@ The unofficial Tesla Owners API allows FleetAPI access (option 2) without having
 ### TEDAPI Mode - Option 4
 
 With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway. This API offers up additional metrics related to string data, voltages and alerts. However, you will need the Gateway/WiFi Password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway IP (192.168.91.1). You can have your computer join the Gateway local WiFi or you can add a route:
+
+Tip: `gw_pwd` is the local Gateway Wi‑Fi password. Leaving `password` empty with `gw_pwd` set will auto‑enable full TEDAPI mode; on PW2/+ you can also combine customer `password`/`email` with `gw_pwd` for a hybrid mode.
 
 In the examples below, change **192.168.0.100** to the IP address of Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
 
@@ -86,7 +88,7 @@ sudo ip route add 192.168.91.1 via 192.168.0.100 [onlink]
 
 See `examples/network_route.py` for two different approaches to do this programmatically in Python.
 
-#### MacOS
+#### macOS
 ```
 sudo route add -host 192.168.91.1 192.168.0.100 # Temporary 
 networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.100 # Persistent
@@ -97,16 +99,25 @@ networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.1
 route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
 ```
 
-#### Windows Subsystem For Linux (Version 2 specific)
-Follow the instructions for Linux, but you must edit (From the host Windows OS) `%USERPROFILE%\.wslconfig` and add the following settings:
+#### Windows Subsystem for Linux (Version 2 specific)
+Follow the instructions for Linux, but you must edit (from the host Windows OS) `%USERPROFILE%\.wslconfig` and add the following settings:
 ```
 [wsl2]
 networkingMode=mirrored
 ```
 
+```bash
 # Test
 python3 -m pypowerwall tedapi
 ```
+
+#### TEDAPI Troubleshooting
+
+- Connection refused/timeout: Ensure you’re connected to the Powerwall’s Wi‑Fi or have a working route to 192.168.91.1. Some firmware versions (25.10.0+) block routing; connect directly to the PW Wi‑Fi.
+- Auth failures: Use the Gateway Wi‑Fi password from the QR label as `gw_pwd` (case‑sensitive). Customer portal passwords do not work for TEDAPI.
+- TLS/certificate warnings: TEDAPI uses a self‑signed cert; most tools need `--insecure` (curl) or `verify=False` (requests). Use only on trusted networks.
+- Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
+- QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
 Troubleshooting note: On the QNAP NAS, and possibly other platforms, adding routes from command line may not work. You can try adding a static route via the appliance's networking control panel.
 
@@ -124,12 +135,12 @@ Via ports:
 # cd /usr/ports/net-mgmt/py-pypowerwall/ && make install clean
 ```
 
-Note: pyPowerwall installation will attempt to install these required python packages: _requests_, _protobuf_ and _teslapy_.
+Note: pyPowerwall installation will attempt to install these required Python packages: _requests_, _protobuf_ and _teslapy_.
 
 ## Programming with pyPowerwall
 
 After importing pypowerwall, you simply create a handle for your Powerwall device 
-and call function to poll data. A simple examples is below or see [example.py](example.py) for an extended version:
+and call functions to poll data. A simple example is below or see [example.py](example.py) for an extended version:
 
 ```python
 import pypowerwall
@@ -171,6 +182,14 @@ if OPTION == 4:
    # Uncomment the following for hybrid mode (Powerwall 2 and +)
    #password="password"
    #email="email@example.com"
+
+# Note on gw_pwd (TEDAPI)
+# - `gw_pwd` is the local Gateway Wi‑Fi password printed on the QR label.
+# - It is only required for TEDAPI features (local diagnostics like vitals/strings) 
+#   and is not used for cloud/FleetAPI authentication.
+# - If you set `gw_pwd` and leave `password` empty, pyPowerwall will auto‑enable full TEDAPI mode.
+# - On Powerwall 2 and Powerwall+ you can optionally provide both `password`/`email` and `gw_pwd` 
+#   to run in a hybrid mode that combines customer APIs with TEDAPI.
 
 # Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
 pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd, auto_select=True)
@@ -227,7 +246,7 @@ print("System Status: %r\n" % pw.system_status())
     timezone                  # Desired timezone
     pwcacheexpire = 5         # Set API cache timeout in seconds
     timeout = 5               # Timeout for HTTPS calls in seconds
-    poolmaxsize = 10          # Pool max size for http connection re-use (persistent
+    poolmaxsize = 10          # Pool max size for HTTP connection reuse (persistent
                                 connections disabled if zero)
     cloudmode = False         # If True, use Tesla cloud for data (default is False)
     siteid = None             # If cloudmode is True, use this siteid (default is None)
@@ -241,8 +260,8 @@ print("System Status: %r\n" % pw.system_status())
     gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
     
  Functions 
-    poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
-    post(api, payload, json)  # Send payload to Powerwall api (dict if json=True)
+   poll(api, json, force)    # Return data from Powerwall API (dict if json=True, bypass cache force=True)
+   post(api, payload, json)  # Send payload to Powerwall API (dict if json=True)
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -282,7 +301,7 @@ print("System Status: %r\n" % pw.system_status())
 
 The following are some useful tools based on pypowerwall:
 
-* [Powerwall Proxy](proxy) - Use this caching proxy to handle authentication to the Powerwall Gateway and make basic read-only API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level) and many [others](https://github.com/jasonacox/pypowerwall/blob/main/proxy/API.md). This is useful for metrics gathering tools like telegraf to pull metrics without needing to authenticate. Because pyPowerwall is designed to cache the auth and high frequency API calls, this will also reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway.
+* [Powerwall Proxy](proxy) - Use this caching proxy to handle authentication to the Powerwall Gateway and make basic read-only API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level) and many [others](https://github.com/jasonacox/pypowerwall/blob/main/proxy/API.md). This is useful for metrics gathering tools like telegraf to pull metrics without needing to authenticate. Because pyPowerwall is designed to cache the auth and high frequency API calls, this will also reduce the load on the Gateway and prevent crash/restart issues that can happen if too many sessions are created on the Gateway.
 
 * [Powerwall Simulator](simulator) - A Powerwall simulator to mimic the responses from the Tesla Powerwall Gateway. This is useful for testing purposes.
 
@@ -290,7 +309,7 @@ The following are some useful tools based on pypowerwall:
 
 ## pyPowerwall Command Line Interface (CLI)
 
-pyPowerwall has a built in feature to scan your network for available Powerwall gateways and set/get operational and reserve modes.
+pyPowerwall has a built-in feature to scan your network for available Powerwall gateways and set/get operational and reserve modes.
 
 ```
 Usage: PyPowerwall [-h] {setup,scan,set,get,version} ...
@@ -758,7 +777,7 @@ Devices and Alerts will show up in the device vitals API (e.g. /api/device/vital
     import pypowerwall
 
     # Connect to Powerwall
-    pw = pypowerwall.Powerwall(host,password,email,timezone,gw_pw=gw_pw,auto_select=True)
+   pw = pypowerwall.Powerwall(host,password,email,timezone,gw_pwd=gw_pwd,auto_select=True)
 
     # Display Device Vitals
     print("Device Vitals:\n %s\n" % pw.vitals(True))
@@ -779,7 +798,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 | PVAC | 296 | Photovoltaic AC - Solar Inverter |
 | PVS | 297 | Photovoltaic Strings |
 | TESLA | x | Internal Device Attributes |
-| NERUIO | x | Wireless Revenue Grade Solar Meter |
+| NEURIO | x | Wireless Revenue Grade Solar Meter |
 
 #### STSTSM - Tesla Energy System
 
@@ -978,7 +997,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 
 ## Glossary
 
-This is an unofficial list of terms that are seen in Powerwall responses and message. 
+This is an unofficial list of terms that are seen in Powerwall responses and messages. 
 
 * Site = Utility Grid
 * Load = Home (think of it as the "load" that the battery or grid powers)
