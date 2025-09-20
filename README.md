@@ -7,9 +7,9 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. Currently supporting local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems.
+pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems.
 
-> ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's WiFi access point to access TEDAPI data.
+> ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
 ## Description
 
@@ -20,8 +20,8 @@ pyPowerwall will cache the authentication headers and API call responses to help
 * Works with Tesla Energy Gateways - Powerwall and Powerwall+
 * Access provided via Local Gateway APIs, Tesla FleetAPI (official), and Tesla Owners API (unofficial).
 * Will cache authentication to reduce load on Powerwall Gateway
-* Will cache responses to limit number of calls to Powerwall Gateway or Cloud (optional/user definable) 
-* Will re-use http connections to Powerwall Gateway for reduced load and faster response times
+* Will cache responses to limit the number of calls to the Powerwall Gateway or cloud (optional/user‑definable)
+* Will re-use HTTP connections to the Powerwall Gateway for reduced load and faster response times
 * Provides solar string data for Powerwall+ systems.
 
 ## Setup
@@ -74,11 +74,11 @@ The unofficial Tesla Owners API allows FleetAPI access (option 2) without having
 
 ### TEDAPI Mode - Option 4
 
-With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway. This API offers up additional metrics related to string data, voltages and alerts. However, you will need the Gateway/WiFi Password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway IP (192.168.91.1). You can have your computer join the Gateway local WiFi or you can add a route:
+With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway. This API offers additional metrics related to string data, voltages, and alerts. However, you will need the Gateway/Wi‑Fi password (often found on the QR sticker on the Powerwall Gateway). Additionally, your computer will need network access to the Gateway at 192.168.91.1. You can join your computer to the Gateway’s local Wi‑Fi or add a route:
 
 Tip: `gw_pwd` is the local Gateway Wi‑Fi password. Leaving `password` empty with `gw_pwd` set will auto‑enable full TEDAPI mode; on PW2/+ you can also combine customer `password`/`email` with `gw_pwd` for a hybrid mode.
 
-In the examples below, change **192.168.0.100** to the IP address of Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
+In the examples below, change **192.168.0.100** to the IP address of the Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
 
 #### Linux Ubuntu and RPi
 ```bash
@@ -94,12 +94,12 @@ sudo route add -host 192.168.91.1 192.168.0.100 # Temporary
 networksetup -setadditionalroutes Wi-Fi 192.168.91.1 255.255.255.255 192.168.0.100 # Persistent
 ```
 
-#### Windows - Using persistence flag - Administrator Shell
+#### Windows - Using the persistence flag - Administrator Shell
 ```
 route -p add 192.168.91.1 mask 255.255.255.255 192.168.0.100
 ```
 
-#### Windows Subsystem for Linux (Version 2 specific)
+#### Windows Subsystem for Linux (WSL 2–specific)
 Follow the instructions for Linux, but you must edit (from the host Windows OS) `%USERPROFILE%\.wslconfig` and add the following settings:
 ```
 [wsl2]
@@ -119,7 +119,7 @@ python3 -m pypowerwall tedapi
 - Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
 - QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
-Troubleshooting note: On the QNAP NAS, and possibly other platforms, adding routes from command line may not work. You can try adding a static route via the appliance's networking control panel.
+
 
 ### FreeBSD Install
 
@@ -153,7 +153,7 @@ OPTION = 4
 
 # Connect to Powerwall based on selected option
 if OPTION == 1:
-   # Option 1 - LOCAL MODE - Customer Login (Powerwall 2 and + only)
+   # Option 1 - LOCAL MODE - Customer Login (Powerwall 2 and Powerwall+ only)
    password="password"
    email="email@example.com"
    host = "10.0.1.123"               # Address of your Powerwall Gateway
@@ -174,7 +174,7 @@ if OPTION == 3:
    gw_pwd = None
 
 if OPTION == 4:
-   # Option 4 - TEDAPI MODE - Requires access to Gateway (Powerwall 2, + and 3)
+   # Option 4 - TEDAPI MODE - Requires access to Gateway (Powerwall 2, Powerwall+, and Powerwall 3)
    host = "192.168.91.1"
    gw_pwd = "ABCDEFGHIJ"
    password = email = ""
@@ -771,7 +771,7 @@ Firmware version of the Powerwall can be seen with `pw.version()`. An estimate o
 
 ### Devices and Alerts
 
-Devices and Alerts will show up in the device vitals API (e.g. /api/device/vitals).  Below are a list of the devices and alerts that I have seen.  I'm looking for information on what these mean. Please submit an Issue or PR if you have more alerts or definitions we can add.  The device details below are mostly educated guesses.
+Devices and alerts appear in the device vitals API (e.g., /api/device/vitals). Below is a list of the devices and alerts I have seen. I’m looking for information on what these mean—please submit an issue or PR if you have more alerts or definitions we can add. The device details below are mostly educated guesses.
 
 ```python
     import pypowerwall
@@ -874,7 +874,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
     * POD_w017_SW_Batt_Volt_Sens_Irrational
     * POD_w024_HW_Fault_Asserted
     * POD_w029_HW_CMA_OV
-    * POD_w031_SW_Brick_OV - It seems that the Brick warnings are related to preventing the condition where the powerwall doesn't have the minimum amount of power it needs to turn back on. When this happens, a third party charger is needed to get the powerwall back to it's minimum operating battery requirement to turn back on, or it's "bricked". Solar cannot return it to this state, because it needs power to make power.
+   * POD_w031_SW_Brick_OV - It seems that the Brick warnings are related to preventing the condition where the Powerwall doesn't have the minimum amount of power it needs to turn back on. When this happens, a third‑party charger is needed to get the Powerwall back to its minimum operating battery requirement to turn back on, or it's "bricked." Solar cannot return it to this state because it needs power to make power.
     * POD_w041_SW_CMA_Comm_Integrity
     * POD_w044_SW_Brick_UV_Warning - see POD_w031_SW_Brick_OV
     * POD_w045_SW_Brick_OV_Warning - see POD_w031_SW_Brick_OV
@@ -986,7 +986,7 @@ Example Output: [here](https://github.com/jasonacox/pypowerwall/blob/main/docs/v
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
 * Details
-    * This is a third party (Generac) meter with Tesla proprietary firmware.  It is generally installed as a wireless meter to report on solar production.  [Link](https://neur.io/)
+   * This is a third‑party (Generac) meter with Tesla proprietary firmware. It is generally installed as a wireless meter to report on solar production. [Link](https://neur.io/)
     * Component of STSTSM
 
 #### TESLA - Internal Device Attributes
