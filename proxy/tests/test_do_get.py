@@ -1,11 +1,13 @@
-
 import json
 import unittest
 from contextlib import contextmanager
+from functools import wraps
 from io import BytesIO
 from unittest.mock import Mock, patch
 
+import proxy
 from proxy.server import Handler
+
 
 class UnittestHandler(Handler):
     """A testable version of Handler that doesn't auto-handle requests"""
@@ -34,6 +36,7 @@ def common_patches(func):
         'uri': {}, 'start': 1000, 'clear': 0
     })
     @patch('proxy.server.proxystats_lock')
+    @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
     return wrapper
@@ -77,6 +80,51 @@ class BaseDoGetTest(unittest.TestCase):
         result = self.get_written_json()
         self.assertIn(expected_key, result)
         self.assertEqual(result[expected_key], expected_value)
+
+
+class TestDoGetAggregatesEndpoints(BaseDoGetTest):
+    """Test cases for aggregates-related endpoints"""
+
+    @common_patches
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.pw')
+    def test_aggregates_endpoint(self, mock_pw, mock_safe_call, proxystats_lock):
+        """Test /aggregates endpoint"""
+        self.handler.path = "/aggregates"
+        mock_pw.poll = Mock()
+        mock_safe_call.return_value = {"solar": {"instant_power": 1000}}
+
+        self.handler.do_GET()
+
+        mock_safe_call.assert_called_once_with(
+            "/aggregates", mock_pw.poll, "/api/meters/aggregates"
+        )
+        self.assertEqual(proxy.server.proxystats["gets"], 1)
+        proxystats_lock.__enter__.assert_called_once()
+        proxystats_lock.__exit__.assert_called_once()
+        self.handler.send_response.assert_called_with(200)
+
+    @common_patches
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.pw')
+    def test_aggregates_with_negative_solar_adjustment(self, mock_pw, mock_safe_call, proxystats_lock):
+        """Test aggregates with negative solar power adjustment"""
+        self.handler.path = "/aggregates"
+        mock_pw.poll = Mock()
+        mock_safe_call.return_value = json.dumps({
+            "solar": {"instant_power": -500},
+            "load": {"instant_power": 2000}
+        })
+
+        self.handler.do_GET()
+
+        self.assertEqual(proxy.server.proxystats["gets"], 1)
+        proxystats_lock.__enter__.assert_called_once()
+        proxystats_lock.__exit__.assert_called_once()
+        result = self.get_written_json()
+        self.assertEqual(result["solar"]["instant_power"], 0)
 
 class TestDoGetStatsEndpoints(BaseDoGetTest):
     """Test cases for stats-related endpoints"""
