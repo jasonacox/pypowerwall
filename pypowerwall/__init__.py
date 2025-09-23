@@ -203,9 +203,13 @@ class Powerwall(object):
                 self.mode = "fleetapi"
             elif os.path.exists(os.path.join(self.authpath, AUTHFILE)):
                 if not self.email or self.email == "nobody@nowhere.com":
-                    with open(authpath + AUTHFILE, 'r') as file:
-                        auth = json.load(file)
-                    self.email = list(auth.keys())[0]
+                    auth_file_path = os.path.join(self.authpath, AUTHFILE)
+                    try:
+                        with open(auth_file_path, 'r') as file:
+                            auth = json.load(file)
+                        self.email = list(auth.keys())[0]
+                    except Exception as exc:
+                        log.debug(f"Failed to load auth file '{auth_file_path}': {exc}")
                 self.cloudmode = True
                 self.fleetapi = False
                 self.mode = "cloud"
