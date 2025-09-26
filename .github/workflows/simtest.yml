@@ -5,36 +5,107 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  determine-image:
+    name: "Determine Image"
+    runs-on: ubuntu-latest
+    outputs:
+      image-owner: ${{ steps.set-owner.outputs.owner }}
+    steps:
+      - name: Determine image owner
+        id: set-owner
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: repo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+
+            let imageOwner = context.repo.owner;
+            if (repo.fork && repo.parent) {
+              imageOwner = repo.parent.owner.login;
+            }
+
+            core.setOutput('owner', imageOwner);
+            console.log(`Image owner: ${imageOwner}`);
   tests:
     name: "Python ${{ matrix.python-version }}"
+    needs: determine-image
     runs-on: ubuntu-latest
     env:
-      USING_COVERAGE: '3.8'
+      USING_COVERAGE: '3.13'
 
     strategy:
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     services:
       simulator:
-        image: ${{ github.repository_owner }}/pwsimulator
+        image: ${{ needs.determine-image.outputs.image-owner }}/pwsimulator
         ports:
            - 443:443
 
     steps:
-      - uses: "actions/checkout@v2"
-      - uses: "actions/setup-python@v2"
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          python-version: "${{ matrix.python-version }}"
-      - name: "Install dependencies"
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            test_requirements.txt
+
+      - name: Show environment
         run: |
           set -xe
           python -VV
           python -m site
+          python -m pip --version
+
+      - name: "Install dependencies"
+        run: |
+          set -xe
           python -m pip install --upgrade pip setuptools wheel
-          pip install --upgrade -r requirements.txt
-          pip install --upgrade -r test_requirements.txt
+          pip install -U -r requirements.txt -r test_requirements.txt
+
+      - name: Wait for simulator
+        run: |
+          for i in {1..10}; do
+            if RESP=$(curl -sk https://localhost/test); then
+              echo "Simulator ready"
+              echo "$RESP"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Simulator never became healthy" >&2
+          docker ps -a
+          exit 1
 
       - name: "Run example.py on ${{ matrix.python-version }}"
         run: "python example.py"
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          mkdir -p logs
+          docker ps -a > logs/docker-ps.txt
+          docker logs "$(docker ps -aq --filter 'publish=443')" > logs/simulator.log 2>&1 || true
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulator-logs-${{ matrix.python-version }}
+          path: logs/
