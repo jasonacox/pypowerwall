@@ -74,6 +74,8 @@ version_args = subparsers.add_parser("version", help='Print version information'
 
 # Add a global debug flag
 p.add_argument("-debug", action="store_true", default=False, help="Enable debug output")
+p.add_argument("-authpath", type=str, default=None,
+               help="Override auth path (default uses PW_AUTH_PATH env var)")
 
 if len(sys.argv) == 1:
     p.print_help(sys.stderr)
@@ -82,6 +84,22 @@ if len(sys.argv) == 1:
 # parse args
 args = p.parse_args()
 command = args.command
+
+# Priority: command-line value > PW_AUTH_PATH env var > current directory
+if args.authpath is not None:  # user explicitly provided (could be "" to force CWD)
+    if args.authpath.strip() == "":
+        authpath = ""  # current directory
+    else:
+        authpath = os.path.expanduser(args.authpath)
+else:
+    # If env var produced None (shouldn't) or still None-like, fallback to "" (cwd)
+    authpath = authpath or ""
+
+# Debug: Show final authpath resolution before using it
+if args.debug:
+    # Show absolute path if non-empty, otherwise indicate current directory
+    display_authpath = os.path.abspath(authpath) if authpath else os.path.abspath(os.getcwd())
+    print(f"[DEBUG] Using auth path: {display_authpath} (raw='{authpath}')")
 
 # Set Debug Mode
 if args.debug:
