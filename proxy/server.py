@@ -104,10 +104,10 @@ import urllib3
 # 3. Executing from within the proxy directory (plain module import)
 try:  # Prefer relative when executed as a package module
     from .transform import get_static, inject_js  # type: ignore
-except Exception:  # noqa: BLE001 - fall back to other strategies
+except ImportError:  # noqa: BLE001 - fall back to other strategies
     try:
         from proxy.transform import get_static, inject_js  # type: ignore
-    except Exception:  # noqa: BLE001
+    except ImportError:  # noqa: BLE001
         from transform import get_static, inject_js  # type: ignore  # Last resort
 import pypowerwall
 from pypowerwall import parse_version
