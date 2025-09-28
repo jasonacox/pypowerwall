@@ -98,7 +98,17 @@ from urllib.parse import urlparse, parse_qs
 import requests
 import urllib3
 
-from proxy.transform import get_static, inject_js
+# Robust import of transform helpers to support multiple invocation patterns:
+# 1. python -m proxy.server (package-relative import works)
+# 2. python proxy/server.py from project root (absolute package import works)
+# 3. Executing from within the proxy directory (plain module import)
+try:  # Prefer relative when executed as a package module
+    from .transform import get_static, inject_js  # type: ignore
+except Exception:  # noqa: BLE001 - fall back to other strategies
+    try:
+        from proxy.transform import get_static, inject_js  # type: ignore
+    except Exception:  # noqa: BLE001
+        from transform import get_static, inject_js  # type: ignore  # Last resort
 import pypowerwall
 from pypowerwall import parse_version
 from pypowerwall.exceptions import (
