@@ -1,5 +1,8 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t83 (5 Oct 2025)
+
+* dd curl to Dockerfiles to use in healthchecks instead of wget by @goodoldme in http://github.com/jasonacox/pypowerwall/pull/223.
 
 ### Proxy t82 (6 Sep 2025)
 
