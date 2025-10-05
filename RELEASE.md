@@ -1,6 +1,5 @@
 # RELEASE NOTES
 
-
 ## v0.14.2 - Misc
 
 * Move API lock timeout messages in exponential backoff mechanism to DEBUG logging to prevent noise for regular users.
