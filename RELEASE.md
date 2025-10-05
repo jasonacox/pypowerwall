@@ -1,5 +1,8 @@
 # RELEASE NOTES
 
+## v0.14.3 - Docker Curl
+
+* Add curl to Dockerfiles to use in healthchecks instead of wget by @goodoldme in http://github.com/jasonacox/pypowerwall/pull/223.
 
 ## v0.14.2 - Misc
 
