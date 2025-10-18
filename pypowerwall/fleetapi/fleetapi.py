@@ -487,16 +487,21 @@ class FleetAPI:
         kind: power, energy, backup, self_consumption
         duration: day, week, month, year, lifetime
         time_zone: America/Los_Angeles
-        start: 2024-05-01T00:00:00-07:00 (RFC3339 format)
-        end: 2024-05-01T23:59:59-07:00
+        start: 2024-05-01T00:00:00-07:00 (RFC3339 format) or datetime object
+        end: 2024-05-01T23:59:59-07:00 (RFC3339 format) or datetime object
         """
         if not self.site_id:
             return None
+        # Convert datetime objects to RFC3339 format strings
+        if start and hasattr(start, 'isoformat'):
+            start = start.isoformat()
+        if end and hasattr(end, 'isoformat'):
+            end = end.isoformat()
         arg_kind = f"kind={kind}&" if kind else ""
         arg_duration = f"period={duration}&" if duration else ""
         arg_time_zone = f"time_zone={time_zone}" if time_zone else ""
-        arg_start = f"start={start}&" if start else ""
-        arg_end = f"end={end}&" if end else ""
+        arg_start = f"start_date={start}&" if start else ""
+        arg_end = f"end_date={end}&" if end else ""
         h = self.poll(f"api/1/energy_sites/{self.site_id}/{history}?{arg_kind}{arg_duration}{arg_time_zone}{arg_start}{arg_end}")
         return self.keyval(h, "response")
 
