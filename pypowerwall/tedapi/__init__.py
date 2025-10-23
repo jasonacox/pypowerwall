@@ -52,7 +52,7 @@ import threading
 import time
 from functools import wraps
 from http import HTTPStatus
-from typing import Dict, Final, List, Optional, Union, Tuple
+from typing import Any, Dict, Final, List, Optional, Union, Tuple
 
 import requests
 import urllib3
@@ -181,7 +181,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_config(self, self_function, force=False):
+    def get_config(self, self_function=None, force=False) -> Optional[Dict[Any, Any]]:
         """
         Get the Powerwall Gateway Configuration
 

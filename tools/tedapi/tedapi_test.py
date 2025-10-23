@@ -25,7 +25,7 @@ gw_pwd = "THEGWPASS"  # Change to your Powerwall Gateway Password
 gw = TEDAPI(gw_pwd)
 
 # Grab the Config and Live Status
-config = gw.get_config()
+config = gw.get_config() or {}
 status = gw.get_status()
 
 # Print
