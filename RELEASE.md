@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.14.3 - Battery Expansion Support
+
+* Add support for Powerwall 3 Battery Expansion Packs in TEDAPI mode - Fix for issue https://github.com/jasonacox/pypowerwall/issues/227 by @JohnJ9ml
+* Battery expansions (battery-only units without inverters) now appear in `/pw/battery_blocks`, `/pod`, and `/tedapi/battery` endpoints
+* The `get_blocks()` function now reads battery expansion data from the configuration's `battery_expansions` array and fetches BMS component data for each expansion unit
+* Expansion units are identified with `"Type": "BatteryExpansion"` and include battery capacity metrics (`nominal_energy_remaining`, `nominal_full_pack_energy`)
+* Inverter-related fields (`pinv_state`, `p_out`, `v_out`, etc.) are set to `None` for expansions since they don't have inverters
+* Fixes issue where battery expansions were visible in `/tedapi/battery` config but missing from battery blocks output
+
 ## v0.14.2 - Misc
 
 * Move API lock timeout messages in exponential backoff mechanism to DEBUG logging to prevent noise for regular users.

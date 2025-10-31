@@ -1567,14 +1567,17 @@ class TEDAPI:
 
     def get_blocks(self, force=False):
         """
-        Get the list of battery blocks from the Powerwall Gateway
+        Get the list of battery blocks from the Powerwall Gateway.
+        
+        This includes both regular Powerwall units (with inverters) and battery 
+        expansion packs (battery-only units without inverters).
         """
         vitals = self.vitals(force=force)
         if not isinstance(vitals, dict):
             return None
         block = {}
 
-        # Walk through the vitals dictionary and create blocks
+        # Walk through the vitals dictionary and create blocks for Powerwall units with inverters
         for key, _ in vitals.items():
             if key.startswith("TEPINV--"):
                 # Extract the part and serial numbers from the key
@@ -1623,6 +1626,70 @@ class TEDAPI:
                         "nominal_energy_remaining": nominal_energy_remaining,
                         "nominal_full_pack_energy": nominal_full_pack_energy,
                     })
+
+        # Add battery expansion packs (battery-only units without inverters)
+        config = self.get_config(force=force)
+        if config and 'battery_blocks' in config:
+            for battery in config['battery_blocks']:
+                # Check if this battery has expansions
+                if 'battery_expansions' in battery and battery['battery_expansions']:
+                    for expansion in battery['battery_expansions']:
+                        exp_din = expansion.get('din')
+                        if not exp_din:
+                            continue
+                        
+                        # Extract part and serial from DIN (format: "1807000-10-B--TG125035000A5E")
+                        exp_parts = exp_din.split('--')
+                        if len(exp_parts) < 2:
+                            log.debug(f"Skipping battery expansion with invalid DIN format: {exp_din}")
+                            continue
+                        exp_part = exp_parts[0]
+                        exp_serial = exp_parts[1]
+                        exp_name = exp_serial  # Use serial number as key
+                        
+                        log.debug(f"Fetching battery expansion data for {exp_serial} ({exp_din})")
+                        # Fetch battery block data for this expansion
+                        exp_data = self.get_battery_block(din=exp_din, force=force)
+                        
+                        # Extract BMS data from expansion
+                        nom_energy_remaining = None
+                        nom_full_pack_energy = None
+                        if exp_data and 'components' in exp_data:
+                            bms_components = exp_data['components'].get('bms', [])
+                            if bms_components and len(bms_components) > 0:
+                                bms_signals = bms_components[0].get('signals', [])
+                                for signal in bms_signals:
+                                    if signal['name'] == 'BMS_nominalEnergyRemaining':
+                                        nom_energy_remaining = int(signal['value'] * 1000)  # Convert kWh to Wh
+                                    elif signal['name'] == 'BMS_nominalFullPackEnergy':
+                                        nom_full_pack_energy = int(signal['value'] * 1000)  # Convert kWh to Wh
+                        
+                        # Add expansion to blocks (expansions don't have inverter data)
+                        block[exp_name] = {
+                            "Type": "BatteryExpansion",
+                            "PackagePartNumber": exp_part,
+                            "PackageSerialNumber": exp_serial,
+                            "disabled_reasons": [],
+                            "pinv_state": None,  # No inverter for expansions
+                            "pinv_grid_state": None,  # No inverter for expansions
+                            "nominal_energy_remaining": nom_energy_remaining,
+                            "nominal_full_pack_energy": nom_full_pack_energy,
+                            "p_out": None,  # No power output for battery-only expansions
+                            "q_out": None,
+                            "v_out": None,
+                            "f_out": None,
+                            "i_out": None,
+                            "energy_charged": None,
+                            "energy_discharged": None,
+                            "off_grid": None,
+                            "vf_mode": None,
+                            "wobble_detected": None,
+                            "charge_power_clamped": None,
+                            "backup_ready": None,
+                            "OpSeqState": None,
+                            "version": None
+                        }
+        
         return block
 
     # End of TEDAPI Class
