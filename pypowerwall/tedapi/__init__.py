@@ -1659,10 +1659,12 @@ class TEDAPI:
                             if bms_components and len(bms_components) > 0:
                                 bms_signals = bms_components[0].get('signals', [])
                                 for signal in bms_signals:
-                                    if signal['name'] == 'BMS_nominalEnergyRemaining':
-                                        nom_energy_remaining = int(signal['value'] * 1000)  # Convert kWh to Wh
-                                    elif signal['name'] == 'BMS_nominalFullPackEnergy':
-                                        nom_full_pack_energy = int(signal['value'] * 1000)  # Convert kWh to Wh
+                                    signal_name = signal.get('name')
+                                    signal_value = signal.get('value')
+                                    if signal_name == 'BMS_nominalEnergyRemaining' and signal_value is not None:
+                                        nom_energy_remaining = int(signal_value * 1000)  # Convert kWh to Wh
+                                    elif signal_name == 'BMS_nominalFullPackEnergy' and signal_value is not None:
+                                        nom_full_pack_energy = int(signal_value * 1000)  # Convert kWh to Wh
                         
                         # Add expansion to blocks (expansions don't have inverter data)
                         block[exp_name] = {
