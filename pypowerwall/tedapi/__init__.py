@@ -1501,6 +1501,35 @@ class TEDAPI:
         msa = lookup(status, ['esCan', 'bus', 'MSA']) or {}
         packagePartNumber = msa.get('packagePartNumber', None)
         packageSerialNumber = msa.get('packageSerialNumber', None)
+
+        # For Powerwall 3, MSA data comes from components.msa with signals format
+        if not packageSerialNumber:
+            for component in lookup(status, ['components', 'msa']) or []:
+                if component.get('serialNumber') and any(
+                    s.get('name', '').startswith('METER_Z') for s in component.get('signals', [])
+                ):
+                    packagePartNumber = component.get('partNumber')
+                    packageSerialNumber = component.get('serialNumber')
+                    # Convert signals array to dict keyed by name
+                    signals_dict = {s['name']: s.get('value') for s in component.get('signals', [])}
+                    # Create a fake METER_Z_AcMeasurements structure for compatibility
+                    # PW3 uses VL1G/VL2G (ground-ref), map to VL1N/VL2N for consistency
+                    msa = {
+                        'packagePartNumber': packagePartNumber,
+                        'packageSerialNumber': packageSerialNumber,
+                        'METER_Z_AcMeasurements': {
+                            'METER_Z_CTA_I': signals_dict.get('METER_Z_CTA_I'),
+                            'METER_Z_CTA_InstReactivePower': signals_dict.get('METER_Z_CTA_InstReactivePower'),
+                            'METER_Z_CTA_InstRealPower': signals_dict.get('METER_Z_CTA_InstRealPower'),
+                            'METER_Z_CTB_I': signals_dict.get('METER_Z_CTB_I'),
+                            'METER_Z_CTB_InstReactivePower': signals_dict.get('METER_Z_CTB_InstReactivePower'),
+                            'METER_Z_CTB_InstRealPower': signals_dict.get('METER_Z_CTB_InstRealPower'),
+                            'METER_Z_VL1N': signals_dict.get('METER_Z_VL1G'),
+                            'METER_Z_VL2N': signals_dict.get('METER_Z_VL2G'),
+                        }
+                    }
+                    break
+
         if packageSerialNumber:
             name = f"TEMSA--{packagePartNumber}--{packageSerialNumber}"
             temsa[name] = {
