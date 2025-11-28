@@ -1391,6 +1391,78 @@ class Handler(BaseHTTPRequestHandler):
                         v, "POD_nom_full_pack_energy"
                     )
                     idx = idx + 1
+
+            # Add expansion packs from TEDAPI get_blocks()
+            # Calculate expansion energy by subtracting known batteries from system totals
+            if pw.tedapi:
+                try:
+                    blocks = pw.tedapi.get_blocks()
+                    if blocks:
+                        # Get system totals (includes all batteries)
+                        status = pw.tedapi.get_status()
+                        system_status = (status or {}).get("control", {}).get("systemStatus", {})
+                        system_full = system_status.get("nominalFullPackEnergyWh") or 0
+                        system_remaining = system_status.get("nominalEnergyRemainingWh") or 0
+
+                        # Sum up non-expansion batteries and count expansions
+                        known_full = 0
+                        known_remaining = 0
+                        expansion_count = 0
+                        expansion_serials = []
+                        for serial, block in blocks.items():
+                            if block.get("Type") == "BatteryExpansion":
+                                expansion_count += 1
+                                expansion_serials.append(serial)
+                            else:
+                                known_full += block.get("nominal_full_pack_energy") or 0
+                                known_remaining += block.get("nominal_energy_remaining") or 0
+
+                        # Calculate combined expansion energy by subtraction
+                        expansion_full = system_full - known_full if system_full > known_full else None
+                        expansion_remaining = system_remaining - known_remaining if system_remaining > known_remaining else None
+
+                        # Add expansion pack entries
+                        for i, serial in enumerate(expansion_serials):
+                            block = blocks.get(serial, {})
+                            part_number = block.get("PackagePartNumber", "")
+
+                            # For multiple expansions, show combined total on first, null on others
+                            if expansion_count > 1:
+                                if i == 0:
+                                    # First expansion shows combined total
+                                    exp_name = f"TEPOD--{part_number}--{serial} (combined)"
+                                    exp_remaining = round(expansion_remaining, 2) if expansion_remaining else None
+                                    exp_to_charge = round(expansion_full - expansion_remaining, 2) if expansion_full and expansion_remaining else None
+                                    exp_full = round(expansion_full, 2) if expansion_full else None
+                                else:
+                                    # Additional expansions show null (individual data unavailable)
+                                    exp_name = f"TEPOD--{part_number}--{serial}"
+                                    exp_remaining = None
+                                    exp_to_charge = None
+                                    exp_full = None
+                            else:
+                                # Single expansion - show calculated values
+                                exp_name = f"TEPOD--{part_number}--{serial}"
+                                exp_remaining = round(expansion_remaining, 2) if expansion_remaining else None
+                                exp_to_charge = round(expansion_full - expansion_remaining, 2) if expansion_full and expansion_remaining else None
+                                exp_full = round(expansion_full, 2) if expansion_full else None
+
+                            pod["PW%d_name" % idx] = exp_name
+                            pod["PW%d_POD_ActiveHeating" % idx] = 0
+                            pod["PW%d_POD_ChargeComplete" % idx] = 0
+                            pod["PW%d_POD_ChargeRequest" % idx] = 0
+                            pod["PW%d_POD_DischargeComplete" % idx] = 0
+                            pod["PW%d_POD_PermanentlyFaulted" % idx] = 0
+                            pod["PW%d_POD_PersistentlyFaulted" % idx] = 0
+                            pod["PW%d_POD_enable_line" % idx] = 0
+                            pod["PW%d_POD_available_charge_power" % idx] = None
+                            pod["PW%d_POD_available_dischg_power" % idx] = None
+                            pod["PW%d_POD_nom_energy_remaining" % idx] = exp_remaining
+                            pod["PW%d_POD_nom_energy_to_be_charged" % idx] = exp_to_charge
+                            pod["PW%d_POD_nom_full_pack_energy" % idx] = exp_full
+                            idx = idx + 1
+                except Exception as e:
+                    log.debug(f"Error getting expansion packs: {e}")
             # Aggregate data
             pod["nominal_full_pack_energy"] = get_value(d, "nominal_full_pack_energy")
             pod["nominal_energy_remaining"] = get_value(d, "nominal_energy_remaining")
