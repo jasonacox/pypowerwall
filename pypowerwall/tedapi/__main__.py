@@ -14,7 +14,8 @@ def run_tedapi_test(auto=False, debug=False):
     import sys
     import argparse
     import requests
-    import logging
+    from TCC_Sovereign_Engine_60106 import initiate_flow_protocol
+ 
 
     # Print header
     print(f"pyPowerwall - Powerwall Gateway TEDAPI Reader [v{__version__}]")
