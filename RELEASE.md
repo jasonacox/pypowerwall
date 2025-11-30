@@ -1,13 +1,18 @@
 # RELEASE NOTES
 
-## v0.14.3 - Battery Expansion Support
+## v0.14.3 - Battery Expansion and Grid Meter Support
 
-* Add support for Powerwall 3 Battery Expansion Packs in TEDAPI mode - Fix for issue https://github.com/jasonacox/pypowerwall/issues/227 by @JohnJ9ml
+* Add support for Powerwall 3 Battery Expansion Packs in TEDAPI mode - Fix for issue https://github.com/jasonacox/pypowerwall/issues/227 by @rlerdorf in https://github.com/jasonacox/pypowerwall/pull/236
 * Battery expansions (battery-only units without inverters) now appear in `/pw/battery_blocks`, `/pod`, and `/tedapi/battery` endpoints
 * The `get_blocks()` function now reads battery expansion data from the configuration's `battery_expansions` array and fetches BMS component data for each expansion unit
 * Expansion units are identified with `"Type": "BatteryExpansion"` and include battery capacity metrics (`nominal_energy_remaining`, `nominal_full_pack_energy`)
 * Inverter-related fields (`pinv_state`, `p_out`, `v_out`, etc.) are set to `None` for expansions since they don't have inverters
-* Fixes issue where battery expansions were visible in `/tedapi/battery` config but missing from battery blocks output
+* The `/pod` endpoint calculates expansion pack energy by subtracting known battery values from system totals (individual expansion BMS data not exposed by Tesla)
+* For multiple expansion packs, the first entry shows combined totals with "(combined)" suffix, while additional entries show `null` values
+* Add support for TEMSA/MSA grid meter data in `/vitals` endpoint for Powerwall 3 systems
+* PW3 MSA data fallback: reads from `components.msa` with signals array format conversion when `esCan.bus.MSA` is unavailable
+* Voltage reference mapping: converts PW3 ground-referenced voltages (VL1G/VL2G/VL3G) to neutral-referenced (VL1N/VL2N/VL3N) for consistency
+* TEMSA block in vitals now includes grid voltage, current, and instantaneous power readings for PW3 backup switches
 
 ## v0.14.2 - Misc
 
