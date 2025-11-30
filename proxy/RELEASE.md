@@ -1,5 +1,24 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t84 (29 Nov 2025)
+
+* **Powerwall 3 Battery Expansion Pack Support** ([#227](https://github.com/jasonacox/pypowerwall/issues/227), [#236](https://github.com/jasonacox/pypowerwall/pull/236)):
+  - **Enhanced `/pod` endpoint**: Now detects and reports PW3 battery expansion packs (battery-only units without inverters)
+  - Uses `get_blocks()` TEDAPI method to identify expansion packs with `Type: "BatteryExpansion"`
+  - Calculates expansion pack energy by subtracting known battery values from system totals
+  - For single expansion: displays individual energy metrics (`PW{N}_POD_nom_energy_remaining`, `PW{N}_POD_nom_full_pack_energy`)
+  - For multiple expansions: first entry shows combined totals with "(combined)" suffix, additional entries show `null` values (individual data not exposed by Tesla)
+  - Expansion pack entries include part number, serial number, and placeholder status fields
+
+* **TEMSA/MSA Grid Meter Support for Powerwall 3** ([#236](https://github.com/jasonacox/pypowerwall/pull/236)):
+  - **Enhanced `/vitals` endpoint**: Added support for PW3 TEMSA/MSA backup switch grid meter data
+  - PW3 fallback logic: reads MSA data from `components.msa` when `esCan.bus.MSA` is unavailable
+  - Automatic signals array format conversion to expected dictionary structure
+  - Voltage reference mapping: converts PW3 ground-referenced voltages (VL1G/VL2G/VL3G) to neutral-referenced (VL1N/VL2N/VL3N) for consistency
+  - TEMSA block includes grid voltage, current, and instantaneous power readings for monitoring backup switch/grid connection
+
+* Credit: @rlerdorf for battery expansion pack and TEMSA/MSA grid meter implementation
+
 ### Proxy t83 (5 Oct 2025)
 
 * dd curl to Dockerfiles to use in healthchecks instead of wget by @goodoldme in http://github.com/jasonacox/pypowerwall/pull/223.
