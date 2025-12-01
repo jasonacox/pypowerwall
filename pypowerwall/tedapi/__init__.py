@@ -782,8 +782,9 @@ class TEDAPI:
                     expansion_dins = {}
                     for exp in battery.get('battery_expansions', []):
                         exp_din = exp.get('din', '')
-                        if '--' in exp_din:
-                            exp_serial = exp_din.split('--')[1]
+                        exp_parts = exp_din.split('--')
+                        if len(exp_parts) >= 2 and exp_parts[1]:
+                            exp_serial = exp_parts[1]
                             expansion_dins[exp_serial] = exp_din
 
                     # Process each BMS/HVP pair
