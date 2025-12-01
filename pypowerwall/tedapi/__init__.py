@@ -772,21 +772,60 @@ class TEDAPI:
                             for alert in components[component][0]['activeAlerts']:
                                 if alert['name'] not in alerts:
                                     alerts.append(alert['name'])
-                    bms_component = data['components']['bms'][0] # TODO: Process all BMS components
-                    signals = bms_component['signals']
-                    nom_energy_remaining = 0
-                    nom_full_pack_energy = 0
-                    for signal in signals:
-                        if "BMS_nominalEnergyRemaining" == signal['name']:
-                            nom_energy_remaining = int(signal['value'] * 1000) # Convert to Wh
-                        elif "BMS_nominalFullPackEnergy" == signal['name']:
-                            nom_full_pack_energy = int(signal['value'] * 1000) # Convert to Wh
-                    response[f"TEPOD--{pw_din}"] = {
-                        "alerts": alerts,
-                        "POD_nom_energy_remaining": nom_energy_remaining,
-                        "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
-                        "POD_nom_full_pack_energy": nom_full_pack_energy,
-                    }
+                    # Process all BMS and HVP components to support expansion packs
+                    # HVP entries have serial numbers, BMS entries have energy data
+                    # They correspond 1:1 by index
+                    bms_list = data['components'].get('bms', [])
+                    hvp_list = data['components'].get('hvp', [])
+
+                    # Get expansion pack DINs for this battery block
+                    expansion_dins = {}
+                    for exp in battery.get('battery_expansions', []):
+                        exp_din = exp.get('din', '')
+                        if '--' in exp_din:
+                            exp_serial = exp_din.split('--')[1]
+                            expansion_dins[exp_serial] = exp_din
+
+                    # Process each BMS/HVP pair
+                    for bms_idx, bms_component in enumerate(bms_list):
+                        signals = bms_component.get('signals', [])
+                        nom_energy_remaining = 0
+                        nom_full_pack_energy = 0
+                        for signal in signals:
+                            if signal.get('value') is None:
+                                continue
+                            if "BMS_nominalEnergyRemaining" == signal['name']:
+                                nom_energy_remaining = int(signal['value'] * 1000)  # Convert to Wh
+                            elif "BMS_nominalFullPackEnergy" == signal['name']:
+                                nom_full_pack_energy = int(signal['value'] * 1000)  # Convert to Wh
+
+                        # Skip entries with no energy data
+                        if nom_full_pack_energy == 0:
+                            continue
+
+                        # Get corresponding HVP serial (same index)
+                        hvp_serial = None
+                        if bms_idx < len(hvp_list):
+                            hvp_serial = hvp_list[bms_idx].get('serialNumber')
+
+                        # Determine DIN for this BMS entry
+                        if bms_idx == 0:
+                            # First BMS is the main Powerwall unit
+                            pod_din = pw_din
+                        elif hvp_serial and hvp_serial in expansion_dins:
+                            # This is an expansion pack - use its full DIN
+                            pod_din = expansion_dins[hvp_serial]
+                        else:
+                            # BMS entry doesn't match main unit or known expansion - skip it
+                            # (This catches phantom BMS slots on batteries without expansions)
+                            continue
+
+                        response[f"TEPOD--{pod_din}"] = {
+                            "alerts": alerts,
+                            "POD_nom_energy_remaining": nom_energy_remaining,
+                            "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
+                            "POD_nom_full_pack_energy": nom_full_pack_energy,
+                        }
                     # PVAC, PVS and TEPINV
                     response[f"PVAC--{pw_din}"] = {}
                     response[f"PVS--{pw_din}"] = {}
@@ -1663,25 +1702,10 @@ class TEDAPI:
                     })
 
         # Add battery expansion packs (battery-only units without inverters)
-        # Expansion pack BMS data is available in the main Powerwall's components response.
-        # We match expansion packs to their BMS entries by finding their serial in the HVP list
-        # (HVP entries have serial numbers and correspond 1:1 with BMS entries by index).
+        # Expansion pack energy is now included in vitals() as TEPOD entries
         config = self.get_config(force=force)
         if config and 'battery_blocks' in config:
-            # Get components from main Powerwall - contains HVP (with serials) and BMS (with energy)
-            components = self.get_components(force=force)
-            hvp_list = (components.get('components', {}) if components else {}).get('hvp', [])
-            bms_list = (components.get('components', {}) if components else {}).get('bms', [])
-
-            # Build a map of HVP serial -> BMS index for matching
-            hvp_serial_to_bms_idx = {}
-            for idx, hvp in enumerate(hvp_list):
-                hvp_serial = hvp.get('serialNumber')
-                if hvp_serial and idx < len(bms_list):
-                    hvp_serial_to_bms_idx[hvp_serial] = idx
-
             for battery in config['battery_blocks']:
-                # Check if this battery has expansions
                 if 'battery_expansions' in battery and battery['battery_expansions']:
                     for expansion in battery['battery_expansions']:
                         exp_din = expansion.get('din')
@@ -1697,25 +1721,10 @@ class TEDAPI:
                         exp_serial = exp_parts[1]
                         exp_name = exp_serial  # Use serial number as key
 
-                        log.debug(f"Looking up battery expansion data for {exp_serial} ({exp_din})")
-
-                        # Find this expansion's BMS data by matching serial in HVP list
-                        nom_energy_remaining = None
-                        nom_full_pack_energy = None
-                        bms_idx = hvp_serial_to_bms_idx.get(exp_serial)
-                        if bms_idx is not None and bms_idx < len(bms_list):
-                            bms_signals = bms_list[bms_idx].get('signals', [])
-                            for signal in bms_signals:
-                                signal_name = signal.get('name')
-                                signal_value = signal.get('value')
-                                if signal_name == 'BMS_nominalEnergyRemaining' and signal_value is not None:
-                                    nom_energy_remaining = int(signal_value * 1000)  # Convert kWh to Wh
-                                elif signal_name == 'BMS_nominalFullPackEnergy' and signal_value is not None:
-                                    nom_full_pack_energy = int(signal_value * 1000)  # Convert kWh to Wh
-                            log.debug(f"Found BMS data for expansion {exp_serial}: "
-                                      f"remaining={nom_energy_remaining}Wh, full={nom_full_pack_energy}Wh")
-                        else:
-                            log.debug(f"No BMS data found for expansion {exp_serial} in HVP list")
+                        # Look up energy from vitals TEPOD entry
+                        tepod_key = f"TEPOD--{exp_din}"
+                        nominal_energy_remaining = lookup(vitals, [tepod_key, 'POD_nom_energy_remaining'])
+                        nominal_full_pack_energy = lookup(vitals, [tepod_key, 'POD_nom_full_pack_energy'])
 
                         # Add expansion to blocks (expansions don't have inverter data)
                         block[exp_name] = {
@@ -1723,11 +1732,11 @@ class TEDAPI:
                             "PackagePartNumber": exp_part,
                             "PackageSerialNumber": exp_serial,
                             "disabled_reasons": [],
-                            "pinv_state": None,  # No inverter for expansions
-                            "pinv_grid_state": None,  # No inverter for expansions
-                            "nominal_energy_remaining": nom_energy_remaining,
-                            "nominal_full_pack_energy": nom_full_pack_energy,
-                            "p_out": None,  # No power output for battery-only expansions
+                            "pinv_state": None,
+                            "pinv_grid_state": None,
+                            "nominal_energy_remaining": nominal_energy_remaining,
+                            "nominal_full_pack_energy": nominal_full_pack_energy,
+                            "p_out": None,
                             "q_out": None,
                             "v_out": None,
                             "f_out": None,
@@ -1742,7 +1751,7 @@ class TEDAPI:
                             "OpSeqState": None,
                             "version": None
                         }
-        
+
         return block
 
     # End of TEDAPI Class

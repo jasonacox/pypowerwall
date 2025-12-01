@@ -1391,42 +1391,8 @@ class Handler(BaseHTTPRequestHandler):
                         v, "POD_nom_full_pack_energy"
                     )
                     idx = idx + 1
-
-            # Add expansion packs from TEDAPI get_blocks()
-            # Expansion pack energy data is now obtained directly from BMS components
-            # matched via HVP serial numbers (no more subtraction hack)
-            if pw.tedapi:
-                try:
-                    blocks = pw.tedapi.get_blocks()
-                    if blocks:
-                        for serial, block in blocks.items():
-                            if block.get("Type") == "BatteryExpansion":
-                                part_number = block.get("PackagePartNumber", "")
-                                exp_remaining = block.get("nominal_energy_remaining")
-                                exp_full = block.get("nominal_full_pack_energy")
-
-                                # Calculate energy to be charged
-                                if exp_full is not None and exp_remaining is not None:
-                                    exp_to_charge = max(0, exp_full - exp_remaining)
-                                else:
-                                    exp_to_charge = None
-
-                                pod["PW%d_name" % idx] = f"TEPOD--{part_number}--{serial}"
-                                pod["PW%d_POD_ActiveHeating" % idx] = 0
-                                pod["PW%d_POD_ChargeComplete" % idx] = 0
-                                pod["PW%d_POD_ChargeRequest" % idx] = 0
-                                pod["PW%d_POD_DischargeComplete" % idx] = 0
-                                pod["PW%d_POD_PermanentlyFaulted" % idx] = 0
-                                pod["PW%d_POD_PersistentlyFaulted" % idx] = 0
-                                pod["PW%d_POD_enable_line" % idx] = 0
-                                pod["PW%d_POD_available_charge_power" % idx] = None
-                                pod["PW%d_POD_available_dischg_power" % idx] = None
-                                pod["PW%d_POD_nom_energy_remaining" % idx] = exp_remaining
-                                pod["PW%d_POD_nom_energy_to_be_charged" % idx] = exp_to_charge
-                                pod["PW%d_POD_nom_full_pack_energy" % idx] = exp_full
-                                idx = idx + 1
-                except Exception as e:
-                    log.debug(f"Error getting expansion packs: {e}")
+            # Note: Expansion packs are now included in vitals() as TEPOD entries,
+            # so they're automatically picked up by the loop above.
             # Aggregate data
             pod["nominal_full_pack_energy"] = get_value(d, "nominal_full_pack_energy")
             pod["nominal_energy_remaining"] = get_value(d, "nominal_energy_remaining")
