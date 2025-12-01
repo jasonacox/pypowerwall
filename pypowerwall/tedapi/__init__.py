@@ -1663,8 +1663,23 @@ class TEDAPI:
                     })
 
         # Add battery expansion packs (battery-only units without inverters)
+        # Expansion pack BMS data is available in the main Powerwall's components response.
+        # We match expansion packs to their BMS entries by finding their serial in the HVP list
+        # (HVP entries have serial numbers and correspond 1:1 with BMS entries by index).
         config = self.get_config(force=force)
         if config and 'battery_blocks' in config:
+            # Get components from main Powerwall - contains HVP (with serials) and BMS (with energy)
+            components = self.get_components(force=force)
+            hvp_list = (components.get('components', {}) if components else {}).get('hvp', [])
+            bms_list = (components.get('components', {}) if components else {}).get('bms', [])
+
+            # Build a map of HVP serial -> BMS index for matching
+            hvp_serial_to_bms_idx = {}
+            for idx, hvp in enumerate(hvp_list):
+                hvp_serial = hvp.get('serialNumber')
+                if hvp_serial and idx < len(bms_list):
+                    hvp_serial_to_bms_idx[hvp_serial] = idx
+
             for battery in config['battery_blocks']:
                 # Check if this battery has expansions
                 if 'battery_expansions' in battery and battery['battery_expansions']:
@@ -1672,7 +1687,7 @@ class TEDAPI:
                         exp_din = expansion.get('din')
                         if not exp_din:
                             continue
-                        
+
                         # Extract part and serial from DIN (format: "1807000-10-B--TG125035000A5E")
                         exp_parts = exp_din.split('--')
                         if len(exp_parts) < 2:
@@ -1681,26 +1696,27 @@ class TEDAPI:
                         exp_part = exp_parts[0]
                         exp_serial = exp_parts[1]
                         exp_name = exp_serial  # Use serial number as key
-                        
-                        log.debug(f"Fetching battery expansion data for {exp_serial} ({exp_din})")
-                        # Fetch battery block data for this expansion
-                        exp_data = self.get_battery_block(din=exp_din, force=force)
-                        
-                        # Extract BMS data from expansion
+
+                        log.debug(f"Looking up battery expansion data for {exp_serial} ({exp_din})")
+
+                        # Find this expansion's BMS data by matching serial in HVP list
                         nom_energy_remaining = None
                         nom_full_pack_energy = None
-                        if exp_data and 'components' in exp_data:
-                            bms_components = exp_data['components'].get('bms', [])
-                            if bms_components and len(bms_components) > 0:
-                                bms_signals = bms_components[0].get('signals', [])
-                                for signal in bms_signals:
-                                    signal_name = signal.get('name')
-                                    signal_value = signal.get('value')
-                                    if signal_name == 'BMS_nominalEnergyRemaining' and signal_value is not None:
-                                        nom_energy_remaining = int(signal_value * 1000)  # Convert kWh to Wh
-                                    elif signal_name == 'BMS_nominalFullPackEnergy' and signal_value is not None:
-                                        nom_full_pack_energy = int(signal_value * 1000)  # Convert kWh to Wh
-                        
+                        bms_idx = hvp_serial_to_bms_idx.get(exp_serial)
+                        if bms_idx is not None and bms_idx < len(bms_list):
+                            bms_signals = bms_list[bms_idx].get('signals', [])
+                            for signal in bms_signals:
+                                signal_name = signal.get('name')
+                                signal_value = signal.get('value')
+                                if signal_name == 'BMS_nominalEnergyRemaining' and signal_value is not None:
+                                    nom_energy_remaining = int(signal_value * 1000)  # Convert kWh to Wh
+                                elif signal_name == 'BMS_nominalFullPackEnergy' and signal_value is not None:
+                                    nom_full_pack_energy = int(signal_value * 1000)  # Convert kWh to Wh
+                            log.debug(f"Found BMS data for expansion {exp_serial}: "
+                                      f"remaining={nom_energy_remaining}Wh, full={nom_full_pack_energy}Wh")
+                        else:
+                            log.debug(f"No BMS data found for expansion {exp_serial} in HVP list")
+
                         # Add expansion to blocks (expansions don't have inverter data)
                         block[exp_name] = {
                             "Type": "BatteryExpansion",
