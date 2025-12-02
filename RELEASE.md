@@ -1,5 +1,16 @@
 # RELEASE NOTES
 
+## v0.14.4 - Expansion Pack Energy Fix
+
+* **Fix expansion pack energy data** by processing all BMS components in TEDAPI responses - Fix by @rlerdorf in https://github.com/jasonacox/pypowerwall/pull/239
+* Refactored `get_pw3_vitals()` to process ALL BMS components and match them to batteries (main units and expansions) via HVP serial numbers
+* Creates individual TEPOD entries in `/vitals` for each battery including expansion packs with accurate energy data
+* Simplified `/pod` endpoint by removing complex subtraction-based energy calculation logic - expansion packs now appear automatically as TEPOD entries
+* Refactored `get_blocks()` to retrieve expansion pack energy from vitals TEPOD entries instead of making separate API calls
+* Improves data accuracy and reduces API calls by directly extracting expansion pack energy from parallel BMS/HVP component arrays
+* Validated on system with 2 Powerwall 3 units (Leader + Follower) and 1 Expansion Pack showing correct energy values for all three batteries
+* Proxy server build t85
+
 ## v0.14.3 - Battery Expansion and Grid Meter Support
 
 * Add support for Powerwall 3 Battery Expansion Packs in TEDAPI mode - Fix for issue https://github.com/jasonacox/pypowerwall/issues/227 by @rlerdorf in https://github.com/jasonacox/pypowerwall/pull/236

@@ -1,5 +1,15 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t85 (1 Dec 2025)
+
+* **Fix Expansion Pack Energy Data** ([#239](https://github.com/jasonacox/pypowerwall/pull/239)):
+  - Removed complex subtraction-based energy calculation logic (83 lines) from `/pod` endpoint
+  - Expansion packs now automatically appear via TEPOD entries from `vitals()` with accurate energy data
+  - Simplified implementation relies on improved TEDAPI `get_pw3_vitals()` function that processes all BMS components
+  - Better accuracy and reduced complexity for systems with battery expansion packs
+
+* Credit: @rlerdorf for expansion pack energy fix implementation
+
 ### Proxy t84 (29 Nov 2025)
 
 * **Powerwall 3 Battery Expansion Pack Support** ([#227](https://github.com/jasonacox/pypowerwall/issues/227), [#236](https://github.com/jasonacox/pypowerwall/pull/236)):
