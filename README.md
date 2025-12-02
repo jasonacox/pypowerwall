@@ -62,7 +62,7 @@ Step 1 - Tesla Partner Account - Sign in to Tesla Developer Portal and make an A
    * CLIENT_ID - This will be provided to you by Tesla when your request is approved.
    * CLIENT_SECRET - Same as above.
    * DOMAIN - The domain name of a website you own and control.
-   * REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed during the pyPowerwall setup. You can use [index.html](./tools/fleetapi/index.html) on your site and update REDIRECT_URI with that URL. Alternatively, you can just copy the URL from the 404 page during the authorization process (the code is in the URL).
+   * REDIRECT_URI - This is the URL that Tesla will direct you to after you authenticate. This landing URL (on your website) will extract the GET variable `code`, which is a one-time use authorization code needed during the pyPowerwall setup. You can use https://pypowerwall.com/code or copy the code from [index.html](./tools/fleetapi/index.html) to your site and update REDIRECT_URI with that URL. Alternatively, you can just copy the URL from the 404 page during the authorization process (the code is in the URL).
 
 Step 2 - Run the [create_pem_key.py](./tools/fleetapi/create_pem_key.py) script and place the **public** key on your website at the URL: https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem
 
