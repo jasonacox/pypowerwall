@@ -1,5 +1,21 @@
 # Tesla Developer - FleetAPI for Powerwall
 
+⚠️ **DEPRECATION NOTICE**: This directory (`tools/fleetapi/`) contains outdated development code and should NOT be used. 
+
+**Please use the built-in pypowerwall FleetAPI module instead:**
+
+```bash
+# Recommended method - use the pypowerwall module
+python -m pypowerwall.fleetapi setup
+python -m pypowerwall.fleetapi status --json
+```
+
+For full documentation, see the main README: https://github.com/jasonacox/pypowerwall?tab=readme-ov-file#fleetapi-setup---option-2
+
+---
+
+## Legacy Documentation (For Reference Only)
+
 FleetAPI is a RESTful data and command service providing access to Tesla Powerwalls. Developers can interact with their own devices, or devices for which they have been granted access by a customer, through this API.
 
 Note: the FleetAPI provides third party access to Tesla Vehicles as well as Energy Products.
