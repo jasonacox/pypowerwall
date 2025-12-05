@@ -60,6 +60,8 @@ def acquire_lock_with_backoff(func, timeout, **backoff_kwargs):
     Context manager for acquiring a lock using exponential backoff with jitter.
     Raises TimeoutError if the lock is not acquired in the given timeout.
     """
+    if not func:
+        return
     lock: threading.Lock = func.api_lock
     if not acquire_with_exponential_backoff(lock, timeout, **backoff_kwargs):
         raise TimeoutError("Unable to acquire lock within the specified timeout.")
