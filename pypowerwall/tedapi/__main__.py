@@ -94,8 +94,8 @@ def run_tedapi_test(auto=False, debug=False):
     if ted.din is None:
         print("\nERROR: Unable to connect to Powerwall Gateway. Check your password and try again")
         sys.exit(1)
-    config = ted.get_config()
-    status = ted.get_status()
+    config = ted.get_config() or {}
+    status = ted.get_status() or {}
     print()
 
     # Print Configuration

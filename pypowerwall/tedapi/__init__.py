@@ -52,7 +52,7 @@ import threading
 import time
 from functools import wraps
 from http import HTTPStatus
-from typing import Dict, Final, List, Optional, Union, Tuple
+from typing import Any, Dict, Final, List, Optional, Tuple, Union
 
 import requests
 import urllib3
@@ -181,7 +181,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_config(self, self_function, force=False):
+    def get_config(self, self_function=None, force=False) -> Optional[Dict[Any, Any]]:
         """
         Get the Powerwall Gateway Configuration
 
@@ -282,7 +282,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_status(self, self_function=None, force=False):
+    def get_status(self, self_function=None, force=False) -> Optional[Dict[Any, Any]]:
         """
         Get the Powerwall Gateway Status
 
@@ -395,7 +395,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_device_controller(self, self_function, force=False):
+    def get_device_controller(self, self_function=None, force=False):
         """
         Get the Powerwall Device Controller Status.
         Similar to get_status but with additional data:
@@ -486,7 +486,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_firmware_version(self, self_function, force=False, details=False):
+    def get_firmware_version(self, self_function=None, force=False, details=False):
         """
         Get the Powerwall Firmware Version.
         Args:
@@ -591,7 +591,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_components(self, self_function, force=False):
+    def get_components(self, self_function=None, force=False):
         """
         Get Powerwall 3 device component information.
         Example payload:
@@ -892,7 +892,7 @@ class TEDAPI:
 
 
     @uses_api_lock
-    def get_battery_block(self, self_function, din=None, force=False):
+    def get_battery_block(self, self_function=None, din=None, force=False):
         """
         Get the Powerwall 3 Battery Block Information.
         Args:

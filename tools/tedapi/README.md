@@ -80,7 +80,7 @@ config = gw.get_config()
 status = gw.get_status()
 
 # Print
-site_info = config.get('site_info', {})
+site_info = config.get('site_info', {}) or {}
 site_name = site_info.get('site_name', 'Unknown')
 print(f"My Site: {site_name}")
 meterAggregates = status.get('control', {}).get('meterAggregates', [])
