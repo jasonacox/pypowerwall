@@ -304,13 +304,13 @@ if __name__ == "__main__":
     # Create TEDAPI Object and get Configuration and Status
     print(f"Connecting to Powerwall Gateway {GW_IP}")
     ted = TEDAPI(gw_pwd)
-    config = ted.get_config()
-    status = ted.get_status()
+    config = ted.get_config() or {}
+    status = ted.get_status() or {}
     print()
 
     # Print Configuration
     print(" - Configuration:")
-    site_info = config.get('site_info', {})
+    site_info = config.get('site_info', {}) or {}
     site_name = site_info.get('site_name', 'Unknown')
     print(f"   - Site Name: {site_name}")
     battery_commission_date = site_info.get('battery_commission_date', 'Unknown')
