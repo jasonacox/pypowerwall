@@ -93,17 +93,22 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
         """Test /aggregates endpoint"""
         self.handler.path = "/aggregates"
         mock_pw.poll = Mock()
-        mock_safe_call.return_value = {"solar": {"instant_power": 1000}}
+        mock_safe_call.return_value = {
+            "solar": {"instant_power": 1000}
+        }
 
         self.handler.do_GET()
 
+        self.handler.send_response.assert_called_with(HTTPStatus.OK)
         mock_safe_call.assert_called_once_with(
             "/aggregates", mock_pw.poll, "/api/meters/aggregates"
         )
         self.assertEqual(proxy.server.proxystats["gets"], 1)
         proxystats_lock.__enter__.assert_called_once()
         proxystats_lock.__exit__.assert_called_once()
-        self.handler.send_response.assert_called_with(HTTPStatus.OK)
+
+        result = self.get_written_json()
+        self.assertEqual(result["solar"]["instant_power"], 1000)
 
     @common_patches
     @patch('proxy.server.pw')
@@ -113,18 +118,24 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
         """Test aggregates with negative solar power adjustment"""
         self.handler.path = "/aggregates"
         mock_pw.poll = Mock()
-        mock_safe_call.return_value = json.dumps({
+        mock_safe_call.return_value = {
             "solar": {"instant_power": -500},
             "load": {"instant_power": 2000}
-        })
+        }
 
         self.handler.do_GET()
 
+        self.handler.send_response.assert_called_with(HTTPStatus.OK)
         self.assertEqual(proxy.server.proxystats["gets"], 1)
         proxystats_lock.__enter__.assert_called_once()
         proxystats_lock.__exit__.assert_called_once()
+
         result = self.get_written_json()
         self.assertEqual(result["solar"]["instant_power"], 0)
+        # Assert: load has been increased by the magnitude of negative solar
+        # 2000 - (-1000) = 3000
+        self.assertIn("load", result)
+        self.assertEqual(result["load"]["instant_power"], 2500)
 
 
 class TestDoGetStatsEndpoints(BaseDoGetTest):
