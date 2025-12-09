@@ -133,7 +133,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
         result = self.get_written_json()
         self.assertEqual(result["solar"]["instant_power"], 0)
         # Assert: load has been increased by the magnitude of negative solar
-        # 2000 - (-1000) = 3000
+        # 2000 - (-500) = 2500
         self.assertIn("load", result)
         self.assertEqual(result["load"]["instant_power"], 2500)
 
