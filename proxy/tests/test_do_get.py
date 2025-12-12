@@ -1,4 +1,3 @@
-
 import json
 import unittest
 from contextlib import contextmanager
@@ -8,6 +7,45 @@ from unittest.mock import Mock, patch
 
 import proxy
 from proxy.server import Handler
+
+
+class MockPowerwall:
+    """Mock Powerwall object for testing"""
+    def __init__(self):
+        self.level_value = 50.0
+        self.grid_value = 100.0
+        self.solar_value = 500.0
+        self.battery_value = -200.0
+        self.home_value = 400.0
+        self.grid_status_value = "UP"
+        self.reserve_value = 20.0
+        self.cloudmode = False
+        self.fleetapi = False
+        self.authmode = "cookie"
+        self.timeout = 5
+        self.auth = {}
+        self.client = None
+
+    def level(self):
+        return self.level_value
+
+    def grid(self):
+        return self.grid_value
+
+    def solar(self):
+        return self.solar_value
+
+    def battery(self):
+        return self.battery_value
+
+    def home(self):
+        return self.home_value
+
+    def grid_status(self):
+        return self.grid_status_value
+
+    def get_reserve(self):
+        return self.reserve_value
 
 
 class UnittestHandler(Handler):
@@ -80,6 +118,17 @@ class BaseDoGetTest(unittest.TestCase):
         result = self.get_written_json()
         self.assertIn(expected_key, result)
         self.assertEqual(result[expected_key], expected_value)
+        
+    def do_get(self, path: str) -> str:
+        """
+        Run Handler.do_GET for a given path under the standard patches
+        and return the response body as text.
+        """
+        self.handler.path = path
+        self.handler.command = "GET"
+        with standard_test_patches():
+            self.handler.do_GET()
+        return self.get_written_text()
 
 
 class TestDoGetAggregatesEndpoints(BaseDoGetTest):
@@ -180,3 +229,111 @@ class TestDoGetStatsEndpoints(BaseDoGetTest):
             self.assertEqual(mock_stats["errors"], 0)
             self.assertEqual(mock_stats["uri"], {'/stats/clear': 1})
             self.assertEqual(mock_stats["clear"], 3000)
+
+
+class TestCSVEndpoints(BaseDoGetTest):
+    """Test cases for /csv endpoint"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.mock_pw = MockPowerwall()
+
+        # Patch the global Powerwall instance and safe_pw_call
+        self.pw_patcher = patch("proxy.server.pw", self.mock_pw)
+        self.safe_patcher = patch(
+            "proxy.server.safe_pw_call",
+            side_effect=lambda func, *args, **kwargs: func(*args, **kwargs),
+        )
+
+        self.pw_patcher.start()
+        self.safe_patcher.start()
+
+        super().setUp()
+
+    def tearDown(self):
+        self.pw_patcher.stop()
+        self.safe_patcher.stop()
+
+    def test_csv_basic_output(self):
+        """Test basic /csv endpoint without headers"""
+        body = self.do_get("/csv")
+        expected = "100.00,400.00,500.00,-200.00,50.00\n"
+        self.assertEqual(body, expected)
+
+    def test_csv_with_headers(self):
+        """Test /csv endpoint with headers parameter"""
+        body = self.do_get("/csv?headers")
+        expected = (
+            "Grid,Home,Solar,Battery,BatteryLevel\n"
+            "100.00,400.00,500.00,-200.00,50.00\n"
+        )
+        self.assertEqual(body, expected)
+
+    def test_csv_with_null_values(self):
+        """Test /csv endpoint when powerwall returns None values"""
+        self.mock_pw.level_value = None
+        self.mock_pw.grid_value = None
+        self.mock_pw.solar_value = None
+        self.mock_pw.battery_value = None
+        self.mock_pw.home_value = None
+
+        body = self.do_get("/csv")
+        expected = "0.00,0.00,0.00,0.00,0.00\n"
+        self.assertEqual(body, expected)
+
+    def test_csv_negative_solar_disabled(self):
+        """
+        Test /csv with negative solar value when neg_solar=False.
+
+        When neg_solar is False and solar is negative, we should:
+        - add the magnitude of the solar value to home
+        - clamp solar to 0
+        """
+        self.mock_pw.solar_value = -100.0
+        self.mock_pw.home_value = 400.0
+
+        with patch("proxy.server.neg_solar", False):
+            body = self.do_get("/csv")
+
+        # home goes from 400 → 500, solar clamped to 0
+        expected = "100.00,500.00,0.00,-200.00,50.00\n"
+        self.assertEqual(body, expected)
+
+    def test_csv_negative_solar_enabled(self):
+        """
+        Test /csv with negative solar value when neg_solar=True.
+
+        When neg_solar is True, we preserve the negative solar
+        and do NOT shift it into home.
+        """
+        self.mock_pw.solar_value = -100.0
+
+        with patch("proxy.server.neg_solar", True):
+            body = self.do_get("/csv")
+
+        expected = "100.00,400.00,-100.00,-200.00,50.00\n"
+        self.assertEqual(body, expected)
+
+    def test_csv_zero_values(self):
+        """Test /csv with all zero values"""
+        self.mock_pw.level_value = 0.0
+        self.mock_pw.grid_value = 0.0
+        self.mock_pw.solar_value = 0.0
+        self.mock_pw.battery_value = 0.0
+        self.mock_pw.home_value = 0.0
+
+        body = self.do_get("/csv")
+        expected = "0.00,0.00,0.00,0.00,0.00\n"
+        self.assertEqual(body, expected)
+
+    def test_csv_fractional_values(self):
+        """Test /csv with fractional values for precision"""
+        self.mock_pw.level_value = 75.555
+        self.mock_pw.grid_value = 123.456
+        self.mock_pw.solar_value = 789.123
+        self.mock_pw.battery_value = -456.789
+        self.mock_pw.home_value = 654.321
+
+        body = self.do_get("/csv")
+        expected = "123.46,654.32,789.12,-456.79,75.56\n"
+        self.assertEqual(body, expected)

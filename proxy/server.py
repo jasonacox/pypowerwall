@@ -1012,9 +1012,9 @@ class Handler(BaseHTTPRequestHandler):
             battery = safe_pw_call(pw.battery) or 0
             home = safe_pw_call(pw.home) or 0
             if not neg_solar and solar < 0:
-                solar = 0
                 # Shift energy from solar to load
                 home -= solar
+                solar = 0
             if request_path.startswith("/csv/v2"):
                 gridstatus = 1 if safe_pw_call(pw.grid_status) == "UP" else 0
                 reserve = safe_pw_call(pw.get_reserve) or 0
