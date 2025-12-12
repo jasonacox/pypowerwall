@@ -969,10 +969,11 @@ class Handler(BaseHTTPRequestHandler):
             if aggregates and not neg_solar and "solar" in aggregates:
                 solar = aggregates["solar"]
                 if solar and "instant_power" in solar and solar["instant_power"] < 0:
-                    solar["instant_power"] = 0
                     # Shift energy from solar to load
                     if "load" in aggregates and "instant_power" in aggregates["load"]:
                         aggregates["load"]["instant_power"] -= solar["instant_power"]
+                    # Finally, clamp solar to 0
+                    solar["instant_power"] = 0
 
             try:
                 if aggregates:
