@@ -2,13 +2,15 @@
 
 TeslaPy is a Python API that lets you monitor and control Tesla products remotely. It is based on [unofficial documentation](https://tesla-api.timdorr.com/) of the Tesla Motors Owner API.
 
-## Local Copy Notice
+## Fork Notice
 
-**Note:** This project is temporarily using a local copy of the TeslaPy library (version 2.9.1) until the original repository publishes this version to PyPI. All credit for TeslaPy goes to the original author, Tim Dorssers, and repository:
+**Note:** This is a fork of the TeslaPy library, originally forked from version 2.9.0:
 
 https://github.com/tdorssers/TeslaPy
 
-This local inclusion is for compatibility and stability only. Please see the upstream repository for the latest updates and license information.
+This fork is maintained as part of pypowerwall to provide timely fixes for Tesla API changes. The original TeslaPy repository is no longer actively maintained, and this fork includes pypowerwall-specific patches and updates to maintain compatibility with Tesla's evolving API.
+
+All credit for the original TeslaPy implementation goes to Tim Dorssers. See RELEASE.md for changes made in this fork.
 
 ## License
 

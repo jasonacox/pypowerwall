@@ -2,11 +2,15 @@
 RFC compliant OAuth 2 Single Sign-On service. Tokens are saved to 'cache.json'
 for reuse and refreshed automatically. The vehicle option codes are loaded from
 'option_codes.json' and the API endpoints are loaded from 'endpoints.json'.
+
+This is a fork of TeslaPy (https://github.com/tdorssers/TeslaPy) maintained as
+part of pypowerwall (https://github.com/jasonacox/pypowerwall) with fixes for
+Tesla API changes. See RELEASE.md for details.
 """
 
 # Author: Tim Dorssers
 
-__version__ = '2.9.1'
+__version__ = '2.9.2'
 
 import os
 import ast
@@ -805,6 +809,11 @@ class Product(JsonDict):
                     '2021-02-27T07:59:59.999Z'
         installation_timezone: Timezone of installation location for 'savings'
         """
+        # Tesla moved backup history to calendar_history endpoint
+        if kind == 'backup':
+            return self.api('CALENDAR_HISTORY_DATA', kind=kind, period=period,
+                            start_date=start_date, end_date=end_date,
+                            time_zone=timezone)['response']
         return self.api('HISTORY_DATA', kind=kind, period=period,
                         start_date=start_date, end_date=end_date,
                         installation_timezone=installation_timezone,
