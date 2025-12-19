@@ -41,6 +41,7 @@ set -euo pipefail
 # or use environment variables.
 
 # Host Addresses
+PYPOWERWALL_HOST=''       # Pypowerwall Proxy Server (optional, e.g., 'localhost:8675')
 INFLUXDB_IP='10.1.1.20'   # Comment out if not using Powerwall-Dashboard
 WEATHER_IP='10.1.1.11'    # Address of weather411 service
 WEATHER_ALERT_URL=''      # NWS weather alerts JSON file path or URL 
@@ -110,8 +111,33 @@ if [[ -n "${WEATHER_IP:-}" ]]; then
     CLOUDS=$(curl --silent "http://${WEATHER_IP}:8676/clouds" | jq -r '.clouds')
 fi
 
-# Fetch current stats from Powerwall using Cloud Mode
-POWERWALL_STATS=$(${PYTHON3} << END
+# Fetch current stats from Powerwall
+# Try pypowerwall proxy server first (if configured), then fall back to Cloud Mode
+POWERWALL_STATS=""
+if [[ -n "${PYPOWERWALL_HOST:-}" ]]; then
+    # Try to fetch from pypowerwall proxy server
+    CSV_DATA=$(curl --silent --fail --max-time 5 "http://${PYPOWERWALL_HOST}/csv/v2" 2>/dev/null)
+    if [[ $? -eq 0 ]] && [[ -n "${CSV_DATA}" ]]; then
+        # Parse CSV response (skip header line, get data line)
+        # Format: Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve
+        DATA_LINE=$(echo "${CSV_DATA}" | tail -n 1)
+        if [[ -n "${DATA_LINE}" ]]; then
+            # Extract values and convert to integers
+            IFS=',' read -r GRID HOUSE SOLAR PW LEVEL GRIDSTATUS CUR <<< "${DATA_LINE}"
+            GRID=$(printf "%.0f" "${GRID}")
+            HOUSE=$(printf "%.0f" "${HOUSE}")
+            SOLAR=$(printf "%.0f" "${SOLAR}")
+            PW=$(printf "%.0f" "${PW}")
+            LEVEL=$(printf "%.0f" "${LEVEL}")
+            CUR=$(printf "%.0f" "${CUR}")
+            POWERWALL_STATS="${GRID},${HOUSE},${SOLAR},${PW},${LEVEL},${CUR}"
+        fi
+    fi
+fi
+
+# Fall back to Cloud Mode if proxy server failed or not configured
+if [[ -z "${POWERWALL_STATS}" ]]; then
+    POWERWALL_STATS=$(${PYTHON3} << END
 import pypowerwall
 import sys
 try:
@@ -131,9 +157,9 @@ except Exception as e:
     exit(1)
 END
 )
-
-# Parse Powerwall stats
-IFS=',' read -r GRID HOUSE SOLAR PW LEVEL CUR <<< "${POWERWALL_STATS}"
+    # Parse Powerwall stats from Python output
+    IFS=',' read -r GRID HOUSE SOLAR PW LEVEL CUR <<< "${POWERWALL_STATS}"
+fi
 
 # Fetch max temperature from InfluxDB for past 24 hours (optional)
 MAX_TEMP=0
