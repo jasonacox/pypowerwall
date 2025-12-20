@@ -1,5 +1,12 @@
 # RELEASE NOTES
 
+## v0.14.5 - Variable Shadowing and Type Annotation Fixes
+
+* Fix variable shadowing in `grid_status()` method: renamed `type` parameter to `output_type` to avoid shadowing Python's built-in `type()` function
+* Add backward compatibility for deprecated `type` parameter - still supported but `output_type` is now preferred
+* Fix return type annotation for `extract_grid_status()` method: changed from `str` to `Optional[str]` to accurately reflect function can return `None`
+* Proxy server build t86
+
 ## v0.14.4 - Expansion Pack Energy Fix
 
 * **Fix expansion pack energy data** by processing all BMS components in TEDAPI responses - Fix by @rlerdorf in https://github.com/jasonacox/pypowerwall/pull/239

@@ -1,5 +1,21 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t86 (20 Dec 2025)
+
+* **CSV Endpoint Performance Optimization**:
+  - Optimized `/csv` and `/csv/v2` endpoints from ~2.5s to ~0.9s response time (64% improvement)
+  - Consolidated 4 separate power API calls (`grid()`, `solar()`, `battery()`, `home()`) into single `poll('/api/meters/aggregates')` call
+  - Eliminated 400-600ms overhead from redundant `get_components()` fallback calls
+
+* **Bug Fixes**:
+  - Fixed TypeError in `/csv/v2` endpoint: removed invalid `force=False` parameter from `level()`, `grid_status()`, and `get_reserve()` calls
+  - Fixed variable shadowing bug in `grid_status()` method where `type` parameter shadowed Python's built-in `type()` function
+  - Renamed `type` parameter to `output_type` throughout codebase for consistency and correctness
+  - Added unit tests for CSV endpoints (`TestCSVEndpoints` class with 7 test cases)
+
+* **Code Quality**:
+  - Improved error handling and logging in `safe_pw_call()` wrapper
+
 ### Proxy t85 (1 Dec 2025)
 
 * **Fix Expansion Pack Energy Data** ([#239](https://github.com/jasonacox/pypowerwall/pull/239)):
