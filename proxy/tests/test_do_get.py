@@ -1,4 +1,3 @@
-
 import json
 import unittest
 from contextlib import contextmanager
@@ -8,6 +7,45 @@ from unittest.mock import Mock, patch
 
 import proxy
 from proxy.server import Handler
+
+
+class MockPowerwall:
+    """Mock Powerwall object for testing"""
+    def __init__(self):
+        self.level_value = 50.0
+        self.grid_value = 100.0
+        self.solar_value = 500.0
+        self.battery_value = -200.0
+        self.home_value = 400.0
+        self.grid_status_value = "UP"
+        self.reserve_value = 20.0
+        self.cloudmode = False
+        self.fleetapi = False
+        self.authmode = "cookie"
+        self.timeout = 5
+        self.auth = {}
+        self.client = None
+
+    def level(self):
+        return self.level_value
+
+    def grid(self):
+        return self.grid_value
+
+    def solar(self):
+        return self.solar_value
+
+    def battery(self):
+        return self.battery_value
+
+    def home(self):
+        return self.home_value
+
+    def grid_status(self):
+        return self.grid_status_value
+
+    def get_reserve(self):
+        return self.reserve_value
 
 
 class UnittestHandler(Handler):
@@ -80,6 +118,17 @@ class BaseDoGetTest(unittest.TestCase):
         result = self.get_written_json()
         self.assertIn(expected_key, result)
         self.assertEqual(result[expected_key], expected_value)
+        
+    def do_get(self, path: str) -> str:
+        """
+        Run Handler.do_GET for a given path under the standard patches
+        and return the response body as text.
+        """
+        self.handler.path = path
+        self.handler.command = "GET"
+        with standard_test_patches():
+            self.handler.do_GET()
+        return self.get_written_text()
 
 
 class TestDoGetAggregatesEndpoints(BaseDoGetTest):
