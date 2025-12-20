@@ -231,8 +231,8 @@ class TestDoGetStatsEndpoints(BaseDoGetTest):
             self.assertEqual(mock_stats["clear"], 3000)
 
 
-class TestCSVV2Endpoints(BaseDoGetTest):
-    """Test cases for /csv/v2 endpoint"""
+class TestCSVEndpoints(BaseDoGetTest):
+    """Test cases for /csv endpoint"""
 
     def setUp(self):
         """Set up test fixtures"""
@@ -254,50 +254,37 @@ class TestCSVV2Endpoints(BaseDoGetTest):
         self.pw_patcher.stop()
         self.safe_patcher.stop()
 
-    def test_csv_v2_basic_output(self):
-        """Test basic /csv/v2 endpoint without headers"""
-        body = self.do_get("/csv/v2")
-        expected = "100.00,400.00,500.00,-200.00,50.00,1,20\n"
+    def test_csv_basic_output(self):
+        """Test basic /csv endpoint without headers"""
+        body = self.do_get("/csv")
+        expected = "100.00,400.00,500.00,-200.00,50.00\n"
         self.assertEqual(body, expected)
 
-    def test_csv_v2_with_headers(self):
-        """Test /csv/v2 endpoint with headers parameter"""
-        body = self.do_get("/csv/v2?headers")
+    def test_csv_with_headers(self):
+        """Test /csv endpoint with headers parameter"""
+        body = self.do_get("/csv?headers")
         expected = (
-            "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
-            "100.00,400.00,500.00,-200.00,50.00,1,20\n"
+            "Grid,Home,Solar,Battery,BatteryLevel\n"
+            "100.00,400.00,500.00,-200.00,50.00\n"
         )
         self.assertEqual(body, expected)
 
-    def test_csv_v2_with_null_values(self):
-        """Test /csv/v2 endpoint when powerwall returns None values"""
+    def test_csv_with_null_values(self):
+        """Test /csv endpoint when powerwall returns None values"""
         self.mock_pw.level_value = None
         self.mock_pw.grid_value = None
         self.mock_pw.solar_value = None
         self.mock_pw.battery_value = None
         self.mock_pw.home_value = None
-        self.mock_pw.grid_status_value = None
-        self.mock_pw.reserve_value = None
 
-        body = self.do_get("/csv/v2")
-        expected = "0.00,0.00,0.00,0.00,0.00,0,0\n"
+        body = self.do_get("/csv")
+        expected = "0.00,0.00,0.00,0.00,0.00\n"
         self.assertEqual(body, expected)
 
-    def test_csv_v2_grid_status_up(self):
-        """Test /csv/v2 with grid status UP (should be 1)"""
-        self.mock_pw.grid_status_value = "UP"
-        body = self.do_get("/csv/v2")
-        self.assertTrue(body.endswith(",1,20\n"))
-
-    def test_csv_v2_grid_status_down(self):
-        """Test /csv/v2 with grid status DOWN (should be 0)"""
-        self.mock_pw.grid_status_value = "DOWN"
-        body = self.do_get("/csv/v2")
-        self.assertTrue(body.endswith(",0,20\n"))
-
-    def test_csv_v2_negative_solar_disabled(self):
+    def test_csv_negative_solar_disabled(self):
         """
-        Test /csv/v2 with negative solar value when neg_solar=False.
+        Test /csv with negative solar value when neg_solar=False.
+
         When neg_solar is False and solar is negative, we should:
         - add the magnitude of the solar value to home
         - clamp solar to 0
@@ -306,47 +293,47 @@ class TestCSVV2Endpoints(BaseDoGetTest):
         self.mock_pw.home_value = 400.0
 
         with patch("proxy.server.neg_solar", False):
-            body = self.do_get("/csv/v2")
+            body = self.do_get("/csv")
 
-        expected = "100.00,500.00,0.00,-200.00,50.00,1,20\n"
+        # home goes from 400 → 500, solar clamped to 0
+        expected = "100.00,500.00,0.00,-200.00,50.00\n"
         self.assertEqual(body, expected)
 
-    def test_csv_v2_negative_solar_enabled(self):
+    def test_csv_negative_solar_enabled(self):
         """
-        Test /csv/v2 with negative solar value when neg_solar=True.
-        Negative solar is preserved and NOT shifted into home.
+        Test /csv with negative solar value when neg_solar=True.
+
+        When neg_solar is True, we preserve the negative solar
+        and do NOT shift it into home.
         """
         self.mock_pw.solar_value = -100.0
 
         with patch("proxy.server.neg_solar", True):
-            body = self.do_get("/csv/v2")
+            body = self.do_get("/csv")
 
-        expected = "100.00,400.00,-100.00,-200.00,50.00,1,20\n"
+        expected = "100.00,400.00,-100.00,-200.00,50.00\n"
         self.assertEqual(body, expected)
 
-    def test_csv_v2_zero_values(self):
-        """Test /csv/v2 with all zero values"""
+    def test_csv_zero_values(self):
+        """Test /csv with all zero values"""
         self.mock_pw.level_value = 0.0
         self.mock_pw.grid_value = 0.0
         self.mock_pw.solar_value = 0.0
         self.mock_pw.battery_value = 0.0
         self.mock_pw.home_value = 0.0
-        self.mock_pw.grid_status_value = "DOWN"
-        self.mock_pw.reserve_value = 0
 
-        body = self.do_get("/csv/v2")
-        expected = "0.00,0.00,0.00,0.00,0.00,0,0\n"
+        body = self.do_get("/csv")
+        expected = "0.00,0.00,0.00,0.00,0.00\n"
         self.assertEqual(body, expected)
 
-    def test_csv_v2_fractional_values(self):
-        """Test /csv/v2 with fractional values for precision"""
+    def test_csv_fractional_values(self):
+        """Test /csv with fractional values for precision"""
         self.mock_pw.level_value = 75.555
         self.mock_pw.grid_value = 123.456
         self.mock_pw.solar_value = 789.123
         self.mock_pw.battery_value = -456.789
         self.mock_pw.home_value = 654.321
-        self.mock_pw.reserve_value = 33
 
-        body = self.do_get("/csv/v2")
-        expected = "123.46,654.32,789.12,-456.79,75.56,1,33\n"
+        body = self.do_get("/csv")
+        expected = "123.46,654.32,789.12,-456.79,75.56\n"
         self.assertEqual(body, expected)
