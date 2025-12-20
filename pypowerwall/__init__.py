@@ -725,7 +725,7 @@ class Powerwall(object):
             If type (deprecated) is set, it will will override output_type
         """
         if type:
-            output_type = type # Backward compatability
+            output_type = type # Backward compatibility
         if output_type not in ['json', 'string', 'numeric']:
             log.error(f"Invalid value for parameter 'output_type': {output_type}")
             raise ValueError("Invalid value for parameter 'output_type': " + str(output_type))

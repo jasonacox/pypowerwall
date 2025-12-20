@@ -262,7 +262,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             }
         return data
 
-    def extract_grid_status(self, status) -> str:
+    def extract_grid_status(self, status) -> Optional[str]:
         if status is None:
             return None
         alerts = lookup(status, ["control", "alerts", "active"]) or []
