@@ -128,7 +128,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t85"
+BUILD = "t86"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -1006,16 +1006,28 @@ class Handler(BaseHTTPRequestHandler):
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = "text/plain; charset=utf-8"
-            batterylevel = safe_pw_call(pw.level) or 0
-            grid = safe_pw_call(pw.grid) or 0
-            solar = safe_pw_call(pw.solar) or 0
-            battery = safe_pw_call(pw.battery) or 0
-            home = safe_pw_call(pw.home) or 0
+            
+            # Optimization: Use single aggregates call for all power values
+            aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
+            if aggregates:
+                grid = aggregates.get('site', {}).get('instant_power', 0)
+                solar = aggregates.get('solar', {}).get('instant_power', 0)
+                battery = aggregates.get('battery', {}).get('instant_power', 0)
+                home = aggregates.get('load', {}).get('instant_power', 0)
+            else:
+                grid = solar = battery = home = 0
+            
+            # Apply negative solar correction if configured
             if not neg_solar and solar < 0:
-                solar = 0
                 # Shift energy from solar to load
                 home -= solar
+                solar = 0
+            
+            # Get battery level - poll() handles caching internally
+            batterylevel = safe_pw_call(pw.level) or 0
+            
             if request_path.startswith("/csv/v2"):
+                # Get grid status and reserve - these use cached data internally
                 gridstatus = 1 if safe_pw_call(pw.grid_status) == "UP" else 0
                 reserve = safe_pw_call(pw.get_reserve) or 0
                 message = ""
@@ -1282,7 +1294,7 @@ class Handler(BaseHTTPRequestHandler):
                     for i in d:
                         if i.startswith("ISLAND") or i.startswith("METER"):
                             fcv[i] = d[i]
-            fcv["grid_status"] = safe_pw_call(pw.grid_status, type="numeric")
+            fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
             message: str = json.dumps(fcv)
         elif request_path == "/pod":
             # Powerwall Battery Data
@@ -1616,7 +1628,7 @@ class Handler(BaseHTTPRequestHandler):
                 "status": lambda: safe_pw_call(pw.status),
                 "system_status": lambda: safe_pw_call(pw.system_status, False),
                 "grid_status": lambda: json.loads(
-                    safe_pw_call(pw.grid_status, type="json") or "{}"
+                    safe_pw_call(pw.grid_status, "json") or "{}"
                 ),
                 "aggregates": lambda: safe_pw_call(
                     pw.poll, "/api/meters/aggregates", False

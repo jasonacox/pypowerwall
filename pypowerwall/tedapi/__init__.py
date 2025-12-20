@@ -1061,6 +1061,7 @@ class TEDAPI:
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
         nominalFullPackEnergyWh = lookup(status, ['control', 'systemStatus', 'nominalFullPackEnergyWh'])
         if not nominalEnergyRemainingWh or not nominalFullPackEnergyWh:
+            log.debug(f"battery_level: Missing battery data - remaining={nominalEnergyRemainingWh}, full={nominalFullPackEnergyWh}")
             return None
         battery_level = nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100
         return battery_level
