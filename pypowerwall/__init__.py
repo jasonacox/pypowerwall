@@ -751,7 +751,7 @@ class Powerwall(object):
             grid_status = payload.get('grid_status')
             status = gridmap.get(grid_status, {}).get(output_type)
             if status is None:
-                log.warning(f"ERROR unable to parse payload '{payload}' for grid_status of output_type: {output_type}")
+                log.warning(f"Unable to parse payload '{payload}' for grid_status of output_type: {output_type}")
             return status
         except Exception as e:
             log.error(f"grid_status(): Exception {type(e).__name__}: {e}")
