@@ -13,6 +13,19 @@
   - Cache memory monitoring added to `/stats` endpoint with detailed memory usage breakdown
   - Average overall response time improvement: 58% reduction (165.7ms → 70.2ms)
 
+**Performance Metrics Comparison:**
+
+| API Route | Before (ms) | After (ms) | Improvement | Usage Count | Impact Reduction |
+|-----------|-------------|------------|-------------|-------------|------------------|
+| `/api/meters/aggregates` | 821.5 | 151.3 | **81.6%** ⚡ | 7,992 | 5,355 seconds saved |
+| `/aggregates` | 764.8 | 150.7 | **80.3%** ⚡ | 3,880 | 2,383 seconds saved |
+| `/strings` | 545.7 | 37.3 | **93.2%** ⚡ | 3,945 | 2,006 seconds saved |
+| `/vitals` | 339.3 | 33.9 | **90.0%** ⚡ | 3,946 | 1,205 seconds saved |
+| `/alerts/pw` | 382.9 | 87.8 | **77.1%** 🚀 | 3,881 | 1,145 seconds saved |
+| `/temps/pw` | 266.0 | 253.6 | **4.7%** ✅ | 3,880 | 48 seconds saved |
+
+*Total Impact Reduction: ~12,142 seconds (3.4 hours) of response time saved per 8-hour period*
+
 * **Performance Testing Tool**:
   - Added `perf_test.py` script for comprehensive API performance testing and analysis
   - Tests 27 production API routes with impact scoring (response_time × usage_frequency)
