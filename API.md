@@ -328,7 +328,7 @@ sequenceDiagram
         Proxy->>Base: frequency()
         Base->>Backend: vitals()
         
-        alt Network Cache Hit (< 30s)
+        alt Network Cache Hit (< 5s)
             Backend-->>Base: Cached Data
         else Network Cache Miss
             Backend->>GW: API Request
