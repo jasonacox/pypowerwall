@@ -234,6 +234,13 @@ class TestDoGetStatsEndpoints(BaseDoGetTest):
 class TestCSVEndpoints(BaseDoGetTest):
     """Test cases for CSV endpoints"""
 
+    def setUp(self):
+        """Clear performance cache before each test"""
+        super().setUp()
+        # Clear the performance cache to prevent test interference
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            pass
+
     @common_patches
     @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', False)
@@ -241,25 +248,26 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_basic_output(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint basic output"""
-        self.handler.path = "/csv"
-        mock_pw.poll = Mock()
-        
-        # Mock the aggregates call
-        mock_safe_endpoint_call.return_value = {
-            'site': {'instant_power': 100.5},
-            'solar': {'instant_power': 200.25},
-            'battery': {'instant_power': -50.75},
-            'load': {'instant_power': 250.0}
-        }
-        
-        # Mock the level call
-        mock_safe_pw_call.return_value = 45.5
-        
-        self.handler.do_GET()
-        
-        self.handler.send_response.assert_called_with(HTTPStatus.OK)
-        result = self.get_written_text()
-        self.assertEqual(result, "100.50,250.00,200.25,-50.75,45.50\n")
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+            
+            # Mock the aggregates call
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': 100.5},
+                'solar': {'instant_power': 200.25},
+                'battery': {'instant_power': -50.75},
+                'load': {'instant_power': 250.0}
+            }
+            
+            # Mock the level call
+            mock_safe_pw_call.return_value = 45.5
+            
+            self.handler.do_GET()
+            
+            self.handler.send_response.assert_called_with(HTTPStatus.OK)
+            result = self.get_written_text()
+            self.assertEqual(result, "100.50,250.00,200.25,-50.75,45.50\n")
 
     @common_patches
     @patch('proxy.server.pw')
@@ -268,23 +276,24 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_with_headers(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with headers"""
-        self.handler.path = "/csv?headers"
-        mock_pw.poll = Mock()
-        
-        mock_safe_endpoint_call.return_value = {
-            'site': {'instant_power': 100},
-            'solar': {'instant_power': 200},
-            'battery': {'instant_power': -50},
-            'load': {'instant_power': 250}
-        }
-        
-        mock_safe_pw_call.return_value = 45.5
-        
-        self.handler.do_GET()
-        
-        result = self.get_written_text()
-        self.assertIn("Grid,Home,Solar,Battery,BatteryLevel\n", result)
-        self.assertIn("100.00,250.00,200.00,-50.00,45.50\n", result)
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv?headers"
+            mock_pw.poll = Mock()
+            
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': 100},
+                'solar': {'instant_power': 200},
+                'battery': {'instant_power': -50},
+                'load': {'instant_power': 250}
+            }
+            
+            mock_safe_pw_call.return_value = 45.5
+            
+            self.handler.do_GET()
+            
+            result = self.get_written_text()
+            self.assertIn("Grid,Home,Solar,Battery,BatteryLevel\n", result)
+            self.assertIn("100.00,250.00,200.00,-50.00,45.50\n", result)
 
     @common_patches
     @patch('proxy.server.pw')
@@ -293,22 +302,23 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_fractional_values(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with fractional values"""
-        self.handler.path = "/csv"
-        mock_pw.poll = Mock()
-        
-        mock_safe_endpoint_call.return_value = {
-            'site': {'instant_power': 123.456},
-            'solar': {'instant_power': 234.567},
-            'battery': {'instant_power': -345.678},
-            'load': {'instant_power': 456.789}
-        }
-        
-        mock_safe_pw_call.return_value = 67.89
-        
-        self.handler.do_GET()
-        
-        result = self.get_written_text()
-        self.assertEqual(result, "123.46,456.79,234.57,-345.68,67.89\n")
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+            
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': 123.456},
+                'solar': {'instant_power': 234.567},
+                'battery': {'instant_power': -345.678},
+                'load': {'instant_power': 456.789}
+            }
+            
+            mock_safe_pw_call.return_value = 67.89
+            
+            self.handler.do_GET()
+            
+            result = self.get_written_text()
+            self.assertEqual(result, "123.46,456.79,234.57,-345.68,67.89\n")
 
     @common_patches
     @patch('proxy.server.pw')
@@ -317,22 +327,23 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_negative_solar_enabled(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with negative solar enabled"""
-        self.handler.path = "/csv"
-        mock_pw.poll = Mock()
-        
-        mock_safe_endpoint_call.return_value = {
-            'site': {'instant_power': 100},
-            'solar': {'instant_power': -50},
-            'battery': {'instant_power': 200},
-            'load': {'instant_power': 250}
-        }
-        
-        mock_safe_pw_call.return_value = 50.0
-        
-        self.handler.do_GET()
-        
-        result = self.get_written_text()
-        self.assertEqual(result, "100.00,250.00,-50.00,200.00,50.00\n")
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+            
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': 100},
+                'solar': {'instant_power': -50},
+                'battery': {'instant_power': 200},
+                'load': {'instant_power': 250}
+            }
+            
+            mock_safe_pw_call.return_value = 50.0
+            
+            self.handler.do_GET()
+            
+            result = self.get_written_text()
+            self.assertEqual(result, "100.00,250.00,-50.00,200.00,50.00\n")
 
     @common_patches
     @patch('proxy.server.pw')
@@ -341,23 +352,24 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_negative_solar_disabled(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with negative solar disabled (clamped to 0)"""
-        self.handler.path = "/csv"
-        mock_pw.poll = Mock()
-        
-        mock_safe_endpoint_call.return_value = {
-            'site': {'instant_power': 100},
-            'solar': {'instant_power': -50},
-            'battery': {'instant_power': 200},
-            'load': {'instant_power': 250}
-        }
-        
-        mock_safe_pw_call.return_value = 50.0
-        
-        self.handler.do_GET()
-        
-        result = self.get_written_text()
-        # Solar should be clamped to 0, and load adjusted: 250 - (-50) = 300
-        self.assertEqual(result, "100.00,300.00,0.00,200.00,50.00\n")
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+            
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': 100},
+                'solar': {'instant_power': -50},
+                'battery': {'instant_power': 200},
+                'load': {'instant_power': 250}
+            }
+            
+            mock_safe_pw_call.return_value = 50.0
+            
+            self.handler.do_GET()
+            
+            result = self.get_written_text()
+            # Solar should be clamped to 0, and load adjusted: 250 - (-50) = 300
+            self.assertEqual(result, "100.00,300.00,0.00,200.00,50.00\n")
 
     @common_patches
     @patch('proxy.server.pw')
@@ -366,17 +378,18 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_with_null_values(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with null aggregates"""
-        self.handler.path = "/csv"
-        mock_pw.poll = Mock()
-        
-        # Return None for aggregates (timeout/error case)
-        mock_safe_endpoint_call.return_value = None
-        mock_safe_pw_call.return_value = 0
-        
-        self.handler.do_GET()
-        
-        result = self.get_written_text()
-        self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+            
+            # Return None for aggregates (timeout/error case)
+            mock_safe_endpoint_call.return_value = None
+            mock_safe_pw_call.return_value = 0
+            
+            self.handler.do_GET()
+            
+            result = self.get_written_text()
+            self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
 
     @common_patches
     @patch('proxy.server.pw')
@@ -385,19 +398,20 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.safe_pw_call')
     def test_csv_zero_values(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with zero values"""
-        self.handler.path = "/csv"
-        mock_pw.poll = Mock()
-        
-        mock_safe_endpoint_call.return_value = {
-            'site': {'instant_power': 0},
-            'solar': {'instant_power': 0},
-            'battery': {'instant_power': 0},
-            'load': {'instant_power': 0}
-        }
-        
-        mock_safe_pw_call.return_value = 0
-        
-        self.handler.do_GET()
-        
-        result = self.get_written_text()
-        self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+            
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': 0},
+                'solar': {'instant_power': 0},
+                'battery': {'instant_power': 0},
+                'load': {'instant_power': 0}
+            }
+            
+            mock_safe_pw_call.return_value = 0
+            
+            self.handler.do_GET()
+            
+            result = self.get_written_text()
+            self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")

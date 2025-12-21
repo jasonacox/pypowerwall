@@ -222,6 +222,218 @@ pip install -r requirements.txt
 
 ---
 
+## Architecture
+
+pypowerwall uses a modular architecture with multiple backend implementations and a sophisticated multi-tier caching system to optimize performance and reliability.
+
+### Component Overview
+
+The library consists of several key components:
+
+- **Powerwall (Main Class)**: High-level interface that automatically selects the appropriate backend
+- **PyPowerwallBase**: Abstract base class defining the core API interface
+- **Backend Implementations**: 
+  - **TEDAPI** - Tesla Energy Device API for local communication via gateway
+  - **Local** - Legacy local API for older Powerwall firmware
+  - **Cloud** - Tesla Cloud API for remote access
+  - **FleetAPI** - Tesla Fleet API for third-party integrations
+- **Proxy Server**: HTTP server that wraps pypowerwall and adds performance caching
+
+### Class Hierarchy
+
+```mermaid
+classDiagram
+    class Powerwall {
+        +__init__(host, password, email, ...)
+        +poll()
+        +power()
+        +battery_blocks()
+        Backend selection logic
+    }
+    
+    class PyPowerwallBase {
+        <<abstract>>
+        +poll()
+        +level()
+        +power()
+        +vitals()
+        +strings()
+    }
+    
+    class TEDAPI {
+        +gw_pwd authentication
+        +protobuf communication
+        +network call cache (30s)
+        +vitals streaming
+    }
+    
+    class Local {
+        +cookie/bearer auth
+        +legacy endpoints
+        +older firmware support
+    }
+    
+    class Cloud {
+        +Tesla account auth
+        +remote access
+        +TeslaPy integration
+    }
+    
+    class FleetAPI {
+        +third-party auth
+        +fleet endpoints
+        +vehicle integration
+    }
+    
+    Powerwall --|> PyPowerwallBase : extends
+    TEDAPI --|> PyPowerwallBase : implements
+    Local --|> PyPowerwallBase : implements
+    Cloud --|> PyPowerwallBase : implements
+    FleetAPI --|> PyPowerwallBase : implements
+    Powerwall --> TEDAPI : uses
+    Powerwall --> Local : uses
+    Powerwall --> Cloud : uses
+    Powerwall --> FleetAPI : uses
+```
+
+### Data Flow and Caching Architecture
+
+pypowerwall implements a 3-tier caching system for optimal performance:
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Proxy as Proxy Server
+    participant Base as Powerwall/Base
+    participant Backend as TEDAPI/Local/Cloud
+    participant GW as Gateway/Cloud API
+    
+    Note over Proxy: Layer 3: Performance Cache<br/>(5s default, configurable)
+    Note over Base: Layer 2: No Caching<br/>(Clean API)
+    Note over Backend: Layer 1: Network Cache<br/>(5s default, configurable)
+    
+    App->>Proxy: GET /api/freq
+    
+    alt Cache Hit (< 5s)
+        Proxy-->>App: Cached Response (~1ms)
+    else Cache Miss
+        Proxy->>Base: frequency()
+        Base->>Backend: vitals()
+        
+        alt Network Cache Hit (< 30s)
+            Backend-->>Base: Cached Data
+        else Network Cache Miss
+            Backend->>GW: API Request
+            GW-->>Backend: Fresh Data
+            Backend->>Backend: Store in cache
+        end
+        
+        Backend-->>Base: Data
+        Base-->>Proxy: Processed Data
+        Proxy->>Proxy: Cache for 5s
+        Proxy-->>App: Fresh Response (~900ms)
+    end
+```
+
+### Connection Mode Selection
+
+The Powerwall class automatically selects the appropriate backend based on configuration:
+
+```mermaid
+flowchart TD
+    Start([Application Initializes]) --> CheckFleet{fleetapi=True?}
+    CheckFleet -->|Yes| Fleet[FleetAPI Backend]
+    CheckFleet -->|No| CheckCloud{cloudmode=True?}
+    CheckCloud -->|Yes| Cloud[Cloud Backend]
+    CheckCloud -->|No| CheckPassword{gw_pwd provided?}
+    CheckPassword -->|Yes| TestTEDAPI[Test TEDAPI Connection]
+    CheckPassword -->|No| Local[Local Backend]
+    
+    TestTEDAPI --> TEDAPI_OK{Connection OK?}
+    TEDAPI_OK -->|Yes| TEDAPI[TEDAPI Backend]
+    TEDAPI_OK -->|No| FallbackLocal[Local Backend<br/>Fallback]
+    
+    Fleet --> Done([Ready])
+    Cloud --> Done
+    TEDAPI --> Done
+    Local --> Done
+    FallbackLocal --> Done
+    
+    style TEDAPI fill:#90EE90
+    style Cloud fill:#87CEEB
+    style Fleet fill:#DDA0DD
+    style Local fill:#FFB6C1
+```
+
+### Backend Comparison
+
+| Feature | TEDAPI | Local | Cloud | FleetAPI |
+|---------|--------|-------|-------|----------|
+| **Connection** | Local Gateway | Local Gateway | Internet | Internet |
+| **Authentication** | Gateway Password | Cookie/Token | Tesla Account | OAuth Token |
+| **Firmware Support** | Recent (23.44.0+) | Legacy | All | All |
+| **Response Speed** | Fast (~300ms) | Fast (~300ms) | Slower (~1-2s) | Slower (~1-2s) |
+| **Vitals Streaming** | Yes | Limited | No | Limited |
+| **Offline Operation** | Yes | Yes | No | No |
+| **Network Cache** | Yes (5s) | No | No | No |
+| **Best For** | PW3, Recent PW2+ | Older Systems | Remote Access | Third-party Apps |
+
+### Caching Strategy
+
+pypowerwall implements intelligent caching at multiple levels:
+
+**Layer 1: Backend Network Cache** (TEDAPI only)
+- Default TTL: 5 seconds (configurable via `pwcacheexpire`)
+- Caches raw API responses from gateway
+- Reduces network calls for repeated requests
+- Logs cache age/expire for debugging
+
+**Layer 2: Base Library**
+- No caching (by design)
+- Clean API boundary
+- Always returns fresh data from backend
+- Simplifies testing and reasoning
+
+**Layer 3: Proxy Server Performance Cache**
+- Default TTL: 5 seconds (configurable via `PW_CACHE_EXPIRE`)
+- Caches processed responses for high-frequency endpoints
+- Dramatically improves response time (900ms → <1ms)
+- Used for: `/api/csv`, `/api/freq`, `/api/pod`, `/api/json`
+- Separate cache keys per endpoint
+- Thread-safe with locks
+
+**Layer 3b: Proxy Graceful Degradation Cache**
+- Default TTL: 15 seconds (configurable via `PW_CACHE_TTL_SECONDS`)
+- Stores last successful response
+- Used when gateway is unreachable
+- Prevents service interruption during brief outages
+
+### Example: Request Flow for `/api/freq`
+
+1. **Application** makes HTTP request to proxy server
+2. **Proxy** checks performance cache (5s TTL)
+   - If hit: Returns cached data immediately (~1ms)
+   - If miss: Proceeds to step 3
+3. **Proxy** calls multiple pypowerwall methods:
+   - `system_status()` - battery blocks
+   - `vitals()` - detailed metrics
+   - `grid_status()` - grid connection state
+4. **Base Library** forwards calls to backend (no caching)
+5. **TEDAPI Backend** checks network cache (5s TTL)
+   - If hit: Returns cached data
+   - If miss: Makes protobuf API call to gateway
+6. **Response** flows back through layers
+7. **Proxy** caches processed response for 5 seconds
+8. **Application** receives consolidated frequency data
+
+This architecture provides:
+- **Performance**: Sub-millisecond cached responses
+- **Reliability**: Graceful degradation during outages
+- **Flexibility**: Multiple backend support
+- **Observability**: Cache logging for debugging
+
+---
+
 ## More Information
 
 - [GitHub Repository](https://github.com/jasonacox/pypowerwall)
