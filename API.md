@@ -9,7 +9,7 @@ PyPowerwall is a Python library for interfacing with the Tesla Solar Powerwall G
 Install the required dependencies:
 
 ```sh
-pip install requests protobuf teslapy
+pip install requests protobuf
 ```
 
 Import the library in your Python code:
@@ -212,12 +212,20 @@ else:
 ## Requirements
 
 - Python 3.7+
-- `requests`, `protobuf`, `teslapy`
+- `requests`, `protobuf`
 
 Install requirements:
 
 ```sh
 pip install -r requirements.txt
+```
+
+## TeslaPy
+
+**Note:** TeslaPy is included as a patched fork within pypowerwall and does not need to be installed separately. The fork was created because the original project is mostly unmaintained and necessary bug fixes were not being accepted by the maintainers. You can access it if needed:
+
+```python
+from pypowerwall.cloud import teslapy
 ```
 
 ---
@@ -276,7 +284,7 @@ classDiagram
     class Cloud {
         +Tesla account auth
         +remote access
-        +TeslaPy integration
+        +Included TeslaPy fork
     }
     
     class FleetAPI {
