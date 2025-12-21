@@ -2,21 +2,34 @@
 
 ### Proxy t86 (20 Dec 2025)
 
-* **Performance Optimization**:
-  - Optimized `/csv` and `/csv/v2` endpoints from ~2.5s to ~0.9s response time (64% improvement)
-  - Extended performance caching to `/freq`, `/pod`, and `/json` endpoints (all cached endpoints <1ms response)
-  - Optimized `/json` endpoint from 9 API calls to 6 calls (33% reduction) using aggregates consolidation
-  - Consolidated 4 separate power API calls (`grid()`, `solar()`, `battery()`, `home()`) into single `poll('/api/meters/aggregates')` call
+* **Performance Caching System**:
+  - Added comprehensive performance caching layer for high-impact API routes
+  - Implemented `cached_route_handler()` pattern for consistent cache management across endpoints
+  - Added performance caching to: `/aggregates`, `/api/meters/aggregates`, `/vitals`, `/strings`, `/temps/pw`, `/alerts/pw`, `/freq`, `/pod`, `/json`, `/csv`, `/csv/v2` endpoints
+  - Shared cache optimization: `/aggregates` and `/api/meters/aggregates` use same cache key for identical payloads
+  - Optimized `/csv` and `/json` endpoints from 9 API calls to 6 calls (33% reduction) using aggregates consolidation
   - Eliminated 400-600ms overhead from redundant `get_components()` fallback calls
+  - Typical performance improvements: 99.6% faster cached responses (764ms → 2.9ms for `/aggregates`)
+  - Cache memory monitoring added to `/stats` endpoint with detailed memory usage breakdown
+  - Average overall response time improvement: 58% reduction (165.7ms → 70.2ms)
+
+* **Performance Testing Tool**:
+  - Added `perf_test.py` script for comprehensive API performance testing and analysis
+  - Tests 27 production API routes with impact scoring (response_time × usage_frequency)
+  - Provides min/max/average response times with color-coded performance indicators
 
 * **Bug Fixes**:
+  - Fixed undefined variable `cache_ttl_seconds` error in graceful degradation system
   - Fixed TypeError in `/csv/v2` endpoint: removed invalid `force=False` parameter from `level()`, `grid_status()`, and `get_reserve()` calls
   - Fixed variable shadowing bug in `grid_status()` method where `type` parameter shadowed Python's built-in `type()` function
   - Renamed `type` parameter to `output_type` throughout codebase for consistency and correctness
-  - Added unit tests for CSV endpoints (`TestCSVEndpoints` class with 7 test cases)
 
-* **Code Quality**:
+* **Code Quality & Maintainability**:
+  - Centralized cache logic in reusable helper functions for improved consistency
   - Improved error handling and logging in `safe_pw_call()` wrapper
+  - Added unit tests for CSV endpoints (`TestCSVEndpoints` class with 7 test cases)
+  - Enhanced error tracking with network error summaries and endpoint statistics
+  - Enhanced documentation with comprehensive performance testing guide
 
 ### Proxy t85 (1 Dec 2025)
 

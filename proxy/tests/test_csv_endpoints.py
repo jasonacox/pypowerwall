@@ -138,7 +138,9 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
     @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', False)
     @patch('proxy.server.safe_endpoint_call')
-    def test_aggregates_endpoint(self, proxystats_lock, mock_safe_call, mock_pw):
+    @patch('proxy.server.get_performance_cached', return_value=None)  # Force cache miss
+    @patch('proxy.server.cache_performance_response')  # Mock cache write
+    def test_aggregates_endpoint(self, proxystats_lock, mock_cache_write, mock_cache_get, mock_safe_call, mock_pw):
         """Test /aggregates endpoint"""
         self.handler.path = "/aggregates"
         mock_pw.poll = Mock()
@@ -163,7 +165,9 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
     @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', False)
     @patch('proxy.server.safe_endpoint_call')
-    def test_aggregates_with_negative_solar_adjustment(self, proxystats_lock, mock_safe_call, mock_pw):
+    @patch('proxy.server.get_performance_cached', return_value=None)  # Force cache miss
+    @patch('proxy.server.cache_performance_response')  # Mock cache write
+    def test_aggregates_with_negative_solar_adjustment(self, proxystats_lock, mock_cache_write, mock_cache_get, mock_safe_call, mock_pw):
         """Test aggregates with negative solar power adjustment"""
         self.handler.path = "/aggregates"
         mock_pw.poll = Mock()
@@ -185,6 +189,125 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
         # 2000 - (-500) = 2500
         self.assertIn("load", result)
         self.assertEqual(result["load"]["instant_power"], 2500)
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.cache_performance_response')
+    def test_cache_stores_processed_data(self, proxystats_lock, mock_cache_write, mock_safe_call, mock_pw):
+        """Test that cache stores data AFTER negative solar processing"""
+        with patch('proxy.server.get_performance_cached', return_value=None):  # Force fresh data generation
+            self.handler.path = "/aggregates"
+            mock_pw.poll = Mock()
+            mock_safe_call.return_value = {
+                "solar": {"instant_power": -300},
+                "load": {"instant_power": 1500}
+            }
+
+            self.handler.do_GET()
+
+            # Verify the cache was written with the PROCESSED data (solar=0, load=1800)
+            mock_cache_write.assert_called_once()
+            cache_key, cached_json = mock_cache_write.call_args[0]
+            self.assertEqual(cache_key, "/aggregates")
+            
+            cached_data = json.loads(cached_json)
+            self.assertEqual(cached_data["solar"]["instant_power"], 0)  # Should be clamped to 0
+            self.assertEqual(cached_data["load"]["instant_power"], 1800)  # Should be 1500 - (-300) = 1800
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.cache_performance_response')
+    def test_cache_hit_returns_processed_data(self, proxystats_lock, mock_cache_write, mock_safe_call, mock_pw):
+        """Test that cache hits return already-processed data correctly"""
+        # Simulate cached data that already has negative solar adjustment applied
+        cached_processed_data = json.dumps({
+            "solar": {"instant_power": 0},
+            "load": {"instant_power": 1800}
+        })
+        
+        with patch('proxy.server.get_performance_cached', return_value=cached_processed_data):
+            self.handler.path = "/aggregates"
+            mock_pw.poll = Mock()
+
+            self.handler.do_GET()
+
+            # safe_endpoint_call should NOT be called when cache hits
+            mock_safe_call.assert_not_called()
+            # cache_performance_response should NOT be called when cache hits
+            mock_cache_write.assert_not_called()
+
+            # Verify the cached processed data is returned correctly
+            result = self.get_written_json()
+            self.assertEqual(result["solar"]["instant_power"], 0)
+            self.assertEqual(result["load"]["instant_power"], 1800)
+
+    @common_patches
+    @patch('proxy.server.pw') 
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.cache_performance_response')
+    def test_cache_preserves_multiple_adjustments(self, proxystats_lock, mock_cache_write, mock_safe_call, mock_pw):
+        """Test cache behavior with multiple different negative solar scenarios"""
+        test_scenarios = [
+            {
+                "input": {"solar": {"instant_power": -100}, "load": {"instant_power": 800}},
+                "expected": {"solar": {"instant_power": 0}, "load": {"instant_power": 900}}
+            },
+            {
+                "input": {"solar": {"instant_power": -750}, "load": {"instant_power": 2000}}, 
+                "expected": {"solar": {"instant_power": 0}, "load": {"instant_power": 2750}}
+            }
+        ]
+
+        for i, scenario in enumerate(test_scenarios):
+            with self.subTest(scenario=i):
+                mock_cache_write.reset_mock()
+                mock_safe_call.reset_mock()
+                
+                with patch('proxy.server.get_performance_cached', return_value=None):
+                    self.handler.path = "/aggregates"
+                    mock_safe_call.return_value = scenario["input"]
+
+                    self.handler.do_GET()
+
+                    # Verify correct processing and caching
+                    mock_cache_write.assert_called_once()
+                    cache_key, cached_json = mock_cache_write.call_args[0]
+                    cached_data = json.loads(cached_json)
+                    
+                    self.assertEqual(cached_data["solar"]["instant_power"], 
+                                   scenario["expected"]["solar"]["instant_power"])
+                    self.assertEqual(cached_data["load"]["instant_power"], 
+                                   scenario["expected"]["load"]["instant_power"])
+
+    @common_patches  
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', True)  # Test with neg_solar ENABLED
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.get_performance_cached', return_value=None)
+    @patch('proxy.server.cache_performance_response')
+    def test_cache_respects_neg_solar_setting(self, proxystats_lock, mock_cache_write, mock_cache_get, mock_safe_call, mock_pw):
+        """Test that cache respects neg_solar configuration setting"""
+        self.handler.path = "/aggregates"
+        mock_pw.poll = Mock()
+        mock_safe_call.return_value = {
+            "solar": {"instant_power": -200},
+            "load": {"instant_power": 1000}
+        }
+
+        self.handler.do_GET()
+
+        # When neg_solar=True, negative solar should be preserved (no adjustment)
+        mock_cache_write.assert_called_once()
+        cache_key, cached_json = mock_cache_write.call_args[0]
+        cached_data = json.loads(cached_json)
+        
+        self.assertEqual(cached_data["solar"]["instant_power"], -200)  # Should preserve negative
+        self.assertEqual(cached_data["load"]["instant_power"], 1000)   # Should remain unchanged
 
 
 class TestDoGetStatsEndpoints(BaseDoGetTest):

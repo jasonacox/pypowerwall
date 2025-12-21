@@ -333,7 +333,116 @@ curl http://localhost:8675/control/reserve
 curl http://localhost:8675/control/grid_charging
 curl http://localhost:8675/control/grid_export
 ```
+
+## Performance Testing
+
+The proxy includes a performance testing script (`perf_test.py`) that helps analyze the response times and performance characteristics of your Powerwall proxy and underlying Powerwall system. This tool is invaluable for identifying slow endpoints, validating caching improvements, and ensuring optimal performance across all API routes.
+
+### Purpose
+
+The performance test script:
+
+* **Tests response times** for all commonly used API endpoints based on real production usage patterns
+* **Provides comprehensive metrics** including average, minimum, and maximum response times
+* **Identifies optimization opportunities** by calculating impact scores (response time × usage frequency)
+* **Validates caching effectiveness** by showing dramatic improvements in cached vs uncached performance
+* **Monitors system health** across the full range of API calls your applications typically make
+
+### Usage
+
+```bash
+# Basic usage - test against default proxy (localhost:8675)
+cd proxy
+python perf_test.py
+
+# Test against different host/port
+python perf_test.py --host 192.168.1.100 --port 8675
+
+# Custom number of test requests per route (default: 5)
+python perf_test.py --requests 10
+
+# Test with timeout adjustment (default: 10 seconds)
+python perf_test.py --timeout 30
+
+# Full example with all options
+python perf_test.py --host myproxy.local --port 9999 --requests 3 --timeout 15
 ```
+
+### Output
+
+The script provides detailed performance analysis including:
+
+* **Per-route metrics**: Average, min, max response times with color-coded performance indicators
+* **Impact analysis**: Routes sorted by performance impact (response time × usage frequency)
+* **Optimization candidates**: Identifies the most critical routes for performance improvements
+* **Response size tracking**: Monitors payload sizes to identify potential bandwidth issues
+* **Overall statistics**: System-wide performance summary
+
+Example output shows routes color-coded by performance:
+* 🟢 **Green**: Good performance (< 100ms average)
+* 🟡 **Yellow**: Moderate performance (100ms - 500ms average)  
+* 🔴 **Red**: Slow performance (> 500ms average)
+
+**Sample Output:**
+```
+Route                               Avg (ms)   Min (ms)   Max (ms)   Usage    Impact     Size (B)  
+----------------------------------------------------------------------------------------------------
+🟡 /temps/pw                         749.3     2.3       3731.4    3880    2907      2        
+🟡 /pod                              669.3     1.6       3339.4    3880    2597      2016     
+🟢 /alerts/pw                        399.8     2.7       1983.1    3881    1551      340      
+🟢 /api/meters/aggregates            145.2     2.7       709.5     7992    1160      2838     
+🟢 /strings                          205.0     2.8       1010.1    3945    809       1801     
+🟢 /freq                             196.7     1.7       974.5     3946    776       2284     
+🟢 /csv/v2                           229.7     1.9       1139.2    1923    442       44       
+🟢 /csv                              100.7     2.6       489.0     2614    263       39       
+🟢 /vitals                           61.0      2.8       289.4     3946    241       7974     
+🟢 /api/system_status/grid_status    18.7      1.3       86.8      7992    149       68       
+🟢 /api/powerwalls                   2.8       2.3       3.6       7992    22        7398     
+🟢 /api/sitemaster                   2.5       1.8       3.2       7990    20        116      
+🟢 /soe                              4.4       2.6       8.7       3880    17        34       
+🟢 /fans/pw                          4.0       2.8       6.8       3880    15        2        
+🟢 /api/system_status/soe            1.7       1.2       2.4       7992    14        34       
+🟢 /version                          28.7      1.5       135.6     461     13        47       
+🟢 /api/troubleshooting/problems     2.7       2.0       4.0       4049    11        16       
+🟢 /aggregates                       2.5       2.0       3.3       3880    10        2838     
+🟢 /api/auth/toggle/supported        3.0       2.4       4.1       2071    6         31       
+🟢 /api/site_info                    2.3       1.9       3.1       651     1         426      
+🟢 /stats                            2.1       1.5       2.9       324     1         1845     
+🟢 /csv/v2?headers                   293.2     2.3       1451.9    1       0         100      
+🟢 /api/status                       3.8       2.6       7.0       2       0         312      
+🟢 /api/site_info/site_name          2.9       2.2       4.0       1       0         59       
+🟢 /api/customer/registration        2.5       1.6       3.8       1       0         41       
+🟢 /api/system_status/grid_faults    1.9       1.8       2.3       1       0         2        
+🟢 /api/networks                     1.5       1.1       2.2       1       0         10    
+
+--------------------------------------------------------------------------------
+OVERALL STATISTICS:
+  Fastest route: 1.5ms
+  Slowest route: 749.3ms
+  Average response time: 116.2ms
+  Total usage count: 87,176
+
+🎯 TOP CANDIDATES (slow + high usage):
+   1. /temps/pw                           (749.3ms × 3880 = 2907s impact)
+   2. /pod                                (669.3ms × 3880 = 2597s impact)
+   3. /alerts/pw                          (399.8ms × 3881 = 1551s impact)
+   4. /api/meters/aggregates              (145.2ms × 7992 = 1160s impact)
+   5. /strings                            (205.0ms × 3945 = 809s impact)
+   6. /freq                               (196.7ms × 3946 = 776s impact)
+   7. /csv/v2                             (229.7ms × 1923 = 442s impact)
+   8. /csv                                (100.7ms × 2614 = 263s impact)
+   9. /csv/v2?headers                     (293.2ms × 1 = 0s impact)
+```
+
+### When to Use
+
+* **After proxy setup**: Establish baseline performance metrics
+* **Performance optimization**: Before/after testing when implementing caching or other improvements
+* **System monitoring**: Regular checks to ensure consistent performance
+* **Troubleshooting**: Identify which specific routes are experiencing performance issues
+* **Capacity planning**: Understand system behavior under different loads
+
+The script tests 27 different API routes based on real production usage patterns, ensuring comprehensive coverage of your proxy's performance characteristics.
 
 ## Release Notes
 

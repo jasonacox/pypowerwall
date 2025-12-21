@@ -207,7 +207,7 @@ graceful_degradation = (
 health_check_enabled = (
     os.getenv("PW_HEALTH_CHECK", "yes").lower() == "yes"
 )  # Track connection health
-cache_ttl_seconds = int(
+degradation_cache_ttl_seconds = int(
     os.getenv("PW_CACHE_TTL", "30")
 )  # Maximum age for cached data before returning None
 
@@ -260,7 +260,7 @@ proxystats = {
         "PW_FAIL_FAST": fail_fast_mode,
         "PW_GRACEFUL_DEGRADATION": graceful_degradation,
         "PW_HEALTH_CHECK": health_check_enabled,
-        "PW_CACHE_TTL": cache_ttl_seconds,
+        "PW_CACHE_TTL": degradation_cache_ttl_seconds,
     },
 }
 proxystats_lock = threading.RLock()
@@ -312,7 +312,7 @@ if fail_fast_mode:
     )
 if graceful_degradation:
     log.info(
-        f"Graceful degradation enabled (PW_GRACEFUL_DEGRADATION=yes) - cached data TTL: {cache_ttl_seconds}s"
+        f"Graceful degradation enabled (PW_GRACEFUL_DEGRADATION=yes) - cached data TTL: {degradation_cache_ttl_seconds}s"
     )
 if health_check_enabled:
     log.info("Connection health monitoring enabled (PW_HEALTH_CHECK=yes)")
@@ -449,7 +449,7 @@ def get_cached_response(endpoint):
         if endpoint in _last_good_responses:
             cached_data, timestamp = _last_good_responses[endpoint]
             age = time.time() - timestamp
-            if age < cache_ttl_seconds:
+            if age < degradation_cache_ttl_seconds:
                 if debugmode:
                     log.debug(f"Using cached response for {endpoint} (age: {age:.1f}s)")
                 return cached_data
@@ -457,7 +457,7 @@ def get_cached_response(endpoint):
                 # Cache expired - remove entry and return None
                 if debugmode:
                     log.debug(
-                        f"Cache expired for {endpoint} (age: {age:.1f}s > {cache_ttl_seconds}s)"
+                        f"Cache expired for {endpoint} (age: {age:.1f}s > {degradation_cache_ttl_seconds}s)"
                     )
                 del _last_good_responses[endpoint]
     return None
@@ -518,6 +518,62 @@ def cache_performance_response(cache_key, data):
     with _performance_cache_lock:
         _performance_cache[cache_key] = (data, time.time())
         log.debug(f"Cached performance response for {cache_key}")
+
+
+def performance_cached(cache_key):
+    """
+    Decorator for performance caching of route handlers.
+    
+    Args:
+        cache_key: The cache key to use (e.g., '/vitals', '/strings', '/freq')
+    
+    Returns:
+        Decorator function that wraps route handlers with caching logic
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            # Try cache first
+            cached_response = get_performance_cached(cache_key)
+            if cached_response is not None:
+                return cached_response
+            
+            # Cache miss - generate fresh data
+            result = func(*args, **kwargs)
+            
+            # Only cache non-None results
+            if result is not None:
+                cache_performance_response(cache_key, result)
+            
+            return result
+        
+        return wrapper
+    return decorator
+
+
+def cached_route_handler(cache_key, data_generator):
+    """
+    Helper function for performance-cached route handling.
+    
+    Args:
+        cache_key: The cache key to use for this route
+        data_generator: Function that generates the response data
+    
+    Returns:
+        Cached response if available, otherwise fresh data (and caches it)
+    """
+    # Try cache first
+    cached_response = get_performance_cached(cache_key)
+    if cached_response is not None:
+        return cached_response
+    
+    # Cache miss - generate fresh data
+    result = data_generator()
+    
+    # Only cache non-None results
+    if result is not None:
+        cache_performance_response(cache_key, result)
+    
+    return result
 
 
 def track_endpoint_call(endpoint, success=True):
@@ -999,35 +1055,39 @@ class Handler(BaseHTTPRequestHandler):
 
         if request_path == "/aggregates" or request_path == "/api/meters/aggregates":
             # Meters - JSON
-            aggregates = safe_endpoint_call(
-                "/aggregates", pw.poll, "/api/meters/aggregates"
-            )
+            def generate_aggregates():
+                # Both routes deliver same payload, use shared cache key
+                aggregates = safe_endpoint_call(
+                    "/aggregates", pw.poll, "/api/meters/aggregates"
+                )
 
-            # Parse aggregates if it's a JSON string
-            if isinstance(aggregates, str):
+                # Parse aggregates if it's a JSON string
+                if isinstance(aggregates, str):
+                    try:
+                        aggregates = json.loads(aggregates)
+                    except (json.JSONDecodeError, TypeError):
+                        aggregates = None
+
+                if aggregates and not neg_solar and "solar" in aggregates:
+                    solar = aggregates["solar"]
+                    if solar and "instant_power" in solar and solar["instant_power"] < 0:
+                        # Shift energy from solar to load
+                        if "load" in aggregates and "instant_power" in aggregates["load"]:
+                            aggregates["load"]["instant_power"] -= solar["instant_power"]
+                        # Finally, clamp solar to 0
+                        solar["instant_power"] = 0
+
                 try:
-                    aggregates = json.loads(aggregates)
-                except (json.JSONDecodeError, TypeError):
-                    aggregates = None
+                    if aggregates:
+                        return json.dumps(aggregates)
+                    else:
+                        # No data available - return None to indicate stale/missing data
+                        return None
+                except:
+                    log.error(f"JSON encoding error in payload: {aggregates}")
+                    return None
 
-            if aggregates and not neg_solar and "solar" in aggregates:
-                solar = aggregates["solar"]
-                if solar and "instant_power" in solar and solar["instant_power"] < 0:
-                    # Shift energy from solar to load
-                    if "load" in aggregates and "instant_power" in aggregates["load"]:
-                        aggregates["load"]["instant_power"] -= solar["instant_power"]
-                    # Finally, clamp solar to 0
-                    solar["instant_power"] = 0
-
-            try:
-                if aggregates:
-                    message = json.dumps(aggregates)
-                else:
-                    # No data available - return None to indicate stale/missing data
-                    message = None
-            except:
-                log.error(f"JSON encoding error in payload: {aggregates}")
-                message = None
+            message = cached_route_handler("/aggregates", generate_aggregates)
         elif request_path == "/soe":
             # Battery Level - JSON
             message: str = safe_endpoint_call(
@@ -1056,12 +1116,7 @@ class Handler(BaseHTTPRequestHandler):
             include_headers = "headers" in request_path
             cache_key = f"/csv/v2{'_headers' if include_headers else ''}" if is_v2 else f"/csv{'_headers' if include_headers else ''}"
             
-            # Try to get cached CSV response (performance optimization)
-            cached_csv = get_performance_cached(cache_key)
-            if cached_csv is not None:
-                message = cached_csv
-            else:
-                # Cache miss - generate fresh CSV data
+            def generate_csv():
                 # Optimization: Use single aggregates call for all power values
                 aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
                 if aggregates:
@@ -1088,12 +1143,12 @@ class Handler(BaseHTTPRequestHandler):
                 
                 # Build CSV response
                 if is_v2:
-                    message = ""
+                    result = ""
                     if include_headers:
-                        message += (
+                        result += (
                             "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
                         )
-                    message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" % (
+                    result += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" % (
                         grid,
                         home,
                         solar,
@@ -1103,27 +1158,31 @@ class Handler(BaseHTTPRequestHandler):
                         reserve,
                     )
                 else:
-                    message = ""
+                    result = ""
                     if include_headers:
-                        message += "Grid,Home,Solar,Battery,BatteryLevel\n"
-                    message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" % (
+                        result += "Grid,Home,Solar,Battery,BatteryLevel\n"
+                    result += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" % (
                         grid,
                         home,
                         solar,
                         battery,
                         batterylevel,
                     )
-                
-                # Cache the final CSV string for future requests (performance optimization)
-                cache_performance_response(cache_key, message)
+                return result
+            
+            message = cached_route_handler(cache_key, generate_csv)
         elif request_path == "/vitals":
             # Vitals Data - JSON
-            message: str = safe_endpoint_call("/vitals", pw.vitals, jsonformat=True)
-            # Return None if no cached data available
+            message = cached_route_handler(
+                "/vitals",
+                lambda: safe_endpoint_call("/vitals", pw.vitals, jsonformat=True)
+            )
         elif request_path == "/strings":
             # Strings Data - JSON
-            message: str = safe_endpoint_call("/strings", pw.strings, jsonformat=True)
-            # Return None if no cached data available
+            message = cached_route_handler(
+                "/strings",
+                lambda: safe_endpoint_call("/strings", pw.strings, jsonformat=True)
+            )
         elif request_path == "/stats":
             # Give Internal Stats
             with proxystats_lock:
@@ -1156,6 +1215,63 @@ class Handler(BaseHTTPRequestHandler):
                             else 0,
                         }
 
+                # Add cache memory usage statistics
+                proxystats["mem_cache"] = {}
+
+                with _error_counts_lock:
+                    proxystats["mem_cache"]["error_counts"] = {
+                        "entries": len(_error_counts),
+                        "size_bytes": sys.getsizeof(_error_counts) + sum(
+                            sys.getsizeof(k) + sys.getsizeof(v) 
+                            for k, v in _error_counts.items()
+                        ),
+                    }
+                    proxystats["mem_cache"]["network_error_summary"] = {
+                        "entries": len(_network_error_summary),
+                        "size_bytes": sys.getsizeof(_network_error_summary) + sum(
+                            sys.getsizeof(k) + sys.getsizeof(v) + sum(
+                                sys.getsizeof(ek) + sys.getsizeof(ev) 
+                                for ek, ev in v.items()
+                            ) for k, v in _network_error_summary.items()
+                        ),
+                    }
+
+                with _last_good_responses_lock:
+                    proxystats["mem_cache"]["degradation_cache"] = {
+                        "entries": len(_last_good_responses),
+                        "size_bytes": sys.getsizeof(_last_good_responses) + sum(
+                            sys.getsizeof(k) + sys.getsizeof(v) + sys.getsizeof(v[0]) + sys.getsizeof(v[1])
+                            for k, v in _last_good_responses.items()
+                        ),
+                    }
+
+                with _performance_cache_lock:
+                    proxystats["mem_cache"]["performance_cache"] = {
+                        "entries": len(_performance_cache),
+                        "size_bytes": sys.getsizeof(_performance_cache) + sum(
+                            sys.getsizeof(k) + sys.getsizeof(v) + sys.getsizeof(v[0]) + sys.getsizeof(v[1])
+                            for k, v in _performance_cache.items()
+                        ),
+                    }
+
+                with _endpoint_stats_lock:
+                    proxystats["mem_cache"]["endpoint_stats"] = {
+                        "entries": len(_endpoint_stats),
+                        "size_bytes": sys.getsizeof(_endpoint_stats) + sum(
+                            sys.getsizeof(k) + sys.getsizeof(v) + sum(
+                                sys.getsizeof(ek) + sys.getsizeof(ev) 
+                                for ek, ev in v.items()
+                            ) for k, v in _endpoint_stats.items()
+                        ),
+                    }
+
+                # Add total cache memory usage
+                total_cache_bytes = sum(
+                    cache_info["size_bytes"] for cache_info in proxystats["mem_cache"].values()
+                )
+                proxystats["mem_cache"]["total_cache_bytes"] = total_cache_bytes
+                proxystats["mem_cache"]["total_cache_mb"] = round(total_cache_bytes / 1024 / 1024, 2)
+
                 message: str = json.dumps(proxystats)
         elif request_path == "/stats/clear":
             # Clear Internal Stats
@@ -1170,7 +1286,8 @@ class Handler(BaseHTTPRequestHandler):
             # Connection Health and Cache Status
             health_info = {
                 "pypowerwall": "%s Proxy %s" % (pypowerwall.version, BUILD),
-                "cache_ttl_seconds": cache_ttl_seconds,
+                "pypowerwall_cache_expire": cache_expire,
+                "degradation_cache_ttl_seconds": degradation_cache_ttl_seconds,
                 "graceful_degradation": graceful_degradation,
                 "fail_fast_mode": fail_fast_mode,
                 "health_check_enabled": health_check_enabled,
@@ -1211,7 +1328,7 @@ class Handler(BaseHTTPRequestHandler):
                         age = current_time - timestamp
                         cached_endpoints[endpoint] = {
                             "age_seconds": age,
-                            "is_expired": age >= cache_ttl_seconds,
+                            "is_expired": age >= degradation_cache_ttl_seconds,
                         }
                     health_info["cached_data"] = {
                         "cache_size": len(_last_good_responses),
@@ -1292,36 +1409,37 @@ class Handler(BaseHTTPRequestHandler):
             message: str = safe_pw_call(pw.temps, jsonformat=True) or json.dumps({})
         elif request_path == "/temps/pw":
             # Temps of Powerwalls with Simple Keys
-            pwtemp = {}
-            idx = 1
-            temps = safe_pw_call(pw.temps)
-            if temps:
-                for i in temps:
-                    key = "PW%d_temp" % idx
-                    pwtemp[key] = temps[i]
-                    idx = idx + 1
-            message: str = json.dumps(pwtemp)
+            def generate_temps_pw():
+                pwtemp = {}
+                idx = 1
+                temps = safe_pw_call(pw.temps)
+                if temps:
+                    for i in temps:
+                        key = "PW%d_temp" % idx
+                        pwtemp[key] = temps[i]
+                        idx = idx + 1
+                return json.dumps(pwtemp)
+            
+            message = cached_route_handler("/temps/pw", generate_temps_pw)
         elif request_path == "/alerts":
             # Alerts
             message: str = safe_pw_call(pw.alerts, jsonformat=True) or json.dumps([])
         elif request_path == "/alerts/pw":
             # Alerts in dictionary/object format
-            pwalerts = {}
-            alerts = safe_pw_call(pw.alerts)
-            if alerts is None:
-                message: Optional[str] = None
-            else:
-                for alert in alerts:
-                    pwalerts[alert] = 1
-                message: str = json.dumps(pwalerts) or json.dumps({})
+            def generate_alerts_pw():
+                pwalerts = {}
+                alerts = safe_pw_call(pw.alerts)
+                if alerts is None:
+                    return None
+                else:
+                    for alert in alerts:
+                        pwalerts[alert] = 1
+                    return json.dumps(pwalerts) or json.dumps({})
+            
+            message = cached_route_handler("/alerts/pw", generate_alerts_pw)
         elif request_path == "/freq":
             # Frequency, Current, Voltage and Grid Status
-            # Try to get cached response (performance optimization)
-            cached_freq = get_performance_cached("/freq")
-            if cached_freq is not None:
-                message = cached_freq
-            else:
-                # Cache miss - generate fresh data
+            def generate_freq():
                 fcv = {}
                 idx = 1
                 # Pull freq, current, voltage of each Powerwall via system_status
@@ -1362,17 +1480,12 @@ class Handler(BaseHTTPRequestHandler):
                             if i.startswith("ISLAND") or i.startswith("METER"):
                                 fcv[i] = d[i]
                 fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
-                message: str = json.dumps(fcv)
-                # Cache the response for future requests
-                cache_performance_response("/freq", message)
+                return json.dumps(fcv)
+            
+            message = cached_route_handler("/freq", generate_freq)
         elif request_path == "/pod":
             # Powerwall Battery Data
-            # Try to get cached response (performance optimization)
-            cached_pod = get_performance_cached("/pod")
-            if cached_pod is not None:
-                message = cached_pod
-            else:
-                # Cache miss - generate fresh data
+            def generate_pod():
                 pod = {}
                 # Get Individual Powerwall Battery Data
                 d = safe_pw_call(pw.system_status) or {}
@@ -1486,17 +1599,12 @@ class Handler(BaseHTTPRequestHandler):
                 pod["nominal_energy_remaining"] = get_value(d, "nominal_energy_remaining")
                 pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
                 pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
-                message: str = json.dumps(pod)
-                # Cache the response for future requests
-                cache_performance_response("/pod", message)
+                return json.dumps(pod)
+            
+            message = cached_route_handler("/pod", generate_pod)
         elif request_path == "/json":
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
-            # Try to get cached response (performance optimization)
-            cached_json = get_performance_cached("/json")
-            if cached_json is not None:
-                message = cached_json
-            else:
-                # Cache miss - generate fresh data
+            def generate_json():
                 # Optimization: Use single aggregates call for all power values (like CSV endpoint)
                 aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
                 if aggregates:
@@ -1528,9 +1636,9 @@ class Handler(BaseHTTPRequestHandler):
                     "energy_remaining": get_value(d, "nominal_energy_remaining") or 0,
                     "strings": safe_pw_call(pw.strings, jsonformat=False) or {},
                 }
-                message: str = json.dumps(values)
-                # Cache the response for future requests
-                cache_performance_response("/json", message)
+                return json.dumps(values)
+            
+            message = cached_route_handler("/json", generate_json)
         elif request_path == "/version":
             # Firmware Version
             version = safe_pw_call(pw.version)
