@@ -5,6 +5,7 @@
 * Fix variable shadowing in `grid_status()` method: renamed `type` parameter to `output_type` to avoid shadowing Python's built-in `type()` function
 * Add backward compatibility for deprecated `type` parameter - still supported but `output_type` is now preferred
 * Fix return type annotation for `extract_grid_status()` method: changed from `str` to `Optional[str]` to accurately reflect function can return `None`
+* Add age and expiration logging to TEDAPI Components cache for debugging consistency
 * Proxy server build t86
 
 ## v0.14.4 - Expansion Pack Energy Fix

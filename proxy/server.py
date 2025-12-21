@@ -391,6 +391,10 @@ _connection_health_lock = threading.RLock()
 _last_good_responses = {}
 _last_good_responses_lock = threading.RLock()
 
+# Performance cache for frequently-hit endpoints (separate from degradation cache)
+_performance_cache = {}
+_performance_cache_lock = threading.RLock()
+
 # Endpoint call tracking for success/failure statistics
 _endpoint_stats = {}
 _endpoint_stats_lock = threading.RLock()
@@ -474,6 +478,46 @@ def cache_response(endpoint, response):
                 _last_good_responses.keys(), key=lambda k: _last_good_responses[k][1]
             )
             del _last_good_responses[oldest_key]
+
+
+def get_performance_cached(cache_key):
+    """
+    Get cached endpoint response for performance optimization.
+    Uses standard cache_expire TTL (typically 5 seconds).
+    
+    Args:
+        cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
+    
+    Returns:
+        Cached response string if available and fresh, None otherwise
+    """
+    with _performance_cache_lock:
+        if cache_key not in _performance_cache:
+            return None
+        
+        data, timestamp = _performance_cache[cache_key]
+        age = time.time() - timestamp
+        
+        # Use standard cache_expire (same as pypowerwall's internal cache)
+        if age < cache_expire:
+            log.debug(f"Performance cache hit for {cache_key} (age: {age:.2f}s)")
+            return data
+        else:
+            log.debug(f"Performance cache expired for {cache_key} (age: {age:.2f}s)")
+            return None
+
+
+def cache_performance_response(cache_key, data):
+    """
+    Cache endpoint response for performance optimization.
+    
+    Args:
+        cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
+        data: The response string to cache
+    """
+    with _performance_cache_lock:
+        _performance_cache[cache_key] = (data, time.time())
+        log.debug(f"Cached performance response for {cache_key}")
 
 
 def track_endpoint_call(endpoint, success=True):
@@ -695,13 +739,13 @@ def get_value(a, key):
 # TODO: Add support for multiple Powerwalls
 try:
     pw = pypowerwall.Powerwall(
-        host,
-        password,
-        email,
-        timezone,
-        cache_expire,
-        timeout,
-        pool_maxsize,
+        host=host,
+        password=password,
+        email=email,
+        timezone=timezone,
+        pwcacheexpire=cache_expire,
+        timeout=timeout,
+        poolmaxsize=pool_maxsize,
         siteid=siteid,
         authpath=authpath,
         authmode=authmode,
@@ -1007,54 +1051,71 @@ class Handler(BaseHTTPRequestHandler):
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = "text/plain; charset=utf-8"
             
-            # Optimization: Use single aggregates call for all power values
-            aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
-            if aggregates:
-                grid = aggregates.get('site', {}).get('instant_power', 0)
-                solar = aggregates.get('solar', {}).get('instant_power', 0)
-                battery = aggregates.get('battery', {}).get('instant_power', 0)
-                home = aggregates.get('load', {}).get('instant_power', 0)
+            # Determine endpoint and whether to include headers
+            is_v2 = request_path.startswith("/csv/v2")
+            include_headers = "headers" in request_path
+            cache_key = f"/csv/v2{'_headers' if include_headers else ''}" if is_v2 else f"/csv{'_headers' if include_headers else ''}"
+            
+            # Try to get cached CSV response (performance optimization)
+            cached_csv = get_performance_cached(cache_key)
+            if cached_csv is not None:
+                message = cached_csv
             else:
-                grid = solar = battery = home = 0
-            
-            # Apply negative solar correction if configured
-            if not neg_solar and solar < 0:
-                # Shift energy from solar to load
-                home -= solar
-                solar = 0
-            
-            # Get battery level - poll() handles caching internally
-            batterylevel = safe_pw_call(pw.level) or 0
-            
-            if request_path.startswith("/csv/v2"):
-                # Get grid status and reserve - these use cached data internally
-                gridstatus = 1 if safe_pw_call(pw.grid_status) == "UP" else 0
-                reserve = safe_pw_call(pw.get_reserve) or 0
-                message = ""
-                if "headers" in request_path:
-                    message += (
-                        "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
+                # Cache miss - generate fresh CSV data
+                # Optimization: Use single aggregates call for all power values
+                aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
+                if aggregates:
+                    grid = aggregates.get('site', {}).get('instant_power', 0)
+                    solar = aggregates.get('solar', {}).get('instant_power', 0)
+                    battery = aggregates.get('battery', {}).get('instant_power', 0)
+                    home = aggregates.get('load', {}).get('instant_power', 0)
+                else:
+                    grid = solar = battery = home = 0
+                
+                # Apply negative solar correction if configured
+                if not neg_solar and solar < 0:
+                    # Shift energy from solar to load
+                    home -= solar
+                    solar = 0
+                
+                # Get battery level - poll() handles caching internally
+                batterylevel = safe_pw_call(pw.level) or 0
+                
+                if is_v2:
+                    # Get grid status and reserve - these use cached data internally
+                    gridstatus = 1 if safe_pw_call(pw.grid_status) == "UP" else 0
+                    reserve = safe_pw_call(pw.get_reserve) or 0
+                
+                # Build CSV response
+                if is_v2:
+                    message = ""
+                    if include_headers:
+                        message += (
+                            "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
+                        )
+                    message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" % (
+                        grid,
+                        home,
+                        solar,
+                        battery,
+                        batterylevel,
+                        gridstatus,
+                        reserve,
                     )
-                message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f,%d,%d\n" % (
-                    grid,
-                    home,
-                    solar,
-                    battery,
-                    batterylevel,
-                    gridstatus,
-                    reserve,
-                )
-            else:
-                message = ""
-                if "headers" in request_path:
-                    message += "Grid,Home,Solar,Battery,BatteryLevel\n"
-                message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" % (
-                    grid,
-                    home,
-                    solar,
-                    battery,
-                    batterylevel,
-                )
+                else:
+                    message = ""
+                    if include_headers:
+                        message += "Grid,Home,Solar,Battery,BatteryLevel\n"
+                    message += "%0.2f,%0.2f,%0.2f,%0.2f,%0.2f\n" % (
+                        grid,
+                        home,
+                        solar,
+                        battery,
+                        batterylevel,
+                    )
+                
+                # Cache the final CSV string for future requests (performance optimization)
+                cache_performance_response(cache_key, message)
         elif request_path == "/vitals":
             # Vitals Data - JSON
             message: str = safe_endpoint_call("/vitals", pw.vitals, jsonformat=True)
@@ -1255,184 +1316,221 @@ class Handler(BaseHTTPRequestHandler):
                 message: str = json.dumps(pwalerts) or json.dumps({})
         elif request_path == "/freq":
             # Frequency, Current, Voltage and Grid Status
-            fcv = {}
-            idx = 1
-            # Pull freq, current, voltage of each Powerwall via system_status
-            d = safe_pw_call(pw.system_status) or {}
-            if "battery_blocks" in d:
-                for block in d["battery_blocks"]:
-                    fcv["PW%d_name" % idx] = None  # Placeholder for vitals
-                    fcv["PW%d_PINV_Fout" % idx] = get_value(block, "f_out")
-                    fcv["PW%d_PINV_VSplit1" % idx] = None  # Placeholder for vitals
-                    fcv["PW%d_PINV_VSplit2" % idx] = None  # Placeholder for vitals
-                    fcv["PW%d_PackagePartNumber" % idx] = get_value(
-                        block, "PackagePartNumber"
-                    )
-                    fcv["PW%d_PackageSerialNumber" % idx] = get_value(
-                        block, "PackageSerialNumber"
-                    )
-                    fcv["PW%d_p_out" % idx] = get_value(block, "p_out")
-                    fcv["PW%d_q_out" % idx] = get_value(block, "q_out")
-                    fcv["PW%d_v_out" % idx] = get_value(block, "v_out")
-                    fcv["PW%d_f_out" % idx] = get_value(block, "f_out")
-                    fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
-                    idx = idx + 1
-            # Pull freq, current, voltage of each Powerwall via vitals if available
-            vitals = safe_pw_call(pw.vitals) or {}
-            idx = 1
-            for device in vitals:
-                d = vitals[device]
-                if device.startswith("TEPINV"):
-                    # PW freq
-                    fcv["PW%d_name" % idx] = device
-                    fcv["PW%d_PINV_Fout" % idx] = get_value(d, "PINV_Fout")
-                    fcv["PW%d_PINV_VSplit1" % idx] = get_value(d, "PINV_VSplit1")
-                    fcv["PW%d_PINV_VSplit2" % idx] = get_value(d, "PINV_VSplit2")
-                    idx = idx + 1
-                if device.startswith("TESYNC") or device.startswith("TEMSA"):
-                    # Island and Meter Metrics from Backup Gateway or Backup Switch
-                    for i in d:
-                        if i.startswith("ISLAND") or i.startswith("METER"):
-                            fcv[i] = d[i]
-            fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
-            message: str = json.dumps(fcv)
+            # Try to get cached response (performance optimization)
+            cached_freq = get_performance_cached("/freq")
+            if cached_freq is not None:
+                message = cached_freq
+            else:
+                # Cache miss - generate fresh data
+                fcv = {}
+                idx = 1
+                # Pull freq, current, voltage of each Powerwall via system_status
+                d = safe_pw_call(pw.system_status) or {}
+                if "battery_blocks" in d:
+                    for block in d["battery_blocks"]:
+                        fcv["PW%d_name" % idx] = None  # Placeholder for vitals
+                        fcv["PW%d_PINV_Fout" % idx] = get_value(block, "f_out")
+                        fcv["PW%d_PINV_VSplit1" % idx] = None  # Placeholder for vitals
+                        fcv["PW%d_PINV_VSplit2" % idx] = None  # Placeholder for vitals
+                        fcv["PW%d_PackagePartNumber" % idx] = get_value(
+                            block, "PackagePartNumber"
+                        )
+                        fcv["PW%d_PackageSerialNumber" % idx] = get_value(
+                            block, "PackageSerialNumber"
+                        )
+                        fcv["PW%d_p_out" % idx] = get_value(block, "p_out")
+                        fcv["PW%d_q_out" % idx] = get_value(block, "q_out")
+                        fcv["PW%d_v_out" % idx] = get_value(block, "v_out")
+                        fcv["PW%d_f_out" % idx] = get_value(block, "f_out")
+                        fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
+                        idx = idx + 1
+                # Pull freq, current, voltage of each Powerwall via vitals if available
+                vitals = safe_pw_call(pw.vitals) or {}
+                idx = 1
+                for device in vitals:
+                    d = vitals[device]
+                    if device.startswith("TEPINV"):
+                        # PW freq
+                        fcv["PW%d_name" % idx] = device
+                        fcv["PW%d_PINV_Fout" % idx] = get_value(d, "PINV_Fout")
+                        fcv["PW%d_PINV_VSplit1" % idx] = get_value(d, "PINV_VSplit1")
+                        fcv["PW%d_PINV_VSplit2" % idx] = get_value(d, "PINV_VSplit2")
+                        idx = idx + 1
+                    if device.startswith("TESYNC") or device.startswith("TEMSA"):
+                        # Island and Meter Metrics from Backup Gateway or Backup Switch
+                        for i in d:
+                            if i.startswith("ISLAND") or i.startswith("METER"):
+                                fcv[i] = d[i]
+                fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
+                message: str = json.dumps(fcv)
+                # Cache the response for future requests
+                cache_performance_response("/freq", message)
         elif request_path == "/pod":
             # Powerwall Battery Data
-            pod = {}
-            # Get Individual Powerwall Battery Data
-            d = safe_pw_call(pw.system_status) or {}
-            if "battery_blocks" in d:
+            # Try to get cached response (performance optimization)
+            cached_pod = get_performance_cached("/pod")
+            if cached_pod is not None:
+                message = cached_pod
+            else:
+                # Cache miss - generate fresh data
+                pod = {}
+                # Get Individual Powerwall Battery Data
+                d = safe_pw_call(pw.system_status) or {}
+                if "battery_blocks" in d:
+                    idx = 1
+                    for block in d["battery_blocks"]:
+                        # Vital Placeholders
+                        pod["PW%d_name" % idx] = None
+                        pod["PW%d_POD_ActiveHeating" % idx] = None
+                        pod["PW%d_POD_ChargeComplete" % idx] = None
+                        pod["PW%d_POD_ChargeRequest" % idx] = None
+                        pod["PW%d_POD_DischargeComplete" % idx] = None
+                        pod["PW%d_POD_PermanentlyFaulted" % idx] = None
+                        pod["PW%d_POD_PersistentlyFaulted" % idx] = None
+                        pod["PW%d_POD_enable_line" % idx] = None
+                        pod["PW%d_POD_available_charge_power" % idx] = None
+                        pod["PW%d_POD_available_dischg_power" % idx] = None
+                        pod["PW%d_POD_nom_energy_remaining" % idx] = None
+                        pod["PW%d_POD_nom_energy_to_be_charged" % idx] = None
+                        pod["PW%d_POD_nom_full_pack_energy" % idx] = None
+                        # Additional System Status Data
+                        pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(
+                            block, "nominal_energy_remaining"
+                        )  # map
+                        pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(
+                            block, "nominal_full_pack_energy"
+                        )  # map
+                        pod["PW%d_PackagePartNumber" % idx] = get_value(
+                            block, "PackagePartNumber"
+                        )
+                        pod["PW%d_PackageSerialNumber" % idx] = get_value(
+                            block, "PackageSerialNumber"
+                        )
+                        pod["PW%d_pinv_state" % idx] = get_value(block, "pinv_state")
+                        pod["PW%d_pinv_grid_state" % idx] = get_value(
+                            block, "pinv_grid_state"
+                        )
+                        pod["PW%d_p_out" % idx] = get_value(block, "p_out")
+                        pod["PW%d_q_out" % idx] = get_value(block, "q_out")
+                        pod["PW%d_v_out" % idx] = get_value(block, "v_out")
+                        pod["PW%d_f_out" % idx] = get_value(block, "f_out")
+                        pod["PW%d_i_out" % idx] = get_value(block, "i_out")
+                        pod["PW%d_energy_charged" % idx] = get_value(
+                            block, "energy_charged"
+                        )
+                        pod["PW%d_energy_discharged" % idx] = get_value(
+                            block, "energy_discharged"
+                        )
+                        pod["PW%d_off_grid" % idx] = int(get_value(block, "off_grid") or 0)
+                        pod["PW%d_vf_mode" % idx] = int(get_value(block, "vf_mode") or 0)
+                        pod["PW%d_wobble_detected" % idx] = int(
+                            get_value(block, "wobble_detected") or 0
+                        )
+                        pod["PW%d_charge_power_clamped" % idx] = int(
+                            get_value(block, "charge_power_clamped") or 0
+                        )
+                        pod["PW%d_backup_ready" % idx] = int(
+                            get_value(block, "backup_ready") or 0
+                        )
+                        pod["PW%d_OpSeqState" % idx] = get_value(block, "OpSeqState")
+                        pod["PW%d_version" % idx] = get_value(block, "version")
+                        idx = idx + 1
+                # Augment with Vitals Data if available
+                vitals = safe_pw_call(pw.vitals) or {}
                 idx = 1
-                for block in d["battery_blocks"]:
-                    # Vital Placeholders
-                    pod["PW%d_name" % idx] = None
-                    pod["PW%d_POD_ActiveHeating" % idx] = None
-                    pod["PW%d_POD_ChargeComplete" % idx] = None
-                    pod["PW%d_POD_ChargeRequest" % idx] = None
-                    pod["PW%d_POD_DischargeComplete" % idx] = None
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = None
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = None
-                    pod["PW%d_POD_enable_line" % idx] = None
-                    pod["PW%d_POD_available_charge_power" % idx] = None
-                    pod["PW%d_POD_available_dischg_power" % idx] = None
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = None
-                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = None
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = None
-                    # Additional System Status Data
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(
-                        block, "nominal_energy_remaining"
-                    )  # map
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(
-                        block, "nominal_full_pack_energy"
-                    )  # map
-                    pod["PW%d_PackagePartNumber" % idx] = get_value(
-                        block, "PackagePartNumber"
-                    )
-                    pod["PW%d_PackageSerialNumber" % idx] = get_value(
-                        block, "PackageSerialNumber"
-                    )
-                    pod["PW%d_pinv_state" % idx] = get_value(block, "pinv_state")
-                    pod["PW%d_pinv_grid_state" % idx] = get_value(
-                        block, "pinv_grid_state"
-                    )
-                    pod["PW%d_p_out" % idx] = get_value(block, "p_out")
-                    pod["PW%d_q_out" % idx] = get_value(block, "q_out")
-                    pod["PW%d_v_out" % idx] = get_value(block, "v_out")
-                    pod["PW%d_f_out" % idx] = get_value(block, "f_out")
-                    pod["PW%d_i_out" % idx] = get_value(block, "i_out")
-                    pod["PW%d_energy_charged" % idx] = get_value(
-                        block, "energy_charged"
-                    )
-                    pod["PW%d_energy_discharged" % idx] = get_value(
-                        block, "energy_discharged"
-                    )
-                    pod["PW%d_off_grid" % idx] = int(get_value(block, "off_grid") or 0)
-                    pod["PW%d_vf_mode" % idx] = int(get_value(block, "vf_mode") or 0)
-                    pod["PW%d_wobble_detected" % idx] = int(
-                        get_value(block, "wobble_detected") or 0
-                    )
-                    pod["PW%d_charge_power_clamped" % idx] = int(
-                        get_value(block, "charge_power_clamped") or 0
-                    )
-                    pod["PW%d_backup_ready" % idx] = int(
-                        get_value(block, "backup_ready") or 0
-                    )
-                    pod["PW%d_OpSeqState" % idx] = get_value(block, "OpSeqState")
-                    pod["PW%d_version" % idx] = get_value(block, "version")
-                    idx = idx + 1
-            # Augment with Vitals Data if available
-            vitals = safe_pw_call(pw.vitals) or {}
-            idx = 1
-            for device in vitals:
-                v = vitals[device]
-                if device.startswith("TEPOD"):
-                    pod["PW%d_name" % idx] = device
-                    pod["PW%d_POD_ActiveHeating" % idx] = int(
-                        get_value(v, "POD_ActiveHeating") or 0
-                    )
-                    pod["PW%d_POD_ChargeComplete" % idx] = int(
-                        get_value(v, "POD_ChargeComplete") or 0
-                    )
-                    pod["PW%d_POD_ChargeRequest" % idx] = int(
-                        get_value(v, "POD_ChargeRequest") or 0
-                    )
-                    pod["PW%d_POD_DischargeComplete" % idx] = int(
-                        get_value(v, "POD_DischargeComplete") or 0
-                    )
-                    pod["PW%d_POD_PermanentlyFaulted" % idx] = int(
-                        get_value(v, "POD_PermanentlyFaulted") or 0
-                    )
-                    pod["PW%d_POD_PersistentlyFaulted" % idx] = int(
-                        get_value(v, "POD_PersistentlyFaulted") or 0
-                    )
-                    pod["PW%d_POD_enable_line" % idx] = int(
-                        get_value(v, "POD_enable_line") or 0
-                    )
-                    pod["PW%d_POD_available_charge_power" % idx] = get_value(
-                        v, "POD_available_charge_power"
-                    )
-                    pod["PW%d_POD_available_dischg_power" % idx] = get_value(
-                        v, "POD_available_dischg_power"
-                    )
-                    pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(
-                        v, "POD_nom_energy_remaining"
-                    )
-                    pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(
-                        v, "POD_nom_energy_to_be_charged"
-                    )
-                    pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(
-                        v, "POD_nom_full_pack_energy"
-                    )
-                    idx = idx + 1
-            # Note: Expansion packs are now included in vitals() as TEPOD entries,
-            # so they're automatically picked up by the loop above.
-            # Aggregate data
-            pod["nominal_full_pack_energy"] = get_value(d, "nominal_full_pack_energy")
-            pod["nominal_energy_remaining"] = get_value(d, "nominal_energy_remaining")
-            pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
-            pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
-            message: str = json.dumps(pod)
+                for device in vitals:
+                    v = vitals[device]
+                    if device.startswith("TEPOD"):
+                        pod["PW%d_name" % idx] = device
+                        pod["PW%d_POD_ActiveHeating" % idx] = int(
+                            get_value(v, "POD_ActiveHeating") or 0
+                        )
+                        pod["PW%d_POD_ChargeComplete" % idx] = int(
+                            get_value(v, "POD_ChargeComplete") or 0
+                        )
+                        pod["PW%d_POD_ChargeRequest" % idx] = int(
+                            get_value(v, "POD_ChargeRequest") or 0
+                        )
+                        pod["PW%d_POD_DischargeComplete" % idx] = int(
+                            get_value(v, "POD_DischargeComplete") or 0
+                        )
+                        pod["PW%d_POD_PermanentlyFaulted" % idx] = int(
+                            get_value(v, "POD_PermanentlyFaulted") or 0
+                        )
+                        pod["PW%d_POD_PersistentlyFaulted" % idx] = int(
+                            get_value(v, "POD_PersistentlyFaulted") or 0
+                        )
+                        pod["PW%d_POD_enable_line" % idx] = int(
+                            get_value(v, "POD_enable_line") or 0
+                        )
+                        pod["PW%d_POD_available_charge_power" % idx] = get_value(
+                            v, "POD_available_charge_power"
+                        )
+                        pod["PW%d_POD_available_dischg_power" % idx] = get_value(
+                            v, "POD_available_dischg_power"
+                        )
+                        pod["PW%d_POD_nom_energy_remaining" % idx] = get_value(
+                            v, "POD_nom_energy_remaining"
+                        )
+                        pod["PW%d_POD_nom_energy_to_be_charged" % idx] = get_value(
+                            v, "POD_nom_energy_to_be_charged"
+                        )
+                        pod["PW%d_POD_nom_full_pack_energy" % idx] = get_value(
+                            v, "POD_nom_full_pack_energy"
+                        )
+                        idx = idx + 1
+                # Note: Expansion packs are now included in vitals() as TEPOD entries,
+                # so they're automatically picked up by the loop above.
+                # Aggregate data
+                pod["nominal_full_pack_energy"] = get_value(d, "nominal_full_pack_energy")
+                pod["nominal_energy_remaining"] = get_value(d, "nominal_energy_remaining")
+                pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
+                pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
+                message: str = json.dumps(pod)
+                # Cache the response for future requests
+                cache_performance_response("/pod", message)
         elif request_path == "/json":
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
-            d = safe_pw_call(pw.system_status) or {}
-            values = {
-                "grid": safe_pw_call(pw.grid) or 0,
-                "home": safe_pw_call(pw.home) or 0,
-                "solar": safe_pw_call(pw.solar) or 0,
-                "battery": safe_pw_call(pw.battery) or 0,
-                "soe": safe_pw_call(pw.level) or 0,
-                "grid_status": int(safe_pw_call(pw.grid_status) == "UP"),
-                "reserve": safe_pw_call(pw.get_reserve) or 0,
-                "time_remaining_hours": safe_pw_call(pw.get_time_remaining) or 0,
-                "full_pack_energy": get_value(d, "nominal_full_pack_energy") or 0,
-                "energy_remaining": get_value(d, "nominal_energy_remaining") or 0,
-                "strings": safe_pw_call(pw.strings, jsonformat=False) or {},
-            }
-            if not neg_solar and values["solar"] < 0:
-                # Shift negative solar to load
-                values["home"] -= values["solar"]
-                values["solar"] = 0
-            message: str = json.dumps(values)
+            # Try to get cached response (performance optimization)
+            cached_json = get_performance_cached("/json")
+            if cached_json is not None:
+                message = cached_json
+            else:
+                # Cache miss - generate fresh data
+                # Optimization: Use single aggregates call for all power values (like CSV endpoint)
+                aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
+                if aggregates:
+                    grid = aggregates.get('site', {}).get('instant_power', 0)
+                    solar = aggregates.get('solar', {}).get('instant_power', 0)
+                    battery = aggregates.get('battery', {}).get('instant_power', 0)
+                    home = aggregates.get('load', {}).get('instant_power', 0)
+                else:
+                    grid = solar = battery = home = 0
+                
+                # Apply negative solar correction if configured
+                if not neg_solar and solar < 0:
+                    # Shift energy from solar to load
+                    home -= solar
+                    solar = 0
+                
+                # Get remaining data
+                d = safe_pw_call(pw.system_status) or {}
+                values = {
+                    "grid": grid,
+                    "home": home,
+                    "solar": solar,
+                    "battery": battery,
+                    "soe": safe_pw_call(pw.level) or 0,
+                    "grid_status": int(safe_pw_call(pw.grid_status) == "UP"),
+                    "reserve": safe_pw_call(pw.get_reserve) or 0,
+                    "time_remaining_hours": safe_pw_call(pw.get_time_remaining) or 0,
+                    "full_pack_energy": get_value(d, "nominal_full_pack_energy") or 0,
+                    "energy_remaining": get_value(d, "nominal_energy_remaining") or 0,
+                    "strings": safe_pw_call(pw.strings, jsonformat=False) or {},
+                }
+                message: str = json.dumps(values)
+                # Cache the response for future requests
+                cache_performance_response("/json", message)
         elif request_path == "/version":
             # Firmware Version
             version = safe_pw_call(pw.version)

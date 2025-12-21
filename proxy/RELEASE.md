@@ -2,8 +2,10 @@
 
 ### Proxy t86 (20 Dec 2025)
 
-* **CSV Endpoint Performance Optimization**:
+* **Performance Optimization**:
   - Optimized `/csv` and `/csv/v2` endpoints from ~2.5s to ~0.9s response time (64% improvement)
+  - Extended performance caching to `/freq`, `/pod`, and `/json` endpoints (all cached endpoints <1ms response)
+  - Optimized `/json` endpoint from 9 API calls to 6 calls (33% reduction) using aggregates consolidation
   - Consolidated 4 separate power API calls (`grid()`, `solar()`, `battery()`, `home()`) into single `poll('/api/meters/aggregates')` call
   - Eliminated 400-600ms overhead from redundant `get_components()` fallback calls
 
