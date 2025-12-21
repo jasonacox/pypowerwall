@@ -722,7 +722,7 @@ class Powerwall(object):
             output_type == "json" return raw JSON
             output_type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
 
-            If type (deprecated) is set, it will will override output_type
+            If type (deprecated) is set, it will override output_type
         """
         if type:
             output_type = type # Backward compatibility
