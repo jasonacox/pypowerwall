@@ -166,6 +166,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
         func = self.poll_api_map.get(api)
         if func:
+            log.debug(f" -- tedapi: Calling {func.__name__} for {api}")
             kwargs = {
                 'force': force,
                 'recursive': recursive,
@@ -173,6 +174,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             }
             return func(**kwargs)
         else:
+            log.error(f" -- tedapi: Unknown API: {api}")
             return {"ERROR": f"Unknown API: {api}"}
 
     def post(self, api: str, payload: Optional[dict], din: Optional[str],
@@ -224,13 +226,18 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        percentage_charged = self.tedapi.battery_level(force=force)
-        if not percentage_charged:
-            return None
-        data = {
-            "percentage": percentage_charged
-        }
-        return data
+        try:
+            percentage_charged = self.tedapi.battery_level(force=force)
+            if percentage_charged is None:
+                log.debug("get_api_system_status_soe: battery_level returned None")
+                return None
+            data = {
+                "percentage": percentage_charged
+            }
+            return data
+        except Exception as e:
+            log.error(f"get_api_system_status_soe: Exception {type(e).__name__}: {e}")
+            raise
 
     def get_api_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
@@ -255,12 +262,15 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             }
         return data
 
-    def extract_grid_status(self, status) -> str:
+    def extract_grid_status(self, status) -> Optional[str]:
+        if status is None:
+            return None
         alerts = lookup(status, ["control", "alerts", "active"]) or []
         if "SystemConnectedToGrid" in alerts:
             return "SystemGridConnected"
         grid_state = lookup(status, ["esCan", "bus", "ISLANDER", "ISLAND_GridConnection", "ISLAND_GridConnected"])
         if not grid_state:
+            log.debug("extract_grid_status: grid_state not found in expected path")
             return None
         if grid_state == "ISLAND_GridConnected_Connected":
             return "SystemGridConnected"
@@ -268,12 +278,23 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     def get_api_system_status_grid_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
-        status = self.tedapi.get_status(force=force)
-        data = {
-            "grid_status": self.extract_grid_status(status),
-            "grid_services_active": None, # TODO
-        }
-        return data
+        try:
+            status = self.tedapi.get_status(force=force)
+            if status is None:
+                log.debug("get_api_system_status_grid_status: get_status returned None")
+                return None
+            grid_status = self.extract_grid_status(status)
+            if grid_status is None:
+                log.debug("get_api_system_status_grid_status: extract_grid_status returned None")
+                return None
+            data = {
+                "grid_status": grid_status,
+                "grid_services_active": None, # TODO
+            }
+            return data
+        except Exception as e:
+            log.error(f"get_api_system_status_grid_status: Exception {type(e).__name__}: {e}")
+            raise
 
     def get_api_site_info_site_name(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)

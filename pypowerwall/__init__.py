@@ -88,7 +88,7 @@ import time
 from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 14, 4)
+version_tuple = (0, 14, 5)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -359,13 +359,17 @@ class Powerwall(object):
             scale = If True, convert battery level to app scale value
         """
         # Return power level percentage for battery
-        payload = self.poll('/api/system_status/soe')
-        if payload is not None and 'percentage' in payload:
-            level = payload['percentage']
-            if scale:
-                level = (level / 0.95) - (5 / 0.95)
-            return level
-        return None
+        try:
+            payload = self.poll('/api/system_status/soe')
+            if payload is not None and 'percentage' in payload:
+                level = payload['percentage']
+                if scale:
+                    level = (level / 0.95) - (5 / 0.95)
+                return level
+            return None
+        except Exception as e:
+            log.error(f"level(): Exception {type(e).__name__}: {e}")
+            raise
 
     def power(self) -> dict:
         """
@@ -709,41 +713,49 @@ class Powerwall(object):
         return result
 
     # noinspection PyShadowingBuiltins
-    def grid_status(self, type="string") -> Optional[Union[str, int]]:
+    def grid_status(self, output_type="string", type=None) -> Optional[Union[str, int]]:
         """
         Get the status of the grid  
         
         Args:
-            type == "string" (default) returns: "UP", "DOWN", "SYNCING"
-            type == "json" return raw JSON
-            type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
+            output_type == "string" (default) returns: "UP", "DOWN", "SYNCING"
+            output_type == "json" return raw JSON
+            output_type == "numeric" return -1 (Syncing), 0 (DOWN), 1 (UP)
+
+            If type (deprecated) is set, it will override output_type
         """
-        if type not in ['json', 'string', 'numeric']:
-            log.error(f"Invalid value for parameter 'type': {type}")
-            raise ValueError("Invalid value for parameter 'type': " + str(type))
+        if type:
+            output_type = type # Backward compatibility
+        if output_type not in ['json', 'string', 'numeric']:
+            log.error(f"Invalid value for parameter 'output_type': {output_type}")
+            raise ValueError("Invalid value for parameter 'output_type': " + str(output_type))
 
-        payload: dict = self.poll('/api/system_status/grid_status')
+        try:
+            payload: dict = self.poll('/api/system_status/grid_status')
 
-        if payload is None:
-            log.error("Failed to get /api/system_status/grid_status")
-            return None
+            if payload is None:
+                log.error("Failed to get /api/system_status/grid_status")
+                return None
 
-        if type == "json":
-            return json.dumps(payload, indent=4, sort_keys=True)
+            if output_type == "json":
+                return json.dumps(payload, indent=4, sort_keys=True)
 
-        gridmap = {'SystemGridConnected': {'string': 'UP', 'numeric': 1},
-                   'SystemIslandedActive': {'string': 'DOWN', 'numeric': 0},
-                   'SystemTransitionToGrid': {'string': 'SYNCING', 'numeric': -1},
-                   'SystemTransitionToIsland': {'string': 'SYNCING', 'numeric': -1},
-                   'SystemIslandedReady': {'string': 'SYNCING', 'numeric': -1},
-                   'SystemMicroGridFaulted': {'string': 'DOWN', 'numeric': 0},
-                   'SystemWaitForUser': {'string': 'DOWN', 'numeric': 0}}
+            gridmap = {'SystemGridConnected': {'string': 'UP', 'numeric': 1},
+                       'SystemIslandedActive': {'string': 'DOWN', 'numeric': 0},
+                       'SystemTransitionToGrid': {'string': 'SYNCING', 'numeric': -1},
+                       'SystemTransitionToIsland': {'string': 'SYNCING', 'numeric': -1},
+                       'SystemIslandedReady': {'string': 'SYNCING', 'numeric': -1},
+                       'SystemMicroGridFaulted': {'string': 'DOWN', 'numeric': 0},
+                       'SystemWaitForUser': {'string': 'DOWN', 'numeric': 0}}
 
-        grid_status = payload.get('grid_status')
-        status = gridmap.get(grid_status, {}).get(type)
-        if status is None:
-            log.debug(f"ERROR unable to parse payload '{payload}' for grid_status of type: {type}")
-        return status
+            grid_status = payload.get('grid_status')
+            status = gridmap.get(grid_status, {}).get(output_type)
+            if status is None:
+                log.warning(f"Unable to parse payload '{payload}' for grid_status of output_type: {output_type}")
+            return status
+        except Exception as e:
+            log.error(f"grid_status(): Exception {type(e).__name__}: {e}")
+            raise
 
     def system_status(self, jsonformat=False) -> Optional[Union[dict, str]]:
         """

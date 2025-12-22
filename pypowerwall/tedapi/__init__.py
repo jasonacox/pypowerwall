@@ -130,6 +130,7 @@ class TEDAPI:
         if self.debug:
             self.set_debug(True)
         self.gw_pwd = gw_pwd
+        log.debug(f"TEDAPI initialized with pwcacheexpire={self.pwcacheexpire}s, pwconfigexpire={self.pwconfigexpire}s")
         # Connect to Powerwall Gateway
         if not self.connect():
             log.error("Failed to connect to Powerwall Gateway")
@@ -214,9 +215,12 @@ class TEDAPI:
         """
         # Check Cache BEFORE acquiring lock
         if not force and "config" in self.pwcachetime:
-            if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
-                log.debug("Using Cached Payload")
+            age = time.time() - self.pwcachetime["config"]
+            if age < self.pwconfigexpire:
+                log.debug(f"Using Cached Config (age: {age:.2f}s, expire: {self.pwconfigexpire}s)")
                 return self.pwcache["config"]
+            else:
+                log.debug(f"Cache expired for config (age: {age:.2f}s, expire: {self.pwconfigexpire}s)")
         
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
@@ -324,9 +328,12 @@ class TEDAPI:
         """
         # Check Cache BEFORE acquiring lock
         if not force and "status" in self.pwcachetime:
-            if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
-                log.debug("Using Cached Payload")
+            age = time.time() - self.pwcachetime["status"]
+            if age < self.pwcacheexpire:
+                log.debug(f"Using Cached Payload (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
                 return self.pwcache["status"]
+            else:
+                log.debug(f"Cache expired for status (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
         
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
@@ -414,9 +421,12 @@ class TEDAPI:
         """
         # Check Cache BEFORE acquiring lock
         if not force and "controller" in self.pwcachetime:
-            if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
-                log.debug("Using Cached Payload")
+            age = time.time() - self.pwcachetime["controller"]
+            if age < self.pwcacheexpire:
+                log.debug(f"Using Cached Controller (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
                 return self.pwcache["controller"]
+            else:
+                log.debug(f"Cache expired for controller (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
         
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
@@ -605,8 +615,9 @@ class TEDAPI:
         """
         # Check Cache BEFORE acquiring lock
         if not force and "components" in self.pwcachetime:
-            if time.time() - self.pwcachetime["components"] < self.pwconfigexpire:
-                log.debug("Using Cached Components")
+            cache_age = time.time() - self.pwcachetime["components"]
+            if cache_age < self.pwconfigexpire:
+                log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s)")
                 return self.pwcache["components"]
         
         # Check cooldown BEFORE acquiring lock
@@ -618,8 +629,9 @@ class TEDAPI:
         with acquire_lock_with_backoff(self_function, self.timeout):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "components" in self.pwcachetime:
-                if time.time() - self.pwcachetime["components"] < self.pwconfigexpire:
-                    log.debug("Using Cached Components (double-check)")
+                cache_age = time.time() - self.pwcachetime["components"]
+                if cache_age < self.pwconfigexpire:
+                    log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s) (double-check)")
                     return self.pwcache["components"]
             
             # Re-check cooldown after acquiring lock
@@ -709,8 +721,9 @@ class TEDAPI:
                 return None
         # Check Cache
         if not force and "pw3_vitals" in self.pwcachetime:
-            if time.time() - self.pwcachetime["pw3_vitals"] < self.pwconfigexpire:
-                log.debug("Using Cached Components")
+            cache_age = time.time() - self.pwcachetime["pw3_vitals"]
+            if cache_age < self.pwconfigexpire:
+                log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s)")
                 return self.pwcache["pw3_vitals"]
         if not force and self.pwcooldown > time.perf_counter():
             # Rate limited - return None
@@ -1061,6 +1074,7 @@ class TEDAPI:
         nominalEnergyRemainingWh = lookup(status, ['control', 'systemStatus', 'nominalEnergyRemainingWh'])
         nominalFullPackEnergyWh = lookup(status, ['control', 'systemStatus', 'nominalFullPackEnergyWh'])
         if not nominalEnergyRemainingWh or not nominalFullPackEnergyWh:
+            log.debug(f"battery_level: Missing battery data - remaining={nominalEnergyRemainingWh}, full={nominalFullPackEnergyWh}")
             return None
         battery_level = nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100
         return battery_level
