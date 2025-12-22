@@ -1,12 +1,19 @@
 # RELEASE NOTES
 
-## v0.14.5 - Variable Shadowing and Type Annotation Fixes
+## v0.14.5 - Performance Improvements
 
-* Fix variable shadowing in `grid_status()` method: renamed `type` parameter to `output_type` to avoid shadowing Python's built-in `type()` function
-* Add backward compatibility for deprecated `type` parameter - still supported but `output_type` is now preferred
-* Fix return type annotation for `extract_grid_status()` method: changed from `str` to `Optional[str]` to accurately reflect function can return `None`
-* Add age and expiration logging to TEDAPI Components cache for debugging consistency
-* Proxy server build t86
+* Performance Fixes and Improvements
+     * Fix variable shadowing in `grid_status()` method: renamed `type` parameter to `output_type` to avoid shadowing Python's built-in `type()` function
+     * Add backward compatibility for deprecated `type` parameter - still supported but `output_type` is now preferred
+     * Fix return type annotation for `extract_grid_status()` method: changed from `str` to `Optional[str]` to accurately reflect function can return `None`
+     * Add age and expiration logging to TEDAPI Components cache for debugging consistency
+     * Proxy server build t86
+* Rename incorrect unit test file (test_ prefix indicates unit tests) by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/226
+* Simple reliability improvements by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/240
+* Add aggregation unit tests by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/241
+* Update all Python versions to be consistent by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/243
+* Add CSV endpoint tests to the proxy by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/244
+* Add csv/v2 endpoint unit tests by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/245
 
 ## v0.14.4 - Expansion Pack Energy Fix
 
