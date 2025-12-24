@@ -205,7 +205,8 @@ battery = pw.battery()
 home = pw.home()
 
 # Display Data
-print("Battery power level: %0.0f%%" % pw.level())
+print("Battery power level: %0.0f%%" % pw.level())  # Actual level including 5% Tesla reserve
+print("Tesla app level: %0.0f%%" % pw.level(scale=True))  # Level as shown in Tesla App
 print("Combined power metrics: %r" % pw.power())
 print("")
 
@@ -262,7 +263,7 @@ print("System Status: %r\n" % pw.system_status())
  Functions 
    poll(api, json, force)    # Return data from Powerwall API (dict if json=True, bypass cache force=True)
    post(api, payload, json)  # Send payload to Powerwall API (dict if json=True)
-    level()                   # Return battery power level percentage
+    level(scale)              # Return battery power level percentage (scale=False: actual level, scale=True: Tesla app level)
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
     solar(verbose):           # Return solar sensor data (W or raw JSON if verbose=True)

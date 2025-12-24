@@ -96,7 +96,9 @@ pw = pypowerwall.Powerwall(
 ### Power and Energy
 
 - `level(scale=False)` → float/None  
-  Returns battery power level percentage.
+  Returns battery power level percentage. Tesla reserves 5% of battery capacity as a buffer, so:
+  - `scale=False` (default): Returns actual battery level including the 5% reserve
+  - `scale=True`: Returns Tesla app-style percentage using formula `(level / 0.95) - (5 / 0.95)` to show percentage of *usable* capacity (matches Tesla App)
 
 - `power()` → dict  
   Returns power data for site, solar, battery, and load.
