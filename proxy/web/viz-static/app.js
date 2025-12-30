@@ -1799,9 +1799,9 @@
             s = { [o.SOLAR]: "solar", [o.USAGE]: "load", [o.GRID]: "site", [o.BATTERY]: "battery" },
             _ = Object(a.invert)(s),
             l = "rgba(255,255,255,0.2)",
-            c = "#F2CA00",
-            d = "#00D000",
-            u = "#00AEEF",
+            c = "#FADE2A", // Solar Power - old #F2CA00
+            d = "#00D000", // Powerwall Energy
+            u = "#5794F2", // Home - old #00AEEF
             m = "#CBCFD1",
             p = "#FFA400",
             g = r.a.createElement(
@@ -14612,9 +14612,9 @@
         e.exports =
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABkAAAAaCAYAAABCfffNAAAAAXNSR0IArs4c6QAAA1BJREFUSA2dlU9Ik3EYx7c5Nm1lJkaIdaiIckVQl5T1xwy0f1Z08FRUQhodPFQQhFPnttYuRh4yunjpUCOCoEOg1KxTeogC7VSJSacysiKn+9Pned073v22d44e+L7Pn9/z/L6//6/VokggEKiJx+P3CO9Rmopxp20227nu7u4JY7LN6Ph8vhYIosQ+geNgEhQjv0hqA4+TyeSz3t7eU8YiqzgEV6D8oBFcxX+BtgwMDDhnZ2e7MS+KbyITJSUlbV6v97O0U1uHumu1Wp/W1tYGWltbE9a+vr7tsN+nYQv4Cv4AVTYQKFWDaV8GlAJO4ACSVwnWg1Gn09luT6VSwlzNWjajNYH0OcZ1Yu/SIQux09gdup/WD8kZEpv2Y6iT+O3i028FeBSLxbbamdZ7nFds1ltpFGHKoySPGzeQ2I2lVu37mu8+sEOvo30tfpXBL8eXvGltTzAKSigUWsOI5BCUgJ8gBG4Bkd0QzCyZ+b9Zpyt/isWysLBwmDYhsDDzPtQmsUXwjyxZ5t+iSFjOlnQXYyzHA+zMHaJN9qKgLEsSDodX0cN+EAfXGLmcpEHQCeZAHcslp8lUliWZn59volqO5hsINnPkd9HpE/yVQDZX+pAcU1mWhOWQmy/iwR4CTcFgcB2+8bQV3JeCJIxYXoJGYTDI2OLiYhBfZqJLQ39/f5nuqLogCctziAJjcZKZrCZ2QumobG5u7qASy7gFSehQXyq9YArDqzuKNl0yUxJ5HOlE3dCNxOQdyyfNkUhEu0tqoykJr+8Bkl1KQaEXomJycrJeyddcUxJa1aUadLvd1Q6Ho5anvZ63TS7hTaXTo4qvufZ8QU6VxOUp0WUYw8e/IYn+nsZH9Di5snxngYjsi/Foa0GzmeyltULLsFg+oDvoTAhypLKyUjrVfwk15O1Uk8xI9KX6Zrfbz1D4Wy3U/c7Ozhj2BfAjHctZshwSOpSYJC6A811dXV/SxaaKmhnu1CUS5F1bnoQNlRe2ClyheAxdlPT09LwkMQy2+f1+OeoZyZkJv9EWRnUHgkgmq0gDotukDicSiayLmUXCDdfuAf8M9WgWRcPgUqWlpZdJdhsLsm4oSeUul2vU4/HIfvyXjIyMxBoaGqbA32g0qvXzD+edDWdswixvAAAAAElFTkSuQmCC";
     },
-    function (e, t) {
+    function (e, t) { // blue house icon
         e.exports =
-            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABsAAAAaCAYAAABGiCfwAAAAAXNSR0IArs4c6QAAAmZJREFUSA21Vr9rFEEU/t7uxVwORYQkRqJWgthYWImNnYigCFYipk7hH6Bgp00CFhYSUULiLUkRsLoyRXoxXTCCgiDxzG0Of4BwCbe7z7d3t3c7O5Pb3fMcWHbe93588+a9mV3gf433PJIMbSWBzPLKrxOH2jrfzmO7fi2pH4ys/P0GgoN1OO71ZEAsuVNgewHkf03q8pM5u3cBmgNzEQjm4dRud4OuuUdRCIQI42g2PnXxzoSSQF+5XJ0FrAcGm6do7LzF2OkF0V2W5zNmpnqL6DgUDI46xEySwUNR3NOVLeQxSmfuSLYXWpKFDya7dLINLgjRE3G+aQrQxSKiEAhou4vHJv3Jlr4UseM+E/urMZ/0qW3lzGxx7xhs74VszaX06AkL3/+YQFqiuRtXq+MY8Zal6/ITEfZQbI6ayPRufFOfhtV8DaazJofMWEgKqR3TJmYmF0M/tWaOew7svRKDycxBDzNkTAA8AQtbkUlvG1drF8FBWRT/ThRFD9+BH0Riexud2hVZxXMwxiLFkN8ruH9yjrD24zgOvFnJqn1LE24JaWlIZB6If8utsy8pVvQGKe+uC9GpIZFV5Np6FMXq1SxCiPQFRLq8b+IjcRedjFnH4h655qSQqa3fDqSTEf5IHffl0xHay0MFuVk6837saWThNjKrEdh6KQdzWQVFqnAJP2vvNDwCCEpmehYsxzA5qHdWkqq+cpBWM5JvlzYsX4OyAMTKHalnYcpMDmGW2JoNqzXTyUjaQBs8YGak/M7pZKbMyB4sM6g1M7X+FoiUvQb7dS3ZEKhuNlGanjfqQpDtRlz3F7gKputfMThvAAAAAElFTkSuQmCC";
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABsAAAAaCAYAAABGiCfwAAABb0lEQVR42t3WsUscQRTH8c8dq3dIEhFOEYRUCeGaFJYBMZUEwSBYSPAfSOEfoGCXNAYEiwSDIoi9RSqLdCkDduIFtEobG41gwChppliW2dzduofgg4F982bnu7+3b95uZf7juR5ZH67SE9VbbDb0n9gzTGUni8Km8RWvIrFRbOBnGbA3WEUdHzCbij0IoAaOszcmXYLeYjHzsO8DeA/reIoT/CkKq2AJCznxFcyhGfyj2KJOYAneYabNumbqulUEVscaJrtMd9fKHuITxgsU0Y/YZF41NrBTEPQLtU6VjWELjwuewWF8C9AWDrAdgz3BJkZKaFfDYRzG0vgcuyWB0naThb0IUh/1oCEvYhnVBIOYwJcQfI2BkkB/cYaX+J0EZzW1YLJE2H5QlVv6lRJT2N/unFV7BUs6hF2ELp5Exq1gsTR+Dh0lawP4XnYab3r1zmLKrgvCavdWWd+dKYtV42Hke3Sas9lV+MPKs8u08w9Szzdf/9wzWwAAAABJRU5ErkJggg==";
     },
     function (e, t) {
         e.exports =

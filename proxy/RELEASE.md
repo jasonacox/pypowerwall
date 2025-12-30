@@ -1,5 +1,16 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t87 (29 Dec 2025)
+
+* Updated Proxy power flow animation to match Powerflow Dashboard color scheme.
+
+| Swatch | Hex | RGB | Use Case |
+|------|------|------|---------|
+| <img width="50" height="50" alt="image" src="https://github.com/user-attachments/assets/194e3871-151a-4e28-afec-3fe907e3c646" /> | `#FADE2A` | `rgb(250, 222, 42)` | Solar |
+| <img width="50" height="50" alt="image" src="https://github.com/user-attachments/assets/b8175f7d-ca73-493e-81a8-5a005c9bd621" />  | `#73BF69` | `rgb(115, 191, 105)` | Powerwall Metrics (Note `#00D000` used for energy flow.) |
+| <img width="50" height="50" alt="image" src="https://github.com/user-attachments/assets/32815264-0170-48d6-9189-f6395ff4a4c2" /> | `#5794F2` | `rgb(87, 148, 242)` | Home |
+| <img width="50" height="50" alt="image" src="https://github.com/user-attachments/assets/b1cf5a13-68e5-4437-b5a2-66b46c42542a" /> | `#B877D9` | `rgb(184, 119, 217)` | Grid |
+
 ### Proxy t86 (20 Dec 2025)
 
 * **Performance Caching System**:
