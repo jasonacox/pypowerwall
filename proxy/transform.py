@@ -1,7 +1,13 @@
 import os
 import logging
 
-from bs4 import BeautifulSoup as Soup
+try:
+    from bs4 import BeautifulSoup as Soup
+except Exception:
+    # bs4 is an optional dependency for HTML injection used by the web UI.
+    # Provide a minimal fallback so tests can import the module when bs4
+    # is not installed. The fallback `inject_js` will be a no-op.
+    Soup = None
 
 logging.basicConfig(
     format="%(asctime)s [%(name)s] [%(levelname)s] %(message)s",
@@ -55,6 +61,10 @@ def get_static(web_root, fpath):
 
 
 def inject_js(htmlsrc, *args):
+    if Soup is None:
+        # BeautifulSoup not available; return HTML unchanged
+        return htmlsrc
+
     soup = Soup(htmlsrc, "html.parser")
 
     for fpath in args:

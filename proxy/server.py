@@ -892,19 +892,43 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json') -> str:
         global proxystats
-        response = json.dumps(data)
+        # Accept dict/list (serialize to JSON) or raw string
         try:
+            if isinstance(data, (dict, list)):
+                response = json.dumps(data)
+            elif data is None:
+                # JSON null
+                response = "null"
+            else:
+                response = str(data)
+
             self.send_response(status_code)
             self.send_header('Content-type', content_type)
             self.send_header('Content-Length', str(len(response)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            if self.wfile.write(response.encode(UTF_8)) > 0:
-                return response
+            # Some writable objects return None from write(); ignore the return value
+            self.wfile.write(response.encode(UTF_8))
+            return response
         except Exception as exc:
             log.debug(f"Error sending response: {exc}")
             proxystats["errors"] += 1
-        return response
+            return ""
+
+    def send_text_response(self, message: str, status_code=HTTPStatus.OK, content_type='text/plain; charset=utf-8') -> str:
+        """Helper to send plain-text responses."""
+        try:
+            response = str(message)
+            self.send_response(status_code)
+            self.send_header('Content-type', content_type)
+            self.send_header('Content-Length', str(len(response)))
+            self.end_headers()
+            self.wfile.write(response.encode(UTF_8))
+            return response
+        except Exception as exc:
+            log.debug(f"Error sending text response: {exc}")
+            proxystats["errors"] += 1
+            return ""
 
 
     def do_POST(self):
@@ -1102,7 +1126,10 @@ class Handler(BaseHTTPRequestHandler):
             return json.dumps(fcv)
 
         message = cached_route_handler("/freq", generate_freq)
-        return self.send_json_response(json.loads(message))
+        if not message:
+            return None
+        # Return parsed data (do_GET will perform the actual write)
+        return json.loads(message)
 
     # Map paths to handler functions
     GET_PATH_HANDLERS = {
@@ -1126,28 +1153,44 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # New path handling via function mapping. Intent is to migrate all paths to this method.
-        result: str = self.GET_PATH_HANDLERS[request_path](self)
+        result = self.GET_PATH_HANDLERS[request_path](self)
 
         API_PATHS = frozenset({"/aggregates", "/soe", "/vitals", "/strings"})
         def _is_api_endpoint(path: str) -> bool:
             return path.startswith("/api/") or path in API_PATHS
 
-        message = None
         global proxystats
         with proxystats_lock:
-            if not result:  # None or ""
+            if not result:
                 proxystats["timeout"] += 1
-                # JSON null for API endpoints
-                message = "null" if _is_api_endpoint(request_path) else "TIMEOUT!"
-            elif result == "ERROR!":
+                if _is_api_endpoint(request_path):
+                    # Send JSON null for API endpoints
+                    self.send_json_response(None)
+                else:
+                    self.send_text_response("TIMEOUT!")
+                return
+            if result == "ERROR!":
                 proxystats["errors"] += 1
-                message = "ERROR!"
-            else:
-                proxystats["gets"] += 1
-                proxystats["uri"][request_path] = proxystats["uri"].get(request_path, 0) + 1
+                self.send_text_response("ERROR!")
+                return
 
-        if message is not None:
-            result = self.send_json_response(json.loads(message))
+            proxystats["gets"] += 1
+            proxystats["uri"][request_path] = proxystats["uri"].get(request_path, 0) + 1
+
+        # Write the handler result. Handlers should return dict/list for JSON,
+        # but may return raw strings for non-JSON endpoints.
+        if isinstance(result, (dict, list)):
+            self.send_json_response(result)
+        elif isinstance(result, str):
+            # Try to parse JSON strings, otherwise treat as plain text
+            try:
+                parsed = json.loads(result)
+                self.send_json_response(parsed)
+            except Exception:
+                self.send_text_response(result)
+        else:
+            # Fallback: stringify
+            self.send_text_response(str(result))
 
 
     # Eventually the plan is to move everything in this "god" function
