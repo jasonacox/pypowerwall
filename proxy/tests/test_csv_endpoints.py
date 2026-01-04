@@ -118,7 +118,7 @@ class BaseDoGetTest(unittest.TestCase):
         result = self.get_written_json()
         self.assertIn(expected_key, result)
         self.assertEqual(result[expected_key], expected_value)
-        
+
     def do_get(self, path: str) -> str:
         """
         Run Handler.do_GET for a given path under the standard patches
@@ -211,7 +211,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
             mock_cache_write.assert_called_once()
             cache_key, cached_json = mock_cache_write.call_args[0]
             self.assertEqual(cache_key, "/aggregates")
-            
+
             cached_data = json.loads(cached_json)
             self.assertEqual(cached_data["solar"]["instant_power"], 0)  # Should be clamped to 0
             self.assertEqual(cached_data["load"]["instant_power"], 1800)  # Should be 1500 - (-300) = 1800
@@ -228,7 +228,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
             "solar": {"instant_power": 0},
             "load": {"instant_power": 1800}
         })
-        
+
         with patch('proxy.server.get_performance_cached', return_value=cached_processed_data):
             self.handler.path = "/aggregates"
             mock_pw.poll = Mock()
@@ -246,7 +246,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
             self.assertEqual(result["load"]["instant_power"], 1800)
 
     @common_patches
-    @patch('proxy.server.pw') 
+    @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', False)
     @patch('proxy.server.safe_endpoint_call')
     @patch('proxy.server.cache_performance_response')
@@ -258,7 +258,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
                 "expected": {"solar": {"instant_power": 0}, "load": {"instant_power": 900}}
             },
             {
-                "input": {"solar": {"instant_power": -750}, "load": {"instant_power": 2000}}, 
+                "input": {"solar": {"instant_power": -750}, "load": {"instant_power": 2000}},
                 "expected": {"solar": {"instant_power": 0}, "load": {"instant_power": 2750}}
             }
         ]
@@ -267,7 +267,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
             with self.subTest(scenario=i):
                 mock_cache_write.reset_mock()
                 mock_safe_call.reset_mock()
-                
+
                 with patch('proxy.server.get_performance_cached', return_value=None):
                     self.handler.path = "/aggregates"
                     mock_safe_call.return_value = scenario["input"]
@@ -278,13 +278,13 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
                     mock_cache_write.assert_called_once()
                     cache_key, cached_json = mock_cache_write.call_args[0]
                     cached_data = json.loads(cached_json)
-                    
-                    self.assertEqual(cached_data["solar"]["instant_power"], 
+
+                    self.assertEqual(cached_data["solar"]["instant_power"],
                                    scenario["expected"]["solar"]["instant_power"])
-                    self.assertEqual(cached_data["load"]["instant_power"], 
+                    self.assertEqual(cached_data["load"]["instant_power"],
                                    scenario["expected"]["load"]["instant_power"])
 
-    @common_patches  
+    @common_patches
     @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', True)  # Test with neg_solar ENABLED
     @patch('proxy.server.safe_endpoint_call')
@@ -305,7 +305,7 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
         mock_cache_write.assert_called_once()
         cache_key, cached_json = mock_cache_write.call_args[0]
         cached_data = json.loads(cached_json)
-        
+
         self.assertEqual(cached_data["solar"]["instant_power"], -200)  # Should preserve negative
         self.assertEqual(cached_data["load"]["instant_power"], 1000)   # Should remain unchanged
 
@@ -374,7 +374,7 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv"
             mock_pw.poll = Mock()
-            
+
             # Mock the aggregates call
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100.5},
@@ -382,12 +382,12 @@ class TestCSVEndpoints(BaseDoGetTest):
                 'battery': {'instant_power': -50.75},
                 'load': {'instant_power': 250.0}
             }
-            
+
             # Mock the level call
             mock_safe_pw_call.return_value = 45.5
-            
+
             self.handler.do_GET()
-            
+
             self.handler.send_response.assert_called_with(HTTPStatus.OK)
             result = self.get_written_text()
             self.assertEqual(result, "100.50,250.00,200.25,-50.75,45.50\n")
@@ -402,18 +402,18 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv?headers"
             mock_pw.poll = Mock()
-            
+
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100},
                 'solar': {'instant_power': 200},
                 'battery': {'instant_power': -50},
                 'load': {'instant_power': 250}
             }
-            
+
             mock_safe_pw_call.return_value = 45.5
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             self.assertIn("Grid,Home,Solar,Battery,BatteryLevel\n", result)
             self.assertIn("100.00,250.00,200.00,-50.00,45.50\n", result)
@@ -428,18 +428,18 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv"
             mock_pw.poll = Mock()
-            
+
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 123.456},
                 'solar': {'instant_power': 234.567},
                 'battery': {'instant_power': -345.678},
                 'load': {'instant_power': 456.789}
             }
-            
+
             mock_safe_pw_call.return_value = 67.89
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             self.assertEqual(result, "123.46,456.79,234.57,-345.68,67.89\n")
 
@@ -453,18 +453,18 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv"
             mock_pw.poll = Mock()
-            
+
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100},
                 'solar': {'instant_power': -50},
                 'battery': {'instant_power': 200},
                 'load': {'instant_power': 250}
             }
-            
+
             mock_safe_pw_call.return_value = 50.0
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             self.assertEqual(result, "100.00,250.00,-50.00,200.00,50.00\n")
 
@@ -478,18 +478,18 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv"
             mock_pw.poll = Mock()
-            
+
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100},
                 'solar': {'instant_power': -50},
                 'battery': {'instant_power': 200},
                 'load': {'instant_power': 250}
             }
-            
+
             mock_safe_pw_call.return_value = 50.0
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             # Solar should be clamped to 0, and load adjusted: 250 - (-50) = 300
             self.assertEqual(result, "100.00,300.00,0.00,200.00,50.00\n")
@@ -504,13 +504,13 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv"
             mock_pw.poll = Mock()
-            
+
             # Return None for aggregates (timeout/error case)
             mock_safe_endpoint_call.return_value = None
             mock_safe_pw_call.return_value = 0
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
 
@@ -524,17 +524,17 @@ class TestCSVEndpoints(BaseDoGetTest):
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/csv"
             mock_pw.poll = Mock()
-            
+
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 0},
                 'solar': {'instant_power': 0},
                 'battery': {'instant_power': 0},
                 'load': {'instant_power': 0}
             }
-            
+
             mock_safe_pw_call.return_value = 0
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
