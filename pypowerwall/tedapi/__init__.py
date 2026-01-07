@@ -198,7 +198,11 @@ class TEDAPI:
             return None
         # Firmware 25.42.2+ returns gzip-compressed DIN response
         content = decompress_response(r.content)
-        din = content.decode('utf-8').strip()
+        try:
+            din = content.decode('utf-8').strip()
+        except UnicodeDecodeError as e:
+            log.error(f"Error decoding DIN response: {e}")
+            return None
         log.debug(f"Connected: Powerwall Gateway DIN: {din}")
         self.pwcachetime["din"] = time.time()
         self.pwcache["din"] = din
