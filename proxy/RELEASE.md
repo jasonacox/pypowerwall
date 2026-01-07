@@ -1,5 +1,12 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t88 (6 Jan 2026)
+
+* Upgraded to pyPowerwall v0.14.6 with support for firmware 25.42.2+ gzip-compressed TEDAPI responses
+* Added gzip decompression support for Gateway firmware 25.42.2 and later
+* Improved error handling for UnicodeDecodeError in DIN decode operations
+* Maintains backward compatibility with older firmware versions
+
 ### Proxy t87 (29 Dec 2025)
 
 * Updated Proxy power flow animation to match Powerflow Dashboard color scheme.
