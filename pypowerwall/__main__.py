@@ -53,7 +53,7 @@ scan_args.add_argument("-hosts", type=int, default=hosts,
 set_mode_args = subparsers.add_parser("set", help='Set Powerwall Mode and Reserve Level')
 set_mode_args.add_argument("-mode", type=str, default=None,
                             help="Powerwall Mode: self_consumption, backup, or autonomous")
-set_mode_args.add_argument("-reserve", type=int, default=None,
+set_mode_args.add_argument("-reserve", type=int, default=-1,
                             help="Set Battery Reserve Level [Default=20]")
 set_mode_args.add_argument("-current", action="store_true", default=False,
                             help="Set Battery Reserve Level to Current Charge")
@@ -153,7 +153,7 @@ elif command == 'scan':
 # Set Powerwall Mode
 elif command == 'set':
     # If no arguments, print usage
-    if not args.mode and not args.reserve and not args.current and not args.gridcharging and not args.gridexport:
+    if not args.mode and args.reserve != -1 and not args.current and not args.gridcharging and not args.gridexport:
         print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current] [-gridcharging MODE] [-gridexport MODE]")
         sys.exit(1)
     import pypowerwall
@@ -170,7 +170,7 @@ elif command == 'set':
             sys.exit(1)
         print("Setting Powerwall Mode to %s" % mode)
         pw.set_mode(mode)
-    if args.reserve:
+    if args.reserve != -1:
         reserve = args.reserve
         print("Setting Powerwall Reserve to %s" % reserve)
         pw.set_reserve(reserve)
