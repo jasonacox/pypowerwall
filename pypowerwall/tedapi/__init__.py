@@ -44,6 +44,7 @@
  For more information see https://github.com/jasonacox/pypowerwall
 """
 
+import gzip
 import json
 import logging
 import math
@@ -108,6 +109,27 @@ def uses_api_lock(func):
         kwargs['self_function'] = func
         return func(*args, **kwargs)
     return wrapper
+
+def decompress_response(content: bytes) -> bytes:
+    """
+    Decompress gzip-compressed response content if needed.
+
+    Firmware 25.42.2+ returns gzip-compressed responses from TEDAPI endpoints.
+    This function checks for the gzip magic bytes (0x1f 0x8b) and decompresses
+    if necessary.
+
+    Args:
+        content: Raw response content bytes
+
+    Returns:
+        Decompressed bytes if gzip-compressed, otherwise original content
+    """
+    if len(content) > 2 and content[0:2] == b'\x1f\x8b':
+        try:
+            return gzip.decompress(content)
+        except Exception as e:
+            log.debug(f"Gzip decompression failed: {e}")
+    return content
 
 # TEDAPI Class
 class TEDAPI:
@@ -174,7 +196,13 @@ class TEDAPI:
         if r.status_code != HTTPStatus.OK:
             log.error(f"Error fetching DIN: {r.status_code}")
             return None
-        din = r.text
+        # Firmware 25.42.2+ returns gzip-compressed DIN response
+        content = decompress_response(r.content)
+        try:
+            din = content.decode('utf-8').strip()
+        except UnicodeDecodeError as e:
+            log.error(f"Error decoding DIN response: {e}")
+            return None
         log.debug(f"Connected: Powerwall Gateway DIN: {din}")
         self.pwcachetime["din"] = time.time()
         self.pwcache["din"] = din
@@ -269,7 +297,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 payload = tedapi.message.config.recv.file.text
                 try:
                     data = json.loads(payload)
@@ -385,7 +413,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 payload = tedapi.message.payload.recv.text
                 try:
                     data = json.loads(payload)
@@ -478,7 +506,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 payload = tedapi.message.payload.recv.text
                 log.debug(f"Payload: {payload}")
                 try:
@@ -557,7 +585,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 firmware_version = tedapi.message.firmware.system.version.text
                 if details:
                     payload = {
@@ -665,7 +693,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 payload = tedapi.message.payload.recv.text
                 log.debug(f"Payload (len={len(payload)}): {payload}")
                 # Append payload to components
@@ -773,7 +801,7 @@ class TEDAPI:
             if r.status_code == HTTPStatus.OK:
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 payload = tedapi.message.payload.recv.text
                 if payload:
                     data = json.loads(payload)
@@ -972,7 +1000,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(r.content)
+                tedapi.ParseFromString(decompress_response(r.content))
                 payload = tedapi.message.config.recv.file.text
                 try:
                     data = json.loads(payload)
