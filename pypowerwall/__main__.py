@@ -153,7 +153,7 @@ elif command == 'scan':
 # Set Powerwall Mode
 elif command == 'set':
     # If no arguments, print usage
-    if not args.mode and args.reserve != -1 and not args.current and not args.gridcharging and not args.gridexport:
+    if not args.mode and args.reserve == -1 and not args.current and not args.gridcharging and not args.gridexport:
         print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current] [-gridcharging MODE] [-gridexport MODE]")
         sys.exit(1)
     import pypowerwall
