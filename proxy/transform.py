@@ -3,7 +3,7 @@ import logging
 
 try:
     from bs4 import BeautifulSoup as Soup
-except Exception:
+except ImportError:
     # bs4 is an optional dependency for HTML injection used by the web UI.
     # Provide a minimal fallback so tests can import the module when bs4
     # is not installed. The fallback `inject_js` will be a no-op.
