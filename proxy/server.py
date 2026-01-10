@@ -1148,7 +1148,7 @@ class Handler(BaseHTTPRequestHandler):
             request_path = "/" + new_path
 
         # Old path handling for until migration to functions is complete.
-        if not request_path in self.GET_PATH_HANDLERS:
+        if request_path not in self.GET_PATH_HANDLERS:
             self._do_get_branches(request_path)
             return
 
