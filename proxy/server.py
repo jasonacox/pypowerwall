@@ -930,7 +930,6 @@ class Handler(BaseHTTPRequestHandler):
             proxystats["errors"] += 1
             return ""
 
-
     def do_POST(self):
         global proxystats
         contenttype = "application/json"
