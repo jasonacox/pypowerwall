@@ -123,7 +123,7 @@ from pypowerwall.tedapi.exceptions import (PyPowerwallTEDAPIInvalidPayload,
                                            PyPowerwallTEDAPINotImplemented,
                                            PyPowerwallTEDAPITeslaNotConnected)
 
-BUILD: Final[str] = "t87"
+BUILD: Final[str] = "t88"
 UTF_8: Final[str] = "utf-8"
 
 ALLOWLIST = [

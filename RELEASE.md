@@ -1,5 +1,21 @@
 # RELEASE NOTES
 
+## v0.14.7 - Reserve Level 0 Fix
+
+* Fix bug where `pypowerwall set` command could not set battery reserve level to 0 - Fix by @ParaAdBellum in https://github.com/jasonacox/pypowerwall/pull/252
+     * Changed default value for `-reserve` argument from `None` to `-1` (sentinel value)
+     * Updated conditional checks to compare against `-1` instead of using truthiness evaluation
+     * Previously, `not args.reserve` evaluated to `True` when reserve was set to 0, preventing the reserve from being set
+
+## v0.14.6 - Firmware 25.42.2+ Support
+
+* Add gzip decompression support for firmware 25.42.2+ TEDAPI responses - Fix by @bolagnaise in https://github.com/jasonacox/pypowerwall/pull/251
+     * Gateway firmware 25.42.2 and later returns gzip-compressed responses for DIN and other TEDAPI endpoints
+     * Added `decompress_response()` helper function to handle both compressed and uncompressed responses transparently
+     * Updated all TEDAPI methods (`get_din()`, `get_config()`, `get_status()`, `get_device_controller()`, `get_firmware_version()`, `get_components()`, `get_battery_block()`) to decompress responses
+     * Added error handling for UnicodeDecodeError in DIN decode operation to gracefully handle corrupted or invalid responses
+     * Maintains backward compatibility with older firmware versions that return uncompressed responses
+
 ## v0.14.5 - Performance Improvements
 
 * Performance Fixes and Improvements
