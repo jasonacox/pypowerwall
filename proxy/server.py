@@ -1584,7 +1584,7 @@ class Handler(BaseHTTPRequestHandler):
 
             message = cached_route_handler("/alerts/pw", generate_alerts_pw)
         elif request_path == "/freq":
-            # No longer handled here.
+            # Now handled by get_handle_freq in GET_PATH_HANDLERS
             return
         elif request_path == "/pod":
             # Powerwall Battery Data
