@@ -1,5 +1,12 @@
 # RELEASE NOTES
 
+## v0.14.7 - Reserve Level 0 Fix
+
+* Fix bug where `pypowerwall set` command could not set battery reserve level to 0 - Fix by @ParaAdBellum in https://github.com/jasonacox/pypowerwall/pull/252
+     * Changed default value for `-reserve` argument from `None` to `-1` (sentinel value)
+     * Updated conditional checks to compare against `-1` instead of using truthiness evaluation
+     * Previously, `not args.reserve` evaluated to `True` when reserve was set to 0, preventing the reserve from being set
+
 ## v0.14.6 - Firmware 25.42.2+ Support
 
 * Add gzip decompression support for firmware 25.42.2+ TEDAPI responses - Fix by @bolagnaise in https://github.com/jasonacox/pypowerwall/pull/251
