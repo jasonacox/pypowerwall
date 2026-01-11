@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PyPowerwall Server</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+            padding: 20px 0;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .connection-banner {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        
+        .connection-banner.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .connection-banner.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .connection-banner.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .card-title {
+            font-size: 0.9em;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+        }
+        
+        .card-value {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .card-unit {
+            font-size: 0.9em;
+            color: #999;
+        }
+        
+        .status-online {
+            color: #10b981;
+        }
+        
+        .status-offline {
+            color: #ef4444;
+        }
+        
+        .power-flow {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 30px;
+        }
+        
+        .flow-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 24px;
+        }
+        
+        .flow-item {
+            text-align: center;
+            padding: 20px;
+            min-width: 120px;
+        }
+        
+        .flow-icon {
+            font-size: 3em;
+            margin-bottom: 12px;
+        }
+        
+        .flow-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .flow-value {
+            font-size: 1.8em;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .gateways {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .gateway-item {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .gateway-item:last-child {
+            border-bottom: none;
+        }
+        
+        .gateway-info {
+            flex: 1;
+        }
+        
+        .gateway-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .gateway-host {
+            font-size: 0.85em;
+            color: #666;
+        }
+        
+        .gateway-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .status-dot.online {
+            background: #10b981;
+        }
+        
+        .status-dot.offline {
+            background: #ef4444;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .status-text {
+            font-size: 0.9em;
+        }
+        
+        .status-error {
+            font-size: 0.75em;
+            color: #ef4444;
+            margin-top: 2px;
+        }
+        
+        .loading {
+            text-align: center;
+            color: white;
+            padding: 40px;
+        }
+        
+        .footer {
+            text-align: center;
+            color: white;
+            opacity: 0.8;
+            padding: 20px 0;
+            margin-top: 40px;
+        }
+        
+        .footer a {
+            color: white;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>⚡ PyPowerwall Server</h1>
+            <div class="subtitle">Real-time Powerwall Monitoring</div>
+        </header>
+        
+        <div id="connection-banner" class="connection-banner">
+            <span id="banner-icon">⚠️</span>
+            <span id="banner-text">Connecting to gateways...</span>
+        </div>
+        
+        <div class="dashboard">
+            <div class="card">
+                <div class="card-title">Battery Level</div>
+                <div class="card-value" id="battery-level">--</div>
+                <div class="card-unit">%</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-title">Solar Power</div>
+                <div class="card-value" id="solar-power">--</div>
+                <div class="card-unit">kW</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-title">Battery Power</div>
+                <div class="card-value" id="battery-power">--</div>
+                <div class="card-unit">kW</div>
+            </div>
+            
+            <div class="card">
+                <div class="card-title">Grid Power</div>
+                <div class="card-value" id="grid-power">--</div>
+                <div class="card-unit">kW</div>
+            </div>
+        </div>
+        
+        <div class="power-flow">
+            <h2>Power Flow</h2>
+            <div class="flow-container">
+                <div class="flow-item">
+                    <div class="flow-icon">☀️</div>
+                    <div class="flow-label">Solar</div>
+                    <div class="flow-value" id="flow-solar">0 kW</div>
+                </div>
+                
+                <div class="flow-item">
+                    <div class="flow-icon">🔋</div>
+                    <div class="flow-label">Battery</div>
+                    <div class="flow-value" id="flow-battery">0 kW</div>
+                </div>
+                
+                <div class="flow-item">
+                    <div class="flow-icon">🏠</div>
+                    <div class="flow-label">Home</div>
+                    <div class="flow-value" id="flow-home">0 kW</div>
+                </div>
+                
+                <div class="flow-item">
+                    <div class="flow-icon">⚡</div>
+                    <div class="flow-label">Grid</div>
+                    <div class="flow-value" id="flow-grid">0 kW</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="gateways">
+            <h2>Connected Gateways</h2>
+            <div id="gateway-list">
+                <div class="loading">Loading gateways...</div>
+            </div>
+        </div>
+    </div>
+    
+    <footer class="footer">
+        <p>PyPowerwall Server v0.1.0 | <a href="/docs">API Docs</a></p>
+    </footer>
+    
+    <script>
+        // Historical data storage in browser (stateless server)
+        const HISTORY_KEY = 'pypowerwall_history';
+        const MAX_HISTORY_POINTS = 288; // 24 hours at 5-second intervals
+        let historyData = [];
+        
+        // Load history from localStorage
+        function loadHistory() {
+            try {
+                const stored = localStorage.getItem(HISTORY_KEY);
+                if (stored) {
+                    historyData = JSON.parse(stored);
+                    console.log(`Loaded ${historyData.length} historical data points from localStorage`);
+                }
+            } catch (e) {
+                console.error('Failed to load history:', e);
+                historyData = [];
+            }
+        }
+        
+        // Save history to localStorage
+        function saveHistory() {
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(historyData));
+            } catch (e) {
+                console.error('Failed to save history:', e);
+            }
+        }
+        
+        // Add data point to history
+        function addToHistory(data) {
+            const point = {
+                timestamp: data.timestamp || Date.now() / 1000,
+                battery_percent: data.total_battery_percent,
+                solar_power: data.total_solar_power,
+                battery_power: data.total_battery_power,
+                grid_power: data.total_grid_power,
+                load_power: data.total_load_power
+            };
+            
+            historyData.push(point);
+            
+            // Keep only last MAX_HISTORY_POINTS
+            if (historyData.length > MAX_HISTORY_POINTS) {
+                historyData = historyData.slice(-MAX_HISTORY_POINTS);
+            }
+            
+            saveHistory();
+        }
+        
+        // Clear history (useful for debugging)
+        function clearHistory() {
+            historyData = [];
+            localStorage.removeItem(HISTORY_KEY);
+            console.log('History cleared');
+        }
+        
+        // WebSocket connection for real-time updates
+        let ws = null;
+        
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/aggregate`;
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                updateDashboard(data);
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+        
+        function updateDashboard(data) {
+            // Update battery level
+            document.getElementById('battery-level').textContent = 
+                data.total_battery_percent ? data.total_battery_percent.toFixed(1) : '--';
+            
+            // Update power values (convert W to kW)
+            const solarKw = (data.total_solar_power / 1000).toFixed(2);
+            const batteryKw = (data.total_battery_power / 1000).toFixed(2);
+            const gridKw = (data.total_grid_power / 1000).toFixed(2);
+            const loadKw = (data.total_load_power / 1000).toFixed(2);
+            
+            document.getElementById('solar-power').textContent = solarKw;
+            document.getElementById('battery-power').textContent = batteryKw;
+            document.getElementById('grid-power').textContent = gridKw;
+            
+            // Update power flow
+            document.getElementById('flow-solar').textContent = `${solarKw} kW`;
+            document.getElementById('flow-battery').textContent = `${batteryKw} kW`;
+            document.getElementById('flow-home').textContent = `${loadKw} kW`;
+            document.getElementById('flow-grid').textContent = `${gridKw} kW`;
+            
+            // Update connection banner
+            updateConnectionBanner(data);
+            
+            // Update gateway list
+            if (data.gateways) {
+                updateGatewayList(data.gateways);
+            }
+            
+            // Store in browser history for graphs (server is stateless)
+            addToHistory(data);
+        }
+        
+        function updateGatewayList(gateways) {
+            const container = document.getElementById('gateway-list');
+            container.innerHTML = '';
+            
+            // Sort gateways by online status, then by name
+            const sortedIds = Object.keys(gateways).sort((a, b) => {
+                const statusA = gateways[a].online ? 0 : 1;
+                const statusB = gateways[b].online ? 0 : 1;
+                if (statusA !== statusB) return statusA - statusB;
+                return gateways[a].gateway.name.localeCompare(gateways[b].gateway.name);
+            });
+            
+            for (const id of sortedIds) {
+                const status = gateways[id];
+                
+                const item = document.createElement('div');
+                item.className = 'gateway-item';
+                
+                const info = document.createElement('div');
+                info.className = 'gateway-info';
+                
+                const name = document.createElement('div');
+                name.className = 'gateway-name';
+                name.textContent = status.gateway.name;
+                
+                const host = document.createElement('div');
+                host.className = 'gateway-host';
+                host.textContent = status.gateway.host || status.gateway.email || id;
+                
+                info.appendChild(name);
+                info.appendChild(host);
+                
+                // Show error message if offline
+                if (!status.online && status.error) {
+                    const error = document.createElement('div');
+                    error.className = 'status-error';
+                    error.textContent = `Error: ${status.error}`;
+                    info.appendChild(error);
+                }
+                
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'gateway-status';
+                
+                const dot = document.createElement('div');
+                dot.className = `status-dot ${status.online ? 'online' : 'offline'}`;
+                dot.title = status.online ? 'Connected' : 'Attempting to connect...';
+                
+                const text = document.createElement('span');
+                text.className = `status-text ${status.online ? 'status-online' : 'status-offline'}`;
+                text.textContent = status.online ? 'Connected' : 'Connecting...';
+                
+                // Show last update time
+                if (status.last_updated) {
+                    const lastUpdate = new Date(status.last_updated * 1000);
+                    const now = new Date();
+                    const secondsAgo = Math.floor((now - lastUpdate) / 1000);
+                    if (secondsAgo < 60 && status.online) {
+                        text.textContent = `Connected (${secondsAgo}s ago)`;
+                    }
+                }
+                
+                statusDiv.appendChild(dot);
+                statusDiv.appendChild(text);
+                
+                item.appendChild(info);
+                item.appendChild(statusDiv);
+                container.appendChild(item);
+            }
+            
+            // If no gateways, show message
+            if (Object.keys(gateways).length === 0) {
+                const message = document.createElement('div');
+                message.className = 'loading';
+                message.style.color = '#666';
+                message.textContent = 'No gateways configured';
+                container.appendChild(message);
+            }
+        }
+        
+        function updateConnectionBanner(data) {
+            const banner = document.getElementById('connection-banner');
+            const icon = document.getElementById('banner-icon');
+            const text = document.getElementById('banner-text');
+            
+            const totalGateways = data.num_gateways || 0;
+            const onlineGateways = data.num_online || 0;
+            
+            if (totalGateways === 0) {
+                banner.className = 'connection-banner error show';
+                icon.textContent = '❌';
+                text.textContent = 'No gateways configured';
+            } else if (onlineGateways === 0) {
+                banner.className = 'connection-banner error show';
+                icon.textContent = '🔄';
+                text.textContent = `Connecting to ${totalGateways} gateway${totalGateways > 1 ? 's' : ''}... (retrying every 5 seconds)`;
+            } else if (onlineGateways < totalGateways) {
+                banner.className = 'connection-banner show';
+                icon.textContent = '⚠️';
+                text.textContent = `${onlineGateways} of ${totalGateways} gateway${totalGateways > 1 ? 's' : ''} connected`;
+            } else {
+                // All online - hide banner after 3 seconds
+                banner.className = 'connection-banner success show';
+                icon.textContent = '✓';
+                text.textContent = `All ${totalGateways} gateway${totalGateways > 1 ? 's are' : ' is'} connected`;
+                setTimeout(() => {
+                    banner.classList.remove('show');
+                }, 3000);
+            }
+        }
+        
+        // Initial load via REST API
+        async function loadInitialData() {
+            try {
+                const response = await fetch('/api/aggregate/');
+                const data = await response.json();
+                updateDashboard(data);
+            } catch (error) {
+                console.error('Failed to load initial data:', error);
+            }
+        }
+        
+        // Fetch gateway list
+        async function loadGateways() {
+            try {
+                const response = await fetch('/api/gateways');
+                const data = await response.json();
+                if (data.gateways) {
+                    updateGatewayList(data.gateways);
+                }
+            } catch (error) {
+                console.error('Failed to load gateways:', error);
+            }
+        }
+        
+        // Start everything
+        loadHistory();  // Load historical data from localStorage
+        loadInitialData();
+        loadGateways();
+        connectWebSocket();
+        
+        // Debug helpers (accessible from browser console)
+        window.pypowerwall = {
+            history: historyData,
+            clearHistory: clearHistory,
+            getHistorySize: () => historyData.length,
+            getHistoryDuration: () => {
+                if (historyData.length < 2) return 0;
+                return (historyData[historyData.length - 1].timestamp - historyData[0].timestamp) / 3600;
+            }
+        };
+        
+        console.log('PyPowerwall Server UI loaded');
+        console.log('Historical data points:', historyData.length);
+        console.log('Debug: window.pypowerwall available for history inspection');
+    </script>
+</body>
+</html>
