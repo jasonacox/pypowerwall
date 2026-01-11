@@ -1,4 +1,34 @@
-"""Legacy proxy-compatible API endpoints."""
+"""
+Legacy Proxy-Compatible API Endpoints
+
+This router provides backward compatibility with the original pypowerwall proxy server.
+Routes are registered WITHOUT a prefix (included directly at root level in main.py).
+
+Key Routes:
+    - /aggregates, /api/meters/aggregates -> Power meter data
+    - /soe, /api/system_status/soe -> Battery state of energy
+    - /api/system_status/grid_status -> Grid connection status
+    - /csv, /csv/v2 -> CSV formatted data for Telegraf/InfluxDB
+    - /vitals -> Detailed system vitals
+    - /strings -> Solar string data
+    - /version -> Firmware version
+    - /stats -> Server statistics
+    - /api/networks, /api/system/networks -> Network configuration
+    - /api/powerwalls -> Powerwall device list
+    
+Control Routes (require authentication):
+    - POST /control/reserve -> Set battery reserve level
+    - POST /control/mode -> Set operation mode
+    - POST /control/grid_charging -> Enable/disable grid charging
+    - POST /control/grid_export -> Set grid export mode
+
+Design Notes:
+    - All routes return data from the DEFAULT gateway (first configured)
+    - Uses short timeouts (2-5s) to prevent hanging on network failures
+    - Fast-fails when gateway is offline (checks cached status first)
+    - Returns safe defaults (empty arrays/nulls) on errors to keep UI responsive
+    - Does NOT conflict with @app.get("/") in main.py (no "/" route here)
+"""
 from fastapi import APIRouter, HTTPException, Response, Header
 from typing import Optional
 
@@ -31,16 +61,11 @@ async def control_api(path: str, data: dict, authorization: Optional[str] = Head
     verify_control_token(authorization)
     
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        result = pw.post(f"/api/{path}", data)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Control operation failed: {str(e)}")
+    result = await gateway_manager.call_api(gateway_id, 'post', f"/api/{path}", data, timeout=10.0)
+    if result is None:
+        raise HTTPException(status_code=503, detail="Control operation failed or gateway not available")
+    return result
 
 
 def get_default_gateway():
@@ -186,17 +211,11 @@ async def get_csv_v2(headers: Optional[str] = None):
     level = status.data.soe or 0
     
     # Get grid status (1=UP, 0=DOWN)
-    try:
-        grid_status_str = pw.grid_status()
-        gridstatus = 1 if grid_status_str == "UP" else 0
-    except:
-        gridstatus = 0
+    grid_status_str = await gateway_manager.call_api(gateway_id, 'grid_status', timeout=2.0)
+    gridstatus = 1 if grid_status_str == "UP" else 0
     
     # Get reserve level
-    try:
-        reserve = pw.get_reserve() or 0
-    except:
-        reserve = 0
+    reserve = await gateway_manager.call_api(gateway_id, 'get_reserve', timeout=2.0) or 0
     
     # Build CSV response
     csv_data = ""
@@ -211,115 +230,72 @@ async def get_csv_v2(headers: Optional[str] = None):
 async def get_temps():
     """Get Powerwall temperatures (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        temps = pw.temps()
-        return temps or {}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get temperatures: {str(e)}")
+    temps = await gateway_manager.call_api(gateway_id, 'temps', timeout=3.0)
+    if temps is None:
+        raise HTTPException(status_code=503, detail="Failed to get temperatures")
+    return temps or {}
 
 
 @router.get("/temps/pw")
 async def get_temps_pw():
     """Get Powerwall temperatures with simple keys (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        temps = pw.temps()
-        pwtemp = {}
-        idx = 1
-        if temps:
-            for i in temps:
-                key = f"PW{idx}_temp"
-                pwtemp[key] = temps[i]
-                idx += 1
-        return pwtemp
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get temperatures: {str(e)}")
+    temps = await gateway_manager.call_api(gateway_id, 'temps', timeout=3.0)
+    pwtemp = {}
+    idx = 1
+    if temps:
+        for i in temps:
+            key = f"PW{idx}_temp"
+            pwtemp[key] = temps[i]
+            idx += 1
+    return pwtemp
 
 
 @router.get("/alerts")
 async def get_alerts():
     """Get Powerwall alerts (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        alerts = pw.alerts()
-        return alerts or []
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get alerts: {str(e)}")
+    alerts = await gateway_manager.call_api(gateway_id, 'alerts', timeout=3.0)
+    return alerts or []
 
 
 @router.get("/alerts/pw")
 async def get_alerts_pw():
     """Get Powerwall alerts in dictionary format (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        alerts = pw.alerts()
-        pwalerts = {}
-        if alerts:
-            for alert in alerts:
-                pwalerts[alert] = 1
-        return pwalerts
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get alerts: {str(e)}")
+    alerts = await gateway_manager.call_api(gateway_id, 'alerts', timeout=3.0)
+    pwalerts = {}
+    if alerts:
+        for alert in alerts:
+            pwalerts[alert] = 1
+    return pwalerts
 
 
 @router.get("/fans")
 async def get_fans():
     """Get fan speeds in raw format (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        if hasattr(pw, 'tedapi') and pw.tedapi:
-            return pw.tedapi.get_fan_speeds() or {}
-        return {}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get fan speeds: {str(e)}")
+    fans = await gateway_manager.call_tedapi(gateway_id, 'get_fan_speeds', timeout=3.0)
+    return fans or {}
 
 
 @router.get("/fans/pw")
 async def get_fans_pw():
     """Get fan speeds in simplified format (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        if hasattr(pw, 'tedapi') and pw.tedapi:
-            fans = {}
-            fan_speeds = pw.tedapi.get_fan_speeds() or {}
-            for i, (_, value) in enumerate(sorted(fan_speeds.items())):
-                key = f"FAN{i+1}"
-                fans[f"{key}_actual"] = value.get("PVAC_Fan_Speed_Actual_RPM")
-                fans[f"{key}_target"] = value.get("PVAC_Fan_Speed_Target_RPM")
-            return fans
-        return {}
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get fan speeds: {str(e)}")
+    fan_speeds = await gateway_manager.call_tedapi(gateway_id, 'get_fan_speeds', timeout=3.0) or {}
+    fans = {}
+    for i, (_, value) in enumerate(sorted(fan_speeds.items())):
+        key = f"FAN{i+1}"
+        fans[f"{key}_actual"] = value.get("PVAC_Fan_Speed_Actual_RPM")
+        fans[f"{key}_target"] = value.get("PVAC_Fan_Speed_Target_RPM")
+    return fans
 
 
 @router.get("/tedapi")
@@ -335,90 +311,55 @@ async def get_tedapi_info():
 async def get_tedapi_config():
     """Get TEDAPI config (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    if not hasattr(pw, 'tedapi') or not pw.tedapi:
-        return {"error": "TEDAPI not enabled"}
-    
-    try:
-        return pw.tedapi.get_config()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get TEDAPI config: {str(e)}")
+    config = await gateway_manager.call_tedapi(gateway_id, 'get_config', timeout=5.0)
+    if config is None:
+        return {"error": "TEDAPI not enabled or unavailable"}
+    return config
 
 
 @router.get("/tedapi/status")
 async def get_tedapi_status():
     """Get TEDAPI status (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    if not hasattr(pw, 'tedapi') or not pw.tedapi:
-        return {"error": "TEDAPI not enabled"}
-    
-    try:
-        return pw.tedapi.get_status()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get TEDAPI status: {str(e)}")
+    status = await gateway_manager.call_tedapi(gateway_id, 'get_status', timeout=5.0)
+    if status is None:
+        return {"error": "TEDAPI not enabled or unavailable"}
+    return status
 
 
 @router.get("/tedapi/components")
 async def get_tedapi_components():
     """Get TEDAPI components (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    if not hasattr(pw, 'tedapi') or not pw.tedapi:
-        return {"error": "TEDAPI not enabled"}
-    
-    try:
-        return pw.tedapi.get_components()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get TEDAPI components: {str(e)}")
+    components = await gateway_manager.call_tedapi(gateway_id, 'get_components', timeout=5.0)
+    if components is None:
+        return {"error": "TEDAPI not enabled or unavailable"}
+    return components
 
 
 @router.get("/tedapi/battery")
 async def get_tedapi_battery():
     """Get TEDAPI battery blocks (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    if not hasattr(pw, 'tedapi') or not pw.tedapi:
-        return {"error": "TEDAPI not enabled"}
-    
-    try:
-        return pw.tedapi.get_battery_blocks()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get TEDAPI battery: {str(e)}")
+    battery = await gateway_manager.call_tedapi(gateway_id, 'get_battery_blocks', timeout=5.0)
+    if battery is None:
+        return {"error": "TEDAPI not enabled or unavailable"}
+    return battery
 
 
 @router.get("/tedapi/controller")
 async def get_tedapi_controller():
     """Get TEDAPI device controller (legacy proxy endpoint)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    if not hasattr(pw, 'tedapi') or not pw.tedapi:
-        return {"error": "TEDAPI not enabled"}
-    
-    try:
-        return pw.tedapi.get_device_controller()
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Failed to get TEDAPI controller: {str(e)}")
+    controller = await gateway_manager.call_tedapi(gateway_id, 'get_device_controller', timeout=5.0)
+    if controller is None:
+        return {"error": "TEDAPI not enabled or unavailable"}
+    return controller
 
 
 @router.get("/pod")
@@ -435,7 +376,7 @@ async def get_pod():
         pod = {}
         
         # Get Individual Powerwall Battery Data from system_status
-        system_status = pw.system_status()
+        system_status = await gateway_manager.call_api(gateway_id, 'system_status', timeout=5.0)
         if system_status and "battery_blocks" in system_status:
             idx = 1
             for block in system_status["battery_blocks"]:
@@ -504,15 +445,8 @@ async def get_pod():
             pod["nominal_full_pack_energy"] = system_status.get("nominal_full_pack_energy")
             pod["nominal_energy_remaining"] = system_status.get("nominal_energy_remaining")
         
-        try:
-            pod["time_remaining_hours"] = pw.get_time_remaining()
-        except:
-            pod["time_remaining_hours"] = None
-        
-        try:
-            pod["backup_reserve_percent"] = pw.get_reserve()
-        except:
-            pod["backup_reserve_percent"] = None
+        pod["time_remaining_hours"] = await gateway_manager.call_api(gateway_id, 'get_time_remaining', timeout=3.0)
+        pod["backup_reserve_percent"] = await gateway_manager.call_api(gateway_id, 'get_reserve', timeout=3.0)
         
         return pod
     except Exception as e:
@@ -538,16 +472,11 @@ async def get_battery_power():
 async def proxy_api(path: str):
     """Proxy arbitrary API calls to default gateway (legacy)."""
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        result = pw.poll(f"/api/{path}")
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"API call failed: {str(e)}")
+    result = await gateway_manager.call_api(gateway_id, 'poll', f"/api/{path}", timeout=10.0)
+    if result is None:
+        raise HTTPException(status_code=503, detail="API call failed or gateway not available")
+    return result
 
 
 @router.get("/stats")
@@ -556,6 +485,7 @@ async def get_stats():
     import time
     import psutil
     import os
+    from datetime import datetime
     
     # Get process info
     process = psutil.Process(os.getpid())
@@ -565,17 +495,47 @@ async def get_stats():
     uptime_seconds = int(time.time() - create_time)
     uptime = str(__import__('datetime').timedelta(seconds=uptime_seconds))
     
+    # Count online/offline gateways
+    total_gateways = len(gateway_manager.gateways)
+    online_count = 0
+    gateway_statuses = []
+    
+    for gateway_id, gw in gateway_manager.gateways.items():
+        status = gateway_manager.get_gateway(gateway_id)
+        if status and status.online:
+            online_count += 1
+        
+        # Get backoff info from gateway_manager
+        failures = gateway_manager._consecutive_failures.get(gateway_id, 0)
+        next_poll = gateway_manager._next_poll_time.get(gateway_id, 0)
+        now = datetime.now().timestamp()
+        backoff_remaining = max(0, int(next_poll - now))
+        
+        gateway_statuses.append({
+            "id": gateway_id,
+            "name": gw.name,
+            "host": gw.host,
+            "online": status.online if status else False,
+            "last_error": status.error if status and status.error else None,
+            "last_updated": status.last_updated if status and status.last_updated else None,
+            "consecutive_failures": failures,
+            "backoff_seconds": backoff_remaining if failures > 0 else 0
+        })
+    
     # Build stats response
     stats = {
         "ts": int(time.time()),
         "uptime": uptime,
         "mem": process.memory_info().rss,
-        "gateways": len(gateway_manager.gateways),
+        "gateways": total_gateways,
+        "gateways_online": online_count,
+        "gateways_offline": total_gateways - online_count,
         "cloudmode": False,
         "fleetapi": False,
+        "gateway_statuses": gateway_statuses
     }
     
-    # Add gateway info
+    # Add default gateway info for backward compatibility
     if gateway_manager.gateways:
         gateway_id = list(gateway_manager.gateways.keys())[0]
         status = gateway_manager.get_gateway(gateway_id)
@@ -674,30 +634,19 @@ async def get_api_networks():
     if not status or not status.online:
         return []
     
-    pw = gateway_manager.get_connection(gateway_id)
-    if not pw:
-        return []
+    # Call through to gateway with short timeout using dedicated executor
+    result = await gateway_manager.call_api(gateway_id, 'poll', '/api/networks', timeout=2.0)
     
-    # Call through to gateway with short timeout to prevent hanging
-    loop = asyncio.get_event_loop()
-    try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: pw.poll("/api/networks")),
-            timeout=2.0  # Short timeout - this is not critical data
-        )
-        # Ensure we return an array
-        if result is None:
-            return []
-        if isinstance(result, str):
-            import json
-            result = json.loads(result)
-        if isinstance(result, list):
-            return result
-        # If it's a dict, wrap it in array
-        return [result] if result else []
-    except (asyncio.TimeoutError, Exception):
-        # Return empty array on timeout or error - app will handle gracefully
+    # Ensure we return an array
+    if result is None:
         return []
+    if isinstance(result, str):
+        import json
+        result = json.loads(result)
+    if isinstance(result, list):
+        return result
+    # If it's a dict, wrap it in array
+    return [result] if result else []
 
 
 @router.get("/api/powerwalls")
@@ -714,21 +663,15 @@ async def get_api_powerwalls():
     if not pw:
         return []
     
-    # Call through to gateway with short timeout
-    loop = asyncio.get_event_loop()
-    try:
-        result = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: pw.poll("/api/powerwalls")),
-            timeout=2.0  # Short timeout
-        )
-        if result is None:
-            return []
-        if isinstance(result, str):
-            import json
-            result = json.loads(result)
-        return result if result else []
-    except (asyncio.TimeoutError, Exception):
+    # Call through to gateway with short timeout using dedicated executor
+    result = await gateway_manager.call_api(gateway_id, 'poll', '/api/powerwalls', timeout=2.0)
+    
+    if result is None:
         return []
+    if isinstance(result, str):
+        import json
+        result = json.loads(result)
+    return result if result else []
 
 
 @router.post("/api/{path:path}")
@@ -745,13 +688,8 @@ async def proxy_api_post(path: str, data: dict):
         )
     
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        raise HTTPException(status_code=503, detail="Gateway not available")
-    
-    try:
-        result = pw.post(f"/api/{path}", data)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"API call failed: {str(e)}")
+    result = await gateway_manager.call_api(gateway_id, 'post', f"/api/{path}", data, timeout=10.0)
+    if result is None:
+        raise HTTPException(status_code=503, detail="API call failed or gateway not available")
+    return result

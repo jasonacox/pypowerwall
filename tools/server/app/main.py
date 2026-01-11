@@ -16,6 +16,41 @@ Standard Configuration (TEDAPI):
         python3 -m pypowerwall setup
         PW_EMAIL=tesla@email.com
         PW_AUTHPATH=/path/to/auth/files
+
+Routing Structure:
+    Routes are organized to avoid conflicts:
+    
+    1. Direct app routes (registered on main app):
+       - GET  /              -> Tesla Power Flow animation UI
+       - GET  /console       -> Management console UI
+       - GET  /example       -> iFrame demo page
+       - GET  /example.html  -> Same as /example
+       - GET  /favicon-*.png -> Favicon files
+    
+    2. Legacy proxy compatibility (no prefix):
+       - GET  /aggregates, /soe, /csv, /vitals, /strings, etc.
+       - GET  /version, /stats, /api/*, etc.
+       - POST /control/*     -> Control operations
+       
+    3. Multi-gateway API (prefix: /api/gateways):
+       - GET  /api/gateways/              -> List all gateways
+       - GET  /api/gateways/{id}          -> Get gateway status
+       - POST /api/gateways/{id}/control  -> Control operations
+       
+    4. Aggregate data API (prefix: /api/aggregate):
+       - GET  /api/aggregate/battery      -> Aggregated battery data
+       - GET  /api/aggregate/power        -> Aggregated power data
+       
+    5. WebSocket streaming (prefix: /ws):
+       - WS   /ws/gateway/{id}            -> Real-time gateway data
+       - WS   /ws/aggregate               -> Real-time aggregate data
+    
+    6. Static files:
+       - /static/*                        -> Static assets (CSS, JS, images)
+    
+    Note: FastAPI will raise an error at startup if routes conflict.
+    The @app.get("/") route does NOT conflict with router.get("/") 
+    because routers use prefixes or have no "/" route defined.
 """
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -25,13 +60,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from pathlib import Path
 
-from app.config import settings
+from app.config import settings, SERVER_VERSION
 from app.api import legacy, gateways, aggregates, websockets
 from app.core.gateway_manager import gateway_manager
 
-# Configure logging
+# Configure logging based on PW_DEBUG setting
+log_level = logging.DEBUG if settings.debug else logging.INFO
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -41,11 +77,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
     # Startup
-    logger.info("Starting PyPowerwall Server...")
-    logger.info(f"Server configuration: {settings.model_dump()}")
+    logger.info(f"Starting PyPowerwall Server v{SERVER_VERSION}...")
+    logger.info(f"Configured for {len(settings.gateways)} gateway(s)")
+    logger.info(f"Polling interval (PW_CACHE_EXPIRE): {settings.cache_expire}s")
+    logger.info(f"Timeout (PW_TIMEOUT): {settings.timeout}s")
+    logger.info(f"Server listening on {settings.server_host}:{settings.server_port}")
     
     # Initialize gateway manager
-    await gateway_manager.initialize(settings.gateways)
+    await gateway_manager.initialize(settings.gateways, poll_interval=settings.cache_expire)
     logger.info(f"Initialized {len(gateway_manager.gateways)} gateway(s)")
     
     for gateway_id, gateway in gateway_manager.gateways.items():
@@ -62,7 +101,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="PyPowerwall Server",
     description="Modern FastAPI server for Tesla Powerwall monitoring with multi-gateway support",
-    version="0.1.0",
+    version=SERVER_VERSION,
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
@@ -246,12 +285,55 @@ async def favicon(request: Request):
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with actual gateway status.
+    
+    Returns:
+        - healthy: All gateways online
+        - degraded: Some gateways online, some offline
+        - unhealthy: All gateways offline
+    """
+    total = len(gateway_manager.gateways)
+    
+    if total == 0:
+        return {
+            "status": "no_gateways",
+            "version": SERVER_VERSION,
+            "gateways": 0,
+            "gateway_ids": []
+        }
+    
+    # Count online gateways
+    online_count = 0
+    gateway_details = []
+    
+    for gateway_id in gateway_manager.gateways.keys():
+        status = gateway_manager.get_gateway(gateway_id)
+        is_online = status.online if status else False
+        if is_online:
+            online_count += 1
+        
+        gateway_details.append({
+            "id": gateway_id,
+            "online": is_online,
+            "error": status.error if status and status.error else None
+        })
+    
+    # Determine overall health
+    if online_count == total:
+        health_status = "healthy"
+    elif online_count > 0:
+        health_status = "degraded"
+    else:
+        health_status = "unhealthy"
+    
     return {
-        "status": "healthy",
-        "version": "0.1.0",
-        "gateways": len(gateway_manager.gateways),
-        "gateway_ids": list(gateway_manager.gateways.keys())
+        "status": health_status,
+        "version": SERVER_VERSION,
+        "gateways": total,
+        "gateways_online": online_count,
+        "gateways_offline": total - online_count,
+        "gateway_ids": list(gateway_manager.gateways.keys()),
+        "gateway_details": gateway_details
     }
 
 

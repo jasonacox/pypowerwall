@@ -1,8 +1,69 @@
-"""Gateway Manager - Manages connections to multiple Powerwall gateways."""
+"""
+Gateway Manager - Manages connections to multiple Powerwall gateways.
+
+This is the central hub of the server that manages all pypowerwall connections,
+performs background polling, caches data, and provides fast API responses.
+
+Architecture:
+    - Singleton pattern (single gateway_manager instance)
+    - Background polling task runs every PW_CACHE_EXPIRE seconds (default: 5s)
+    - Concurrent polling of all gateways using asyncio.gather
+    - Cached data for instant API responses without blocking
+    - Automatic reconnection on failure
+
+Connection Modes:
+    TEDAPI (Local Gateway):
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            gw_pwd="gateway_wifi_password",
+            timeout=3
+        )
+    
+    Cloud Mode:
+        pw = pypowerwall.Powerwall(
+            email="user@example.com",
+            authpath="/path/to/auth/files",
+            cloudmode=True
+        )
+    
+    FleetAPI:
+        pw = pypowerwall.Powerwall(
+            email="user@example.com",
+            authpath="/path/to/auth/files",
+            fleetapi=True
+        )
+
+Data Flow:
+    1. Background task calls _poll_gateway() for each gateway every N seconds
+    2. _poll_gateway() makes blocking pypowerwall calls in executor with timeouts
+    3. Results cached in self.cache[gateway_id] as GatewayStatus objects
+    4. API endpoints read from cache (instant response, no blocking)
+    5. Failed polls update gateway status to offline (automatic retry next cycle)
+
+Error Handling:
+    - Connection failures logged but don't crash server
+    - Timeouts on pypowerwall calls (3-10s depending on operation)
+    - Offline gateways excluded from aggregates
+    - Cached data remains available during outages
+    - Automatic reconnection every poll cycle
+
+Thread Safety:
+    - All operations use asyncio (no threads/locks needed)
+    - Single event loop handles all concurrency
+    - Background task coordinated via asyncio.create_task()
+    - Graceful shutdown via task cancellation
+
+Performance:
+    - Concurrent gateway polling for speed
+    - Short timeouts prevent blocking
+    - Cached responses for instant API access
+    - Minimal memory footprint (only latest data cached)
+"""
 import asyncio
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import pypowerwall
 from app.models.gateway import Gateway, GatewayStatus, PowerwallData, AggregateData
@@ -19,12 +80,45 @@ class GatewayManager:
         self.connections: Dict[str, pypowerwall.Powerwall] = {}
         self.cache: Dict[str, GatewayStatus] = {}
         self._poll_task: Optional[asyncio.Task] = None
-        self._poll_interval = 5  # seconds
+        self._poll_interval = 5  # Default, will be set from config during initialize()
+        
+        # Exponential backoff tracking per gateway
+        self._consecutive_failures: Dict[str, int] = {}  # Track failure count
+        self._next_poll_time: Dict[str, float] = {}  # Track when to poll next (Unix timestamp)
+        self._last_successful_data: Dict[str, PowerwallData] = {}  # Keep last good data for graceful degradation
+        self._pending_configs: Dict[str, GatewayConfig] = {}  # Gateways waiting for lazy initialization
+        
+        # Dedicated thread pool for blocking pypowerwall operations
+        # Will be sized during initialize() based on gateway count
+        self._executor: Optional[ThreadPoolExecutor] = None
     
-    async def initialize(self, gateway_configs: List[GatewayConfig]):
-        """Initialize gateway connections."""
+    async def initialize(self, gateway_configs: List[GatewayConfig], poll_interval: int = 5):
+        """Initialize gateway manager - non-blocking.
+        
+        This method sets up gateways for lazy initialization. Actual pypowerwall
+        connections are created during the first poll cycle to ensure the server
+        starts accepting connections immediately.
+        
+        Args:
+            gateway_configs: List of gateway configurations
+            poll_interval: Polling frequency in seconds (from PW_CACHE_EXPIRE, default: 5)
+        """
+        self._poll_interval = poll_interval
+        
+        # Size thread pool based on gateway count
+        # Formula: max(10, num_gateways * 3) to support concurrent API calls
+        num_gateways = len(gateway_configs)
+        pool_size = max(10, num_gateways * 3)
+        self._executor = ThreadPoolExecutor(max_workers=pool_size, thread_name_prefix="pypowerwall")
+        logger.info(f"Thread pool initialized with {pool_size} workers for {num_gateways} gateway(s)")
+        
         for config in gateway_configs:
             try:
+                # Validate configuration
+                if not ((config.cloud_mode and config.email) or (config.host and config.gw_pwd)):
+                    logger.error(f"Invalid configuration for gateway {config.id}: need host+gw_pwd or email+authpath")
+                    continue
+                
                 gateway = Gateway(
                     id=config.id,
                     name=config.name,
@@ -36,44 +130,28 @@ class GatewayManager:
                     fleetapi=config.fleetapi
                 )
                 
-                # Create pypowerwall connection
-                if config.cloud_mode and config.email:
-                    # Cloud mode - requires email and auth token files
-                    pw = pypowerwall.Powerwall(
-                        email=config.email,
-                        authpath=config.authpath,  # Path to .pypowerwall.auth/.site files
-                        cloudmode=True,
-                        fleetapi=config.fleetapi,
-                        timezone=config.timezone
-                    )
-                elif config.host and config.gw_pwd:
-                    # TEDAPI mode - local gateway access via 192.168.91.1
-                    pw = pypowerwall.Powerwall(
-                        host=config.host,
-                        gw_pwd=config.gw_pwd,  # Gateway Wi-Fi password for TEDAPI
-                        email=config.email,
-                        authpath=config.authpath,  # Optional: for cloud control operations
-                        timezone=config.timezone,
-                        timeout=3  # Short timeout to prevent blocking
-                    )
-                else:
-                    logger.error(f"Invalid configuration for gateway {config.id}: need host+gw_pwd or email+authpath")
-                    continue
-                
+                # Store gateway - connection will be created lazily on first poll
                 self.gateways[config.id] = gateway
-                self.connections[config.id] = pw
+                self._pending_configs[config.id] = config  # All start as pending
+                
                 self.cache[config.id] = GatewayStatus(
                     gateway=gateway,
-                    online=False
+                    online=False,
+                    error="Initializing..."
                 )
                 
-                logger.info(f"Initialized gateway: {config.id} ({config.name})")
+                # Initialize backoff tracking
+                self._consecutive_failures[config.id] = 0
+                self._next_poll_time[config.id] = 0  # Poll immediately
+                
+                logger.info(f"Registered gateway: {config.id} ({config.name}) - connection pending")
             except Exception as e:
                 logger.error(f"Failed to initialize gateway {config.id}: {e}")
         
         # Start polling task
         if self.gateways:
             self._poll_task = asyncio.create_task(self._poll_gateways())
+            logger.info(f"Gateway manager ready - {len(self.gateways)} gateway(s) will connect on first poll")
     
     async def shutdown(self):
         """Shutdown gateway manager and cleanup resources."""
@@ -84,6 +162,10 @@ class GatewayManager:
             except asyncio.CancelledError:
                 # Expected when cancelling the polling task during shutdown
                 pass
+        
+        # Shutdown thread pool executor
+        if self._executor:
+            self._executor.shutdown(wait=False)
         logger.info("Gateway manager shutdown complete")
     
     async def _poll_gateways(self):
@@ -105,21 +187,86 @@ class GatewayManager:
                 await asyncio.sleep(self._poll_interval)
     
     async def _poll_gateway(self, gateway_id: str):
-        """Poll a single gateway for data."""
+        """Poll a single gateway for data with exponential backoff on failures."""
         try:
-            pw = self.connections.get(gateway_id)
-            if not pw:
-                logger.warning(f"No connection object for gateway {gateway_id}")
+            # Check if we're in backoff period
+            now = datetime.now().timestamp()
+            next_poll = self._next_poll_time.get(gateway_id, 0)
+            
+            if now < next_poll:
+                # Skip this poll cycle - in backoff period
+                logger.debug(f"Gateway {gateway_id} in backoff, skipping poll (next poll at {next_poll - now:.0f}s)")
                 return
             
-            # Run blocking pypowerwall calls in executor with timeout protection
+            # Check for lazy initialization - create connection if pending
+            if gateway_id in self._pending_configs and gateway_id not in self.connections:
+                config = self._pending_configs[gateway_id]
+                logger.info(f"Attempting lazy initialization of gateway {gateway_id}")
+                
+                from app.config import settings
+                loop = asyncio.get_event_loop()
+                
+                try:
+                    if config.cloud_mode and config.email:
+                        cloud_kwargs = {
+                            "email": config.email,
+                            "cloudmode": True,
+                            "fleetapi": config.fleetapi,
+                            "timezone": config.timezone
+                        }
+                        if config.authpath:
+                            cloud_kwargs["authpath"] = config.authpath
+                        pw = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, lambda kw=cloud_kwargs: pypowerwall.Powerwall(**kw)),
+                            timeout=15.0
+                        )
+                    else:
+                        tedapi_kwargs = {
+                            "host": config.host,
+                            "gw_pwd": config.gw_pwd,
+                            "timezone": config.timezone,
+                            "timeout": settings.timeout,
+                            "poolmaxsize": settings.pool_maxsize,
+                        }
+                        if settings.pw_password:
+                            tedapi_kwargs["password"] = settings.pw_password
+                        if config.email:
+                            tedapi_kwargs["email"] = config.email
+                        if config.authpath:
+                            tedapi_kwargs["authpath"] = config.authpath
+                        if settings.cache_file:
+                            tedapi_kwargs["cachefile"] = settings.cache_file
+                        if settings.siteid:
+                            tedapi_kwargs["siteid"] = settings.siteid
+                        pw = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, lambda kw=tedapi_kwargs: pypowerwall.Powerwall(**kw)),
+                            timeout=15.0
+                        )
+                    
+                    self.connections[gateway_id] = pw
+                    del self._pending_configs[gateway_id]
+                    logger.info(f"Lazy initialization successful for gateway {gateway_id}")
+                    
+                except asyncio.TimeoutError:
+                    logger.warning(f"Lazy initialization timeout for gateway {gateway_id} - will retry next cycle")
+                    raise Exception("Connection initialization timeout")
+                except Exception as e:
+                    logger.warning(f"Lazy initialization failed for gateway {gateway_id}: {e}")
+                    raise
+            
+            pw = self.connections.get(gateway_id)
+            if not pw:
+                logger.debug(f"No connection object for gateway {gateway_id} - waiting for lazy init")
+                raise Exception("Connection not yet initialized")
+            
+            # Run blocking pypowerwall calls in dedicated executor with timeout protection
             loop = asyncio.get_event_loop()
             
             # Fetch core data - aggregates is required, vitals/strings are optional
             # Use asyncio.wait_for to timeout if pypowerwall hangs
             try:
                 aggregates = await asyncio.wait_for(
-                    loop.run_in_executor(None, pw.poll, '/api/meters/aggregates'),
+                    loop.run_in_executor(self._executor, pw.poll, '/api/meters/aggregates'),
                     timeout=10.0  # 10 second timeout
                 )
             except asyncio.TimeoutError:
@@ -137,7 +284,7 @@ class GatewayManager:
             # Try to get optional vitals and strings (don't fail if these aren't available)
             try:
                 data.vitals = await asyncio.wait_for(
-                    loop.run_in_executor(None, pw.vitals),
+                    loop.run_in_executor(self._executor, pw.vitals),
                     timeout=10.0
                 )
             except (asyncio.TimeoutError, Exception) as e:
@@ -145,7 +292,7 @@ class GatewayManager:
             
             try:
                 data.strings = await asyncio.wait_for(
-                    loop.run_in_executor(None, pw.strings),
+                    loop.run_in_executor(self._executor, pw.strings),
                     timeout=10.0
                 )
             except (asyncio.TimeoutError, Exception) as e:
@@ -153,10 +300,10 @@ class GatewayManager:
             
             # Try to get additional data
             try:
-                data.soe = await asyncio.wait_for(loop.run_in_executor(None, pw.level), timeout=5.0)
-                data.freq = await asyncio.wait_for(loop.run_in_executor(None, pw.freq), timeout=5.0)
-                data.status = await asyncio.wait_for(loop.run_in_executor(None, pw.status), timeout=5.0)
-                data.version = await asyncio.wait_for(loop.run_in_executor(None, pw.version), timeout=5.0)
+                data.soe = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.level), timeout=5.0)
+                data.freq = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.freq), timeout=5.0)
+                data.status = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.status), timeout=5.0)
+                data.version = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.version), timeout=5.0)
                 logger.debug(f"Gateway {gateway_id} aggregates: {data.aggregates}")
             except (asyncio.TimeoutError, Exception) as e:
                 logger.debug(f"Failed to fetch additional data for {gateway_id}: {e}")
@@ -169,8 +316,18 @@ class GatewayManager:
             gateway.online = True
             gateway.last_error = None
             
+            # Reset backoff on success
+            previous_failures = self._consecutive_failures.get(gateway_id, 0)
+            self._consecutive_failures[gateway_id] = 0
+            self._next_poll_time[gateway_id] = 0  # Poll normally next cycle
+            
+            # Store successful data for graceful degradation
+            self._last_successful_data[gateway_id] = data
+            
             if was_offline:
                 logger.info(f"Successfully connected to gateway {gateway_id} ({gateway.host})")
+                if previous_failures > 0:
+                    logger.debug(f"Exponential backoff reset for {gateway_id} after {previous_failures} failures")
             
             self.cache[gateway_id] = GatewayStatus(
                 gateway=gateway,
@@ -182,13 +339,28 @@ class GatewayManager:
         except Exception as e:
             gateway = self.gateways[gateway_id]
             
+            # Increment failure count and calculate exponential backoff
+            self._consecutive_failures[gateway_id] = self._consecutive_failures.get(gateway_id, 0) + 1
+            failure_count = self._consecutive_failures[gateway_id]
+            
+            # Exponential backoff: 5s, 10s, 30s, 60s, 120s (max 2 minutes)
+            backoff_intervals = [5, 10, 30, 60, 120]
+            backoff_index = min(failure_count - 1, len(backoff_intervals) - 1)
+            backoff_seconds = backoff_intervals[backoff_index]
+            
+            now = datetime.now().timestamp()
+            self._next_poll_time[gateway_id] = now + backoff_seconds
+            
+            logger.debug(f"Exponential backoff for {gateway_id}: failure #{failure_count}, waiting {backoff_seconds}s before retry")
+            
             # Log connection failures with full context
             if gateway.online:
                 # Just went offline
                 logger.error(f"Lost connection to gateway {gateway_id} ({gateway.host}): {e}")
+                logger.info(f"Will retry gateway {gateway_id} in {backoff_seconds}s (failure #{failure_count})")
             else:
                 # Still offline, attempting to reconnect
-                logger.warning(f"Unable to connect to gateway {gateway_id} ({gateway.host}): {e} - will retry in {self._poll_interval}s")
+                logger.warning(f"Unable to connect to gateway {gateway_id} ({gateway.host}): {e} - backoff {backoff_seconds}s (failure #{failure_count})")
             
             gateway.online = False
             gateway.last_error = str(e)
@@ -197,20 +369,178 @@ class GatewayManager:
                 gateway=gateway,
                 online=False,
                 error=str(e),
-                last_updated=datetime.now().timestamp()
+                last_updated=now
             )
     
     def get_gateway(self, gateway_id: str) -> Optional[GatewayStatus]:
-        """Get status for a specific gateway."""
-        return self.cache.get(gateway_id)
+        """Get status for a specific gateway with graceful degradation support.
+        
+        Graceful Degradation (PW_GRACEFUL_DEGRADATION=yes):
+            - If gateway is offline but went offline recently (within PW_CACHE_TTL seconds)
+            - Return cached data with last_updated timestamp
+            - After PW_CACHE_TTL expires, return status with data=None
+        
+        This allows UI to remain responsive during brief network outages while
+        indicating stale data, and eventually showing "offline" after extended downtime.
+        """
+        from app.config import settings
+        
+        status = self.cache.get(gateway_id)
+        if not status:
+            return None
+        
+        # If gateway is online, return current status
+        if status.online:
+            return status
+        
+        # Gateway is offline - check graceful degradation settings
+        if not settings.graceful_degradation:
+            # Graceful degradation disabled - return offline status with no data
+            logger.debug(f"Gateway {gateway_id} offline, graceful degradation disabled (PW_GRACEFUL_DEGRADATION=no)")
+            return status
+        
+        # Check if we have cached data that's still fresh
+        last_success_data = self._last_successful_data.get(gateway_id)
+        if not last_success_data or not last_success_data.timestamp:
+            # No cached data available
+            logger.debug(f"Gateway {gateway_id} offline, no cached data available for graceful degradation")
+            return status
+        
+        # Calculate age of cached data
+        now = datetime.now().timestamp()
+        data_age = now - last_success_data.timestamp
+        
+        # If cached data is within TTL, return it with offline status
+        if data_age <= settings.cache_ttl:
+            logger.debug(f"Graceful degradation active for {gateway_id}: serving stale data (age: {data_age:.0f}s / TTL: {settings.cache_ttl}s)")
+            return GatewayStatus(
+                gateway=status.gateway,
+                data=last_success_data,  # Return last good data
+                online=False,  # Still indicate gateway is offline
+                last_updated=last_success_data.timestamp,
+                error=status.error
+            )
+        
+        # Cached data too old - return offline status with no data
+        logger.debug(f"Graceful degradation expired for {gateway_id}: cached data too old (age: {data_age:.0f}s > TTL: {settings.cache_ttl}s), returning null")
+        return status
     
     def get_all_gateways(self) -> Dict[str, GatewayStatus]:
-        """Get status for all gateways."""
-        return self.cache.copy()
+        """Get status for all gateways with graceful degradation applied."""
+        result = {}
+        for gateway_id in self.gateways.keys():
+            status = self.get_gateway(gateway_id)  # Use get_gateway for graceful degradation
+            if status:
+                result[gateway_id] = status
+        return result
     
     def get_connection(self, gateway_id: str) -> Optional[pypowerwall.Powerwall]:
         """Get pypowerwall connection for a gateway."""
         return self.connections.get(gateway_id)
+    
+    async def call_api(self, gateway_id: str, method: str, *args, timeout: float = 5.0, fail_if_offline: bool = True, **kwargs):
+        """Safely call a pypowerwall API method with timeout protection.
+        
+        This wraps blocking pypowerwall calls in the dedicated executor to prevent
+        blocking the FastAPI event loop. All direct pypowerwall calls from API
+        endpoints should use this method.
+        
+        Fast-Fail Behavior:
+            By default, returns None immediately if gateway is offline (fail_if_offline=True).
+            This prevents wasting time on connections that will likely fail.
+            Set fail_if_offline=False for operations that should attempt connection
+            regardless of cached status (e.g., reconnection attempts).
+        
+        Args:
+            gateway_id: Gateway identifier
+            method: Method name to call on pypowerwall object (e.g., 'grid_status', 'get_reserve')
+            *args: Positional arguments to pass to method
+            timeout: Timeout in seconds (default: 5.0)
+            fail_if_offline: Return None immediately if gateway offline (default: True)
+            **kwargs: Keyword arguments to pass to method
+            
+        Returns:
+            Result of the pypowerwall method call, or None on error/timeout/offline
+            
+        Example:
+            grid_status = await gateway_manager.call_api('default', 'grid_status', timeout=3.0)
+            reserve = await gateway_manager.call_api('default', 'get_reserve')
+        """
+        # Fast-fail if gateway is offline
+        if fail_if_offline:
+            status = self.cache.get(gateway_id)
+            if status and not status.online:
+                logger.debug(f"[{gateway_id}] call_api({method}) fast-fail: gateway offline")
+                return None
+        
+        pw = self.connections.get(gateway_id)
+        if not pw:
+            logger.warning(f"[{gateway_id}] call_api({method}): no connection object")
+            return None
+        
+        try:
+            method_func = getattr(pw, method)
+            loop = asyncio.get_event_loop()
+            logger.debug(f"[{gateway_id}] call_api({method}) starting (timeout={timeout}s)")
+            result = await asyncio.wait_for(
+                loop.run_in_executor(self._executor, lambda: method_func(*args, **kwargs)),
+                timeout=timeout
+            )
+            logger.debug(f"[{gateway_id}] call_api({method}) completed successfully")
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"[{gateway_id}] call_api({method}) timeout after {timeout}s")
+            return None
+        except AttributeError:
+            logger.error(f"[{gateway_id}] call_api({method}): method not found")
+            return None
+        except Exception as e:
+            logger.warning(f"[{gateway_id}] call_api({method}) error: {e}")
+            return None
+    
+    async def call_tedapi(self, gateway_id: str, method: str, *args, timeout: float = 5.0, fail_if_offline: bool = True, **kwargs):
+        """Safely call a TEDAPI method with timeout protection.
+        
+        Args:
+            gateway_id: Gateway identifier
+            method: Method name to call on tedapi object (e.g., 'get_config', 'get_status')
+            timeout: Timeout in seconds (default: 5.0)
+            fail_if_offline: Return None immediately if gateway offline (default: True)
+            
+        Returns:
+            Result of the TEDAPI method call, or None if TEDAPI not available/offline
+        """
+        # Fast-fail if gateway is offline
+        if fail_if_offline:
+            status = self.cache.get(gateway_id)
+            if status and not status.online:
+                logger.debug(f"[{gateway_id}] call_tedapi({method}) fast-fail: gateway offline")
+                return None
+        
+        pw = self.connections.get(gateway_id)
+        if not pw or not hasattr(pw, 'tedapi') or not pw.tedapi:
+            logger.debug(f"[{gateway_id}] call_tedapi({method}): TEDAPI not available")
+            return None
+        
+        try:
+            method_func = getattr(pw.tedapi, method)
+            loop = asyncio.get_event_loop()
+            logger.debug(f"[{gateway_id}] call_tedapi({method}) starting (timeout={timeout}s)")
+            result = await asyncio.wait_for(
+                loop.run_in_executor(self._executor, lambda: method_func(*args, **kwargs)),
+                timeout=timeout
+            )
+            logger.debug(f"[{gateway_id}] call_tedapi({method}) completed successfully")
+            return result
+        except asyncio.TimeoutError:
+            logger.warning(f"[{gateway_id}] call_tedapi({method}) timeout after {timeout}s")
+            return None
+        except AttributeError:
+            logger.error(f"[{gateway_id}] call_tedapi({method}): method not found")
+            return None
+        except Exception as e:
+            logger.warning(f"[{gateway_id}] call_tedapi({method}) error: {e}")
+            return None
     
     def get_aggregate_data(self) -> AggregateData:
         """Get aggregated data from all gateways.

@@ -1,4 +1,20 @@
-"""Multi-gateway API endpoints."""
+"""
+Multi-Gateway Management API
+
+REST API for managing multiple Powerwall gateways and querying per-gateway data.
+All routes are prefixed with /api/gateways (configured in main.py).
+
+Routes:
+    - GET  /api/gateways/              -> List all configured gateways
+    - GET  /api/gateways/{id}          -> Get specific gateway status
+    - POST /api/gateways/{id}/control  -> Control operations for specific gateway
+    
+Design Notes:
+    - Router prefix prevents conflicts with legacy routes
+    - The @router.get("/") here becomes /api/gateways/ (NOT root /)
+    - Each gateway can be queried independently
+    - Control operations support per-gateway targeting
+"""
 from fastapi import APIRouter, HTTPException
 from typing import Dict
 
