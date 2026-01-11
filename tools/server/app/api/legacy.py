@@ -29,18 +29,27 @@ Design Notes:
     - Returns safe defaults (empty arrays/nulls) on errors to keep UI responsive
     - Does NOT conflict with @app.get("/") in main.py (no "/" route here)
 """
+import json
+import logging
+import os
+import time
+from datetime import datetime, timedelta
+
+import psutil
 from fastapi import APIRouter, HTTPException, Response, Header
 from typing import Optional
 
 from app.core.gateway_manager import gateway_manager
 from app.config import settings
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 def verify_control_token(authorization: Optional[str] = Header(None)):
     """Verify control token for authenticated operations."""
-    if not settings.control_enabled or not settings.control_token:
+    if not settings.control_enabled or not settings.control_secret:
         raise HTTPException(status_code=403, detail="Control features not enabled")
     
     if not authorization:
@@ -49,7 +58,7 @@ def verify_control_token(authorization: Optional[str] = Header(None)):
     # Support both "Bearer token" and plain token
     token = authorization.replace("Bearer ", "") if authorization.startswith("Bearer ") else authorization
     
-    if token != settings.control_token:
+    if token != settings.control_secret:
         raise HTTPException(status_code=401, detail="Invalid control token")
     
     return True
@@ -482,18 +491,13 @@ async def proxy_api(path: str):
 @router.get("/stats")
 async def get_stats():
     """Get proxy statistics (legacy proxy endpoint)."""
-    import time
-    import psutil
-    import os
-    from datetime import datetime
-    
     # Get process info
     process = psutil.Process(os.getpid())
     
     # Calculate uptime
     create_time = process.create_time()
     uptime_seconds = int(time.time() - create_time)
-    uptime = str(__import__('datetime').timedelta(seconds=uptime_seconds))
+    uptime = str(timedelta(seconds=uptime_seconds))
     
     # Count online/offline gateways
     total_gateways = len(gateway_manager.gateways)
@@ -548,50 +552,36 @@ async def get_stats():
 @router.get("/version")
 async def get_version():
     """Get firmware version (legacy proxy endpoint)."""
-    import asyncio
-    
     gateway_id = get_default_gateway()
-    pw = gateway_manager.get_connection(gateway_id)
     
-    if not pw:
-        return {
-            "version": "Unknown",
-            "vint": 0
-        }
+    # Use call_api for non-blocking execution
+    version = await gateway_manager.call_api(gateway_id, 'version', timeout=5.0)
     
-    # Call pw.version() in executor to avoid blocking
-    loop = asyncio.get_event_loop()
-    try:
-        version = await asyncio.wait_for(
-            loop.run_in_executor(None, pw.version),
-            timeout=5.0
-        )
-        
-        if version is None:
+    if version is None:
+        # Check if we have cached version data
+        status = gateway_manager.get_gateway(gateway_id)
+        if status and status.data and status.data.version:
+            version = status.data.version
+        else:
             return {
-                "version": "SolarOnly",
+                "version": "Unknown",
                 "vint": 0
             }
-        
-        # Parse version string to integer (basic implementation)
-        vint = 0
-        try:
-            # Extract numbers from version string like "23.44.0"
-            parts = version.split('.')
-            if len(parts) >= 2:
-                vint = int(parts[0]) * 100 + int(parts[1])
-        except:
-            pass
-        
-        return {
-            "version": version,
-            "vint": vint
-        }
-    except:
-        return {
-            "version": "Unknown",
-            "vint": 0
-        }
+    
+    # Parse version string to integer (basic implementation)
+    vint = 0
+    try:
+        # Extract numbers from version string like "23.44.0"
+        parts = version.split('.')
+        if len(parts) >= 2:
+            vint = int(parts[0]) * 100 + int(parts[1])
+    except Exception:
+        pass
+    
+    return {
+        "version": version,
+        "vint": vint
+    }
 
 
 @router.get("/api/system_status/soe")

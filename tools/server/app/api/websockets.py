@@ -127,7 +127,7 @@ async def websocket_aggregate(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error (aggregate): {type(e).__name__}: {e}")
         manager.disconnect(websocket)
 
 
@@ -147,7 +147,7 @@ async def websocket_gateway(websocket: WebSocket, gateway_id: str):
         
     Returns error message if gateway_id is not found or goes offline.
     """
-    await websocket.accept()
+    await manager.connect(websocket)
     try:
         while True:
             status = gateway_manager.get_gateway(gateway_id)
@@ -157,7 +157,7 @@ async def websocket_gateway(websocket: WebSocket, gateway_id: str):
                 await websocket.send_json({"error": "Gateway not found"})
             await asyncio.sleep(1)
     except WebSocketDisconnect:
-        # Normal client disconnect - no action needed
-        pass
+        manager.disconnect(websocket)
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error (gateway={gateway_id}): {type(e).__name__}: {e}")
+        manager.disconnect(websocket)

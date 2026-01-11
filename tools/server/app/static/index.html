@@ -412,26 +412,61 @@
             };
         }
         
+        function formatPowerWithArrow(valueKw, type) {
+            // type: 'battery' or 'grid'
+            // Battery: positive = discharging (arrow down, power leaving), negative = charging (arrow up, power entering)
+            // Grid: positive = importing (arrow down from grid), negative = exporting (arrow up to grid)
+            const absValue = Math.abs(valueKw).toFixed(2);
+            let arrow = '';
+            let title = '';
+            
+            if (type === 'battery') {
+                if (valueKw > 0.01) {
+                    arrow = ' ↓';  // Discharging - power flowing out of battery
+                    title = 'Discharging';
+                } else if (valueKw < -0.01) {
+                    arrow = ' ↑';  // Charging - power flowing into battery
+                    title = 'Charging';
+                }
+            } else if (type === 'grid') {
+                if (valueKw > 0.01) {
+                    arrow = ' ↓';  // Importing from grid
+                    title = 'Importing';
+                } else if (valueKw < -0.01) {
+                    arrow = ' ↑';  // Exporting to grid
+                    title = 'Exporting';
+                }
+            }
+            
+            return { text: `${absValue}${arrow}`, title: title };
+        }
+        
         function updateDashboard(data) {
             // Update battery level
             document.getElementById('battery-level').textContent = 
                 data.total_battery_percent ? data.total_battery_percent.toFixed(1) : '--';
             
             // Update power values (convert W to kW)
-            const solarKw = (data.total_solar_power / 1000).toFixed(2);
-            const batteryKw = (data.total_battery_power / 1000).toFixed(2);
-            const gridKw = (data.total_grid_power / 1000).toFixed(2);
-            const loadKw = (data.total_load_power / 1000).toFixed(2);
+            const solarKw = (data.total_solar_power / 1000);
+            const batteryKw = (data.total_battery_power / 1000);
+            const gridKw = (data.total_grid_power / 1000);
+            const loadKw = (data.total_load_power / 1000);
             
-            document.getElementById('solar-power').textContent = solarKw;
-            document.getElementById('battery-power').textContent = batteryKw;
-            document.getElementById('grid-power').textContent = gridKw;
+            // Format with arrows
+            const batteryFormatted = formatPowerWithArrow(batteryKw, 'battery');
+            const gridFormatted = formatPowerWithArrow(gridKw, 'grid');
             
-            // Update power flow
-            document.getElementById('flow-solar').textContent = `${solarKw} kW`;
-            document.getElementById('flow-battery').textContent = `${batteryKw} kW`;
-            document.getElementById('flow-home').textContent = `${loadKw} kW`;
-            document.getElementById('flow-grid').textContent = `${gridKw} kW`;
+            document.getElementById('solar-power').textContent = solarKw.toFixed(2);
+            document.getElementById('battery-power').textContent = batteryFormatted.text;
+            document.getElementById('grid-power').textContent = gridFormatted.text;
+            
+            // Update power flow with arrows
+            document.getElementById('flow-solar').textContent = `${solarKw.toFixed(2)} kW`;
+            document.getElementById('flow-battery').textContent = `${batteryFormatted.text} kW`;
+            document.getElementById('flow-battery').title = batteryFormatted.title;
+            document.getElementById('flow-home').textContent = `${loadKw.toFixed(2)} kW`;
+            document.getElementById('flow-grid').textContent = `${gridFormatted.text} kW`;
+            document.getElementById('flow-grid').title = gridFormatted.title;
             
             // Update connection banner
             updateConnectionBanner(data);
@@ -472,7 +507,17 @@
                 
                 const host = document.createElement('div');
                 host.className = 'gateway-host';
-                host.textContent = status.gateway.host || status.gateway.email || id;
+                
+                // Show appropriate info based on mode
+                if (status.gateway.cloud_mode || status.gateway.fleetapi) {
+                    // Cloud/FleetAPI mode - show mode and site_id if available
+                    const modeLabel = status.gateway.fleetapi ? 'FleetAPI' : 'Cloud Mode';
+                    const siteInfo = status.gateway.site_id || status.gateway.email || id;
+                    host.textContent = `${modeLabel}: ${siteInfo}`;
+                } else {
+                    // TEDAPI mode - show host
+                    host.textContent = status.gateway.host || id;
+                }
                 
                 info.appendChild(name);
                 info.appendChild(host);

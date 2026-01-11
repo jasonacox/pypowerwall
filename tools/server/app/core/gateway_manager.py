@@ -61,7 +61,7 @@ Performance:
 """
 import asyncio
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -115,9 +115,18 @@ class GatewayManager:
         for config in gateway_configs:
             try:
                 # Validate configuration
-                if not ((config.cloud_mode and config.email) or (config.host and config.gw_pwd)):
-                    logger.error(f"Invalid configuration for gateway {config.id}: need host+gw_pwd or email+authpath")
+                # TEDAPI mode: need host + gw_pwd
+                # Cloud mode: need email (authpath is optional, pypowerwall has defaults)
+                has_tedapi = config.host and config.gw_pwd
+                has_cloud = config.email  # cloud_mode is auto-set, email is sufficient
+                
+                if not (has_tedapi or has_cloud):
+                    logger.error(f"Invalid configuration for gateway {config.id}: need host+gw_pwd (TEDAPI) or email (Cloud)")
                     continue
+                
+                # Auto-enable cloud_mode if email is set but no host
+                if config.email and not config.host:
+                    config.cloud_mode = True
                 
                 gateway = Gateway(
                     id=config.id,
@@ -144,7 +153,15 @@ class GatewayManager:
                 self._consecutive_failures[config.id] = 0
                 self._next_poll_time[config.id] = 0  # Poll immediately
                 
-                logger.info(f"Registered gateway: {config.id} ({config.name}) - connection pending")
+                # Determine and log connection mode
+                if config.fleetapi:
+                    mode = "FleetAPI"
+                elif config.cloud_mode:
+                    mode = "Cloud"
+                else:
+                    mode = "TEDAPI"
+                
+                logger.info(f"Registered gateway: {config.id} ({config.name}) - {mode} mode - connection pending")
             except Exception as e:
                 logger.error(f"Failed to initialize gateway {config.id}: {e}")
         
@@ -186,7 +203,7 @@ class GatewayManager:
                 logger.error(f"Error in polling task: {e}")
                 await asyncio.sleep(self._poll_interval)
     
-    async def _poll_gateway(self, gateway_id: str):
+    async def _poll_gateway(self, gateway_id: str) -> None:
         """Poll a single gateway for data with exponential backoff on failures."""
         try:
             # Check if we're in backoff period
@@ -204,7 +221,7 @@ class GatewayManager:
                 logger.info(f"Attempting lazy initialization of gateway {gateway_id}")
                 
                 from app.config import settings
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 
                 try:
                     if config.cloud_mode and config.email:
@@ -245,7 +262,23 @@ class GatewayManager:
                     
                     self.connections[gateway_id] = pw
                     del self._pending_configs[gateway_id]
-                    logger.info(f"Lazy initialization successful for gateway {gateway_id}")
+                    
+                    # Try to get site_id for cloud mode gateways
+                    gateway = self.gateways[gateway_id]
+                    mode_label = "FleetAPI" if gateway.fleetapi else ("Cloud" if gateway.cloud_mode else "TEDAPI")
+                    
+                    if gateway.cloud_mode or gateway.fleetapi:
+                        try:
+                            site_id = getattr(pw, 'siteid', None) or getattr(pw, 'site_id', None)
+                            if site_id:
+                                gateway.site_id = str(site_id)
+                                logger.info(f"Connected to gateway {gateway_id} - {mode_label} mode (Site ID: {site_id}, Email: {gateway.email})")
+                            else:
+                                logger.info(f"Connected to gateway {gateway_id} - {mode_label} mode (Email: {gateway.email})")
+                        except Exception:
+                            logger.info(f"Connected to gateway {gateway_id} - {mode_label} mode")
+                    else:
+                        logger.info(f"Connected to gateway {gateway_id} - {mode_label} mode ({gateway.host})")
                     
                 except asyncio.TimeoutError:
                     logger.warning(f"Lazy initialization timeout for gateway {gateway_id} - will retry next cycle")
@@ -260,7 +293,7 @@ class GatewayManager:
                 raise Exception("Connection not yet initialized")
             
             # Run blocking pypowerwall calls in dedicated executor with timeout protection
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             
             # Fetch core data - aggregates is required, vitals/strings are optional
             # Use asyncio.wait_for to timeout if pypowerwall hangs
@@ -438,7 +471,7 @@ class GatewayManager:
         """Get pypowerwall connection for a gateway."""
         return self.connections.get(gateway_id)
     
-    async def call_api(self, gateway_id: str, method: str, *args, timeout: float = 5.0, fail_if_offline: bool = True, **kwargs):
+    async def call_api(self, gateway_id: str, method: str, *args, timeout: float = 5.0, fail_if_offline: bool = True, **kwargs) -> Optional[Any]:
         """Safely call a pypowerwall API method with timeout protection.
         
         This wraps blocking pypowerwall calls in the dedicated executor to prevent
@@ -480,7 +513,7 @@ class GatewayManager:
         
         try:
             method_func = getattr(pw, method)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             logger.debug(f"[{gateway_id}] call_api({method}) starting (timeout={timeout}s)")
             result = await asyncio.wait_for(
                 loop.run_in_executor(self._executor, lambda: method_func(*args, **kwargs)),
@@ -498,7 +531,7 @@ class GatewayManager:
             logger.warning(f"[{gateway_id}] call_api({method}) error: {e}")
             return None
     
-    async def call_tedapi(self, gateway_id: str, method: str, *args, timeout: float = 5.0, fail_if_offline: bool = True, **kwargs):
+    async def call_tedapi(self, gateway_id: str, method: str, *args, timeout: float = 5.0, fail_if_offline: bool = True, **kwargs) -> Optional[Any]:
         """Safely call a TEDAPI method with timeout protection.
         
         Args:
@@ -524,7 +557,7 @@ class GatewayManager:
         
         try:
             method_func = getattr(pw.tedapi, method)
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             logger.debug(f"[{gateway_id}] call_tedapi({method}) starting (timeout={timeout}s)")
             result = await asyncio.wait_for(
                 loop.run_in_executor(self._executor, lambda: method_func(*args, **kwargs)),
@@ -603,9 +636,9 @@ class GatewayManager:
         if aggregate.num_online > 0:
             aggregate.total_battery_percent /= aggregate.num_online
         
-        # Calculate grid power (site - solar)
-        # This represents net import/export from grid
-        aggregate.total_grid_power = aggregate.total_site_power - aggregate.total_solar_power
+        # Grid power is the site power (positive = importing, negative = exporting)
+        # The "site" meter in aggregates measures grid interaction directly
+        aggregate.total_grid_power = aggregate.total_site_power
         
         return aggregate
 

@@ -41,6 +41,7 @@ class Gateway(BaseModel):
     host: Optional[str] = None
     gw_pwd: Optional[str] = None  # Gateway Wi-Fi password for TEDAPI
     email: Optional[str] = None
+    site_id: Optional[str] = None  # Tesla Site ID (populated after connection)
     timezone: str = "America/Los_Angeles"
     cloud_mode: bool = False
     fleetapi: bool = False

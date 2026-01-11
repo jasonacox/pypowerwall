@@ -163,10 +163,13 @@ Accessing Configuration:
         pass
 """
 import json
+import logging
 import os
 from typing import List, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger(__name__)
 
 # Server version
 SERVER_VERSION = "0.1.0"
@@ -262,7 +265,7 @@ class Settings(BaseSettings):
                 self.gateways = [GatewayConfig(**gw) for gw in gateways_data]
                 return
             except Exception as e:
-                print(f"Error parsing PW_GATEWAYS: {e}")
+                logger.error(f"Error parsing PW_GATEWAYS: {e}")
         
         # Fall back to single gateway mode (legacy compatibility)
         if self.pw_host or self.pw_email:

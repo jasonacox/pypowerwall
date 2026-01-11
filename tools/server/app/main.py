@@ -52,17 +52,20 @@ Routing Structure:
     The @app.get("/") route does NOT conflict with router.get("/") 
     because routers use prefixes or have no "/" route defined.
 """
+import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-import logging
-from pathlib import Path
 
 from app.config import settings, SERVER_VERSION
 from app.api import legacy, gateways, aggregates, websockets
 from app.core.gateway_manager import gateway_manager
+from app.utils.transform import get_static, inject_js
 
 # Configure logging based on PW_DEBUG setting
 log_level = logging.DEBUG if settings.debug else logging.INFO
@@ -88,7 +91,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"Initialized {len(gateway_manager.gateways)} gateway(s)")
     
     for gateway_id, gateway in gateway_manager.gateways.items():
-        logger.info(f"  - {gateway_id}: {gateway.name} ({gateway.host})")
+        # Show appropriate connection info based on mode
+        if gateway.fleetapi:
+            mode_info = f"FleetAPI: {gateway.site_id or gateway.email}"
+        elif gateway.cloud_mode:
+            mode_info = f"Cloud Mode: {gateway.site_id or gateway.email}"
+        else:
+            mode_info = gateway.host or "TEDAPI"
+        logger.info(f"  - {gateway_id}: {gateway.name} ({mode_info})")
     
     yield
     
@@ -130,9 +140,6 @@ app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 @app.get("/", response_class=HTMLResponse, tags=["UI"])
 async def root(request: Request):
     """Serve the Power Flow animation (Tesla Powerwall interface)."""
-    from app.utils.transform import get_static, inject_js
-    import os
-    
     # Use the proxy web directory
     web_root = str(Path(__file__).parent.parent.parent.parent / "proxy" / "web")
     # Use clear.js for UI customization (jQuery loaded from local static files)

@@ -107,3 +107,30 @@ async def get_aggregate_soe():
         "num_gateways": data.num_online,
         "timestamp": data.timestamp
     }
+
+
+@router.get("/battery")
+async def get_aggregate_battery():
+    """
+    Get aggregated battery capacity and charge information.
+    
+    Returns battery-specific metrics useful for capacity planning
+    and charge state monitoring.
+    
+    Response includes:
+        - total_capacity: Combined battery capacity in Wh
+        - battery_percent: Average state of charge (0-100%)
+        - battery_power: Combined charge/discharge power in watts (+ discharge, - charge)
+        - num_gateways: Total configured gateways
+        - num_online: Currently connected gateways
+        - timestamp: Data timestamp
+    """
+    data = gateway_manager.get_aggregate_data()
+    return {
+        "total_capacity": data.total_battery_capacity,
+        "battery_percent": data.total_battery_percent,
+        "battery_power": data.total_battery_power,
+        "num_gateways": data.num_gateways,
+        "num_online": data.num_online,
+        "timestamp": data.timestamp
+    }

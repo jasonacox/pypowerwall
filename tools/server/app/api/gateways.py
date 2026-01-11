@@ -80,27 +80,48 @@ async def get_gateway_aggregates(gateway_id: str):
 
 @router.get("/{gateway_id}/api/{path:path}")
 async def proxy_gateway_api(gateway_id: str, path: str):
-    """Proxy API calls to a specific gateway."""
-    pw = gateway_manager.get_connection(gateway_id)
-    if not pw:
+    """Proxy API calls to a specific gateway.
+    
+    Args:
+        gateway_id: Gateway identifier
+        path: API path to proxy (e.g., "meters/aggregates")
+        
+    Returns:
+        JSON response from the gateway API
+        
+    Raises:
+        HTTPException 404: Gateway not found
+        HTTPException 503: API call failed or gateway offline
+    """
+    if gateway_id not in gateway_manager.gateways:
         raise HTTPException(status_code=404, detail=f"Gateway {gateway_id} not found")
     
-    try:
-        result = pw.poll(f"/api/{path}")
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"API call failed: {str(e)}")
+    result = await gateway_manager.call_api(gateway_id, 'poll', f"/api/{path}", timeout=10.0)
+    if result is None:
+        raise HTTPException(status_code=503, detail="API call failed or gateway offline")
+    return result
 
 
 @router.post("/{gateway_id}/api/{path:path}")
 async def proxy_gateway_api_post(gateway_id: str, path: str, data: dict):
-    """Proxy POST requests to a specific gateway."""
-    pw = gateway_manager.get_connection(gateway_id)
-    if not pw:
+    """Proxy POST requests to a specific gateway.
+    
+    Args:
+        gateway_id: Gateway identifier
+        path: API path to proxy
+        data: JSON payload to send
+        
+    Returns:
+        JSON response from the gateway API
+        
+    Raises:
+        HTTPException 404: Gateway not found
+        HTTPException 503: API call failed or gateway offline
+    """
+    if gateway_id not in gateway_manager.gateways:
         raise HTTPException(status_code=404, detail=f"Gateway {gateway_id} not found")
     
-    try:
-        result = pw.post(f"/api/{path}", data)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"API call failed: {str(e)}")
+    result = await gateway_manager.call_api(gateway_id, 'post', f"/api/{path}", data, timeout=10.0)
+    if result is None:
+        raise HTTPException(status_code=503, detail="API call failed or gateway offline")
+    return result
