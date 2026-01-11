@@ -6,14 +6,16 @@ def test_settings_defaults():
     """Test default settings values."""
     settings = Settings()
     assert settings.server_host == "0.0.0.0"
-    assert settings.server_port == 8080
+    assert settings.server_port == 8675  # Matches pypowerwall proxy default
 
 
 def test_settings_from_env(monkeypatch):
     """Test loading settings from environment variables."""
-    monkeypatch.setenv("SERVER_HOST", "127.0.0.1")
-    monkeypatch.setenv("SERVER_PORT", "9000")
+    # Use PW_* aliases which are the primary env var names
+    monkeypatch.setenv("PW_BIND_ADDRESS", "127.0.0.1")
+    monkeypatch.setenv("PW_PORT", "9000")
     
+    # Create new Settings instance to pick up env vars
     settings = Settings()
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 9000

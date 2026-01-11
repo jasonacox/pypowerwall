@@ -10,7 +10,8 @@ def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "healthy"
+    # Status is 'no_gateways' when no gateways configured, 'healthy' otherwise
+    assert data["status"] in ("healthy", "no_gateways")
     assert "version" in data
     assert "gateways" in data
 
