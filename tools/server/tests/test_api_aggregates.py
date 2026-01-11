@@ -1,5 +1,4 @@
 """Tests for aggregates API endpoint."""
-import pytest
 
 
 def test_get_aggregates_success(client, connected_gateway):

@@ -1,7 +1,4 @@
 """Tests for edge cases and error handling."""
-import pytest
-import asyncio
-from unittest.mock import Mock
 
 
 def test_null_aggregates_data(client, connected_gateway):

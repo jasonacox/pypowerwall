@@ -1,7 +1,6 @@
 """Legacy proxy-compatible API endpoints."""
 from fastapi import APIRouter, HTTPException, Response, Header
 from typing import Optional
-import json
 
 from app.core.gateway_manager import gateway_manager
 from app.config import settings
@@ -129,18 +128,18 @@ async def get_freq():
 
 
 @router.get("/csv")
-async def get_csv(headers: bool = False):
+async def get_csv(headers: Optional[str] = None):
     """Get CSV format data (legacy proxy endpoint).
     
     Returns: Grid,Home,Solar,Battery,BatteryLevel
-    Add ?headers=true to include CSV headers.
+    Add ?headers (any value) to include CSV headers.
     """
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
     
     if not status or not status.online or not status.data:
         # Return zeros for CSV (backwards compatibility)
-        csv_data = "Grid,Home,Solar,Battery,BatteryLevel\n" if headers else ""
+        csv_data = "Grid,Home,Solar,Battery,BatteryLevel\n" if headers is not None else ""
         csv_data += "0.00,0.00,0.00,0.00,0.00\n"
         return Response(content=csv_data, media_type="text/plain; charset=utf-8")
     
@@ -154,7 +153,7 @@ async def get_csv(headers: bool = False):
     
     # Build CSV response
     csv_data = ""
-    if headers:
+    if headers is not None:
         csv_data += "Grid,Home,Solar,Battery,BatteryLevel\n"
     csv_data += f"{grid:.2f},{home:.2f},{solar:.2f},{battery:.2f},{level:.2f}\n"
     
@@ -162,11 +161,11 @@ async def get_csv(headers: bool = False):
 
 
 @router.get("/csv/v2")
-async def get_csv_v2(headers: bool = False):
+async def get_csv_v2(headers: Optional[str] = None):
     """Get CSV v2 format data (legacy proxy endpoint).
     
     Returns: Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve
-    Add ?headers=true to include CSV headers.
+    Add ?headers (any value) to include CSV headers.
     """
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
@@ -174,7 +173,7 @@ async def get_csv_v2(headers: bool = False):
     
     if not status or not status.online or not status.data or not pw:
         # Return zeros for CSV (backwards compatibility)
-        csv_data = "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n" if headers else ""
+        csv_data = "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n" if headers is not None else ""
         csv_data += "0.00,0.00,0.00,0.00,0.00,0,0\n"
         return Response(content=csv_data, media_type="text/plain; charset=utf-8")
     
@@ -201,7 +200,7 @@ async def get_csv_v2(headers: bool = False):
     
     # Build CSV response
     csv_data = ""
-    if headers:
+    if headers is not None:
         csv_data += "Grid,Home,Solar,Battery,BatteryLevel,GridStatus,Reserve\n"
     csv_data += f"{grid:.2f},{home:.2f},{solar:.2f},{battery:.2f},{level:.2f},{gridstatus},{reserve:.0f}\n"
     

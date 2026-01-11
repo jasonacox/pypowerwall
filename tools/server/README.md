@@ -59,7 +59,7 @@ docker run -d \
   --name pypowerwall-server \
   -p 8080:8080 \
   -e PW_HOST=192.168.91.1 \
-  -e PW_PASSWORD=your_gateway_password \
+  -e PW_GW_PWD=your_gateway_password \
   jasonacox/pypowerwall-server
 ```
 
@@ -72,8 +72,8 @@ docker run -d \
   --name pypowerwall-server \
   -p 8080:8080 \
   -e PW_GATEWAYS='[
-    {"id": "home", "name": "Home Gateway", "host": "192.168.91.1", "password": "gateway_password_1"},
-    {"id": "cabin", "name": "Cabin Gateway", "host": "192.168.91.1", "password": "gateway_password_2"}
+    {"id": "home", "name": "Home Gateway", "host": "192.168.91.1", "gw_pwd": "gateway_password_1"},
+    {"id": "cabin", "name": "Cabin Gateway", "host": "192.168.91.1", "gw_pwd": "gateway_password_2"}
   ]' \
   jasonacox/pypowerwall-server
 ```
@@ -85,7 +85,7 @@ docker run -d \
 pip install pypowerwall-server
 
 # Single Powerwall
-pypowerwall-server --host 192.168.91.1 --password your_gateway_password
+pypowerwall-server --host 192.168.91.1 --gw-pwd your_gateway_password
 
 # Multiple Powerwalls
 pypowerwall-server --config gateways.yaml
@@ -126,7 +126,7 @@ docker run -v /host/path/to/auth:/auth \
 **Single Gateway Mode (Read-Only via TEDAPI):**
 ```bash
 PW_HOST=192.168.91.1
-PW_PASSWORD=your_gateway_password
+PW_GW_PWD=your_gateway_password
 PW_TIMEZONE=America/Los_Angeles
 SERVER_PORT=8080
 SERVER_HOST=0.0.0.0
@@ -135,7 +135,7 @@ SERVER_HOST=0.0.0.0
 **Single Gateway Mode (With Cloud Control):**
 ```bash
 PW_HOST=192.168.91.1
-PW_PASSWORD=your_gateway_password          # For TEDAPI data reads
+PW_GW_PWD=your_gateway_password          # For TEDAPI data reads
 PW_EMAIL=your-tesla-account@email.com
 PW_AUTHPATH=/path/to/auth/files            # Directory with .pypowerwall.auth/.site
 PW_TIMEZONE=America/Los_Angeles
@@ -148,7 +148,7 @@ PW_GATEWAYS='[
     "id": "home",
     "name": "Home System", 
     "host": "192.168.91.1",
-    "password": "gw_pwd_1",
+    "gw_pwd": "gw_pwd_1",
     "email": "tesla@email.com",
     "authpath": "/auth"
   },
@@ -156,7 +156,7 @@ PW_GATEWAYS='[
     "id": "cabin",
     "name": "Cabin System",
     "host": "192.168.91.1",
-    "password": "gw_pwd_2",
+    "gw_pwd": "gw_pwd_2",
     "email": "tesla@email.com",
     "authpath": "/auth"
   }
@@ -176,7 +176,7 @@ gateways:
   - id: home
     name: Home System
     host: 192.168.91.1
-    password: gw_pwd_1
+    gw_pwd: gw_pwd_1
     email: tesla@email.com
     authpath: /auth
     timezone: America/Los_Angeles
@@ -184,7 +184,7 @@ gateways:
   - id: cabin
     name: Cabin System
     host: 192.168.91.1
-    password: gw_pwd_2
+    gw_pwd: gw_pwd_2
     email: tesla@email.com
     authpath: /auth
     timezone: America/Denver
@@ -197,7 +197,7 @@ gateways:
 ```
 
 **Authentication:**
-- `password`: For TEDAPI local gateway access
+- `gw_pwd`: For TEDAPI local gateway access
 - `email` + `authpath`: For Tesla Cloud API (control operations)
   - Run `python3 -m pypowerwall setup` to authenticate and generate auth files
   - Specify directory containing `.pypowerwall.auth` and `.pypowerwall.site` files
@@ -260,11 +260,11 @@ The server supports **Tesla Cloud authentication** for control operations:
 ```bash
 # TEDAPI only (monitoring)
 PW_HOST=192.168.91.1
-PW_PASSWORD=gateway_password
+PW_GW_PWD=gateway_password
 
 # TEDAPI + Cloud (monitoring + control)
 PW_HOST=192.168.91.1
-PW_PASSWORD=gateway_password
+PW_GW_PWD=gateway_password
 PW_EMAIL=tesla@email.com
 PW_AUTHPATH=/path/to/auth  # Directory with .pypowerwall.auth/.site files
 ```
@@ -418,7 +418,7 @@ docker run -d \
   --name pypowerwall-server \
   -p 8675:8080 \
   -e PW_HOST=192.168.91.1 \
-  -e PW_PASSWORD=your_gateway_password \
+  -e PW_GW_PWD=your_gateway_password \
   jasonacox/pypowerwall-server
 ```
 

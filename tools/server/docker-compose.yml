@@ -9,7 +9,7 @@ services:
     environment:
       # Single gateway mode - TEDAPI only (read-only)
       - PW_HOST=192.168.91.1
-      - PW_PASSWORD=your-gateway-password
+      - PW_GW_PWD=your-gateway-password
       
       # Optional: Add cloud auth for control operations
       # First run: python3 -m pypowerwall setup (generates auth files)
@@ -19,7 +19,7 @@ services:
       - PW_TIMEZONE=America/Los_Angeles
       
       # Or multi-gateway mode (uncomment and edit):
-      # - PW_GATEWAYS=[{"id":"home","name":"Home","host":"192.168.91.1","password":"gw_pwd","email":"tesla@email.com","authpath":"/auth"}]
+      # - PW_GATEWAYS=[{"id":"home","name":"Home","host":"192.168.91.1","gw_pwd":"your_gateway_password","email":"tesla@email.com","authpath":"/auth"}]
       
       # CORS settings
       - CORS_ORIGINS=["*"]

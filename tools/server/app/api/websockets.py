@@ -1,7 +1,6 @@
 """WebSocket endpoints for real-time data streaming."""
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import asyncio
-import json
 import logging
 
 from app.core.gateway_manager import gateway_manager
@@ -72,6 +71,7 @@ async def websocket_gateway(websocket: WebSocket, gateway_id: str):
                 await websocket.send_json({"error": "Gateway not found"})
             await asyncio.sleep(1)
     except WebSocketDisconnect:
+        # Normal client disconnect - no action needed
         pass
     except Exception as e:
         logger.error(f"WebSocket error: {e}")

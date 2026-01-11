@@ -1,5 +1,4 @@
 """Tests for legacy proxy API endpoints."""
-import pytest
 
 
 def test_aggregates_endpoint(client, connected_gateway):

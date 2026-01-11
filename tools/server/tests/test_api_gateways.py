@@ -1,5 +1,4 @@
 """Tests for gateway API endpoints."""
-import pytest
 
 
 def test_list_gateways_empty(client, mock_gateway_manager):

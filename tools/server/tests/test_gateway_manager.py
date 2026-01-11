@@ -1,9 +1,6 @@
 """Tests for gateway manager."""
 import pytest
-import asyncio
-from datetime import datetime
 from app.core.gateway_manager import gateway_manager
-from app.config import GatewayConfig
 
 
 def test_get_gateway(connected_gateway):

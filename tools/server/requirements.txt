@@ -1,7 +1,7 @@
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
-pypowerwall>=0.14.7
-aiohttp>=3.9.0
-websockets>=12.0
+fastapi==0.115.12
+uvicorn[standard]==0.29.0
+pydantic==2.11.3
+pydantic-settings==2.9.1
+pypowerwall==0.14.2
+aiohttp==3.12.15
+websockets==13.1

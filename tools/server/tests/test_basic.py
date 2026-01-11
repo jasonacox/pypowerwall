@@ -1,5 +1,4 @@
 """Basic tests for PyPowerwall Server."""
-import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 

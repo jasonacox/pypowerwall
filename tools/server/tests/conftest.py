@@ -1,6 +1,6 @@
 """Pytest configuration and fixtures."""
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 from fastapi.testclient import TestClient
 from app.main import app
 from app.core.gateway_manager import gateway_manager

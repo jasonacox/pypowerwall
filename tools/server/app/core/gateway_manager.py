@@ -82,6 +82,7 @@ class GatewayManager:
             try:
                 await self._poll_task
             except asyncio.CancelledError:
+                # Expected when cancelling the polling task during shutdown
                 pass
         logger.info("Gateway manager shutdown complete")
     
