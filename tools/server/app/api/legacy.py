@@ -550,6 +550,187 @@ async def proxy_api(path: str):
         raise HTTPException(status_code=503, detail=f"API call failed: {str(e)}")
 
 
+@router.get("/stats")
+async def get_stats():
+    """Get proxy statistics (legacy proxy endpoint)."""
+    import time
+    import psutil
+    import os
+    
+    # Get process info
+    process = psutil.Process(os.getpid())
+    
+    # Calculate uptime
+    create_time = process.create_time()
+    uptime_seconds = int(time.time() - create_time)
+    uptime = str(__import__('datetime').timedelta(seconds=uptime_seconds))
+    
+    # Build stats response
+    stats = {
+        "ts": int(time.time()),
+        "uptime": uptime,
+        "mem": process.memory_info().rss,
+        "gateways": len(gateway_manager.gateways),
+        "cloudmode": False,
+        "fleetapi": False,
+    }
+    
+    # Add gateway info
+    if gateway_manager.gateways:
+        gateway_id = list(gateway_manager.gateways.keys())[0]
+        status = gateway_manager.get_gateway(gateway_id)
+        if status:
+            stats["site_name"] = status.gateway.name
+    
+    return stats
+
+
+@router.get("/version")
+async def get_version():
+    """Get firmware version (legacy proxy endpoint)."""
+    import asyncio
+    
+    gateway_id = get_default_gateway()
+    pw = gateway_manager.get_connection(gateway_id)
+    
+    if not pw:
+        return {
+            "version": "Unknown",
+            "vint": 0
+        }
+    
+    # Call pw.version() in executor to avoid blocking
+    loop = asyncio.get_event_loop()
+    try:
+        version = await asyncio.wait_for(
+            loop.run_in_executor(None, pw.version),
+            timeout=5.0
+        )
+        
+        if version is None:
+            return {
+                "version": "SolarOnly",
+                "vint": 0
+            }
+        
+        # Parse version string to integer (basic implementation)
+        vint = 0
+        try:
+            # Extract numbers from version string like "23.44.0"
+            parts = version.split('.')
+            if len(parts) >= 2:
+                vint = int(parts[0]) * 100 + int(parts[1])
+        except:
+            pass
+        
+        return {
+            "version": version,
+            "vint": vint
+        }
+    except:
+        return {
+            "version": "Unknown",
+            "vint": 0
+        }
+
+
+@router.get("/api/system_status/soe")
+async def get_api_soe():
+    """Get battery state of energy - API format (legacy proxy endpoint)."""
+    gateway_id = get_default_gateway()
+    status = gateway_manager.get_gateway(gateway_id)
+    
+    if not status or not status.online or not status.data:
+        return {"percentage": None}
+    
+    level = status.data.soe
+    if level is not None:
+        # Scale to 95% like the original proxy
+        level = level * 0.95
+    
+    return {"percentage": level}
+
+
+@router.get("/api/meters/aggregates")
+async def get_api_aggregates():
+    """Get power aggregates - API format (legacy proxy endpoint)."""
+    gateway_id = get_default_gateway()
+    status = gateway_manager.get_gateway(gateway_id)
+    
+    if not status or not status.online or not status.data:
+        raise HTTPException(status_code=503, detail="Gateway offline or no data available")
+    
+    return status.data.aggregates or {}
+
+
+@router.get("/api/networks")
+@router.get("/api/system/networks")
+async def get_api_networks():
+    """Get network configuration - API format (legacy proxy endpoint)."""
+    gateway_id = get_default_gateway()
+    status = gateway_manager.get_gateway(gateway_id)
+    
+    # Fast fail if gateway is offline - don't try to connect
+    if not status or not status.online:
+        return []
+    
+    pw = gateway_manager.get_connection(gateway_id)
+    if not pw:
+        return []
+    
+    # Call through to gateway with short timeout to prevent hanging
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: pw.poll("/api/networks")),
+            timeout=2.0  # Short timeout - this is not critical data
+        )
+        # Ensure we return an array
+        if result is None:
+            return []
+        if isinstance(result, str):
+            import json
+            result = json.loads(result)
+        if isinstance(result, list):
+            return result
+        # If it's a dict, wrap it in array
+        return [result] if result else []
+    except (asyncio.TimeoutError, Exception):
+        # Return empty array on timeout or error - app will handle gracefully
+        return []
+
+
+@router.get("/api/powerwalls")
+async def get_api_powerwalls():
+    """Get powerwalls list - API format (legacy proxy endpoint)."""
+    gateway_id = get_default_gateway()
+    status = gateway_manager.get_gateway(gateway_id)
+    
+    # Fast fail if gateway is offline
+    if not status or not status.online:
+        return []
+    
+    pw = gateway_manager.get_connection(gateway_id)
+    if not pw:
+        return []
+    
+    # Call through to gateway with short timeout
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: pw.poll("/api/powerwalls")),
+            timeout=2.0  # Short timeout
+        )
+        if result is None:
+            return []
+        if isinstance(result, str):
+            import json
+            result = json.loads(result)
+        return result if result else []
+    except (asyncio.TimeoutError, Exception):
+        return []
+
+
 @router.post("/api/{path:path}")
 async def proxy_api_post(path: str, data: dict):
     """Proxy POST requests to default gateway (legacy)."""
