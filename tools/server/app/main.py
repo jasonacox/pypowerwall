@@ -57,7 +57,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -127,14 +127,30 @@ app.add_middleware(
 )
 
 # Include API routers
-app.include_router(legacy.router, tags=["Legacy Proxy Compatibility"])
+# NOTE: Order matters! More specific routers (gateways, aggregates) must be 
+# included BEFORE legacy router to prevent the legacy catch-all /api/{path:path}
+# from intercepting requests meant for other routers.
 app.include_router(gateways.router, prefix="/api/gateways", tags=["Gateways"])
 app.include_router(aggregates.router, prefix="/api/aggregate", tags=["Aggregates"])
 app.include_router(websockets.router, prefix="/ws", tags=["WebSockets"])
+app.include_router(legacy.router, tags=["Legacy Proxy Compatibility"])
 
 # Mount static files
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Serve favicon.ico from static files."""
+    favicon_path = static_path / "favicon.ico"
+    if favicon_path.exists():
+        return FileResponse(favicon_path, media_type="image/x-icon")
+    # Fall back to 32x32 PNG if .ico doesn't exist
+    png_path = static_path / "favicon-32x32.png"
+    if png_path.exists():
+        return FileResponse(png_path, media_type="image/png")
+    return Response(status_code=404)
 
 
 @app.get("/", response_class=HTMLResponse, tags=["UI"])

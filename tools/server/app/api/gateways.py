@@ -41,39 +41,48 @@ async def get_gateway(gateway_id: str):
 
 @router.get("/{gateway_id}/vitals")
 async def get_gateway_vitals(gateway_id: str):
-    """Get vitals for a specific gateway."""
+    """Get vitals for a specific gateway.
+    
+    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+    """
     status = gateway_manager.get_gateway(gateway_id)
     if not status:
         raise HTTPException(status_code=404, detail=f"Gateway {gateway_id} not found")
     
-    if not status.online or not status.data:
-        raise HTTPException(status_code=503, detail="Gateway offline or no data available")
+    if not status.data:
+        return {}
     
     return status.data.vitals or {}
 
 
 @router.get("/{gateway_id}/strings")
 async def get_gateway_strings(gateway_id: str):
-    """Get strings for a specific gateway."""
+    """Get strings for a specific gateway.
+    
+    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+    """
     status = gateway_manager.get_gateway(gateway_id)
     if not status:
         raise HTTPException(status_code=404, detail=f"Gateway {gateway_id} not found")
     
-    if not status.online or not status.data:
-        raise HTTPException(status_code=503, detail="Gateway offline or no data available")
+    if not status.data:
+        return {}
     
     return status.data.strings or {}
 
 
 @router.get("/{gateway_id}/aggregates")
 async def get_gateway_aggregates(gateway_id: str):
-    """Get aggregates for a specific gateway."""
+    """Get aggregates for a specific gateway.
+    
+    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+    """
     status = gateway_manager.get_gateway(gateway_id)
     if not status:
         raise HTTPException(status_code=404, detail=f"Gateway {gateway_id} not found")
     
-    if not status.online or not status.data:
-        raise HTTPException(status_code=503, detail="Gateway offline or no data available")
+    if not status.data:
+        return {}
     
     return status.data.aggregates or {}
 

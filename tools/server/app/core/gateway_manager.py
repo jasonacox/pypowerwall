@@ -334,12 +334,91 @@ class GatewayManager:
             # Try to get additional data
             try:
                 data.soe = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.level), timeout=5.0)
-                data.freq = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.freq), timeout=5.0)
-                data.status = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.status), timeout=5.0)
-                data.version = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.version), timeout=5.0)
-                logger.debug(f"Gateway {gateway_id} aggregates: {data.aggregates}")
             except (asyncio.TimeoutError, Exception) as e:
-                logger.debug(f"Failed to fetch additional data for {gateway_id}: {e}")
+                logger.debug(f"SOE not available for {gateway_id}: {e}")
+            
+            try:
+                data.freq = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.freq), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Frequency not available for {gateway_id}: {e}")
+            
+            try:
+                data.status = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.status), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Status not available for {gateway_id}: {e}")
+            
+            try:
+                data.version = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.version), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Version not available for {gateway_id}: {e}")
+            
+            logger.debug(f"Gateway {gateway_id} aggregates: {data.aggregates}")
+            
+            # Try to get alerts (for caching)
+            try:
+                data.alerts = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.alerts), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Alerts not available for {gateway_id}: {e}")
+            
+            # Try to get temps (for caching)
+            try:
+                data.temps = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.temps), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Temps not available for {gateway_id}: {e}")
+            
+            # Try to get grid status (for caching)
+            try:
+                data.grid_status = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.grid_status), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Grid status not available for {gateway_id}: {e}")
+            
+            # Try to get reserve and time remaining (for caching)
+            try:
+                data.reserve = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.get_reserve), timeout=5.0)
+                data.time_remaining = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.get_time_remaining), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Reserve/time remaining not available for {gateway_id}: {e}")
+            
+            # Try to get system status for /pod endpoint (for caching)
+            try:
+                data.system_status = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.system_status), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"System status not available for {gateway_id}: {e}")
+            
+            # Try to get fan speeds for /fans endpoint (TEDAPI only)
+            try:
+                if hasattr(pw, 'get_fan_speeds'):
+                    data.fan_speeds = await asyncio.wait_for(loop.run_in_executor(self._executor, pw.get_fan_speeds), timeout=5.0)
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Fan speeds not available for {gateway_id}: {e}")
+            
+            # Try to get networks for /api/system/networks endpoint
+            try:
+                networks_result = await asyncio.wait_for(loop.run_in_executor(self._executor, lambda: pw.poll('/api/networks')), timeout=5.0)
+                if networks_result and isinstance(networks_result, list):
+                    data.networks = networks_result
+                elif networks_result and isinstance(networks_result, str):
+                    import json
+                    try:
+                        data.networks = json.loads(networks_result)
+                    except json.JSONDecodeError:
+                        pass
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Networks not available for {gateway_id}: {e}")
+            
+            # Try to get powerwalls for /api/powerwalls endpoint
+            try:
+                powerwalls_result = await asyncio.wait_for(loop.run_in_executor(self._executor, lambda: pw.poll('/api/powerwalls')), timeout=5.0)
+                if powerwalls_result and isinstance(powerwalls_result, dict):
+                    data.powerwalls = powerwalls_result
+                elif powerwalls_result and isinstance(powerwalls_result, str):
+                    import json
+                    try:
+                        data.powerwalls = json.loads(powerwalls_result)
+                    except json.JSONDecodeError:
+                        pass
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(f"Powerwalls not available for {gateway_id}: {e}")
             
             # Update cache
             gateway = self.gateways[gateway_id]

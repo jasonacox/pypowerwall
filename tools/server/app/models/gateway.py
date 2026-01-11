@@ -1,5 +1,5 @@
 """Pydantic models for gateway configuration and data."""
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
 
@@ -108,6 +108,15 @@ class PowerwallData(BaseModel):
     vitals: Optional[Dict[str, Any]] = None
     strings: Optional[Dict[str, Any]] = None
     aggregates: Optional[Dict[str, Any]] = None
+    alerts: Optional[List[str]] = None  # Active alert codes
+    temps: Optional[Dict[str, Any]] = None  # Temperature readings
+    grid_status: Optional[str] = None  # "UP", "DOWN", etc.
+    reserve: Optional[float] = None  # Backup reserve percentage
+    time_remaining: Optional[float] = None  # Hours of backup remaining
+    system_status: Optional[Dict[str, Any]] = None  # Full system status for /pod
+    fan_speeds: Optional[Dict[str, Any]] = None  # Fan speed data from TEDAPI
+    networks: Optional[List[Any]] = None  # Network configuration
+    powerwalls: Optional[Dict[str, Any]] = None  # Powerwalls list
     soe: Optional[float] = None  # State of Energy
     freq: Optional[float] = None
     din: Optional[str] = None
