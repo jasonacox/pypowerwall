@@ -903,7 +903,7 @@ class TEDAPI:
                                 elif 'PCH_AcVoltageAB' == signal['name']:
                                     response[f"PVAC--{pw_din}"]["PVAC_Vout"] = signal['value']
                                     response[f"TEPINV--{pw_din}"]["PINV_Vout"] = signal['value']
-                                elif 'PCH_AcRealPowerAB' == signal['name']:
+                                elif 'PCH_BatteryPower' == signal['name']: # not PCH_AcRealPowerAB
                                     response[f"PVAC--{pw_din}"]["PVAC_Pout"] = signal['value']
                                     response[f"TEPINV--{pw_din}"]["PINV_Pout"] = (signal['value'] or 0) / 1000
                                 elif 'PCH_AcMode' == signal['name']:
