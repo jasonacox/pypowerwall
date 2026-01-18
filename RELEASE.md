@@ -1,5 +1,16 @@
 # RELEASE NOTES
 
+## v0.14.8 - CLI Tool and PW3 Power Vitals Fix
+
+* Add standalone `pypowerwall` command-line tool - installed automatically with pip
+     * Added `entry_points` to `setup.py` to create console script
+     * Refactored `__main__.py` to use a `main()` function as entry point
+     * Users can now run `pypowerwall` command directly instead of `python -m pypowerwall`
+     * Maintains backward compatibility - both methods work identically
+     * Available commands: `pypowerwall scan`, `pypowerwall setup`, `pypowerwall fleetapi`, `pypowerwall get`, `pypowerwall set`, `pypowerwall version`
+* Fix Powerwall 3 power output (PINV_Pout) in vitals for TEDAPI mode
+     * Corrected signal source from `PCH_AcRealPowerAB` to `PCH_BatteryPower` for accurate per battery power reporting
+
 ## v0.14.7 - Reserve Level 0 Fix
 
 * Fix bug where `pypowerwall set` command could not set battery reserve level to 0 - Fix by @ParaAdBellum in https://github.com/jasonacox/pypowerwall/pull/252

@@ -40,6 +40,11 @@ setuptools.setup(
         'pypowerwall.cloud.teslapy': ['endpoints.json', 'option_codes.json'],
     },
     include_package_data=True,
+    entry_points={
+        'console_scripts': [
+            'pypowerwall=pypowerwall.__main__:main',
+        ],
+    },
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
