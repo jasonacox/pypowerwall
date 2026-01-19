@@ -18,7 +18,7 @@ class TestFreqEndpoint(BaseDoGetTest):
         """Test /freq endpoint basic output with battery_blocks and vitals"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/freq"
-            
+
             # Mock system_status call with battery_blocks
             def safe_pw_call_side_effect(*args, **kwargs):
                 if args[0] == mock_pw.system_status:
@@ -46,25 +46,25 @@ class TestFreqEndpoint(BaseDoGetTest):
                 elif args[0] == mock_pw.grid_status:
                     return 1  # UP
                 return None
-            
+
             mock_safe_pw_call.side_effect = safe_pw_call_side_effect
-            
+
             self.handler.do_GET()
-            
+
             self.handler.send_response.assert_called_with(HTTPStatus.OK)
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Verify battery_blocks data
             self.assertEqual(data['PW1_PackagePartNumber'], 'PW123')
             self.assertEqual(data['PW1_f_out'], 60.0)
             self.assertEqual(data['PW1_v_out'], 240.0)
-            
+
             # Verify vitals data
             self.assertEqual(data['PW1_name'], 'TEPINV1')
             self.assertEqual(data['PW1_PINV_Fout'], 59.98)
             self.assertEqual(data['PW1_PINV_VSplit1'], 120.5)
-            
+
             # Verify grid status
             self.assertEqual(data['grid_status'], 1)
 
@@ -75,7 +75,7 @@ class TestFreqEndpoint(BaseDoGetTest):
         """Test /freq endpoint with TESYNC/TEMSA meter data"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/freq"
-            
+
             def safe_pw_call_side_effect(*args, **kwargs):
                 if args[0] == mock_pw.system_status:
                     return {'battery_blocks': []}
@@ -89,14 +89,14 @@ class TestFreqEndpoint(BaseDoGetTest):
                 elif args[0] == mock_pw.grid_status:
                     return 1
                 return None
-            
+
             mock_safe_pw_call.side_effect = safe_pw_call_side_effect
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Verify meter/island metrics are included
             self.assertEqual(data['ISLAND_FreqL1_Load'], 60.01)
             self.assertEqual(data['METER_X_CTA_InstRealPower'], 5000)
@@ -108,7 +108,7 @@ class TestFreqEndpoint(BaseDoGetTest):
         """Test /freq endpoint caching"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/freq"
-            
+
             call_count = 0
             def safe_pw_call_side_effect(*args, **kwargs):
                 nonlocal call_count
@@ -120,18 +120,18 @@ class TestFreqEndpoint(BaseDoGetTest):
                 elif args[0] == mock_pw.grid_status:
                     return 1
                 return None
-            
+
             mock_safe_pw_call.side_effect = safe_pw_call_side_effect
-            
+
             # First call - should hit the API
             self.handler.do_GET()
             first_call_count = call_count
-            
+
             # Second call - should use cache
             self.handler.wfile = BytesIO()
             self.handler.do_GET()
             second_call_count = call_count
-            
+
             # Verify cache was used (no new API calls)
             self.assertEqual(first_call_count, second_call_count)
 
@@ -146,7 +146,7 @@ class TestPodEndpoint(BaseDoGetTest):
         """Test /pod endpoint basic output"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/pod"
-            
+
             def safe_pw_call_side_effect(*args, **kwargs):
                 if args[0] == mock_pw.system_status:
                     return {
@@ -180,24 +180,24 @@ class TestPodEndpoint(BaseDoGetTest):
                 elif args[0] == mock_pw.get_reserve:
                     return 20.0
                 return None
-            
+
             mock_safe_pw_call.side_effect = safe_pw_call_side_effect
-            
+
             self.handler.do_GET()
-            
+
             self.handler.send_response.assert_called_with(HTTPStatus.OK)
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Verify battery block data
             self.assertEqual(data['PW1_PackagePartNumber'], 'PW2-123')
             self.assertEqual(data['PW1_POD_nom_energy_remaining'], 13500)
             self.assertEqual(data['PW1_pinv_state'], 'PV_Active')
-            
+
             # Verify vitals overlay
             self.assertEqual(data['PW1_name'], 'TEPOD1')
             self.assertEqual(data['PW1_POD_available_charge_power'], 5000)
-            
+
             # Verify aggregates
             self.assertEqual(data['nominal_full_pack_energy'], 14000)
             self.assertEqual(data['time_remaining_hours'], 18.5)
@@ -210,7 +210,7 @@ class TestPodEndpoint(BaseDoGetTest):
         """Test /pod endpoint with multiple Powerwalls"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/pod"
-            
+
             def safe_pw_call_side_effect(*args, **kwargs):
                 if args[0] == mock_pw.system_status:
                     return {
@@ -231,14 +231,14 @@ class TestPodEndpoint(BaseDoGetTest):
                 elif args[0] == mock_pw.get_reserve:
                     return 15.0
                 return None
-            
+
             mock_safe_pw_call.side_effect = safe_pw_call_side_effect
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Verify both batteries are present
             self.assertEqual(data['PW1_PackageSerialNumber'], 'SN001')
             self.assertEqual(data['PW2_PackageSerialNumber'], 'SN002')
@@ -252,15 +252,15 @@ class TestPodEndpoint(BaseDoGetTest):
         """Test /pod endpoint with null values"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/pod"
-            
+
             # All calls return None
             mock_safe_pw_call.return_value = None
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Should return empty/null aggregates
             self.assertIsNone(data.get('nominal_full_pack_energy'))
             self.assertIsNone(data.get('time_remaining_hours'))
@@ -278,7 +278,7 @@ class TestJsonEndpoint(BaseDoGetTest):
         """Test /json endpoint basic output"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/json"
-            
+
             # Mock aggregates call
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100},
@@ -286,7 +286,7 @@ class TestJsonEndpoint(BaseDoGetTest):
                 'battery': {'instant_power': -2000},
                 'load': {'instant_power': 3100}
             }
-            
+
             # Mock other calls
             def safe_pw_call_side_effect(*args, **kwargs):
                 if args[0] == mock_pw.level:
@@ -305,15 +305,15 @@ class TestJsonEndpoint(BaseDoGetTest):
                 elif args[0] == mock_pw.strings:
                     return {'A': {'Connected': True, 'Current': 5.5}}
                 return None
-            
+
             mock_safe_pw_call.side_effect = safe_pw_call_side_effect
-            
+
             self.handler.do_GET()
-            
+
             self.handler.send_response.assert_called_with(HTTPStatus.OK)
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Verify all fields
             self.assertEqual(data['grid'], 100)
             self.assertEqual(data['home'], 3100)
@@ -336,7 +336,7 @@ class TestJsonEndpoint(BaseDoGetTest):
         """Test /json endpoint with negative solar correction"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/json"
-            
+
             # Mock aggregates with negative solar
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100},
@@ -344,7 +344,7 @@ class TestJsonEndpoint(BaseDoGetTest):
                 'battery': {'instant_power': 200},
                 'load': {'instant_power': 250}
             }
-            
+
             mock_safe_pw_call.side_effect = lambda *args, **kwargs: (
                 50.0 if args[0] == mock_pw.level else
                 "UP" if args[0] == mock_pw.grid_status else
@@ -353,12 +353,12 @@ class TestJsonEndpoint(BaseDoGetTest):
                 {} if args[0] == mock_pw.system_status else
                 {} if args[0] == mock_pw.strings else None
             )
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # Verify solar clamped to 0 and home adjusted
             self.assertEqual(data['solar'], 0)
             self.assertEqual(data['home'], 300)  # 250 - (-50)
@@ -372,14 +372,14 @@ class TestJsonEndpoint(BaseDoGetTest):
         """Test /json endpoint uses single aggregates call"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/json"
-            
+
             mock_safe_endpoint_call.return_value = {
                 'site': {'instant_power': 100},
                 'solar': {'instant_power': 200},
                 'battery': {'instant_power': -50},
                 'load': {'instant_power': 250}
             }
-            
+
             # Mock safe_pw_call with appropriate return values
             mock_safe_pw_call.side_effect = lambda *args, **kwargs: (
                 50.0 if args[0] == mock_pw.level else
@@ -389,14 +389,14 @@ class TestJsonEndpoint(BaseDoGetTest):
                 {} if args[0] == mock_pw.system_status else
                 {} if args[0] == mock_pw.strings else None
             )
-            
+
             self.handler.do_GET()
-            
+
             # Verify aggregates was called once
             mock_safe_endpoint_call.assert_called_once_with(
                 "/aggregates", mock_pw.poll, "/api/meters/aggregates", jsonformat=False
             )
-            
+
             # Verify individual power methods were NOT called
             for call in mock_safe_pw_call.call_args_list:
                 method = call[0][0]
@@ -415,16 +415,16 @@ class TestJsonEndpoint(BaseDoGetTest):
         """Test /json endpoint with null aggregates"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
             self.handler.path = "/json"
-            
+
             # Aggregates returns None (timeout/error)
             mock_safe_endpoint_call.return_value = None
             mock_safe_pw_call.return_value = 0
-            
+
             self.handler.do_GET()
-            
+
             result = self.get_written_text()
             data = json.loads(result)
-            
+
             # All power values should be 0
             self.assertEqual(data['grid'], 0)
             self.assertEqual(data['home'], 0)
