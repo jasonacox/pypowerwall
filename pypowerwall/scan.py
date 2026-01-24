@@ -183,7 +183,7 @@ def scan_ip(addr: IPv4Address, context: ScanContext, result_queue: Queue) -> Non
         if "User does not have adequate access rights" in response_pw3.text:
             # Found PW3
             if context.interactive:
-                print(f"{host} OPEN{context.dim()} - {context.subbold()}Found Powerwall 3 [Cloud and TEDAPI Mode only]{context.normal}")
+                print(f"{host} OPEN{context.dim()} - {context.subbold()}Found Powerwall 3 [Cloud and TEDAPI Mode only]{context.normal()}")
             result_queue.put({
                 'ip': addr,
                 'din': 'Powerwall-3',
