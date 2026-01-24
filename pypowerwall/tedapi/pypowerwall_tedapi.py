@@ -56,8 +56,8 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
     # Check for single leg line voltage (UK)
     active_voltages = [v for v in (v1n, v2n, v3n) if v and abs(v) > SIGNIFICANT_VOLTAGE]
     if not active_voltages:
-        # Low voltage scenario - return the sum of all voltages
-        return v1n + v2n + v3n
+        # Low voltage scenario - return the sum of all voltages (handle None values)
+        return (v1n or 0) + (v2n or 0) + (v3n or 0)
     if len(active_voltages) == 1:
         # single phase voltage - one leg, active leg
         return active_voltages[0]
@@ -66,9 +66,13 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
         return active_voltages[0] + active_voltages[1]
     else:
         # three phase voltage - 120 degrees out of phase
-        v12 = math.sqrt(v1n**2 + v2n**2 + v1n * v2n)
-        v23 = math.sqrt(v2n**2 + v3n**2 + v2n * v3n)
-        v31 = math.sqrt(v3n**2 + v1n**2 + v3n * v1n)
+        # Ensure None values are converted to 0 for arithmetic operations
+        v1 = v1n or 0
+        v2 = v2n or 0
+        v3 = v3n or 0
+        v12 = math.sqrt(v1**2 + v2**2 + v1 * v2)
+        v23 = math.sqrt(v2**2 + v3**2 + v2 * v3)
+        v31 = math.sqrt(v3**2 + v1**2 + v3 * v1)
         avg_ll_voltage = (v12 + v23 + v31) / 3
         return avg_ll_voltage
 

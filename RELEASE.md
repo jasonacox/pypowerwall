@@ -1,5 +1,13 @@
 # RELEASE NOTES
 
+## v0.14.9 - TEDAPI Voltage Calculation Fix
+
+* Fix `compute_LL_voltage()` function to handle `None` voltage values in grid down scenarios - Fix for https://github.com/jasonacox/Powerwall-Dashboard/issues/683
+     * Added `None` value handling in three-phase voltage calculations to prevent `TypeError` exceptions
+     * Converts `None` voltage parameters to `0` before performing arithmetic operations
+     * Prevents crashes when grid is down and voltage readings are unavailable
+     * Added comprehensive unit tests to verify None handling behavior for all scenarios: grid down (all None), mixed None/valid values, and numeric-only values
+
 ## v0.14.8 - CLI Tool and PW3 Power Vitals Fix
 
 * Add standalone `pypowerwall` command-line tool - installed automatically with pip
