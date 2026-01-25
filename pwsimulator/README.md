@@ -84,6 +84,36 @@ docker start pypowerwall
 
 ## Test Commands
 
+### TEDAPI Endpoints (Powerwall 3)
+
+The simulator now supports TEDAPI endpoints used by Powerwall 3 systems:
+
+#### Get DIN (Device Identification Number)
+```bash
+curl -k https://localhost/tedapi/din
+```
+
+#### Get Configuration
+```bash
+# Post a small protobuf request to get config.json
+curl -k -X POST https://localhost/tedapi/v1 \
+  --user Tesla_Energy_Device:ABCDEFGHIJ \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @- << EOF
+test
+EOF
+```
+
+#### Get Status
+```bash
+# Post a larger protobuf request to get status data
+python3 test_tedapi.py
+```
+
+The simulator intelligently returns config or status data based on the request size:
+- Small requests (< 100 bytes) return configuration data
+- Larger requests return status/controller data
+
 ### Battery
 Full: `curl -k https://localhost/test/battery-percentage/100.0`
 Empty: `curl -k https://localhost/test/battery-percentage/0.0`
