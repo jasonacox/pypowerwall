@@ -735,7 +735,7 @@ For detailed documentation, see the [Documentation Hub](docs/README.md).
 
 * [Firmware Version History](docs/reference/firmware-history.md) - Complete history of Powerwall firmware versions and release notes
 * [Device Information](docs/reference/devices.md) - Detailed information about Powerwall devices and alerts  
-* [Alert Codes](docs/reference/Alerts.md) - Comprehensive list of alert codes
+* [Alert Codes](docs/reference/alerts.md) - Comprehensive list of alert codes
 * [Python API Reference](API.md) - Full API documentation
 
 ## Glossary
