@@ -166,3 +166,4 @@ proxy/.beta_version
 cleanroom
 tools/tesla-history/tesla-history.auth
 tools/tesla-history/tesla-history.conf
+tools/tedapi-lan/credentials.json

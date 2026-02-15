@@ -1,0 +1,4 @@
+pypowerwall
+requests
+cryptography
+protobuf
