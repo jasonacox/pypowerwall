@@ -11,6 +11,17 @@ syntax = "proto3";
 
 package tedapi;
 
+// ***** Auth Envelope (Bearer Token Auth) *****
+
+message AuthEnvelope {
+  bytes payload = 1;
+  ExternalAuth externalAuth = 2;
+}
+
+message ExternalAuth {
+  int32 type = 1;  // 1 = EXTERNAL_AUTH_TYPE_PRESENCE
+}
+
 // ***** Message *****
 
 message Message {

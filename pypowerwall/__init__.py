@@ -130,7 +130,8 @@ class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
-                 fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None):
+                 fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
+                 tedapi_auth_mode="basic"):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -176,6 +177,7 @@ class Powerwall(object):
         self.retry_modes = retry_modes
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
+        self.tedapi_auth_mode = tedapi_auth_mode  # basic or bearer for TEDAPI
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -250,7 +252,8 @@ class Powerwall(object):
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host,
-                                                        poolmaxsize=self.poolmaxsize)
+                                                        poolmaxsize=self.poolmaxsize,
+                                                        auth_mode=self.tedapi_auth_mode)
                     else:
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
