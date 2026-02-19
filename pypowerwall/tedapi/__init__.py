@@ -93,8 +93,25 @@ log.debug('Python %s on %s', sys.version, sys.platform)
 
 # --- TEDAPI Query and Payload Constants ---
 # All queries below are from the Tesla One APK. Each query+signature pair is
-# ECDSA-SHA256 signed. DO NOT modify query whitespace - it invalidates the signature.
+# ECDSA-P521 signed (SHA256 hash, ASN.1/DER format). DO NOT modify query
+# whitespace - it invalidates the signature.
 # The APK uses inline filters (no variablesJson needed), so all queries use "{}".
+#
+# The ECDSA signature is over the serialized SignedGraphQLQuery protobuf bytes
+# (NOT just the query text). Use _build_signed_query() to construct these bytes.
+
+
+def _build_signed_query(query_text: str) -> bytes:
+    """Build serialized SignedGraphQLQuery bytes from query text.
+
+    The gateway expects field 2 (query) of GraphQLAPIQueryRequest to contain
+    serialized SignedGraphQLQuery{version:2, query:queryText} bytes. The ECDSA
+    signature is computed over these exact bytes.
+    """
+    sq = tedapi_pb2.SignedGraphQLQuery()
+    sq.version = 2
+    sq.query = query_text.encode('utf-8')
+    return sq.SerializeToString()
 
 # ECDSA-SHA256 signature for DEVICE_CONTROLLER query
 SEND_CODE_DEVICE_CONTROLLER = bytes.fromhex(
@@ -357,6 +374,60 @@ def decompress_response(content: bytes) -> bytes:
             log.debug(f"Gzip decompression failed: {e}")
     return content
 
+
+def _pb_extract(data: bytes, *field_path: int) -> Optional[bytes]:
+    """Extract a length-delimited field from raw protobuf bytes by field number path.
+
+    Navigates nested protobuf messages by following the given field numbers.
+    Returns the raw bytes of the final field, or None if not found.
+    Only supports length-delimited (wire type 2) fields in the path.
+    """
+    for target in field_path:
+        pos = 0
+        found = False
+        while pos < len(data):
+            # Decode varint tag
+            tag = 0
+            shift = 0
+            while pos < len(data):
+                b = data[pos]
+                pos += 1
+                tag |= (b & 0x7F) << shift
+                if not (b & 0x80):
+                    break
+                shift += 7
+            wire_type = tag & 0x07
+            field_number = tag >> 3
+            if wire_type == 0:  # varint
+                while pos < len(data) and data[pos] & 0x80:
+                    pos += 1
+                pos += 1
+            elif wire_type == 2:  # length-delimited
+                length = 0
+                shift = 0
+                while pos < len(data):
+                    b = data[pos]
+                    pos += 1
+                    length |= (b & 0x7F) << shift
+                    if not (b & 0x80):
+                        break
+                    shift += 7
+                if field_number == target:
+                    data = data[pos:pos + length]
+                    found = True
+                    break
+                pos += length
+            elif wire_type == 1:  # 64-bit
+                pos += 8
+            elif wire_type == 5:  # 32-bit
+                pos += 4
+            else:
+                break
+        if not found:
+            return None
+    return data
+
+
 # TEDAPI Class
 class TEDAPI:
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
@@ -523,11 +594,11 @@ class TEDAPI:
             log.debug("Get Configuration from Powerwall")
             # Build Protobuf to fetch config
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.config.send.num = 1
-            pb.message.config.send.file = "config.json"
+            pb.message.filestore.readFileRequest.domain = 1  # CONFIG_JSON
+            pb.message.filestore.readFileRequest.name = "config.json"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -542,7 +613,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = self._parse_response(r.content)
-                payload = tedapi.message.config.recv.file.text
+                payload = tedapi.message.filestore.readFileResponse.file.blob.decode('utf-8')
                 if payload:
                     try:
                         data = json.loads(payload)
@@ -638,14 +709,13 @@ class TEDAPI:
             log.debug("Get Status from Powerwall")
             # Build Protobuf to fetch status
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_DEVICE_CONTROLLER
-            pb.message.payload.send.code = SEND_CODE_DEVICE_CONTROLLER
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_DEVICE_CONTROLLER)
+            pb.message.graphql.send.signature = SEND_CODE_DEVICE_CONTROLLER
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -660,7 +730,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = self._parse_response(r.content)
-                payload = tedapi.message.payload.recv.text
+                payload = tedapi.message.graphql.recv.data
                 if payload:
                     try:
                         data = json.loads(payload)
@@ -722,14 +792,13 @@ class TEDAPI:
             log.debug("Get controller data from Powerwall")
             # Build Protobuf to fetch controller data
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_DEVICE_CONTROLLER
-            pb.message.payload.send.code = SEND_CODE_DEVICE_CONTROLLER
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_DEVICE_CONTROLLER)
+            pb.message.graphql.send.signature = SEND_CODE_DEVICE_CONTROLLER
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -744,7 +813,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = self._parse_response(r.content)
-                payload = tedapi.message.payload.recv.text
+                payload = tedapi.message.graphql.recv.data
                 log.debug(f"Payload: {payload}")
                 if payload:
                     try:
@@ -805,12 +874,16 @@ class TEDAPI:
                 return None
             # Fetch Current Status from Powerwall
             log.debug("Get Firmware Version from Powerwall")
-            # Build Protobuf to fetch status
+            # Build Protobuf to fetch system info (wire-compatible with old firmware request)
+            # Old: field 4 (firmware) → field 2 (request="")
+            # New: field 4 (common) → field 2 (getSystemInfoRequest={})
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.firmware.request = ""
+            pb.message.common.getSystemInfoRequest.CopyFrom(
+                tedapi_pb2.CommonAPIGetSystemInfoRequest()
+            )
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -823,38 +896,36 @@ class TEDAPI:
                 if r.status_code != HTTPStatus.OK:
                     log.error(f"Error fetching firmware version: {r.status_code}")
                     return None
-                # Decode response
+                # Decode response - the gateway returns firmware data inside
+                # getSystemInfoResponse (field 3 of CommonMessages). Since the
+                # proto defines it as empty, firmware fields are preserved as
+                # raw bytes. Use _pb_extract to navigate the wire format:
+                #   FirmwarePayload.version (field 3) → FirmwareVersion.text (field 1)
+                #   FirmwarePayload.gateway (field 1) → EcuId
+                #   FirmwarePayload.din (field 2)
                 tedapi = self._parse_response(r.content)
-                firmware_version = tedapi.message.firmware.system.version.text
+                sys_info = tedapi.message.common.getSystemInfoResponse
+                raw = sys_info.SerializeToString()
+                version_text = _pb_extract(raw, 3, 1)  # version.text
+                firmware_version = version_text.decode('utf-8') if version_text else None
                 if details:
+                    din_bytes = _pb_extract(raw, 2)  # din
+                    gw_part = _pb_extract(raw, 1, 1)  # gateway.partNumber
+                    gw_serial = _pb_extract(raw, 1, 2)  # gateway.serialNumber
+                    githash = _pb_extract(raw, 3, 2)  # version.githash
                     payload = {
                         "system": {
                             "gateway": {
-                                "partNumber": tedapi.message.firmware.system.gateway.partNumber,
-                                "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
+                                "partNumber": gw_part.decode('utf-8') if gw_part else "",
+                                "serialNumber": gw_serial.decode('utf-8') if gw_serial else ""
                             },
-                            "din": tedapi.message.firmware.system.din,
+                            "din": din_bytes.decode('utf-8') if din_bytes else "",
                             "version": {
-                                "text": tedapi.message.firmware.system.version.text,
-                                "githash": tedapi.message.firmware.system.version.githash
+                                "text": firmware_version or "",
+                                "githash": githash or b""
                             },
-                            "five": tedapi.message.firmware.system.five,
-                            "six": tedapi.message.firmware.system.six,
-                            "wireless": {
-                                "device": []
-                            }
                         }
                     }
-                    try:
-                        for device in tedapi.message.firmware.system.wireless.device:
-                            payload["system"]["wireless"]["device"].append({
-                                "company": device.company.value,
-                                "model": device.model.value,
-                                "fcc_id": device.fcc_id.value,
-                                "ic": device.ic.value
-                            })
-                    except Exception as e:
-                        log.debug(f"Error parsing wireless devices: {e}")
                     log.debug(f"Firmware Version: {payload}")
                 else:
                     payload = firmware_version
@@ -909,14 +980,13 @@ class TEDAPI:
             log.debug("Get PW3 Components from Powerwall")
             # Build Protobuf to fetch config
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_COMPONENTS
-            pb.message.payload.send.code = SEND_CODE_COMPONENTS
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_COMPONENTS)
+            pb.message.graphql.send.signature = SEND_CODE_COMPONENTS
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -931,7 +1001,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = self._parse_response(r.content)
-                payload = tedapi.message.payload.recv.text
+                payload = tedapi.message.graphql.recv.data
                 log.debug(f"Payload (len={len(payload)}): {payload}")
                 # Append payload to components
                 components = json.loads(payload)
@@ -1017,14 +1087,13 @@ class TEDAPI:
                 continue
             # Fetch Device ComponentsQuery from each Powerwall
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.recipient.din = pw_din  # DIN of Powerwall of Interest
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_COMPONENTS
-            pb.message.payload.send.code = SEND_CODE_COMPONENTS
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_COMPONENTS)
+            pb.message.graphql.send.signature = SEND_CODE_COMPONENTS
+            pb.message.graphql.send.variablesJson.value = "{}"
             if single_pw:
                 # If only one Powerwall, use basic tedapi URL
                 pb.tail.value = 1
@@ -1038,7 +1107,7 @@ class TEDAPI:
             if r.status_code == HTTPStatus.OK:
                 # Decode response
                 tedapi = self._parse_response(r.content)
-                payload = tedapi.message.payload.recv.text
+                payload = tedapi.message.graphql.recv.data
                 if payload:
                     data = json.loads(payload)
                     # TEDPOD
@@ -1209,15 +1278,14 @@ class TEDAPI:
             log.debug(f"Get Battery Block from Powerwall ({din})")
             # Build Protobuf to fetch config
             pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
+            pb.message.deliveryChannel = tedapi_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = tedapi_pb2.LOCAL_PARTICIPANT_INSTALLER
             pb.message.sender.din = self.din  # DIN of Primary Powerwall 3 / System
             pb.message.recipient.din = din  # DIN of Powerwall of Interest
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_COMPONENTS
-            pb.message.payload.send.code = SEND_CODE_COMPONENTS
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_COMPONENTS)
+            pb.message.graphql.send.signature = SEND_CODE_COMPONENTS
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 2
             url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
             try:
@@ -1236,7 +1304,7 @@ class TEDAPI:
                     return None
                 # Decode response
                 tedapi = self._parse_response(r.content)
-                payload = tedapi.message.config.recv.file.text
+                payload = tedapi.message.filestore.readFileResponse.file.blob.decode('utf-8')
                 if payload:
                     try:
                         data = json.loads(payload)
@@ -1313,8 +1381,8 @@ class TEDAPI:
     def _send_cmd(self, pb, url=None):
         """Send a protobuf command to a TEDAPI endpoint.
 
-        In basic mode, sends the raw serialized Message.
-        In bearer mode, wraps the inner MessageEnvelope in an AuthEnvelope
+        In basic mode, sends the raw serialized Message (MessageEnvelope + Tail).
+        In bearer mode, wraps the serialized MessageEnvelope in an AuthEnvelope
         with EXTERNAL_AUTH_TYPE_PRESENCE.
 
         Args:
@@ -1343,11 +1411,10 @@ class TEDAPI:
             try:
                 self._bearer_login()
                 # Re-wrap with fresh session state
-                if self.auth_mode == "bearer":
-                    auth_env = tedapi_pb2.AuthEnvelope()
-                    auth_env.payload = pb.message.SerializeToString()
-                    auth_env.externalAuth.type = 1
-                    data = auth_env.SerializeToString()
+                auth_env = tedapi_pb2.AuthEnvelope()
+                auth_env.payload = pb.message.SerializeToString()
+                auth_env.externalAuth.type = 1
+                data = auth_env.SerializeToString()
                 r = self.session.post(url, data=data, timeout=self.timeout)
             except Exception as e:
                 log.error(f"Bearer re-authentication failed: {e}")
@@ -1357,11 +1424,11 @@ class TEDAPI:
     def _parse_response(self, content):
         """Parse a TEDAPI protobuf response.
 
-        In basic mode, parses raw content as a Message.
-        In bearer mode, unwraps the AuthEnvelope first, then parses the
+        In basic mode, parses raw content as a full Message.
+        In bearer mode, unwraps the AuthEnvelope and parses the
         inner payload as a MessageEnvelope.
 
-        Returns a tedapi_pb2.Message object.
+        Returns a tedapi_pb2.Message object (with .message populated).
         """
         content = decompress_response(content)
         if self.auth_mode == "bearer":
@@ -1476,11 +1543,10 @@ class TEDAPI:
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_IEEE20305
-            pb.message.payload.send.code = SEND_CODE_IEEE20305
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_IEEE20305)
+            pb.message.graphql.send.signature = SEND_CODE_IEEE20305
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -1491,7 +1557,7 @@ class TEDAPI:
                     log.error(f"Error fetching IEEE 2030.5 data: {r.status_code}")
                     return None
                 tedapi = self._parse_response(r.content)
-                data = json.loads(tedapi.message.payload.recv.text)
+                data = json.loads(tedapi.message.graphql.recv.data)
                 self.pwcachetime["ieee20305"] = time.time()
                 self.pwcache["ieee20305"] = data
             except Exception as e:
@@ -1520,11 +1586,10 @@ class TEDAPI:
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_GRID_CODES
-            pb.message.payload.send.code = SEND_CODE_GRID_CODES
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_GRID_CODES)
+            pb.message.graphql.send.signature = SEND_CODE_GRID_CODES
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -1535,7 +1600,7 @@ class TEDAPI:
                     log.error(f"Error fetching grid codes: {r.status_code}")
                     return None
                 tedapi = self._parse_response(r.content)
-                data = json.loads(tedapi.message.payload.recv.text)
+                data = json.loads(tedapi.message.graphql.recv.data)
                 self.pwcachetime["grid_codes"] = time.time()
                 self.pwcache["grid_codes"] = data
             except Exception as e:
@@ -1566,11 +1631,10 @@ class TEDAPI:
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_GRID_CODE_DETAILS
-            pb.message.payload.send.code = SEND_CODE_GRID_CODE_DETAILS
-            pb.message.payload.send.b.value = json.dumps({
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_GRID_CODE_DETAILS)
+            pb.message.graphql.send.signature = SEND_CODE_GRID_CODE_DETAILS
+            pb.message.graphql.send.variablesJson.value = json.dumps({
                 "gridCode": grid_code,
                 "pointNames": point_names,
             })
@@ -1584,7 +1648,7 @@ class TEDAPI:
                     log.error(f"Error fetching grid code details: {r.status_code}")
                     return None
                 tedapi = self._parse_response(r.content)
-                data = json.loads(tedapi.message.payload.recv.text)
+                data = json.loads(tedapi.message.graphql.recv.data)
                 self.pwcachetime[cache_key] = time.time()
                 self.pwcache[cache_key] = data
             except Exception as e:
@@ -1613,11 +1677,10 @@ class TEDAPI:
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_EATON_SBII
-            pb.message.payload.send.code = SEND_CODE_EATON_SBII
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_EATON_SBII)
+            pb.message.graphql.send.signature = SEND_CODE_EATON_SBII
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -1628,7 +1691,7 @@ class TEDAPI:
                     log.error(f"Error fetching Eaton SBII data: {r.status_code}")
                     return None
                 tedapi = self._parse_response(r.content)
-                data = json.loads(tedapi.message.payload.recv.text)
+                data = json.loads(tedapi.message.graphql.recv.data)
                 self.pwcachetime["eaton_sbii"] = time.time()
                 self.pwcache["eaton_sbii"] = data
             except Exception as e:
@@ -1657,11 +1720,10 @@ class TEDAPI:
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_PINV_SELF_TEST
-            pb.message.payload.send.code = SEND_CODE_PINV_SELF_TEST
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_PINV_SELF_TEST)
+            pb.message.graphql.send.signature = SEND_CODE_PINV_SELF_TEST
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -1672,7 +1734,7 @@ class TEDAPI:
                     log.error(f"Error fetching inverter self-test data: {r.status_code}")
                     return None
                 tedapi = self._parse_response(r.content)
-                data = json.loads(tedapi.message.payload.recv.text)
+                data = json.loads(tedapi.message.graphql.recv.data)
                 self.pwcachetime["pinv_self_test"] = time.time()
                 self.pwcache["pinv_self_test"] = data
             except Exception as e:
@@ -1701,11 +1763,10 @@ class TEDAPI:
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = QUERY_PROTECTION_TRIP_TEST
-            pb.message.payload.send.code = SEND_CODE_PROTECTION_TRIP_TEST
-            pb.message.payload.send.b.value = "{}"
+            pb.message.graphql.send.format = tedapi_pb2.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+            pb.message.graphql.send.query = _build_signed_query(QUERY_PROTECTION_TRIP_TEST)
+            pb.message.graphql.send.signature = SEND_CODE_PROTECTION_TRIP_TEST
+            pb.message.graphql.send.variablesJson.value = "{}"
             pb.tail.value = 1
             try:
                 r = self._send_cmd(pb)
@@ -1716,7 +1777,7 @@ class TEDAPI:
                     log.error(f"Error fetching protection trip test data: {r.status_code}")
                     return None
                 tedapi = self._parse_response(r.content)
-                data = json.loads(tedapi.message.payload.recv.text)
+                data = json.loads(tedapi.message.graphql.recv.data)
                 self.pwcachetime["protection_trip_test"] = time.time()
                 self.pwcache["protection_trip_test"] = data
             except Exception as e:
