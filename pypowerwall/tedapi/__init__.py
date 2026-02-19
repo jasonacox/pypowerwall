@@ -543,10 +543,14 @@ class TEDAPI:
                 # Decode response
                 tedapi = self._parse_response(r.content)
                 payload = tedapi.message.config.recv.file.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
+                if payload:
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
+                else:
+                    log.warning("Empty config payload from gateway")
                     data = {}
                 log.debug(f"Configuration: {data}")
                 self.pwcachetime["config"] = time.time()
@@ -657,10 +661,14 @@ class TEDAPI:
                 # Decode response
                 tedapi = self._parse_response(r.content)
                 payload = tedapi.message.payload.recv.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
+                if payload:
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
+                else:
+                    log.warning("Empty status payload from gateway")
                     data = {}
                 log.debug(f"Status: {data}")
                 self.pwcachetime["status"] = time.time()
@@ -738,10 +746,14 @@ class TEDAPI:
                 tedapi = self._parse_response(r.content)
                 payload = tedapi.message.payload.recv.text
                 log.debug(f"Payload: {payload}")
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
+                if payload:
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
+                else:
+                    log.warning("Empty controller payload from gateway")
                     data = {}
                 log.debug(f"Status: {data}")
                 self.pwcachetime["controller"] = time.time()
@@ -1225,10 +1237,14 @@ class TEDAPI:
                 # Decode response
                 tedapi = self._parse_response(r.content)
                 payload = tedapi.message.config.recv.file.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
+                if payload:
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
+                else:
+                    log.warning(f"Empty device config payload from gateway for {din}")
                     data = {}
                 log.debug(f"Configuration: {data}")
                 self.pwcachetime[din] = time.time()
