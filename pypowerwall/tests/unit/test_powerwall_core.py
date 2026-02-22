@@ -2,6 +2,7 @@ import json
 import pytest
 from pypowerwall import Powerwall
 from pypowerwall.pypowerwall_base import PyPowerwallBase
+from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter
 
 class StubClient(PyPowerwallBase):
     def __init__(self):
@@ -134,3 +135,71 @@ def test_temps(pw):
 
 def test_site_name(pw):
     assert pw.site_name() == 'Test Site'
+
+
+# ---------------------------------------------------------------------------
+# Host validation tests (_validate_init_configuration host:port support)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(name="pw_validator")
+def fixture_pw_validator():
+    """Powerwall created in cloud mode (no local connection) used as a harness
+    to invoke _validate_init_configuration() with arbitrary host values."""
+    inst = Powerwall(host='', password='', email='test@example.com', cloudmode=True)
+    # Switch to local-like state so only the host block runs during re-validation
+    inst.cloudmode = False
+    inst.fleetapi = False
+    return inst
+
+
+def _set_and_validate(pw, host):
+    pw.host = host
+    pw._validate_init_configuration()
+
+
+class TestHostPortValidation:
+    """Unit tests for host / host:port validation logic."""
+
+    def test_bare_ipv4_valid(self, pw_validator):
+        _set_and_validate(pw_validator, "192.168.1.50")
+
+    def test_bare_hostname_valid(self, pw_validator):
+        _set_and_validate(pw_validator, "powerwall.local")
+
+    def test_bare_fqdn_valid(self, pw_validator):
+        _set_and_validate(pw_validator, "gateway.example.com")
+
+    def test_host_port_valid(self, pw_validator):
+        _set_and_validate(pw_validator, "192.168.1.50:8443")
+
+    def test_host_port_default_443(self, pw_validator):
+        _set_and_validate(pw_validator, "192.168.91.1:443")
+
+    def test_hostname_port_valid(self, pw_validator):
+        _set_and_validate(pw_validator, "powerwall.local:8443")
+
+    def test_port_zero_rejected(self, pw_validator):
+        with pytest.raises(PyPowerwallInvalidConfigurationParameter):
+            _set_and_validate(pw_validator, "192.168.1.50:0")
+
+    def test_port_too_large_rejected(self, pw_validator):
+        with pytest.raises(PyPowerwallInvalidConfigurationParameter):
+            _set_and_validate(pw_validator, "192.168.1.50:65536")
+
+    def test_invalid_host_rejected(self, pw_validator):
+        with pytest.raises(PyPowerwallInvalidConfigurationParameter):
+            _set_and_validate(pw_validator, "not a host!!")
+
+    def test_bare_ipv6_valid(self, pw_validator):
+        # Valid bare IPv6 passes regex validation (URL construction is a separate concern)
+        _set_and_validate(pw_validator, "2001:db8::1")
+
+    def test_invalid_ipv6_like_rejected(self, pw_validator):
+        # Multi-colon string that is not valid IPv6 must not slip through
+        # via port-stripping and must raise a validation error
+        with pytest.raises(PyPowerwallInvalidConfigurationParameter):
+            _set_and_validate(pw_validator, "2001:db8::99999")
+
+    def test_empty_host_skips_validation(self, pw_validator):
+        # Empty host bypasses the block entirely (cloud/fleet mode use case)
+        _set_and_validate(pw_validator, "")
