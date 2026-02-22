@@ -46,6 +46,9 @@ def run_tedapi_test(auto=False, debug=False):
     parser = argparse.ArgumentParser(description='Tesla Powerwall Gateway TEDAPI Reader')
     parser.add_argument('gw_pwd', nargs='?', help='Powerwall Gateway Password')
     parser.add_argument('--gw_ip', default=GW_IP, help='Powerwall Gateway IP Address')
+    parser.add_argument('--auth-mode', default='basic', choices=['basic', 'bearer'],
+                        help='Authentication mode: basic (default, requires static route to 192.168.91.1) '
+                             'or bearer (installer login, works from home network)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     # Parse arguments
     args = parser.parse_args()
@@ -90,7 +93,7 @@ def run_tedapi_test(auto=False, debug=False):
     # Create TEDAPI Object and get Configuration and Status
     print()
     print(f"Connecting to Powerwall Gateway {GW_IP}")
-    ted = TEDAPI(gw_pwd, host=GW_IP)
+    ted = TEDAPI(gw_pwd, host=GW_IP, auth_mode=args.auth_mode)
     if ted.din is None:
         print("\nERROR: Unable to connect to Powerwall Gateway. Check your password and try again")
         sys.exit(1)
