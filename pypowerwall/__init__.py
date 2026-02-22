@@ -929,10 +929,17 @@ class Powerwall(object):
                 not IPV4_6_REGEX.match(host_part) and
                 not HOST_REGEX.match(host_part)
             ):
-                # Not a bare host — check if a trailing :port suffix can be stripped
-                if ":" in host_part:
+                # Not a bare host — check if a trailing :port suffix can be stripped.
+                # Only consider single-colon strings (hostname:port or IPv4:port);
+                # multi-colon strings are IPv6 or malformed and must not be treated as host:port.
+                if host_part.count(":") == 1:
                     last_part = host_part.rsplit(":", 1)[1]
                     if last_part.isdigit():
+                        port = int(last_part)
+                        if not (1 <= port <= 65535):
+                            raise PyPowerwallInvalidConfigurationParameter(
+                                f"Invalid port in host '{self.host}': port {port} is out of the "
+                                f"valid TCP range 1-65535.")
                         host_part = host_part.rsplit(":", 1)[0]
             if (
                 not isinstance(host_part, str) or
