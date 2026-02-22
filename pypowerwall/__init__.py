@@ -20,7 +20,8 @@
         cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd)
 
  Parameters
-    host                      # Hostname or IP of the Tesla gateway
+    host                      # Hostname or IP of the Tesla gateway (optionally host:port for 
+                                non-standard HTTPS port, e.g. 10.0.1.99:8443; default port is 443)
     password                  # Customer password for gateway
     email                     # (required) Customer email for gateway / cloud
     timezone                  # Desired timezone
@@ -88,7 +89,7 @@ import time
 from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 14, 9)
+version_tuple = (0, 14, 10)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -135,7 +136,9 @@ class Powerwall(object):
         Represents a Tesla Energy Gateway Powerwall device.
 
         Args:
-            host        = Hostname or IP address of Powerwall (e.g. 10.0.1.99)
+            host        = Hostname or IP address of Powerwall (e.g. 10.0.1.99); optionally
+                          include a port for non-standard HTTPS access (e.g. 10.0.1.99:8443);
+                          defaults to port 443 when no port is specified
             password    = Customer password set up on Powerwall gateway
             email       = Customer email 
             timezone    = Timezone for location of Powerwall 
@@ -911,13 +914,36 @@ class Powerwall(object):
         # Basic user input validation for starters. Can be expanded to limit other parameters such as cache
         # expiration range, timeout range, etc
 
-        # Check for valid hostname/IP address
-        if (self.host and (
-                not isinstance(self.host, str) or
-                (not IPV4_6_REGEX.match(self.host) and not HOST_REGEX.match(self.host))
-        )):
-            raise PyPowerwallInvalidConfigurationParameter(f"Invalid powerwall host: '{self.host}'. Must be in the "
-                                                           f"form of IP address or a valid form of a hostname or FQDN.")
+        # Check for valid hostname/IP address.
+        # Supports optional :port suffix (e.g. "192.168.1.50:8443") — strip the port
+        # before regex validation since IPV4_6_REGEX and HOST_REGEX only match bare hosts.
+        #
+        # IMPORTANT: only attempt port-stripping when the value does NOT already validate
+        # as a bare host/IP. This prevents false port detection in IPv6 addresses, where
+        # colons are part of the address itself (e.g. "2001:db8::1" must not have its
+        # trailing ":1" mistaken for a port number).
+        if self.host:
+            host_part = self.host
+            if (
+                isinstance(host_part, str) and
+                not IPV4_6_REGEX.match(host_part) and
+                not HOST_REGEX.match(host_part)
+            ):
+                # Not a bare host — check if a trailing :port suffix can be stripped
+                if ":" in host_part:
+                    last_part = host_part.rsplit(":", 1)[1]
+                    if last_part.isdigit():
+                        host_part = host_part.rsplit(":", 1)[0]
+            if (
+                not isinstance(host_part, str) or
+                (not IPV4_6_REGEX.match(host_part) and not HOST_REGEX.match(host_part))
+            ):
+                raise PyPowerwallInvalidConfigurationParameter(f"Invalid powerwall host: '{self.host}'. Must be in the "
+                                                               f"form of IP address or a valid form of a hostname or FQDN.")
+            # TODO: IPv6 support - bare IPv6 addresses (e.g. "2001:db8::1") pass validation via
+            # IPV4_6_REGEX but URL construction produces malformed URLs. If IPv6 is ever needed,
+            # detect a validated bare IPv6 host here and wrap it in brackets so that all downstream
+            # callers automatically produce RFC 2732-compliant URLs (e.g. "https://[2001:db8::1]/...").
 
         # If cloud mode requested, check appropriate parameters
         if self.cloudmode and not self.fleetapi:

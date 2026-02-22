@@ -73,7 +73,10 @@ class PyPowerwallLocal(PyPowerwallBase):
         if self.auth == {}:
             self._get_session()
         # Check for TEDAPI capability
-        if self.gw_pw and self.host == GW_IP:
+        # Match bare GW_IP or explicit port variant (e.g. "192.168.91.1:443") so that
+        # hybrid TEDAPI mode activates regardless of whether the user appended the
+        # default port to the host string.
+        if self.gw_pw and (self.host == GW_IP or self.host.startswith(GW_IP + ":")):
             # TEDAPI is requested now test
             self.tedapi = TEDAPI(self.gw_pw)
             if self.tedapi.connect():

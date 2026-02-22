@@ -1,5 +1,16 @@
 # RELEASE NOTES
 
+## v0.14.10 - Host Port Support
+
+* Add support for `host:port` format in the `host` parameter for local mode connections - Fix for https://github.com/jasonacox/pypowerwall/issues/254
+     * Allows specifying a non-standard HTTPS port (e.g. `192.168.1.50:8443` or `powerwall.local:8443`)
+     * Defaults to port 443 when no port is specified in `host`
+     * Enables travel router / NAT proxy setups where multiple Powerwall gateways are each mapped to distinct `ip:port` endpoints on the local network
+     * Updated `_validate_init_configuration()` to validate bare host first, then strip the optional port suffix — prevents false port detection inside IPv6 addresses (e.g. `2001:db8::1` is never mistaken for a host with port `1`)
+     * Fixed TEDAPI hybrid mode detection in `PyPowerwallLocal` to match `192.168.91.1:443` (explicit default port) in addition to bare `192.168.91.1`, ensuring TEDAPI activates for direct gateway connections regardless of whether the port is stated
+     * URL construction in local and TEDAPI modes naturally handles `host:port` format via `https://{host}/...` string formatting
+     * Note: IPv6 addresses are accepted by validation but full URL construction support (bracket notation per RFC 2732) is not yet implemented
+
 ## v0.14.9 - TEDAPI Voltage Calculation Fix
 
 * Fix `compute_LL_voltage()` function to handle `None` voltage values in grid down scenarios - Fix for https://github.com/jasonacox/Powerwall-Dashboard/issues/683

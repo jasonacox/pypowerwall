@@ -241,7 +241,7 @@ print("System Status: %r\n" % pw.system_status())
         cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd)
 
  Parameters
-    host                      # Hostname or IP of the Tesla gateway
+    host                      # Hostname or IP of the Tesla gateway (host:port)
     password                  # Customer password for gateway
     email                     # (required) Customer email for gateway / cloud
     timezone                  # Desired timezone
