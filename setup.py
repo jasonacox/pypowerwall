@@ -1,6 +1,16 @@
 import setuptools
+import os
+import re
 
-from pypowerwall import __version__
+version_file = os.path.join(os.path.dirname(__file__), 'pypowerwall', '__init__.py')
+with open(version_file, 'r') as f:
+    version_content = f.read()
+match = re.search(r"^version_tuple\s*=\s*\(([^)]*)\)", version_content, re.MULTILINE)
+if match:
+    version_tuple = tuple(int(x.strip()) for x in match.group(1).split(','))
+    __version__ = '%d.%d.%d' % version_tuple
+else:
+    raise RuntimeError('Unable to find version_tuple string in pypowerwall/__init__.py')
 
 with open("README.md", "r") as fh:
     long_description = fh.read()

@@ -46,7 +46,8 @@ def compute_LL_voltage(v1n, v2n, v3n=None):
 # noinspection PyMethodMayBeStatic
 class PyPowerwallTEDAPI(PyPowerwallBase):
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-                 pwconfigexpire: int = 5, poolmaxsize: int = 10, host: str = GW_IP) -> None:
+                 pwconfigexpire: int = 5, poolmaxsize: int = 10, host: str = GW_IP,
+                 auth_mode: str = "basic") -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout
@@ -56,6 +57,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.host = host
         self.gw_pwd = gw_pwd
         self.debug = debug
+        self.auth_mode = auth_mode
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
         self.siteid = None
@@ -65,7 +67,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         # Initialize TEDAPI
         self.tedapi = TEDAPI(gw_pwd=self.gw_pwd, debug=self.debug, host=self.host, 
                              timeout=self.timeout, pwcacheexpire=self.pwcacheexpire,
-                             pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize)
+                             pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
+                             auth_mode=self.auth_mode)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
@@ -90,7 +93,6 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
             "/api/system_status/soe": self.get_api_system_status_soe,
             "/vitals": self.vitals,
-            # Possible Actions
             "/api/login/Basic": self.api_login_basic,
             "/api/logout": self.api_logout,
             # Mock Actions

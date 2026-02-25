@@ -4,7 +4,8 @@ WORKDIR /app
 
 # 1) copy in all the things that affect pip
 COPY proxy/requirements.txt .
-COPY setup.py requirements.txt README.md pypowerwall/ ./pypowerwall/
+COPY setup.py requirements.txt README.md ./pypowerwall/
+COPY pypowerwall/ ./pypowerwall/pypowerwall/
 
 # 2) install build deps, upgrade pip, install everything, then remove build deps
 RUN apk add --no-cache --virtual .build-deps \

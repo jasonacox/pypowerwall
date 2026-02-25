@@ -63,6 +63,9 @@ import pypowerwall
 from pypowerwall import parse_version
 
 BUILD: Final[str] = "t67"
+# Build from here
+# Fix cache expiration bug and update version to 0.12.2 #122
+#https://github.com/jasonacox/pypowerwall/commit/365ad94a817da5dbe6b583fae038512bdfff12cc
 UTF_8: Final[str] = "utf-8"
 
 ALLOWLIST: Final[Set[str]] = set([
@@ -1194,7 +1197,8 @@ def main() -> None:
                 cachefile=config[CONFIG_TYPE.PW_CACHE_FILE],
                 auto_select=True,
                 retry_modes=True,
-                gw_pwd=config[CONFIG_TYPE.PW_GW_PWD]
+                gw_pwd=config[CONFIG_TYPE.PW_GW_PWD],
+                tedapi_auth_mode="bearer"
             )
             pw_control = configure_pw_control(pw_monitor, config)
             pws.append((pw_monitor, pw_control, config))
