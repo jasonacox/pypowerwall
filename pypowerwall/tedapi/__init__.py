@@ -1383,38 +1383,54 @@ class TEDAPI:
 
     # Helper Function
     def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
+        """Extract fan speed signals from device controller data.
+
+        Primary path: esCan.bus.PVAC[].PVAC_Logging (new APK query location).
+        Fallback: components.msa[].signals[] (older firmware compatibility).
+        """
         if not isinstance(data, dict):
             return {}
 
         fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
-
-        # List to store the valid fan speed values
         result = {}
 
-        # Iterate over each component in the "msa" list
-        components = data.get("components", {})
-        if isinstance(components, dict):
-            for component in components.get("msa", []):
-                signals = component.get("signals", [])
-                fan_speeds = {
-                    signal["name"]: signal["value"]
-                    for signal in signals
-                    if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
-                }
-                if not fan_speeds:
-                    continue
-                componentPartNumber = component.get("partNumber")
-                componentSerialNumber = component.get("serialNumber")
-                result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
+        # Primary: fan speeds are now in esCan.bus.PVAC[].PVAC_Logging
+        pvac_list = lookup(data, ['esCan', 'bus', 'PVAC']) or []
+        for pvac in pvac_list:
+            logging_data = pvac.get("PVAC_Logging", {}) or {}
+            fan_speeds = {
+                name: logging_data[name]
+                for name in fan_speed_signal_names
+                if name in logging_data and logging_data[name] is not None
+            }
+            if not fan_speeds:
+                continue
+            part = pvac.get("packagePartNumber")
+            serial = pvac.get("packageSerialNumber")
+            result[f"PVAC--{part}--{serial}"] = fan_speeds
+
+        # Fallback: older firmware may still have fan speeds in components.msa signals
+        if not result:
+            components = data.get("components", {})
+            if isinstance(components, dict):
+                for component in components.get("msa", []):
+                    signals = component.get("signals", [])
+                    fan_speeds = {
+                        signal["name"]: signal["value"]
+                        for signal in signals
+                        if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
+                    }
+                    if not fan_speeds:
+                        continue
+                    part = component.get("partNumber")
+                    serial = component.get("serialNumber")
+                    result[f"PVAC--{part}--{serial}"] = fan_speeds
+
         return result
 
-
     def get_fan_speeds(self, force=False):
-         """
-         Get the fan speeds for the Powerwall / Inverter
-         """
-         return self.extract_fan_speeds(self.get_device_controller(force=force))
-
+        """Get the fan speeds for the Powerwall or inverter."""
+        return self.extract_fan_speeds(self.get_device_controller(force=force))
 
     def derive_meter_config(self, config) -> dict:
         # Build meter Lookup if available
