@@ -405,23 +405,25 @@ class Handler(BaseHTTPRequestHandler):
         # Map paths to handler functions
         path_handlers = {
             '/aggregates': self.handle_combined_aggregates,
-            '/api/meters/aggregates': self.handle_individual_gateway_aggregates,
-            '/soe': self.handle_soe,
-            '/api/system_status/soe': self.handle_soe_scaled,
-            '/api/system_status/grid_status': self.handle_grid_status,
-            '/vitals': self.handle_vitals,
-            '/strings': self.handle_strings,
-            '/stats': self.handle_stats,
-            '/stats/clear': self.handle_stats_clear,
-            '/temps': self.handle_temps,
-            '/temps/pw': self.handle_temps_pw,
             '/alerts': self.handle_alerts,
             '/alerts/pw': self.handle_alerts_pw,
-            '/freq': self.handle_freq,
-            '/pod': self.handle_pod,
-            '/version': self.handle_version,
-            '/help': self.handle_help,
+            '/api/meters/aggregates': self.handle_individual_gateway_aggregates,
+            '/api/system_status/grid_status': self.handle_grid_status,
+            '/api/system_status/soe': self.handle_soe_scaled,
             '/api/troubleshooting/problems': self.handle_problems,
+            '/fans': self.handle_fans,
+            '/fans/pw': self.handle_fans,
+            '/freq': self.handle_freq,
+            '/help': self.handle_help,
+            '/pod': self.handle_pod,
+            '/soe': self.handle_soe,
+            '/stats': self.handle_stats,
+            '/stats/clear': self.handle_stats_clear,
+            '/strings': self.handle_strings,
+            '/temps': self.handle_temps,
+            '/temps/pw': self.handle_temps_pw,
+            '/version': self.handle_version,
+            '/vitals': self.handle_vitals,
         }
 
         result: str = ""
@@ -662,6 +664,21 @@ class Handler(BaseHTTPRequestHandler):
             PROXY_STATS_TYPE.CLEAR: int(time.time()),
         })
         return self.send_json_response(self.proxystats)
+
+
+    def handle_fans(self) -> str:
+        if not self.pw.tedapi:
+            return self.send_json_response({})
+        fan_speeds = self.pw.tedapi.get_fan_speeds()
+        if self.path.startswith('/fans/pw'):
+            # Fan speeds in simplified format (e.g. FAN1_actual, FAN1_target)
+            output = {}
+            for i, (_, value) in enumerate(sorted(fan_speeds.items())):
+                key = f"FAN{i+1}"
+                output[f"{key}_actual"] = value.get('PVAC_Fan_Speed_Actual_RPM')
+                output[f"{key}_target"] = value.get('PVAC_Fan_Speed_Target_RPM')
+            return self.send_json_response(output)
+        return self.send_json_response(fan_speeds)
 
 
     def handle_temps(self) -> str:
