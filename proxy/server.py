@@ -409,7 +409,6 @@ class Handler(BaseHTTPRequestHandler):
             '/soe': self.handle_soe,
             '/api/system_status/soe': self.handle_soe_scaled,
             '/api/system_status/grid_status': self.handle_grid_status,
-            '/csv': self.handle_csv,
             '/vitals': self.handle_vitals,
             '/strings': self.handle_strings,
             '/stats': self.handle_stats,
@@ -434,6 +433,11 @@ class Handler(BaseHTTPRequestHandler):
             )
         elif path in ALLOWLIST:
             result = self.handle_allowlist(path)
+        elif path.startswith('/csv') or path.startswith('/csv/v2'):
+            # CSV Output - Grid,Home,Solar,Battery,Level
+            # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
+            # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
+            result = self.handle_csv()
         elif path.startswith('/tedapi'):
             result = self.handle_tedapi(path)
         elif path.startswith('/cloud'):
@@ -597,8 +601,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_csv(self) -> str:
-        # Grid,Home,Solar,Battery,Level - CSV
-        batterylevel = self.pw.level() or 0
+        # Grid,Home,Solar,Battery,BatteryLevel[,GridStatus,Reserve] - CSV
         grid = self.pw.grid() or 0
         solar = self.pw.solar() or 0
         battery = self.pw.battery() or 0
@@ -607,7 +610,16 @@ class Handler(BaseHTTPRequestHandler):
             solar = 0
             # Shift energy from solar to load
             home -= solar
-        message = f"{grid:.2f},{home:.2f},{solar:.2f},{battery:.2f},{batterylevel:.2f}\n"
+        fields = [grid, home, solar, battery, self.pw.level() or 0]
+        headers = ["Grid", "Home", "Solar", "Battery", "BatteryLevel"]
+        if self.path.startswith('/csv/v2'):
+            fields.append(1 if self.pw.grid_status() == 'UP' else 0)
+            fields.append(self.pw.get_reserve() or 0)
+            headers += ["GridStatus", "Reserve"]
+        message = ""
+        if "headers" in self.path:
+            message += ",".join(headers) + "\n"
+        message += ",".join(f"{v:.2f}" if isinstance(v, float) else str(v) for v in fields) + "\n"
         return self.send_json_response(message)
 
 

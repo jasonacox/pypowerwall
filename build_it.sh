@@ -1,0 +1,1 @@
+docker build -f proxy/Dockerfile -t jasonacox/pypowerwall:0.12.6.t221 .
