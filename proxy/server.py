@@ -88,12 +88,13 @@ import resource
 import signal
 import ssl
 import sys
-import time
 import threading
+import time
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import Optional
-from urllib.parse import urlparse, parse_qs
+from typing import Final
+from urllib.parse import parse_qs, urlparse
 
 import requests
 import urllib3
@@ -109,26 +110,22 @@ except ImportError:  # noqa: BLE001 - fall back to other strategies
         from proxy.transform import get_static, inject_js  # type: ignore
     except ImportError:  # noqa: BLE001
         from transform import get_static, inject_js  # type: ignore  # Last resort
+
 import pypowerwall
 from pypowerwall import parse_version
-from pypowerwall.exceptions import (
-    PyPowerwallInvalidConfigurationParameter,
-    InvalidBatteryReserveLevelException,
-)
-from pypowerwall.tedapi.exceptions import (
-    PyPowerwallTEDAPINoTeslaAuthFile,
-    PyPowerwallTEDAPITeslaNotConnected,
-    PyPowerwallTEDAPINotImplemented,
-    PyPowerwallTEDAPIInvalidPayload,
-)
+from pypowerwall.exceptions import (InvalidBatteryReserveLevelException,
+                                    PyPowerwallInvalidConfigurationParameter)
 from pypowerwall.fleetapi.exceptions import (
-    PyPowerwallFleetAPINoTeslaAuthFile,
-    PyPowerwallFleetAPITeslaNotConnected,
-    PyPowerwallFleetAPINotImplemented,
-    PyPowerwallFleetAPIInvalidPayload,
-)
+    PyPowerwallFleetAPIInvalidPayload, PyPowerwallFleetAPINoTeslaAuthFile,
+    PyPowerwallFleetAPINotImplemented, PyPowerwallFleetAPITeslaNotConnected)
+from pypowerwall.tedapi.exceptions import (PyPowerwallTEDAPIInvalidPayload,
+                                           PyPowerwallTEDAPINoTeslaAuthFile,
+                                           PyPowerwallTEDAPINotImplemented,
+                                           PyPowerwallTEDAPITeslaNotConnected)
 
-BUILD = "t88"
+BUILD: Final[str] = "t88"
+UTF_8: Final[str] = "utf-8"
+
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -484,20 +481,20 @@ def get_performance_cached(cache_key):
     """
     Get cached endpoint response for performance optimization.
     Uses standard cache_expire TTL (typically 5 seconds).
-    
+
     Args:
         cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
-    
+
     Returns:
         Cached response string if available and fresh, None otherwise
     """
     with _performance_cache_lock:
         if cache_key not in _performance_cache:
             return None
-        
+
         data, timestamp = _performance_cache[cache_key]
         age = time.time() - timestamp
-        
+
         # Use standard cache_expire (same as pypowerwall's internal cache)
         if age < cache_expire:
             log.debug(f"Performance cache hit for {cache_key} (age: {age:.2f}s)")
@@ -510,7 +507,7 @@ def get_performance_cached(cache_key):
 def cache_performance_response(cache_key, data):
     """
     Cache endpoint response for performance optimization.
-    
+
     Args:
         cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
         data: The response string to cache
@@ -523,10 +520,10 @@ def cache_performance_response(cache_key, data):
 def performance_cached(cache_key):
     """
     Decorator for performance caching of route handlers.
-    
+
     Args:
         cache_key: The cache key to use (e.g., '/vitals', '/strings', '/freq')
-    
+
     Returns:
         Decorator function that wraps route handlers with caching logic
     """
@@ -536,16 +533,16 @@ def performance_cached(cache_key):
             cached_response = get_performance_cached(cache_key)
             if cached_response is not None:
                 return cached_response
-            
+
             # Cache miss - generate fresh data
             result = func(*args, **kwargs)
-            
+
             # Only cache non-None results
             if result is not None:
                 cache_performance_response(cache_key, result)
-            
+
             return result
-        
+
         return wrapper
     return decorator
 
@@ -553,11 +550,11 @@ def performance_cached(cache_key):
 def cached_route_handler(cache_key, data_generator):
     """
     Helper function for performance-cached route handling.
-    
+
     Args:
         cache_key: The cache key to use for this route
         data_generator: Function that generates the response data
-    
+
     Returns:
         Cached response if available, otherwise fresh data (and caches it)
     """
@@ -565,14 +562,14 @@ def cached_route_handler(cache_key, data_generator):
     cached_response = get_performance_cached(cache_key)
     if cached_response is not None:
         return cached_response
-    
+
     # Cache miss - generate fresh data
     result = data_generator()
-    
+
     # Only cache non-None results
     if result is not None:
         cache_performance_response(cache_key, result)
-    
+
     return result
 
 
@@ -892,6 +889,47 @@ class Handler(BaseHTTPRequestHandler):
         hostaddr, hostport = self.client_address[:2]
         return hostaddr
 
+
+    def send_json_response(self, data, status_code=HTTPStatus.OK, content_type='application/json') -> str:
+        global proxystats
+        # Accept dict/list (serialize to JSON) or raw string
+        try:
+            if isinstance(data, (dict, list)):
+                response = json.dumps(data)
+            elif data is None:
+                # JSON null
+                response = "null"
+            else:
+                response = str(data)
+
+            self.send_response(status_code)
+            self.send_header('Content-type', content_type)
+            self.send_header('Content-Length', str(len(response)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            # Some writable objects return None from write(); ignore the return value
+            self.wfile.write(response.encode(UTF_8))
+            return response
+        except Exception as exc:
+            log.debug(f"Error sending response: {exc}")
+            proxystats["errors"] += 1
+            return ""
+
+    def send_text_response(self, message: str, status_code=HTTPStatus.OK, content_type='text/plain; charset=utf-8') -> str:
+        """Helper to send plain-text responses."""
+        try:
+            response = str(message)
+            self.send_response(status_code)
+            self.send_header('Content-type', content_type)
+            self.send_header('Content-Length', str(len(response)))
+            self.end_headers()
+            self.wfile.write(response.encode(UTF_8))
+            return response
+        except Exception as exc:
+            log.debug(f"Error sending text response: {exc}")
+            proxystats["errors"] += 1
+            return ""
+
     def do_POST(self):
         global proxystats
         contenttype = "application/json"
@@ -1041,10 +1079,65 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(message.encode("utf8"))
 
+    def get_handle_freq(self) -> str:
+        # Frequency, Current, Voltage and Grid Status
+        def generate_freq() -> str:
+            fcv = {}
+            idx = 1
+            # Pull freq, current, voltage of each Powerwall via system_status
+            d = safe_pw_call(pw.system_status) or {}
+            if "battery_blocks" in d:
+                for block in d["battery_blocks"]:
+                    fcv["PW%d_name" % idx] = None  # Placeholder for vitals
+                    fcv["PW%d_PINV_Fout" % idx] = get_value(block, "f_out")
+                    fcv["PW%d_PINV_VSplit1" % idx] = None  # Placeholder for vitals
+                    fcv["PW%d_PINV_VSplit2" % idx] = None  # Placeholder for vitals
+                    fcv["PW%d_PackagePartNumber" % idx] = get_value(
+                        block, "PackagePartNumber"
+                    )
+                    fcv["PW%d_PackageSerialNumber" % idx] = get_value(
+                        block, "PackageSerialNumber"
+                    )
+                    fcv["PW%d_p_out" % idx] = get_value(block, "p_out")
+                    fcv["PW%d_q_out" % idx] = get_value(block, "q_out")
+                    fcv["PW%d_v_out" % idx] = get_value(block, "v_out")
+                    fcv["PW%d_f_out" % idx] = get_value(block, "f_out")
+                    fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
+                    idx = idx + 1
+            # Pull freq, current, voltage of each Powerwall via vitals if available
+            vitals = safe_pw_call(pw.vitals) or {}
+            idx = 1
+            for device in vitals:
+                d = vitals[device]
+                if device.startswith("TEPINV"):
+                    # PW freq
+                    fcv["PW%d_name" % idx] = device
+                    fcv["PW%d_PINV_Fout" % idx] = get_value(d, "PINV_Fout")
+                    fcv["PW%d_PINV_VSplit1" % idx] = get_value(d, "PINV_VSplit1")
+                    fcv["PW%d_PINV_VSplit2" % idx] = get_value(d, "PINV_VSplit2")
+                    idx = idx + 1
+                if device.startswith("TESYNC") or device.startswith("TEMSA"):
+                    # Island and Meter Metrics from Backup Gateway or Backup Switch
+                    for i in d:
+                        if i.startswith("ISLAND") or i.startswith("METER"):
+                            fcv[i] = d[i]
+            fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
+            return json.dumps(fcv)
+
+        message = cached_route_handler("/freq", generate_freq)
+        if not message:
+            return None
+        # Return parsed data (do_GET will perform the actual write)
+        return json.loads(message)
+
+    # Map paths to handler functions
+    GET_PATH_HANDLERS = {
+        '/freq': get_handle_freq,
+    }
+
     def do_GET(self):
-        global proxystats
-        self.send_response(200)
-        contenttype = "application/json"
+        """Handle GET requests."""
+        self.send_response(HTTPStatus.OK)
 
         # If set, remove the api_base_url from the requested path. This allows installing the
         # the proxy on a path without impacting the use of Telegraf or other integrations. Python 3.9+
@@ -1052,6 +1145,58 @@ class Handler(BaseHTTPRequestHandler):
         new_path = request_path.removeprefix(api_base_url)
         if new_path is not request_path:
             request_path = "/" + new_path
+
+        # Old path handling for until migration to functions is complete.
+        if request_path not in self.GET_PATH_HANDLERS:
+            self._do_get_branches(request_path)
+            return
+
+        # New path handling via function mapping. Intent is to migrate all paths to this method.
+        result = self.GET_PATH_HANDLERS[request_path](self)
+
+        API_PATHS = frozenset({"/aggregates", "/soe", "/vitals", "/strings"})
+        def _is_api_endpoint(path: str) -> bool:
+            return path.startswith("/api/") or path in API_PATHS
+
+        global proxystats
+        with proxystats_lock:
+            if not result:
+                proxystats["timeout"] += 1
+                if _is_api_endpoint(request_path):
+                    # Send JSON null for API endpoints
+                    self.send_json_response(None)
+                else:
+                    self.send_text_response("TIMEOUT!")
+                return
+            if result == "ERROR!":
+                proxystats["errors"] += 1
+                self.send_text_response("ERROR!")
+                return
+
+            proxystats["gets"] += 1
+            proxystats["uri"][request_path] = proxystats["uri"].get(request_path, 0) + 1
+
+        # Write the handler result. Handlers should return dict/list for JSON,
+        # but may return raw strings for non-JSON endpoints.
+        if isinstance(result, (dict, list)):
+            self.send_json_response(result)
+        elif isinstance(result, str):
+            # Try to parse JSON strings, otherwise treat as plain text
+            try:
+                parsed = json.loads(result)
+                self.send_json_response(parsed)
+            except Exception:
+                self.send_text_response(result)
+        else:
+            # Fallback: stringify
+            self.send_text_response(str(result))
+
+
+    # Eventually the plan is to move everything in this "god" function
+    # to individual handler functions mapped in GET_PATH_HANDLERS above.
+    def _do_get_branches(self, request_path: str):
+        global proxystats
+        contenttype = "application/json"
 
         if request_path == "/aggregates" or request_path == "/api/meters/aggregates":
             # Meters - JSON
@@ -1110,12 +1255,12 @@ class Handler(BaseHTTPRequestHandler):
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
             contenttype = "text/plain; charset=utf-8"
-            
+
             # Determine endpoint and whether to include headers
             is_v2 = request_path.startswith("/csv/v2")
             include_headers = "headers" in request_path
             cache_key = f"/csv/v2{'_headers' if include_headers else ''}" if is_v2 else f"/csv{'_headers' if include_headers else ''}"
-            
+
             def generate_csv():
                 # Optimization: Use single aggregates call for all power values
                 aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
@@ -1126,21 +1271,21 @@ class Handler(BaseHTTPRequestHandler):
                     home = aggregates.get('load', {}).get('instant_power', 0)
                 else:
                     grid = solar = battery = home = 0
-                
+
                 # Apply negative solar correction if configured
                 if not neg_solar and solar < 0:
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
-                
+
                 # Get battery level - poll() handles caching internally
                 batterylevel = safe_pw_call(pw.level) or 0
-                
+
                 if is_v2:
                     # Get grid status and reserve - these use cached data internally
                     gridstatus = 1 if safe_pw_call(pw.grid_status) == "UP" else 0
                     reserve = safe_pw_call(pw.get_reserve) or 0
-                
+
                 # Build CSV response
                 if is_v2:
                     result = ""
@@ -1169,7 +1314,7 @@ class Handler(BaseHTTPRequestHandler):
                         batterylevel,
                     )
                 return result
-            
+
             message = cached_route_handler(cache_key, generate_csv)
         elif request_path == "/vitals":
             # Vitals Data - JSON
@@ -1222,7 +1367,7 @@ class Handler(BaseHTTPRequestHandler):
                     proxystats["mem_cache"]["error_counts"] = {
                         "entries": len(_error_counts),
                         "size_bytes": sys.getsizeof(_error_counts) + sum(
-                            sys.getsizeof(k) + sys.getsizeof(v) 
+                            sys.getsizeof(k) + sys.getsizeof(v)
                             for k, v in _error_counts.items()
                         ),
                     }
@@ -1230,7 +1375,7 @@ class Handler(BaseHTTPRequestHandler):
                         "entries": len(_network_error_summary),
                         "size_bytes": sys.getsizeof(_network_error_summary) + sum(
                             sys.getsizeof(k) + sys.getsizeof(v) + sum(
-                                sys.getsizeof(ek) + sys.getsizeof(ev) 
+                                sys.getsizeof(ek) + sys.getsizeof(ev)
                                 for ek, ev in v.items()
                             ) for k, v in _network_error_summary.items()
                         ),
@@ -1259,7 +1404,7 @@ class Handler(BaseHTTPRequestHandler):
                         "entries": len(_endpoint_stats),
                         "size_bytes": sys.getsizeof(_endpoint_stats) + sum(
                             sys.getsizeof(k) + sys.getsizeof(v) + sum(
-                                sys.getsizeof(ek) + sys.getsizeof(ev) 
+                                sys.getsizeof(ek) + sys.getsizeof(ev)
                                 for ek, ev in v.items()
                             ) for k, v in _endpoint_stats.items()
                         ),
@@ -1419,7 +1564,7 @@ class Handler(BaseHTTPRequestHandler):
                         pwtemp[key] = temps[i]
                         idx = idx + 1
                 return json.dumps(pwtemp)
-            
+
             message = cached_route_handler("/temps/pw", generate_temps_pw)
         elif request_path == "/alerts":
             # Alerts
@@ -1435,54 +1580,11 @@ class Handler(BaseHTTPRequestHandler):
                     for alert in alerts:
                         pwalerts[alert] = 1
                     return json.dumps(pwalerts) or json.dumps({})
-            
+
             message = cached_route_handler("/alerts/pw", generate_alerts_pw)
         elif request_path == "/freq":
-            # Frequency, Current, Voltage and Grid Status
-            def generate_freq():
-                fcv = {}
-                idx = 1
-                # Pull freq, current, voltage of each Powerwall via system_status
-                d = safe_pw_call(pw.system_status) or {}
-                if "battery_blocks" in d:
-                    for block in d["battery_blocks"]:
-                        fcv["PW%d_name" % idx] = None  # Placeholder for vitals
-                        fcv["PW%d_PINV_Fout" % idx] = get_value(block, "f_out")
-                        fcv["PW%d_PINV_VSplit1" % idx] = None  # Placeholder for vitals
-                        fcv["PW%d_PINV_VSplit2" % idx] = None  # Placeholder for vitals
-                        fcv["PW%d_PackagePartNumber" % idx] = get_value(
-                            block, "PackagePartNumber"
-                        )
-                        fcv["PW%d_PackageSerialNumber" % idx] = get_value(
-                            block, "PackageSerialNumber"
-                        )
-                        fcv["PW%d_p_out" % idx] = get_value(block, "p_out")
-                        fcv["PW%d_q_out" % idx] = get_value(block, "q_out")
-                        fcv["PW%d_v_out" % idx] = get_value(block, "v_out")
-                        fcv["PW%d_f_out" % idx] = get_value(block, "f_out")
-                        fcv["PW%d_i_out" % idx] = get_value(block, "i_out")
-                        idx = idx + 1
-                # Pull freq, current, voltage of each Powerwall via vitals if available
-                vitals = safe_pw_call(pw.vitals) or {}
-                idx = 1
-                for device in vitals:
-                    d = vitals[device]
-                    if device.startswith("TEPINV"):
-                        # PW freq
-                        fcv["PW%d_name" % idx] = device
-                        fcv["PW%d_PINV_Fout" % idx] = get_value(d, "PINV_Fout")
-                        fcv["PW%d_PINV_VSplit1" % idx] = get_value(d, "PINV_VSplit1")
-                        fcv["PW%d_PINV_VSplit2" % idx] = get_value(d, "PINV_VSplit2")
-                        idx = idx + 1
-                    if device.startswith("TESYNC") or device.startswith("TEMSA"):
-                        # Island and Meter Metrics from Backup Gateway or Backup Switch
-                        for i in d:
-                            if i.startswith("ISLAND") or i.startswith("METER"):
-                                fcv[i] = d[i]
-                fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
-                return json.dumps(fcv)
-            
-            message = cached_route_handler("/freq", generate_freq)
+            # Now handled by get_handle_freq in GET_PATH_HANDLERS
+            return
         elif request_path == "/pod":
             # Powerwall Battery Data
             def generate_pod():
@@ -1600,7 +1702,7 @@ class Handler(BaseHTTPRequestHandler):
                 pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
                 pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
                 return json.dumps(pod)
-            
+
             message = cached_route_handler("/pod", generate_pod)
         elif request_path == "/json":
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
@@ -1614,13 +1716,13 @@ class Handler(BaseHTTPRequestHandler):
                     home = aggregates.get('load', {}).get('instant_power', 0)
                 else:
                     grid = solar = battery = home = 0
-                
+
                 # Apply negative solar correction if configured
                 if not neg_solar and solar < 0:
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
-                
+
                 # Get remaining data
                 d = safe_pw_call(pw.system_status) or {}
                 values = {
@@ -1637,7 +1739,7 @@ class Handler(BaseHTTPRequestHandler):
                     "strings": safe_pw_call(pw.strings, jsonformat=False) or {},
                 }
                 return json.dumps(values)
-            
+
             message = cached_route_handler("/json", generate_json)
         elif request_path == "/version":
             # Firmware Version
