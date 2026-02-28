@@ -1135,7 +1135,10 @@ class TEDAPI:
             except Exception:
                 # If parsing fails, assume pb_bytes is already envelope bytes
                 envelope_bytes = pb_bytes
-            inner = self.v1r_transport.post_v1r(envelope_bytes, din or self.din)
+            # Always sign with leader DIN (self.din) — the RSA key is registered
+            # on the leader only. The follower DIN is in the envelope's recipient
+            # field for routing, but TLV personalization must match the leader.
+            inner = self.v1r_transport.post_v1r(envelope_bytes, self.din)
             return inner
         else:
             url = f'https://{self.gw_ip}{url_suffix}'
