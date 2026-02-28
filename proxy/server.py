@@ -55,20 +55,40 @@ from ipaddress import IPv4Address
 from typing import Any, Dict, Final, List, Set, Tuple
 from urllib.parse import parse_qs, urlparse
 
+import psutil
 import requests
 import urllib3
-
-import psutil
 from pyroute2 import IPRoute
 from transform import get_static, inject_js
 
 import pypowerwall
 from pypowerwall import parse_version
-from pypowerwall.cloud.exceptions import *
-from pypowerwall.exceptions import *
-from pypowerwall.fleetapi.exceptions import *
-from pypowerwall.local.exceptions import *
-from pypowerwall.tedapi.exceptions import *
+from pypowerwall.cloud.exceptions import (
+    PyPowerwallCloudInvalidPayload,
+    PyPowerwallCloudNoTeslaAuthFile,
+    PyPowerwallCloudNotImplemented,
+    PyPowerwallCloudTeslaNotConnected,
+)
+from pypowerwall.exceptions import (
+    InvalidBatteryReserveLevelException,
+    PyPowerwallInvalidConfigurationParameter,
+)
+from pypowerwall.fleetapi.exceptions import (
+    PyPowerwallFleetAPIInvalidPayload,
+    PyPowerwallFleetAPINoTeslaAuthFile,
+    PyPowerwallFleetAPINotImplemented,
+    PyPowerwallFleetAPITeslaNotConnected,
+)
+from pypowerwall.local.exceptions import (
+    LoginError,
+    PowerwallConnectionError,
+)
+from pypowerwall.tedapi.exceptions import (
+    PyPowerwallTEDAPIInvalidPayload,
+    PyPowerwallTEDAPINoTeslaAuthFile,
+    PyPowerwallTEDAPINotImplemented,
+    PyPowerwallTEDAPITeslaNotConnected,
+)
 
 BUILD: Final[str] = "t67"
 # Build from here
