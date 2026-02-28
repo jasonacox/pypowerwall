@@ -83,8 +83,8 @@ class TestV1rPasswordDerivation:
         assert pw.tedapi_mode != "v1r"
 
 
-class TestMode4Selection:
-    """Test that mode 4 (WiFi TEDAPI) selection is unchanged."""
+class TestMode4FullTEDAPI:
+    """Test mode 4 full TEDAPI selection (gw_pwd only, no customer password)."""
 
     def test_full_tedapi_with_gw_pwd_only(self, mock_clients):
         """Full TEDAPI mode when only gw_pwd is set (no password)."""
@@ -100,7 +100,47 @@ class TestMode4Selection:
         call_args = mock_clients['tedapi'].call_args
         assert call_args.args[0] == "ABCDELNDYT"
 
-    def test_hybrid_tedapi_with_both_passwords(self, mock_clients):
+    def test_full_tedapi_does_not_use_local_client(self, mock_clients):
+        """Full TEDAPI should use PyPowerwallTEDAPI, not PyPowerwallLocal."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            password="",
+            gw_pwd="ABCDELNDYT",
+        )
+        mock_clients['local'].assert_not_called()
+        mock_clients['tedapi'].assert_called_once()
+
+    def test_full_tedapi_passes_gw_pwd_not_password(self, mock_clients):
+        """Full TEDAPI should pass gw_pwd as first arg, not use password kwarg."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            password="",
+            gw_pwd="FULLPWDHERE",
+        )
+        call_args = mock_clients['tedapi'].call_args
+        # gw_pwd is first positional arg
+        assert call_args.args[0] == "FULLPWDHERE"
+        # v1r should NOT be set
+        assert call_args.kwargs.get('v1r') is None or call_args.kwargs.get('v1r') is False
+
+    def test_full_tedapi_with_port_443(self, mock_clients):
+        """Full TEDAPI should work with explicit :443 on gateway IP."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1:443",
+            password="",
+            gw_pwd="ABCDELNDYT",
+        )
+        # Should still select full TEDAPI (not hybrid)
+        assert pw.tedapi_mode == "full"
+
+
+class TestMode4HybridTEDAPI:
+    """Test mode 4 hybrid selection (password + gw_pwd, no rsa_key_path)."""
+
+    def test_hybrid_with_both_passwords(self, mock_clients):
         """Hybrid mode when both password and gw_pwd are set (no rsa_key_path)."""
         import pypowerwall
         pw = pypowerwall.Powerwall(
@@ -110,6 +150,58 @@ class TestMode4Selection:
         )
         assert pw.tedapi_mode in ("hybrid", "off")
         mock_clients['local'].assert_called_once()
+
+    def test_hybrid_uses_local_client(self, mock_clients):
+        """Hybrid mode should use PyPowerwallLocal (not PyPowerwallTEDAPI directly)."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            password="LNDYT",
+            gw_pwd="ABCDELNDYT",
+        )
+        mock_clients['local'].assert_called_once()
+        # PyPowerwallTEDAPI should NOT be called directly (Local handles TEDAPI internally)
+        mock_clients['tedapi'].assert_not_called()
+
+    def test_hybrid_passes_both_passwords_to_local(self, mock_clients):
+        """Hybrid mode should pass password and gw_pwd to PyPowerwallLocal."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            password="LNDYT",
+            gw_pwd="ABCDELNDYT",
+        )
+        call_args = mock_clients['local'].call_args
+        # PyPowerwallLocal(host, password, email, timezone, timeout, ...)
+        assert call_args.args[0] == "192.168.91.1"  # host
+        assert call_args.args[1] == "LNDYT"          # password
+        # gw_pwd is last positional arg
+        assert call_args.args[-1] == "ABCDELNDYT"
+
+    def test_hybrid_without_gw_pwd_is_local_only(self, mock_clients):
+        """Password only (no gw_pwd) should still use Local client but no TEDAPI."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            password="LNDYT",
+        )
+        mock_clients['local'].assert_called_once()
+        call_args = mock_clients['local'].call_args
+        # gw_pwd should be None
+        assert call_args.args[-1] is None
+
+    def test_rsa_key_overrides_hybrid(self, mock_clients):
+        """With rsa_key_path set, v1r takes priority over hybrid even with both passwords."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(
+            host="192.168.91.1",
+            password="LNDYT",
+            gw_pwd="ABCDELNDYT",
+            rsa_key_path="/tmp/fake_key.pem",
+        )
+        assert pw.tedapi_mode == "v1r"
+        mock_clients['tedapi'].assert_called_once()
+        mock_clients['local'].assert_not_called()
 
 
 class TestMode1Selection:
