@@ -174,6 +174,29 @@ print(pw.grid_status()) # Grid connection status
 
 This gives you the three core endpoints: `/api/meters/aggregates`, `/api/system_status/soe`, and `/api/system_status/grid_status`. For full access to vitals, strings, firmware, components, and device-level data, use v1r mode below.
 
+##### Getting a Bearer Token (curl / shell)
+
+You can also access these endpoints directly without pypowerwall using a Bearer token:
+
+```bash
+# Get a Bearer token using the customer password (last 5 chars of GW password)
+TOKEN=$(curl -sk -X POST https://10.0.1.50/api/login/Basic \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"customer","password":"XXXXX","email":"user@example.com","force_sm_off":false}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+
+# Power data (solar, battery, grid, load)
+curl -sk -H "Authorization: Bearer $TOKEN" https://10.0.1.50/api/meters/aggregates
+
+# Battery level (state of energy)
+curl -sk -H "Authorization: Bearer $TOKEN" https://10.0.1.50/api/system_status/soe
+
+# Grid connection status
+curl -sk -H "Authorization: Bearer $TOKEN" https://10.0.1.50/api/system_status/grid_status
+```
+
+**Note:** Most other `/api/*` endpoints return 404 on the Powerwall 3 wired LAN. Only the three endpoints above are confirmed to work without RSA key registration. The token is also returned in the response cookies (`AuthCookie` and `UserRecord`).
+
 #### Full v1r LAN Access (RSA Key Required)
 
 With an RSA key registered via `fleet_register.py`, you get full TEDapi access over the wired LAN — equivalent to what was previously only available over Wi-Fi:
