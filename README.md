@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems.
+pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems. For Powerwall 3 on wired LAN, the v1r TEDapi mode provides full local access using RSA-signed protobuf messages without needing Wi-Fi access.
 
 > ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
@@ -17,12 +17,12 @@ This Python module can be used to monitor and control Tesla Energy Powerwalls. I
 
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
-* Works with Tesla Energy Gateways - Powerwall and Powerwall+
-* Access provided via Local Gateway APIs, Tesla FleetAPI (official), and Tesla Owners API (unofficial).
+* Works with Tesla Energy Gateways - Powerwall, Powerwall+ and Powerwall 3
+* Access provided via Local Gateway APIs, Tesla FleetAPI (official), Tesla Owners API (unofficial), and v1r LAN TEDapi (Powerwall 3).
 * Will cache authentication to reduce load on Powerwall Gateway
 * Will cache responses to limit the number of calls to the Powerwall Gateway or cloud (optional/user‑definable)
 * Will re-use HTTP connections to the Powerwall Gateway for reduced load and faster response times
-* Provides solar string data for Powerwall+ systems.
+* Provides solar string data for Powerwall+ and Powerwall 3 systems.
 
 ## Setup
 
@@ -43,15 +43,17 @@ python3 -m pypowerwall setup
 
 # Option 4 - TEDAPI MODE - Test this mode (requires extended setup - see below)
 python3 -m pypowerwall tedapi
+
+# Option 5 - v1r LAN TEDAPI MODE - Powerwall 3 wired LAN access (see below)
 ```
 
 ### Local Setup - Option 1
 
 The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based Web Portal and API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. 
 
-The Powerwall 3 does not have a Web Portal or API but you can access it via the cloud (see options 2 and 3) and via the TEDAPI access point (option 4).
+The Powerwall 3 does not have a traditional Web Portal or API but you can access it via the cloud (see options 2 and 3), via the TEDAPI Wi-Fi access point (option 4), or via the wired LAN using v1r TEDapi (option 5).
 
-Locally accessible extended device vitals metrics are available using the TEDAPI method (see option 4 below).
+Locally accessible extended device vitals metrics are available using the TEDAPI method (see options 4 and 5 below).
 
 ### FleetAPI Setup - Option 2
 
@@ -119,7 +121,136 @@ python3 -m pypowerwall tedapi
 - Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
 - QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
+### v1r LAN TEDapi Setup - Option 5
 
+The Powerwall 3 exposes a `/tedapi/v1r` endpoint on the **wired LAN** that accepts RSA-4096 signed protobuf messages. This provides full local access to all Powerwall data (config, firmware, power, vitals, components) without needing Wi-Fi access to `192.168.91.1`. This is especially useful for always-on monitoring setups where a wired Ethernet connection to the Powerwall gateway is available.
+
+#### Requirements
+
+1. **Wired LAN connection** to the Powerwall 3 gateway (e.g., Ethernet via network switch, bridge, or VLAN)
+2. **RSA-4096 key pair** registered with the Powerwall via Tesla Fleet API
+3. **Customer password** (last 5 characters of the gateway password on the QR sticker)
+4. **Tesla developer account** with Fleet API credentials (CLIENT_ID, CLIENT_SECRET)
+
+#### RSA Key Registration
+
+Use `fleet_register.py` to generate and register an RSA-4096 key pair with the Powerwall:
+
+```bash
+python3 fleet_register.py
+```
+
+The script will interactively prompt you for:
+- Tesla Fleet API credentials (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
+- Fleet API region (North America, Europe, or China)
+
+It will then:
+1. Generate an RSA-4096 key pair (saves private key to `tedapi_rsa_private.pem`)
+2. Walk you through Tesla OAuth to authorize the application
+3. Register the public key with the Powerwall via Fleet API
+4. Prompt you to confirm registration by toggling the Powerwall breaker within 30 seconds
+
+**Note:** Tesla Fleet API requires your application’s public key to be served at `https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem`. A Cloudflare Worker or any static web host can serve this file.
+
+#### Simple LAN Access (No RSA Key Required)
+
+If you only need basic power, battery, and grid data from the Powerwall 3 over the wired LAN, you can use the standard local mode (mode 1) without RSA key registration. This uses the same `/api/login/Basic` endpoint that the Tesla app uses:
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(
+    host="10.0.1.50",                # Powerwall wired LAN IP
+    password="XXXXX",                 # Customer password (last 5 of GW password)
+    email="user@example.com",
+    timezone="America/Los_Angeles"
+)
+
+# Basic power data available without RSA:
+print(pw.power())       # {site, solar, battery, load} in watts
+print(pw.level())       # Battery percentage
+print(pw.grid_status()) # Grid connection status
+```
+
+This gives you the three core endpoints: `/api/meters/aggregates`, `/api/system_status/soe`, and `/api/system_status/grid_status`. For full access to vitals, strings, firmware, components, and device-level data, use v1r mode below.
+
+#### Full v1r LAN Access (RSA Key Required)
+
+With an RSA key registered via `fleet_register.py`, you get full TEDapi access over the wired LAN — equivalent to what was previously only available over Wi-Fi:
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(
+    host="10.0.1.50",                          # Powerwall wired LAN IP
+    password="XXXXX",                           # Customer password (last 5 of GW password)
+    email="user@example.com",
+    timezone="America/Los_Angeles",
+    rsa_key_path="/path/to/tedapi_rsa_private.pem"  # RSA key from fleet_register.py
+)
+
+# All standard methods work over v1r:
+print(pw.level())       # Battery percentage
+print(pw.power())       # {site, solar, battery, load} in watts
+print(pw.solar())       # Solar power in watts
+print(pw.battery())     # Battery power in watts
+print(pw.grid())        # Grid power in watts
+print(pw.load())        # Load power in watts
+print(pw.version())     # Firmware version
+print(pw.vitals())      # Per-device vitals (PVAC, PVS, TEPOD, PINV, etc.)
+print(pw.strings())     # Solar string data
+print(pw.alerts())      # Active device alerts
+
+# API polling:
+pw.poll('/api/meters/aggregates')              # Detailed meter data
+pw.poll('/api/system_status/soe')              # Battery state of energy
+pw.poll('/api/system_status/grid_status')      # Grid connection status
+pw.poll('/api/system_status')                  # Full system status
+pw.poll('/api/site_info')                      # Site configuration
+pw.poll('/api/operation')                      # Operation mode
+```
+
+#### v1r Docker Proxy Setup
+
+For always-on monitoring (e.g., with [Powerwall-Dashboard](https://github.com/jasonacox/Powerwall-Dashboard)), configure the proxy container with these environment variables:
+
+```env
+PW_HOST=10.0.1.50                    # Powerwall wired LAN IP
+PW_PASSWORD=XXXXX                    # Customer password
+PW_GW_PWD=ABCDEFXXXXX               # Full gateway password
+PW_TIMEZONE=America/Los_Angeles
+PW_RSA_KEY_PATH=/app/.auth/tedapi_rsa_private.pem
+```
+
+Mount the RSA private key into the container at the path specified by `PW_RSA_KEY_PATH`.
+
+#### v1r Mode Selection
+
+pyPowerwall automatically selects v1r mode (mode 5) when both `password` and `rsa_key_path` are provided. The mode selection logic:
+
+| password | gw_pwd | rsa_key_path | Mode |
+|----------|--------|--------------|------|
+| set | - | set | **v1r LAN TEDapi (mode 5)** |
+| empty | set | - | Full TEDapi WiFi (mode 4) |
+| set | set | - | Hybrid TEDapi (mode 4) |
+| set | - | - | Local API (mode 1) |
+
+#### v1r Feature Parity
+
+| Feature | WiFi TEDapi (mode 4) | v1r LAN (mode 5) |
+|---------|:--------------------:|:-----------------:|
+| Config (site info, batteries) | Yes | Yes |
+| Firmware version | Yes | Yes |
+| Power (solar/battery/grid/load) | Yes | Yes |
+| Battery level (%) | Yes | Yes |
+| Grid status | Yes | Yes |
+| Site info & operation mode | Yes | Yes |
+| Per-device vitals (PVAC/PINV/POD) | Yes | Yes |
+| Component queries (PCH/BMS/HVP) | Yes | Yes |
+| Solar string data | Yes | Yes |
+| Multi-PW follower queries | Yes | Timeout* |
+
+\*In multi-Powerwall setups, sub-device queries to follower Powerwalls may time out via v1r. The leader Powerwall query still returns BMS/HVP data for all connected units including expansion packs, so vitals data remains available.
 
 ### FreeBSD Install
 
@@ -149,7 +280,7 @@ import pypowerwall
 # pypowerwall.set_debug(True)
 
 # Select option you wish to use.
-OPTION = 4
+OPTION = 5
 
 # Connect to Powerwall based on selected option
 if OPTION == 1:
@@ -159,12 +290,14 @@ if OPTION == 1:
    host = "10.0.1.123"               # Address of your Powerwall Gateway
    timezone = "America/Los_Angeles"  # Your local timezone
    gw_pwd = None
+   rsa_key_path = None
 
 if OPTION == 2:
    # Option 2 - FLEETAPI MODE - Requires Setup (Powerwall & Solar-Only)
    host = password = email = ""
    timezone = "America/Los_Angeles"
-   gw_pwd = None 
+   gw_pwd = None
+   rsa_key_path = None
 
 if OPTION == 3:
    # Option 3 - CLOUD MODE - Requires Setup (Powerwall & Solar-Only)
@@ -172,6 +305,7 @@ if OPTION == 3:
    email='email@example.com'
    timezone = "America/Los_Angeles"
    gw_pwd = None
+   rsa_key_path = None
 
 if OPTION == 4:
    # Option 4 - TEDAPI MODE - Requires access to Gateway (Powerwall 2, Powerwall+, and Powerwall 3)
@@ -179,20 +313,36 @@ if OPTION == 4:
    gw_pwd = "ABCDEFGHIJ"
    password = email = ""
    timezone = "America/Los_Angeles"
+   rsa_key_path = None
    # Uncomment the following for hybrid mode (Powerwall 2 and +)
    #password="password"
    #email="email@example.com"
 
+if OPTION == 5:
+   # Option 5 - v1r LAN TEDAPI MODE - Powerwall 3 wired LAN (requires RSA key registration)
+   host = "10.0.1.50"                  # Powerwall wired LAN IP
+   password = "XXXXX"                   # Customer password (last 5 chars of GW password)
+   email = "user@example.com"
+   timezone = "America/Los_Angeles"
+   gw_pwd = None
+   rsa_key_path = "/path/to/tedapi_rsa_private.pem"  # From fleet_register.py
+
 # Note on gw_pwd (TEDAPI)
 # - `gw_pwd` is the local Gateway Wi‑Fi password printed on the QR label.
-# - It is only required for TEDAPI features (local diagnostics like vitals/strings) 
+# - It is only required for TEDAPI features (local diagnostics like vitals/strings)
 #   and is not used for cloud/FleetAPI authentication.
 # - If you set `gw_pwd` and leave `password` empty, pyPowerwall will auto‑enable full TEDAPI mode.
-# - On Powerwall 2 and Powerwall+ you can optionally provide both `password`/`email` and `gw_pwd` 
+# - On Powerwall 2 and Powerwall+ you can optionally provide both `password`/`email` and `gw_pwd`
 #   to run in a hybrid mode that combines customer APIs with TEDAPI.
+#
+# Note on rsa_key_path (v1r LAN TEDapi)
+# - Only needed for Powerwall 3 wired LAN access (mode 5).
+# - Requires RSA-4096 key pair registered via Tesla Fleet API (see fleet_register.py).
+# - When both `password` and `rsa_key_path` are set, v1r mode is auto-selected.
 
-# Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
-pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd, auto_select=True)
+# Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi, v1r)
+pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd,
+                           rsa_key_path=rsa_key_path, auto_select=True)
 
 # Some System Info
 print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))
@@ -237,8 +387,9 @@ print("System Status: %r\n" % pw.system_status())
  set_debug(True, color=True)
 
  Classes
-    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-        cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd)
+    Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize,
+        cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd,
+        rsa_key_path)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway; may include :port for non-standard HTTPS (e.g. 10.0.1.99:8443); default port is 443 if omitted
@@ -259,8 +410,9 @@ print("System Status: %r\n" % pw.system_status())
     auto_select = False       # If True, select the best available mode to connect (default is False)
     retry_modes = False       # If True, retry connection to Powerwall
     gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
-    
- Functions 
+    rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi (Powerwall 3)
+
+ Functions
    poll(api, json, force)    # Return data from Powerwall API (dict if json=True, bypass cache force=True)
    post(api, payload, json)  # Send payload to Powerwall API (dict if json=True)
     level(scale)              # Return battery power level percentage (scale=False: actual level, scale=True: Tesla app level)
