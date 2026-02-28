@@ -381,25 +381,28 @@ if OPTION == 4:
 
 if OPTION == 5:
    # Option 5 - v1r LAN TEDAPI MODE - Powerwall 3 wired LAN (requires RSA key registration)
-   host = "10.0.1.50"                  # Powerwall wired LAN IP
-   password = "XXXXX"                   # Customer password (last 5 chars of GW password)
-   email = "user@example.com"
+   host = "10.0.1.50"                  # Powerwall wired LAN IP (vendor subnet)
+   gw_pwd = "ABCDEXXXXX"              # Full gateway password from QR sticker (last 5 auto-derived)
+   password = ""                       # Not needed — auto-derived from gw_pwd
+   email = ""
    timezone = "America/Los_Angeles"
-   gw_pwd = None
    rsa_key_path = "/path/to/tedapi_rsa_private.pem"  # From fleet_register.py
 
-# Note on gw_pwd (TEDAPI)
-# - `gw_pwd` is the local Gateway Wi‑Fi password printed on the QR label.
-# - It is only required for TEDAPI features (local diagnostics like vitals/strings)
-#   and is not used for cloud/FleetAPI authentication.
-# - If you set `gw_pwd` and leave `password` empty, pyPowerwall will auto‑enable full TEDAPI mode.
-# - On Powerwall 2 and Powerwall+ you can optionally provide both `password`/`email` and `gw_pwd`
-#   to run in a hybrid mode that combines customer APIs with TEDAPI.
+# Note on gw_pwd (Gateway Password)
+# - `gw_pwd` is the full Gateway Wi‑Fi password printed on the QR label.
+# - Used directly for TEDAPI HTTP Basic Auth in mode 4 (WiFi).
+# - In v1r mode (mode 5), the last 5 characters are auto-derived for /api/login/Basic.
+# - You only need to set `gw_pwd` — setting `password` separately is optional (backward compatible).
+# - If you set `gw_pwd` and leave `password` empty, pyPowerwall will:
+#     - Auto-enable full TEDAPI mode (mode 4) if no `rsa_key_path` is set.
+#     - Auto-enable v1r mode (mode 5) if `rsa_key_path` is set (derives last 5 chars).
+# - On Powerwall 2/+ you can set both `password`/`email` and `gw_pwd` for hybrid mode
+#   that combines customer APIs with TEDAPI for supplemental vitals data.
 #
 # Note on rsa_key_path (v1r LAN TEDapi)
-# - Only needed for Powerwall 3 wired LAN access (mode 5).
+# - Only needed for Powerwall 3 wired LAN access (mode 5) with full protobuf data.
 # - Requires RSA-4096 key pair registered via Tesla Fleet API (see fleet_register.py).
-# - When both `password` and `rsa_key_path` are set, v1r mode is auto-selected.
+# - Without rsa_key_path, basic LAN mode still works for core power/battery/grid data.
 
 # Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi, v1r)
 pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd,
@@ -470,7 +473,8 @@ print("System Status: %r\n" % pw.system_status())
     auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
     retry_modes = False       # If True, retry connection to Powerwall
-    gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
+    gw_pwd = None             # Full gateway password from QR sticker; used for TEDAPI (mode 4)
+                                and auto-derived (last 5 chars) for v1r login (mode 5)
     rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi (Powerwall 3)
 
  Functions

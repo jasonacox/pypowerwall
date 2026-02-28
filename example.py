@@ -5,7 +5,8 @@
 #
 # Usage:
 #   - Set your connection mode and credentials below, or use a .env file with the following variables:
-#       POWERWALL_MODE, POWERWALL_HOST, POWERWALL_PASSWORD, POWERWALL_EMAIL, POWERWALL_TIMEZONE, POWERWALL_GW_PWD
+#       POWERWALL_MODE, POWERWALL_HOST, POWERWALL_PASSWORD, POWERWALL_EMAIL, POWERWALL_TIMEZONE,
+#       POWERWALL_GW_PWD, POWERWALL_RSA_KEY_PATH
 #   - Run: python example.py
 #
 # For more info, see: https://github.com/jasonacox/pypowerwall
@@ -16,7 +17,7 @@ import os
 
 # Load environment variables from .env file if present
 dotenv.load_dotenv()
-host = password = email = timezone = gw_pwd = None
+host = password = email = timezone = gw_pwd = rsa_key_path = None
 
 # Enable debug logging for more verbose output (optional for learning)
 # pypowerwall.set_debug(True)
@@ -46,15 +47,23 @@ if mode == "cloud":
     timezone = "America/Los_Angeles"
     gw_pwd = None
 
-# Option 4 - TEDAPI MODE - Requires WiFI access to Gateway (Powerwall 2, + and 3)
+# Option 4 - TEDAPI MODE - Requires WiFi access to Gateway (Powerwall 2, + and 3)
 if mode == "tedapi":
     host = "192.168.91.1"
-    gw_pwd = "ABCDEFGHIJ"             # Gateway WiFi password
+    gw_pwd = "ABCDEFGHIJ"             # Full gateway password from QR sticker
     password = email = ""
     timezone = "America/Los_Angeles"
     # Uncomment the following for hybrid mode (Powerwall 2 and +)
     # password = "password"
     # email = "email@example.com"
+
+# Option 5 - v1r LAN MODE - Wired LAN to Powerwall 3 (requires RSA key registration)
+if mode == "v1r":
+    host = "10.0.1.50"                # Powerwall wired LAN IP (vendor subnet)
+    gw_pwd = "ABCDEFGHIJ"             # Full gateway password (last 5 auto-derived for login)
+    password = email = ""
+    timezone = "America/Los_Angeles"
+    rsa_key_path = "/path/to/tedapi_rsa_private.pem"
 
 # Override with .env or environment variables if set
 host = os.getenv('POWERWALL_HOST', host)
@@ -62,10 +71,12 @@ password = os.getenv('POWERWALL_PASSWORD', password)
 email = os.getenv('POWERWALL_EMAIL', email)
 timezone = os.getenv('POWERWALL_TIMEZONE', timezone)
 gw_pwd = os.getenv('POWERWALL_GW_PWD', gw_pwd)
+rsa_key_path = os.getenv('POWERWALL_RSA_KEY_PATH', locals().get('rsa_key_path'))
 
-# Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi)
+# Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi, v1r)
 print(f"Connecting to Powerwall using {mode} mode...")
-pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd, auto_select=True)
+pw = pypowerwall.Powerwall(host, password, email, timezone, gw_pwd=gw_pwd,
+                           rsa_key_path=rsa_key_path, auto_select=True)
 
 # --- System Info ---
 print("Site Name: %s - Firmware: %s - DIN: %s" % (pw.site_name(), pw.version(), pw.din()))

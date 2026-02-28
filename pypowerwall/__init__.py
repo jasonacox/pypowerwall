@@ -155,7 +155,8 @@ class Powerwall(object):
             fleetapi     = If True, use Tesla FleetAPI for data (default is False)
             auto_select  = If True, select the best available mode to connect (default is False)
             retry_modes  = If True, retry connection to Powerwall
-            gw_pwd       = TEG Gateway password (used for local mode access to tedapi)
+            gw_pwd       = Full gateway password from QR sticker; used for TEDAPI (mode 4)
+                           and auto-derived (last 5 chars) for v1r login (mode 5)
             rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
         """
 
