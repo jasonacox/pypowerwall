@@ -309,9 +309,7 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 | Per-device vitals (PVAC/PINV/POD) | Yes | Yes |
 | Component queries (PCH/BMS/HVP) | Yes | Yes |
 | Solar string data | Yes | Yes |
-| Multi-PW follower queries | Yes | Timeout* |
-
-\*In multi-Powerwall setups, sub-device queries to follower Powerwalls may time out via v1r. The leader Powerwall query still returns BMS/HVP data for all connected units including expansion packs, so vitals data remains available.
+| Multi-PW follower queries | Yes | Yes |
 
 ### FreeBSD Install
 
