@@ -68,7 +68,7 @@ BUILD: Final[str] = "t67"
 #https://github.com/jasonacox/pypowerwall/commit/365ad94a817da5dbe6b583fae038512bdfff12cc
 UTF_8: Final[str] = "utf-8"
 
-ALLOWLIST: Final[Set[str]] = set([
+ALLOWLIST: Final[Set[str]] = {
     '/api/auth/toggle/supported',
     '/api/customer',
     '/api/customer/registration',
@@ -95,7 +95,7 @@ ALLOWLIST: Final[Set[str]] = set([
     '/api/system/networks',
     '/api/system/update/status',
     '/api/troubleshooting/problems',
-])
+}
 
 DISABLED: Final[Set[str]] = set([
     '/api/customer/registration',
@@ -427,12 +427,14 @@ class Handler(BaseHTTPRequestHandler):
         }
 
         result: str = ""
-        if path in path_handlers:
-            result = path_handlers[path]()
-        elif path in DISABLED:
+        if path in DISABLED:
             result = self.send_json_response(
                 {"status": "404 Response - API Disabled"}
             )
+        elif path in path_handlers:
+            result = path_handlers[path]()
+        elif path.startswith('/pw/'):
+            result = self.handle_pw_api()
         elif path in ALLOWLIST:
             result = self.handle_allowlist(path)
         elif path.startswith('/csv') or path.startswith('/csv/v2'):
@@ -680,6 +682,45 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json_response(output)
         return self.send_json_response(fan_speeds)
 
+
+    def handle_pw_api(self) -> str:
+        # Expose Powerwall API methods as JSON endpoints via /pw/XXX
+        # Entries with a wrapper key return {key: value}, others return the result directly
+        pw_endpoints = {
+            '/pw/level':              ('level', lambda: self.pw.level()),
+            '/pw/power':              (None, lambda: self.pw.power()),
+            '/pw/site':               (None, lambda: self.pw.site(verbose=True)),
+            '/pw/solar':              (None, lambda: self.pw.solar(verbose=True)),
+            '/pw/battery':            (None, lambda: self.pw.battery(verbose=True)),
+            '/pw/battery_blocks':     (None, lambda: self.pw.battery_blocks()),
+            '/pw/load':               (None, lambda: self.pw.load(verbose=True)),
+            '/pw/grid':               (None, lambda: self.pw.grid(verbose=True)),
+            '/pw/home':               (None, lambda: self.pw.home(verbose=True)),
+            '/pw/vitals':             (None, lambda: self.pw.vitals()),
+            '/pw/aggregates':         (None, lambda: self.pw.poll('/api/meters/aggregates')),
+            '/pw/temps':              (None, lambda: self.pw.temps()),
+            '/pw/strings':            (None, lambda: self.pw.strings(verbose=True)),
+            '/pw/din':                ('din', lambda: self.pw.din()),
+            '/pw/uptime':             ('uptime', lambda: self.pw.uptime()),
+            '/pw/version':            ('version', lambda: self.pw.version()),
+            '/pw/status':             (None, lambda: self.pw.status()),
+            '/pw/system_status':      (None, lambda: self.pw.system_status()),
+            '/pw/grid_status':        (None, lambda: json.loads(self.pw.grid_status(type="json"))),
+            '/pw/site_name':          ('site_name', lambda: self.pw.site_name()),
+            '/pw/alerts':             ('alerts', lambda: self.pw.alerts()),
+            '/pw/is_connected':       ('is_connected', lambda: self.pw.is_connected()),
+            '/pw/get_reserve':        ('reserve', lambda: self.pw.get_reserve()),
+            '/pw/get_mode':           ('mode', lambda: self.pw.get_mode()),
+            '/pw/get_time_remaining': ('time_remaining', lambda: self.pw.get_time_remaining()),
+        }
+        endpoint = pw_endpoints.get(self.path)
+        if not endpoint:
+            return self.send_json_response({"error": "Invalid Request"}, status_code=HTTPStatus.BAD_REQUEST)
+        wrapper_key, fn = endpoint
+        result = fn()
+        if wrapper_key:
+            result = {wrapper_key: result}
+        return self.send_json_response(result)
 
     def handle_temps(self) -> str:
         temps = self.pw.temps(jsonformat=True) or {}
