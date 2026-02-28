@@ -248,9 +248,18 @@ class Powerwall(object):
                 time.sleep(30)
                 count = 0
             if self.mode == "local":
-                log.debug(f"password = {self.password}, gw_pwd = {self.gw_pwd}")
+                log.debug(f"password = {'[set]' if self.password else '[empty]'}, "
+                          f"gw_pwd = {'[set]' if self.gw_pwd else '[empty]'}, "
+                          f"rsa_key_path = {'[set]' if self.rsa_key_path else '[empty]'}")
                 try:
-                    if self.password and self.rsa_key_path:  # v1r LAN TEDapi mode
+                    if self.rsa_key_path:  # v1r LAN TEDapi mode (mode 5)
+                        # Auto-derive customer password from gw_pwd if not explicitly set
+                        pw = self.password
+                        if not pw and self.gw_pwd:
+                            pw = self.gw_pwd[-5:]
+                            log.debug("Derived customer password from gw_pwd (last 5 characters)")
+                        if not pw:
+                            raise ValueError("v1r mode requires password or gw_pwd")
                         log.debug("TEDAPI ** v1r **")
                         self.tedapi_mode = "v1r"
                         self.client = PyPowerwallTEDAPI(
@@ -258,16 +267,16 @@ class Powerwall(object):
                             pwconfigexpire=self.pwcacheexpire,
                             timeout=self.timeout, host=self.host,
                             poolmaxsize=self.poolmaxsize,
-                            v1r=True, password=self.password,
+                            v1r=True, password=pw,
                             rsa_key_path=self.rsa_key_path)
-                    elif not self.password and self.gw_pwd:  # Use full TEDAPI mode
+                    elif not self.password and self.gw_pwd:  # Full TEDAPI WiFi (mode 4)
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host,
                                                         poolmaxsize=self.poolmaxsize)
-                    else:
+                    else:  # Hybrid (password + gw_pwd) or local-only (password only)
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
                                                        self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
