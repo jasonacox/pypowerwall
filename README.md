@@ -35,7 +35,7 @@ python3 -m pip install pypowerwall
 # Option 1 - LOCAL MODE - Scan Network for Powerwalls
 python3 -m pypowerwall scan
 
-# Option 2 - FLEETAPI MODE - Setup to use the official Tesla FleetAPI - See notes below.
+# Option 2 - FLEETAPI CLOUD MODE - Setup to use the official Tesla FleetAPI - See notes below.
 python3 -m pypowerwall fleetapi
 
 # Option 3 - CLOUD MODE - Setup to use Tesla Owners cloud API
@@ -55,7 +55,7 @@ The Powerwall 3 does not have a traditional Web Portal or API but you can access
 
 Locally accessible extended device vitals metrics are available using the TEDAPI method (see options 4 and 5 below).
 
-### FleetAPI Setup - Option 2
+### FleetAPI Cloud Setup - Option 2
 
 FleetAPI is the official Tesla API for accessing your Tesla products. This setup has some additional setup requirements that you will be prompted to do:
 
@@ -125,6 +125,8 @@ python3 -m pypowerwall tedapi
 
 The Powerwall 3 exposes a `/tedapi/v1r` endpoint on the **wired LAN** that accepts RSA-4096 signed protobuf messages. This provides full local access to all Powerwall data (config, firmware, power, vitals, components) without needing Wi-Fi access to `192.168.91.1`. This is especially useful for always-on monitoring setups where a wired Ethernet connection to the Powerwall gateway is available.
 
+> **Note:** This mode requires a Tesla developer account with Fleet API access to register the RSA key. If you already have FleetAPI set up (Option 2), you can reuse those credentials. If not, expect the one-time setup to take some effort — see the [FleetAPI Cloud Setup](#fleetapi-cloud-setup---option-2) section for the developer account requirements.
+
 #### Requirements
 
 1. **Wired LAN connection** to the Powerwall 3 gateway (e.g., Ethernet via network switch, bridge, or VLAN)
@@ -134,7 +136,7 @@ The Powerwall 3 exposes a `/tedapi/v1r` endpoint on the **wired LAN** that accep
 
 #### RSA Key Registration
 
-Use `fleet_register.py` to generate and register an RSA-4096 key pair with the Powerwall:
+Use `fleet_register.py` (or `python -m pypowerwall register` after pip install) to generate and register an RSA-4096 key pair with the Powerwall:
 
 ```bash
 python3 fleet_register.py
@@ -148,7 +150,9 @@ It will then:
 1. Generate an RSA-4096 key pair (saves private key to `tedapi_rsa_private.pem`)
 2. Walk you through Tesla OAuth to authorize the application
 3. Register the public key with the Powerwall via Fleet API
-4. Prompt you to confirm registration by toggling the Powerwall breaker within 30 seconds
+4. Prompt you to confirm registration by toggling a Powerwall breaker off and back on
+
+After the breaker toggle, wait for the Powerwall status light to turn from red back to white — this can take 30-60 seconds. The script will poll for confirmation and show whether the key was authorized.
 
 **Note:** Tesla Fleet API requires your application’s public key to be served at `https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem`. A Cloudflare Worker or any static web host can serve this file.
 

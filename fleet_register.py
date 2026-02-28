@@ -328,7 +328,7 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
     }
 
     code, resp = api_call(
-        f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command?language=en_US",
+        f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command",
         method="POST",
         data=payload,
         token=token,
@@ -366,7 +366,7 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
 
     for attempt in range(6):
         code, resp = api_call(
-            f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command?language=en_US",
+            f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command",
             method="POST",
             data=verify_payload,
             token=token,
@@ -382,16 +382,21 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
     print("  Done!")
     print("=" * 70)
     print()
-    print("  If the key state shows 'authorized' (state 3), registration")
+    print("  If the response shows the key as 'authorized', registration")
     print("  was successful. Your RSA private key is at:")
     print(f"    {RSA_PRIVATE_KEY_FILE}")
     print()
-    print("  Next steps:")
+    print("  Next steps (library usage):")
+    print("    import pypowerwall")
+    print('    pw = pypowerwall.Powerwall(host="POWERWALL_IP", password="XXXXX",')
+    print('         email="you@example.com", rsa_key_path="tedapi_rsa_private.pem")')
+    print()
+    print("  Next steps (Docker / Powerwall-Dashboard):")
     print("    1. Copy the key to your Powerwall-Dashboard .auth/ directory")
     print("    2. Set PW_RSA_KEY_PATH=/app/.auth/tedapi_rsa_private.pem")
     print("    3. Set PW_HOST to your Powerwall's wired LAN IP")
     print("    4. Set PW_PASSWORD to your customer password")
-    print("    5. Start the pypowerwall Docker container")
+    print("    5. Start the container — v1r mode is auto-detected")
     print()
 
 
