@@ -133,8 +133,9 @@ def decompress_response(content: bytes) -> bytes:
 
 # TEDAPI Class
 class TEDAPI:
-    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5, 
-                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,) -> None:
+    def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
+                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
+                 v1r: bool = False, password: str = None, rsa_key_path: str = None) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication."""
         self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
@@ -147,12 +148,24 @@ class TEDAPI:
         self.gw_ip = host
         self.din = None
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
-        if not gw_pwd:
-            raise ValueError("Missing gw_pwd")
+        self.v1r = v1r
+        self.v1r_transport = None
+        if v1r:
+            if not password or not rsa_key_path:
+                raise ValueError("v1r mode requires password and rsa_key_path")
+            from .tedapi_v1r import TEDAPIv1r
+            self.v1r_transport = TEDAPIv1r(
+                host=host, password=password, rsa_key_path=rsa_key_path,
+                timeout=timeout, poolmaxsize=poolmaxsize
+            )
+            self.gw_pwd = ""
+        else:
+            if not gw_pwd:
+                raise ValueError("Missing gw_pwd")
+            self.gw_pwd = gw_pwd
         if self.debug:
             self.set_debug(True)
-        self.gw_pwd = gw_pwd
-        log.debug(f"TEDAPI initialized with pwcacheexpire={self.pwcacheexpire}s, pwconfigexpire={self.pwconfigexpire}s")
+        log.debug(f"TEDAPI initialized with pwcacheexpire={self.pwcacheexpire}s, pwconfigexpire={self.pwconfigexpire}s, v1r={self.v1r}")
         # Connect to Powerwall Gateway
         if not self.connect():
             log.error("Failed to connect to Powerwall Gateway")
@@ -183,6 +196,12 @@ class TEDAPI:
             return None
         # Fetch DIN from Powerwall
         log.debug("Fetching DIN from Powerwall...")
+        if self.v1r:
+            din = self.v1r_transport.get_din()
+            if din:
+                self.pwcachetime["din"] = time.time()
+                self.pwcache["din"] = din
+            return din
         url = f'https://{self.gw_ip}/tedapi/din'
         r = self.session.get(url, timeout=self.timeout)
         if r.status_code in BUSY_CODES:
@@ -275,40 +294,52 @@ class TEDAPI:
                     return None
             # Fetch Configuration from Powerwall
             log.debug("Get Configuration from Powerwall")
-            # Build Protobuf to fetch config
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of Powerwall
-            pb.message.config.send.num = 1
-            pb.message.config.send.file = "config.json"
-            pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
-            try:
-                r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching config: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                payload = tedapi.message.config.recv.file.text
+            if self.v1r:
+                # v1r uses FileStore protobuf format for config
                 try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
-                    data = {}
-                log.debug(f"Configuration: {data}")
-                self.pwcachetime["config"] = time.time()
-                self.pwcache["config"] = data
-            except Exception as e:
-                log.error(f"Error fetching config: {e}")
+                    data = self.v1r_transport.get_config_v1r(self.din)
+                    if data:
+                        log.debug(f"Configuration (v1r): {data}")
+                        self.pwcachetime["config"] = time.time()
+                        self.pwcache["config"] = data
+                except Exception as e:
+                    log.error(f"Error fetching config via v1r: {e}")
+                    data = None
+            else:
+                # Build Protobuf to fetch config (WiFi v1 format)
+                pb = tedapi_pb2.Message()
+                pb.message.deliveryChannel = 1
+                pb.message.sender.local = 1
+                pb.message.recipient.din = self.din  # DIN of Powerwall
+                pb.message.config.send.num = 1
+                pb.message.config.send.file = "config.json"
+                pb.tail.value = 1
+                url = f'https://{self.gw_ip}/tedapi/v1'
+                try:
+                    r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
+                    log.debug(f"Response Code: {r.status_code}")
+                    if r.status_code in BUSY_CODES:
+                        # Rate limited - Switch to cooldown mode for 5 minutes
+                        self.pwcooldown = time.perf_counter() + 300
+                        log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                        return None
+                    if r.status_code != HTTPStatus.OK:
+                        log.error(f"Error fetching config: {r.status_code}")
+                        return None
+                    # Decode response
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(decompress_response(r.content))
+                    payload = tedapi.message.config.recv.file.text
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
+                    log.debug(f"Configuration: {data}")
+                    self.pwcachetime["config"] = time.time()
+                    self.pwcache["config"] = data
+                except Exception as e:
+                    log.error(f"Error fetching config: {e}")
                 data = None
         return data
 
@@ -388,6 +419,7 @@ class TEDAPI:
                     return None
             # Fetch Current Status from Powerwall
             log.debug("Get Status from Powerwall")
+
             # Build Protobuf to fetch status
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -399,25 +431,20 @@ class TEDAPI:
             pb.message.payload.send.code = b'0\201\206\002A\024\261\227\245\177\255\265\272\321r\032\250\275j\305\030\2300\266\022B\242\264pO\262\024vd\267\316\032\f\376\322V\001\f\177*\366\345\333g_/`\v\026\225_qc\023$\323\216y\276~\335A1\022x\002Ap\a_\264\037]\304>\362\356\005\245V\301\177*\b\307\016\246]\037\202\242\353I~\332\317\021\336\006\033q\317\311\264\315\374\036\365s\272\225\215#o!\315z\353\345z\226\365\341\f\265\256r\373\313/\027\037'
             pb.message.payload.send.b.value = "{}"
             pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                response = self._post_tedapi(pb.SerializeToString())
+                if response is None:
                     return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching status: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                payload = tedapi.message.payload.recv.text
+                if self.v1r:
+                    payload = self._parse_v1r_query_response(response)
+                else:
+                    # Decode WiFi v1 response
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(response)
+                    payload = tedapi.message.payload.recv.text
                 try:
                     data = json.loads(payload)
-                except json.JSONDecodeError as e:
+                except (json.JSONDecodeError, TypeError) as e:
                     log.error(f"Error Decoding JSON: {e}")
                     data = {}
                 log.debug(f"Status: {data}")
@@ -481,6 +508,7 @@ class TEDAPI:
                     return None
             # Fetch Current Status from Powerwall
             log.debug("Get controller data from Powerwall")
+
             # Build Protobuf to fetch controller data
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -492,26 +520,20 @@ class TEDAPI:
             pb.message.payload.send.code = b'0\x81\x87\x02B\x01A\x95\x12\xe3B\xd1\xca\x1a\xd3\x00\xf6}\x0bE@/\x9a\x9f\xc0\r\x06%\xac,\x0ej!)\nd\xef\xe67\x8b\xafb\xd7\xf8&\x0b.\xc1\xac\xd9!\x1f\xd6\x83\xffkIm\xf3\\J\xd8\xeeiTY\xde\x7f\xc5xR\x02A\x1dC\x03H\xfb8"\xb0\xe4\xd6\x18\xde\x11\xc45\xb2\xa9VB\xa6J\x8f\x08\x9d\xba\x86\xf1 W\xcdJ\x8c\x02*\x05\x12\xcb{<\x9b\xc8g\xc9\x9d9\x8bR\xb3\x89\xb8\xf1\xf1\x0f\x0e\x16E\xed\xd7\xbf\xd5&)\x92.\x12'
             pb.message.payload.send.b.value = '{"msaComp":{"types" :["PVS","PVAC", "TESYNC", "TEPINV", "TETHC", "STSTSM",  "TEMSA", "TEPINV" ]},\n\t"msaSignals":[\n\t"MSA_pcbaId",\n\t"MSA_usageId",\n\t"MSA_appGitHash",\n\t"PVAC_Fan_Speed_Actual_RPM",\n\t"PVAC_Fan_Speed_Target_RPM",\n\t"MSA_HeatingRateOccurred",\n\t"THC_AmbientTemp",\n\t"METER_Z_CTA_InstRealPower",\n\t"METER_Z_CTA_InstReactivePower",\n\t"METER_Z_CTA_I",\n\t"METER_Z_VL1G",\n\t"METER_Z_CTB_InstRealPower",\n\t"METER_Z_CTB_InstReactivePower",\n\t"METER_Z_CTB_I",\n\t"METER_Z_VL2G",\n\t"METER_Z_CTC_InstRealPower",\n\t"METER_Z_CTC_InstReactivePower",\n\t"METER_Z_CTC_I",\n\t"METER_Z_VL3G",\n\t"METER_Z_LifetimeEnergyExport",\n\t"METER_Z_LifetimeEnergyImport"]}'
             pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                response = self._post_tedapi(pb.SerializeToString())
+                if response is None:
                     return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching controller data: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                payload = tedapi.message.payload.recv.text
+                if self.v1r:
+                    payload = self._parse_v1r_query_response(response)
+                else:
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(response)
+                    payload = tedapi.message.payload.recv.text
                 log.debug(f"Payload: {payload}")
                 try:
                     data = json.loads(payload)
-                except json.JSONDecodeError as e:
+                except (json.JSONDecodeError, TypeError) as e:
                     log.error(f"Error Decoding JSON: {e}")
                     data = {}
                 log.debug(f"Status: {data}")
@@ -564,61 +586,78 @@ class TEDAPI:
                 return None
             # Fetch Current Status from Powerwall
             log.debug("Get Firmware Version from Powerwall")
-            # Build Protobuf to fetch status
+            # Build Protobuf to fetch firmware
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
             pb.message.sender.local = 1
             pb.message.recipient.din = self.din  # DIN of Powerwall
             pb.message.firmware.request = ""
             pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                    return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching firmware version: {r.status_code}")
+                response = self._post_tedapi(pb.SerializeToString())
+                if response is None:
                     return None
                 # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                firmware_version = tedapi.message.firmware.system.version.text
-                if details:
-                    payload = {
-                        "system": {
-                            "gateway": {
-                                "partNumber": tedapi.message.firmware.system.gateway.partNumber,
-                                "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
-                            },
-                            "din": tedapi.message.firmware.system.din,
-                            "version": {
-                                "text": tedapi.message.firmware.system.version.text,
-                                "githash": tedapi.message.firmware.system.version.githash
-                            },
-                            "five": tedapi.message.firmware.system.five,
-                            "six": tedapi.message.firmware.system.six,
-                            "wireless": {
-                                "device": []
+                if self.v1r:
+                    # v1r response is a MessageEnvelope (not full Message)
+                    envelope = tedapi_pb2.MessageEnvelope()
+                    envelope.ParseFromString(response)
+                    firmware_version = envelope.firmware.system.version.text
+                    if details:
+                        payload = {
+                            "system": {
+                                "gateway": {
+                                    "partNumber": envelope.firmware.system.gateway.partNumber,
+                                    "serialNumber": envelope.firmware.system.gateway.serialNumber
+                                },
+                                "din": envelope.firmware.system.din,
+                                "version": {
+                                    "text": envelope.firmware.system.version.text,
+                                    "githash": envelope.firmware.system.version.githash
+                                },
+                                "five": envelope.firmware.system.five,
+                                "six": envelope.firmware.system.six,
+                                "wireless": {"device": []}
                             }
                         }
-                    }
-                    try:
-                        for device in tedapi.message.firmware.system.wireless.device:
-                            payload["system"]["wireless"]["device"].append({
-                                "company": device.company.value,
-                                "model": device.model.value,
-                                "fcc_id": device.fcc_id.value,
-                                "ic": device.ic.value
-                            })
-                    except Exception as e:
-                        log.debug(f"Error parsing wireless devices: {e}")
-                    log.debug(f"Firmware Version: {payload}")
+                    else:
+                        payload = firmware_version
                 else:
-                    payload = firmware_version
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(response)
+                    firmware_version = tedapi.message.firmware.system.version.text
+                    if details:
+                        payload = {
+                            "system": {
+                                "gateway": {
+                                    "partNumber": tedapi.message.firmware.system.gateway.partNumber,
+                                    "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
+                                },
+                                "din": tedapi.message.firmware.system.din,
+                                "version": {
+                                    "text": tedapi.message.firmware.system.version.text,
+                                    "githash": tedapi.message.firmware.system.version.githash
+                                },
+                                "five": tedapi.message.firmware.system.five,
+                                "six": tedapi.message.firmware.system.six,
+                                "wireless": {
+                                    "device": []
+                                }
+                            }
+                        }
+                        try:
+                            for device in tedapi.message.firmware.system.wireless.device:
+                                payload["system"]["wireless"]["device"].append({
+                                    "company": device.company.value,
+                                    "model": device.model.value,
+                                    "fcc_id": device.fcc_id.value,
+                                    "ic": device.ic.value
+                                })
+                        except Exception as e:
+                            log.debug(f"Error parsing wireless devices: {e}")
+                        log.debug(f"Firmware Version: {payload}")
+                    else:
+                        payload = firmware_version
                 log.debug(f"Firmware Version: {firmware_version}")
                 self.pwcachetime["firmware"] = time.time()
                 self.pwcache["firmware"] = firmware_version
@@ -668,6 +707,7 @@ class TEDAPI:
                 return None
             # Fetch Configuration from Powerwall
             log.debug("Get PW3 Components from Powerwall")
+
             # Build Protobuf to fetch config
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -679,24 +719,17 @@ class TEDAPI:
             pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
             pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
             pb.tail.value = 1
-            url = f'https://{self.gw_ip}/tedapi/v1'
             try:
-                r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                response = self._post_tedapi(pb.SerializeToString())
+                if response is None:
                     return None
-                if r.status_code != HTTPStatus.OK:
-                    log.error(f"Error fetching components: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                payload = tedapi.message.payload.recv.text
-                log.debug(f"Payload (len={len(payload)}): {payload}")
-                # Append payload to components
+                if self.v1r:
+                    payload = self._parse_v1r_query_response(response)
+                else:
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(response)
+                    payload = tedapi.message.payload.recv.text
+                log.debug(f"Payload (len={len(payload) if payload else 0}): {payload}")
                 components = json.loads(payload)
                 log.debug(f"Components: {components}")
                 self.pwcachetime["components"] = time.time()
@@ -791,18 +824,20 @@ class TEDAPI:
             if single_pw:
                 # If only one Powerwall, use basic tedapi URL
                 pb.tail.value = 1
-                url = f'https://{self.gw_ip}/tedapi/v1'
+                url_suffix = '/tedapi/v1'
             else:
                 # If multiple Powerwalls, use tedapi/device/{pw_din}/v1
                 pb.tail.value = 2
                 pb.message.sender.din = din  # DIN of Primary Powerwall 3 / System
-                url = f'https://{self.gw_ip}/tedapi/device/{pw_din}/v1'
-            r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-            if r.status_code == HTTPStatus.OK:
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                payload = tedapi.message.payload.recv.text
+                url_suffix = f'/tedapi/device/{pw_din}/v1'
+            api_response = self._post_tedapi(pb.SerializeToString(), din=pw_din, url_suffix=url_suffix)
+            if api_response is not None:
+                if self.v1r:
+                    payload = self._parse_v1r_query_response(api_response)
+                else:
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(api_response)
+                    payload = tedapi.message.payload.recv.text
                 if payload:
                     data = json.loads(payload)
                     # TEDPOD
@@ -921,7 +956,7 @@ class TEDAPI:
                 else:
                     log.debug(f"No payload for {pw_din}")
             else:
-                log.debug(f"Error fetching components: {r.status_code}")
+                log.debug(f"No response for {pw_din}")
         return response
 
 
@@ -971,6 +1006,7 @@ class TEDAPI:
                 return None
             # Fetch Battery Block from Powerwall
             log.debug(f"Get Battery Block from Powerwall ({din})")
+
             # Build Protobuf to fetch config
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -983,30 +1019,27 @@ class TEDAPI:
             pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
             pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
             pb.tail.value = 2
-            url = f'https://{self.gw_ip}/tedapi/device/{din}/v1'
             try:
-                r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                log.debug(f"Response Code: {r.status_code}")
-                if r.status_code in BUSY_CODES:
-                    # Rate limited - Switch to cooldown mode for 5 minutes
-                    self.pwcooldown = time.perf_counter() + 300
-                    log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                response = self._post_tedapi(pb.SerializeToString(), din=din,
+                                             url_suffix=f'/tedapi/device/{din}/v1')
+                if response is None:
                     return None
-                if r.status_code == 404:
-                    log.debug(f"Device not found: {din}")
-                    return None
-                if r.status_code != 200:
-                    log.error(f"Error fetching config: {r.status_code}")
-                    return None
-                # Decode response
-                tedapi = tedapi_pb2.Message()
-                tedapi.ParseFromString(decompress_response(r.content))
-                payload = tedapi.message.config.recv.file.text
-                try:
-                    data = json.loads(payload)
-                except json.JSONDecodeError as e:
-                    log.error(f"Error Decoding JSON: {e}")
-                    data = {}
+                if self.v1r:
+                    # v1r battery block config — try parsing as query response first
+                    payload_text = self._parse_v1r_query_response(response)
+                    if payload_text:
+                        data = json.loads(payload_text)
+                    else:
+                        data = {}
+                else:
+                    tedapi = tedapi_pb2.Message()
+                    tedapi.ParseFromString(response)
+                    payload = tedapi.message.config.recv.file.text
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
                 log.debug(f"Configuration: {data}")
                 self.pwcachetime[din] = time.time()
                 self.pwcache[din] = data
@@ -1036,6 +1069,8 @@ class TEDAPI:
 
     def connect(self):
         """Connect to the Powerwall Gateway and retrieve the DIN."""
+        if self.v1r:
+            return self._connect_v1r()
         # Test IP Connection to Powerwall Gateway
         log.debug(f"Testing Connection to Powerwall Gateway: {self.gw_ip}")
         url = f'https://{self.gw_ip}'
@@ -1053,6 +1088,107 @@ class TEDAPI:
             log.error("Please verify your your host has a route to the Gateway.")
             log.error(f"Error Details: {e}")
         return self.din
+
+    def _connect_v1r(self):
+        """Connect via v1r transport (RSA-signed LAN access)."""
+        log.debug(f"v1r: Connecting to Powerwall Gateway: {self.gw_ip}")
+        self.din = None
+        self.pw3 = True  # v1r is PW3-only
+        try:
+            if not self.v1r_transport.login():
+                log.error("v1r: Login failed")
+                return None
+            self.din = self.v1r_transport.get_din()
+            if not self.din:
+                log.error("v1r: Failed to get DIN")
+                return None
+            log.debug(f"v1r: Connected, DIN={self.din}")
+        except Exception as e:
+            log.error(f"v1r: Connection error: {e}")
+        return self.din
+
+    def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
+        """
+        Transport abstraction: POST protobuf bytes to the appropriate TEDAPI endpoint.
+
+        WiFi mode: POST to /tedapi/v1 with HTTP Basic auth session.
+        v1r mode:  Wrap in RSA-signed RoutableMessage and POST to /tedapi/v1r.
+
+        Args:
+            pb_bytes: Serialized protobuf payload. For WiFi: full tedapi_pb2.Message.
+                      For v1r: can be either full Message or just MessageEnvelope bytes.
+            din: DIN for v1r envelope (ignored in WiFi mode)
+            url_suffix: URL suffix for WiFi mode (e.g., '/tedapi/v1' or '/tedapi/device/{din}/v1')
+
+        Returns:
+            Raw response content bytes, or None on error.
+            For WiFi: the raw HTTP response body (protobuf)
+            For v1r: the inner protobuf_message_as_bytes from the RoutableMessage response
+        """
+        if self.v1r:
+            # v1r requires just the MessageEnvelope bytes (NOT the full Message
+            # wrapper with tail). Extract the envelope from the full Message.
+            try:
+                msg = tedapi_pb2.Message()
+                msg.ParseFromString(pb_bytes)
+                envelope_bytes = msg.message.SerializeToString()
+            except Exception:
+                # If parsing fails, assume pb_bytes is already envelope bytes
+                envelope_bytes = pb_bytes
+            inner = self.v1r_transport.post_v1r(envelope_bytes, din or self.din)
+            return inner
+        else:
+            url = f'https://{self.gw_ip}{url_suffix}'
+            r = self.session.post(url, data=pb_bytes, timeout=self.timeout)
+            if r.status_code in BUSY_CODES:
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall - Activating 5 minute cooldown')
+                return None
+            if r.status_code != HTTPStatus.OK:
+                log.error(f"Error posting to {url_suffix}: {r.status_code}")
+                return None
+            return decompress_response(r.content)
+
+    def _parse_v1r_query_response(self, inner_bytes: bytes) -> Optional[str]:
+        """
+        Parse v1r query response to extract the JSON text payload.
+
+        For v1r, the response is a MessageEnvelope (not a full Message with tail).
+        The JSON payload is in envelope.payload.recv.text.
+        """
+        if not inner_bytes:
+            return None
+        # v1r returns MessageEnvelope directly (no outer Message wrapper)
+        try:
+            envelope = tedapi_pb2.MessageEnvelope()
+            envelope.ParseFromString(inner_bytes)
+            if envelope.HasField('payload'):
+                return envelope.payload.recv.text
+        except Exception:
+            pass
+        # Fallback: try as full Message
+        try:
+            resp = tedapi_pb2.Message()
+            resp.ParseFromString(inner_bytes)
+            return resp.message.payload.recv.text
+        except Exception:
+            pass
+        # Last resort: find JSON in raw bytes
+        try:
+            text = inner_bytes.decode('utf-8', errors='replace')
+            json_start = text.find('{')
+            if json_start >= 0:
+                depth = 0
+                for i, ch in enumerate(text[json_start:], json_start):
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            return text[json_start:i + 1]
+        except Exception as e:
+            log.error(f"v1r response parse error: {e}")
+        return None
 
     # Handy Function to access Powerwall Status
     def current_power(self, location: Optional[str] = None, force: bool = False) -> Optional[Union[float, Dict[str, float]]]:
