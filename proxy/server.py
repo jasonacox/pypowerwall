@@ -345,6 +345,10 @@ _connection_health_lock = threading.RLock()
 _last_good_responses: Dict[str, tuple] = {}
 _last_good_responses_lock = threading.RLock()
 
+# Endpoint call tracking for success/failure statistics
+_endpoint_stats: Dict[str, Dict[str, Any]] = {}
+_endpoint_stats_lock = threading.RLock()
+
 # Health thresholds
 HEALTH_FAILURE_THRESHOLD: Final[int] = 5   # consecutive failures before degraded mode
 HEALTH_RECOVERY_THRESHOLD: Final[int] = 3  # consecutive successes to exit degraded mode
@@ -395,6 +399,27 @@ def cache_response(endpoint: str, response: Any) -> None:
         if len(_last_good_responses) > 50:
             oldest_key = min(_last_good_responses, key=lambda k: _last_good_responses[k][1])
             del _last_good_responses[oldest_key]
+
+
+def track_endpoint_call(endpoint: str, success: bool = True) -> None:
+    """Track endpoint call success/failure statistics."""
+    with _endpoint_stats_lock:
+        if endpoint not in _endpoint_stats:
+            _endpoint_stats[endpoint] = {
+                'total_calls': 0,
+                'successful_calls': 0,
+                'failed_calls': 0,
+                'last_success_time': None,
+                'last_failure_time': None,
+            }
+        _endpoint_stats[endpoint]['total_calls'] += 1
+        current_time = time.time()
+        if success:
+            _endpoint_stats[endpoint]['successful_calls'] += 1
+            _endpoint_stats[endpoint]['last_success_time'] = current_time
+        else:
+            _endpoint_stats[endpoint]['failed_calls'] += 1
+            _endpoint_stats[endpoint]['last_failure_time'] = current_time
 
 
 def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG) -> pypowerwall.Powerwall:
@@ -560,9 +585,11 @@ class Handler(BaseHTTPRequestHandler):
         if result is not None:
             if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
                 cache_response(endpoint_name, result)
+            track_endpoint_call(endpoint_name, success=True)
             return result
 
-        # Failed to get fresh data - try cached response
+        # Failed to get fresh data - track failure and try cached response
+        track_endpoint_call(endpoint_name, success=False)
         if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
             cached = get_cached_response(endpoint_name, self.configuration[CONFIG_TYPE.PW_CACHE_TTL])
             if cached is not None:
@@ -974,6 +1001,15 @@ class Handler(BaseHTTPRequestHandler):
             'graceful_degradation': self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION],
             'fail_fast_mode': self.configuration[CONFIG_TYPE.PW_FAIL_FAST],
             'health_check_enabled': self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK],
+            'startup_time': datetime.datetime.fromtimestamp(self.proxystats[PROXY_STATS_TYPE.START]).isoformat(),
+            'current_time': datetime.datetime.now().isoformat(),
+        }
+        # Add overall proxy response counters
+        health_info['proxy_stats'] = {
+            'total_gets': self.proxystats[PROXY_STATS_TYPE.GETS],
+            'total_posts': self.proxystats[PROXY_STATS_TYPE.POSTS],
+            'total_errors': self.proxystats[PROXY_STATS_TYPE.ERRORS],
+            'total_timeouts': self.proxystats[PROXY_STATS_TYPE.TIMEOUT],
         }
         if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
             with _connection_health_lock:
@@ -999,6 +1035,25 @@ class Handler(BaseHTTPRequestHandler):
                     'cache_size': len(_last_good_responses),
                     'endpoints': cached_endpoints,
                 }
+        # Add endpoint call statistics
+        with _endpoint_stats_lock:
+            endpoint_stats = {}
+            current_time = time.time()
+            for endpoint, stats in _endpoint_stats.items():
+                success_rate = (stats['successful_calls'] / stats['total_calls'] * 100) if stats['total_calls'] > 0 else 0
+                endpoint_info = {
+                    'total_calls': stats['total_calls'],
+                    'successful_calls': stats['successful_calls'],
+                    'failed_calls': stats['failed_calls'],
+                    'success_rate_percent': round(success_rate, 2),
+                }
+                if stats['last_success_time']:
+                    endpoint_info['last_success_age_seconds'] = current_time - stats['last_success_time']
+                if stats['last_failure_time']:
+                    endpoint_info['last_failure_age_seconds'] = current_time - stats['last_failure_time']
+                endpoint_stats[endpoint] = endpoint_info
+            if endpoint_stats:
+                health_info['endpoint_statistics'] = endpoint_stats
         return self.send_json_response(health_info)
 
 
@@ -1015,12 +1070,17 @@ class Handler(BaseHTTPRequestHandler):
             with _last_good_responses_lock:
                 cache_size_before = len(_last_good_responses)
                 _last_good_responses.clear()
-        log.info("Health counters and cache reset via /health/reset endpoint")
+        # Reset endpoint statistics
+        with _endpoint_stats_lock:
+            endpoint_stats_count = len(_endpoint_stats)
+            _endpoint_stats.clear()
+        log.info("Health counters, cache, and endpoint statistics reset via /health/reset endpoint")
         return self.send_json_response({
             'status': 'reset_complete',
             'health_counters_reset': self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK],
             'cache_cleared': self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION],
             'cache_entries_removed': cache_size_before,
+            'endpoint_stats_cleared': endpoint_stats_count,
         })
 
 
@@ -1355,9 +1415,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", f"AuthCookie=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
             self.send_header("Set-Cookie", f"UserRecord=1234567890;{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
         else:
+            # Safely access auth cookies with fallback
             auth = self.pw.client.auth
-            self.send_header("Set-Cookie", f"AuthCookie={auth['AuthCookie']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
-            self.send_header("Set-Cookie", f"UserRecord={auth['UserRecord']};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+            auth_cookie = auth.get('AuthCookie', '1234567890') if auth else '1234567890'
+            user_record = auth.get('UserRecord', '1234567890') if auth else '1234567890'
+            self.send_header("Set-Cookie", f"AuthCookie={auth_cookie};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
+            self.send_header("Set-Cookie", f"UserRecord={user_record};{self.configuration[CONFIG_TYPE.PW_COOKIE_SUFFIX]}")
 
         content, content_type = get_static(WEB_ROOT, path)
         if path == "/" or path == "":
