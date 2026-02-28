@@ -55,6 +55,9 @@ from ipaddress import IPv4Address
 from typing import Any, Dict, Final, List, Set, Tuple
 from urllib.parse import parse_qs, urlparse
 
+import requests
+import urllib3
+
 import psutil
 from pyroute2 import IPRoute
 from transform import get_static, inject_js
@@ -137,19 +140,25 @@ class CONFIG_TYPE(StrEnum):
     PW_BROWSER_CACHE = auto()
     PW_CACHE_EXPIRE = auto()
     PW_CACHE_FILE = auto()
+    PW_CACHE_TTL = auto()
     PW_CONTROL_SECRET = auto()
     PW_COOKIE_SUFFIX = auto()
     PW_EMAIL = auto()
+    PW_FAIL_FAST = auto()
+    PW_GRACEFUL_DEGRADATION = auto()
     PW_GW_PWD = auto()
+    PW_HEALTH_CHECK = auto()
     PW_HOST = auto()
     PW_HTTP_TYPE = auto()
     PW_HTTPS = auto()
     PW_NEG_SOLAR = auto()
+    PW_NETWORK_ERROR_RATE_LIMIT = auto()
     PW_PASSWORD = auto()
     PW_POOL_MAXSIZE = auto()
     PW_PORT = auto()
     PW_SITEID = auto()
     PW_STYLE = auto()
+    PW_SUPPRESS_NETWORK_ERRORS = auto()
     PW_TIMEOUT = auto()
     PW_TIMEZONE = auto()
 
@@ -165,6 +174,7 @@ class PROXY_STATS_TYPE(StrEnum):
     CLEAR = auto()
     CLOUDMODE = auto()
     CONFIG = auto()
+    CONNECTION_HEALTH = auto()
     COUNTER = auto()
     ERRORS = auto()
     FLEETAPI = auto()
@@ -253,6 +263,120 @@ def get_value(a, key):
     return value
 
 
+# Rate limiter for network error logging to prevent spam
+_error_counts: Dict[str, int] = {}
+_error_counts_lock = threading.RLock()
+_network_error_summary: Dict[str, Dict[str, int]] = {}
+_last_summary_time = time.time()
+
+
+def should_log_network_error(func_name: str, max_per_minute: int = 5) -> bool:
+    """
+    Rate limit network error logging to prevent log spam.
+    Allow max_per_minute errors per function per minute.
+    """
+    current_time = time.time()
+    minute_bucket = int(current_time // 60)
+    key = f"{func_name}_{minute_bucket}"
+
+    with _error_counts_lock:
+        _error_counts[key] = _error_counts.get(key, 0) + 1
+
+        # Clean up old entries (keep only current and previous minute)
+        current_keys = {f"{func_name}_{minute_bucket}", f"{func_name}_{minute_bucket - 1}"}
+        keys_to_remove = [k for k in _error_counts if k not in current_keys and k.startswith(f"{func_name}_")]
+        for k in keys_to_remove:
+            del _error_counts[k]
+
+        return _error_counts[key] <= max_per_minute
+
+
+def track_network_error(func_name: str, error_type: str) -> None:
+    """Track network errors for summary reporting."""
+    global _network_error_summary, _last_summary_time
+
+    with _error_counts_lock:
+        _network_error_summary.setdefault(func_name, {})
+        _network_error_summary[func_name][error_type] = _network_error_summary[func_name].get(error_type, 0) + 1
+
+        # Log summary every 5 minutes if there are errors
+        current_time = time.time()
+        if current_time - _last_summary_time > 300:
+            if _network_error_summary:
+                log.warning("Network Error Summary (last 5 minutes):")
+                for func, errors in _network_error_summary.items():
+                    for etype, count in errors.items():
+                        log.warning(f"  {func}: {count} {etype} errors")
+                _network_error_summary.clear()
+            _last_summary_time = current_time
+
+
+# Connection health tracking
+_connection_health = {
+    'consecutive_failures': 0,
+    'last_success_time': time.time(),
+    'total_failures': 0,
+    'total_successes': 0,
+    'is_degraded': False,
+}
+_connection_health_lock = threading.RLock()
+
+# Cache for last known good responses (graceful degradation)
+_last_good_responses: Dict[str, tuple] = {}
+_last_good_responses_lock = threading.RLock()
+
+# Health thresholds
+HEALTH_FAILURE_THRESHOLD: Final[int] = 5   # consecutive failures before degraded mode
+HEALTH_RECOVERY_THRESHOLD: Final[int] = 3  # consecutive successes to exit degraded mode
+
+
+def update_connection_health(success: bool = True) -> None:
+    """Update connection health metrics and degraded mode status."""
+    with _connection_health_lock:
+        if success:
+            _connection_health['consecutive_failures'] = 0
+            _connection_health['last_success_time'] = time.time()
+            _connection_health['total_successes'] += 1
+            if _connection_health['is_degraded']:
+                if _connection_health['total_successes'] % HEALTH_RECOVERY_THRESHOLD == 0:
+                    _connection_health['is_degraded'] = False
+                    log.info("Connection health recovered - exiting degraded mode")
+        else:
+            _connection_health['consecutive_failures'] += 1
+            _connection_health['total_failures'] += 1
+            if not _connection_health['is_degraded']:
+                if _connection_health['consecutive_failures'] >= HEALTH_FAILURE_THRESHOLD:
+                    _connection_health['is_degraded'] = True
+                    log.warning(f"Connection health degraded after {HEALTH_FAILURE_THRESHOLD} consecutive failures")
+
+
+def get_cached_response(endpoint: str, cache_ttl: int) -> Any:
+    """Get cached response for graceful degradation."""
+    with _last_good_responses_lock:
+        if endpoint in _last_good_responses:
+            cached_data, timestamp = _last_good_responses[endpoint]
+            age = time.time() - timestamp
+            if age < cache_ttl:
+                log.debug(f"Using cached response for {endpoint} (age: {age:.1f}s)")
+                return cached_data
+            else:
+                log.debug(f"Cache expired for {endpoint} (age: {age:.1f}s > {cache_ttl}s)")
+                del _last_good_responses[endpoint]
+    return None
+
+
+def cache_response(endpoint: str, response: Any) -> None:
+    """Cache successful response for graceful degradation."""
+    if response is None:
+        return
+    with _last_good_responses_lock:
+        _last_good_responses[endpoint] = (response, time.time())
+        # Limit cache size to prevent memory growth
+        if len(_last_good_responses) > 50:
+            oldest_key = min(_last_good_responses, key=lambda k: _last_good_responses[k][1])
+            del _last_good_responses[oldest_key]
+
+
 def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG) -> pypowerwall.Powerwall:
     if not configuration[CONFIG_TYPE.PW_CONTROL_SECRET]:
         return None
@@ -327,9 +451,19 @@ class Handler(BaseHTTPRequestHandler):
         """
         Safely call a pypowerwall function with global exception handling.
         Returns None on any exception and logs a clean error message.
+        Includes health tracking, fail-fast mode, and rate-limited logging.
         """
+        # In fail-fast mode with degraded connection, return None immediately
+        if self.configuration[CONFIG_TYPE.PW_FAIL_FAST] and self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+            with _connection_health_lock:
+                if _connection_health['is_degraded']:
+                    return None
+
         try:
-            return pw_func(*args, **kwargs)
+            result = pw_func(*args, **kwargs)
+            if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+                update_connection_health(success=True)
+            return result
         except (PyPowerwallInvalidConfigurationParameter,
                 InvalidBatteryReserveLevelException,
                 PyPowerwallTEDAPINoTeslaAuthFile,
@@ -347,19 +481,74 @@ class Handler(BaseHTTPRequestHandler):
                 LoginError,
                 PowerwallConnectionError) as e:
             func_name = getattr(pw_func, '__name__', str(pw_func))
-            log.error(f"Powerwall API Error in {func_name}: {e}")
+            log.warning(f"Powerwall API Error in {func_name}: {e}")
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
             return None
-        except (ConnectionError, TimeoutError, OSError) as e:
+        except (ConnectionError,
+                TimeoutError,
+                OSError,
+                requests.exceptions.RequestException,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+                requests.exceptions.ConnectTimeout,
+                requests.exceptions.ConnectionError,
+                urllib3.exceptions.ReadTimeoutError,
+                urllib3.exceptions.ConnectTimeoutError,
+                urllib3.exceptions.TimeoutError,
+                urllib3.exceptions.MaxRetryError) as e:
             func_name = getattr(pw_func, '__name__', str(pw_func))
-            log.error(f"Connection Error in {func_name}: {e}")
+            error_type = type(e).__name__
+
+            if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+                update_connection_health(success=False)
+
+            track_network_error(func_name, error_type)
+
+            rate_limit = self.configuration[CONFIG_TYPE.PW_NETWORK_ERROR_RATE_LIMIT]
+            if not self.configuration[CONFIG_TYPE.PW_SUPPRESS_NETWORK_ERRORS] and should_log_network_error(func_name, rate_limit):
+                if "timeout" in error_type.lower():
+                    log.info(f"Network timeout in {func_name}: {error_type}")
+                else:
+                    log.info(f"Network error in {func_name}: {error_type}")
+
             self.proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
             return None
         except Exception as e:
             func_name = getattr(pw_func, '__name__', str(pw_func))
-            log.error(f"Unexpected error in {func_name}: {type(e).__name__}: {e}")
+            error_type = type(e).__name__
+
+            if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+                update_connection_health(success=False)
+
+            if SERVER_DEBUG:
+                log.error(f"Unexpected error in {func_name}: {error_type}: {e}")
+            else:
+                log.warning(f"Unexpected error in {func_name}: {error_type}")
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
             return None
+
+    def safe_endpoint_call(self, endpoint_name, pw_func, *args, **kwargs):
+        """
+        Safely call a pypowerwall function for an endpoint with caching
+        and graceful degradation.
+
+        Returns response data on success, cached data if available and fresh
+        enough, or None if no data available.
+        """
+        result = self.safe_pw_call(pw_func, *args, **kwargs)
+
+        if result is not None:
+            if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
+                cache_response(endpoint_name, result)
+            return result
+
+        # Failed to get fresh data - try cached response
+        if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
+            cached = get_cached_response(endpoint_name, self.configuration[CONFIG_TYPE.PW_CACHE_TTL])
+            if cached is not None:
+                return cached
+
+        return None
 
     def handle_control_post(self, self_path) -> bool:
         """Handle control POST requests."""
@@ -457,6 +646,8 @@ class Handler(BaseHTTPRequestHandler):
             '/fans': self.handle_fans,
             '/fans/pw': self.handle_fans,
             '/freq': self.handle_freq,
+            '/health': self.handle_health,
+            '/health/reset': self.handle_health_reset,
             '/help': self.handle_help,
             '/json': self.handle_json,
             '/pod': self.handle_pod,
@@ -608,6 +799,14 @@ class Handler(BaseHTTPRequestHandler):
 
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := self.safe_pw_call(pws[0].poll, "/api/meters/aggregates"))]
+        if not results:
+            # No fresh data - try cached response
+            if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
+                cached = get_cached_response('/aggregates', self.configuration[CONFIG_TYPE.PW_CACHE_TTL])
+                if cached is not None:
+                    return self.send_json_response(cached)
+            return self.send_json_response(None)
+
         combined = aggregate_meter_results(results)
         update_power_metrics(combined)
 
@@ -628,17 +827,21 @@ class Handler(BaseHTTPRequestHandler):
                 if site:
                     site["instant_power"] = abs(site.get("instant_power"))
 
+        # Cache the combined result for graceful degradation
+        if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
+            cache_response('/aggregates', combined)
+
         return self.send_json_response(combined)
 
 
     def handle_soe(self) -> str:
-        soe = self.safe_pw_call(self.pw.poll, '/api/system_status/soe', jsonformat=True)
-        return self.send_json_response(json.loads(soe) if soe else {})
+        soe = self.safe_endpoint_call('/soe', self.pw.poll, '/api/system_status/soe', jsonformat=True)
+        return self.send_json_response(json.loads(soe) if soe else None)
 
 
     def handle_soe_scaled(self) -> str:
         level = self.safe_pw_call(self.pw.level, scale=True)
-        return self.send_json_response({"percentage": level or 0})
+        return self.send_json_response({"percentage": level} if level is not None else None)
 
 
     def handle_grid_status(self) -> str:
@@ -693,15 +896,17 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_vitals(self) -> str:
-        vitals = self.safe_pw_call(self.pw.vitals, jsonformat=True) or '{}'
-        return self.send_json_response(json.loads(vitals))
+        vitals = self.safe_endpoint_call('/vitals', self.pw.vitals, jsonformat=True)
+        return self.send_json_response(json.loads(vitals) if vitals else None)
 
 
     def handle_strings(self) -> str:
-        strings = self.safe_pw_call(self.pw.strings, jsonformat=True) or '{}'
+        strings = self.safe_endpoint_call('/strings', self.pw.strings, jsonformat=True)
+        if not strings:
+            return self.send_json_response(None)
         output = json.loads(strings)
         if len(self.all_pws) > 1:
-            output = {f"{key}_{self.pw.pw_din_suffix}":value for key, value in output.items()}
+            output = {f"{key}_{self.pw.pw_din_suffix}": value for key, value in output.items()}
         return self.send_json_response(output)
 
 
@@ -718,6 +923,16 @@ class Handler(BaseHTTPRequestHandler):
         if (self.pw.cloudmode or self.pw.fleetapi) and self.pw.client:
             self.proxystats[PROXY_STATS_TYPE.SITEID] = self.pw.client.siteid
             self.proxystats[PROXY_STATS_TYPE.COUNTER] = self.pw.client.counter
+        if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+            with _connection_health_lock:
+                self.proxystats[PROXY_STATS_TYPE.CONNECTION_HEALTH] = {
+                    'consecutive_failures': _connection_health['consecutive_failures'],
+                    'total_failures': _connection_health['total_failures'],
+                    'total_successes': _connection_health['total_successes'],
+                    'is_degraded': _connection_health['is_degraded'],
+                    'last_success_time': _connection_health['last_success_time'],
+                    'cache_size': len(_last_good_responses) if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION] else 0,
+                }
         return self.send_json_response(self.proxystats)
 
 
@@ -731,6 +946,62 @@ class Handler(BaseHTTPRequestHandler):
             PROXY_STATS_TYPE.CLEAR: int(time.time()),
         })
         return self.send_json_response(self.proxystats)
+
+
+    def handle_health(self) -> str:
+        health_info = {
+            'cache_ttl_seconds': self.configuration[CONFIG_TYPE.PW_CACHE_TTL],
+            'graceful_degradation': self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION],
+            'fail_fast_mode': self.configuration[CONFIG_TYPE.PW_FAIL_FAST],
+            'health_check_enabled': self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK],
+        }
+        if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+            with _connection_health_lock:
+                health_info['connection_health'] = {
+                    'consecutive_failures': _connection_health['consecutive_failures'],
+                    'total_failures': _connection_health['total_failures'],
+                    'total_successes': _connection_health['total_successes'],
+                    'is_degraded': _connection_health['is_degraded'],
+                    'last_success_time': _connection_health['last_success_time'],
+                    'last_success_age_seconds': time.time() - _connection_health['last_success_time'],
+                }
+        if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
+            with _last_good_responses_lock:
+                cached_endpoints = {}
+                current_time = time.time()
+                for endpoint, (data, timestamp) in _last_good_responses.items():
+                    age = current_time - timestamp
+                    cached_endpoints[endpoint] = {
+                        'age_seconds': age,
+                        'is_expired': age >= self.configuration[CONFIG_TYPE.PW_CACHE_TTL],
+                    }
+                health_info['cached_data'] = {
+                    'cache_size': len(_last_good_responses),
+                    'endpoints': cached_endpoints,
+                }
+        return self.send_json_response(health_info)
+
+
+    def handle_health_reset(self) -> str:
+        cache_size_before = 0
+        if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+            with _connection_health_lock:
+                _connection_health['consecutive_failures'] = 0
+                _connection_health['total_failures'] = 0
+                _connection_health['total_successes'] = 0
+                _connection_health['is_degraded'] = False
+                _connection_health['last_success_time'] = time.time()
+        if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION]:
+            with _last_good_responses_lock:
+                cache_size_before = len(_last_good_responses)
+                _last_good_responses.clear()
+        log.info("Health counters and cache reset via /health/reset endpoint")
+        return self.send_json_response({
+            'status': 'reset_complete',
+            'health_counters_reset': self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK],
+            'cache_cleared': self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION],
+            'cache_entries_removed': cache_size_before,
+        })
 
 
     def handle_fans(self) -> str:
@@ -1187,17 +1458,23 @@ def read_env_configs() -> List[PROXY_CONFIG]:
             CONFIG_TYPE.PW_BROWSER_CACHE: int(get_env_value(CONFIG_TYPE.PW_BROWSER_CACHE, "0")),
             CONFIG_TYPE.PW_CACHE_EXPIRE: int(get_env_value(CONFIG_TYPE.PW_CACHE_EXPIRE, "10")),
             CONFIG_TYPE.PW_CACHE_FILE: get_env_value(CONFIG_TYPE.PW_CACHE_FILE, ""),
+            CONFIG_TYPE.PW_CACHE_TTL: int(get_env_value(CONFIG_TYPE.PW_CACHE_TTL, "30")),
             CONFIG_TYPE.PW_CONTROL_SECRET: get_env_value(CONFIG_TYPE.PW_CONTROL_SECRET, ""),
             CONFIG_TYPE.PW_EMAIL: get_env_value(CONFIG_TYPE.PW_EMAIL, "email@example.com"),
+            CONFIG_TYPE.PW_FAIL_FAST: bool((get_env_value(CONFIG_TYPE.PW_FAIL_FAST, "no") or "no").lower() == "yes"),
+            CONFIG_TYPE.PW_GRACEFUL_DEGRADATION: bool((get_env_value(CONFIG_TYPE.PW_GRACEFUL_DEGRADATION, "yes") or "yes").lower() == "yes"),
             CONFIG_TYPE.PW_GW_PWD: get_env_value(CONFIG_TYPE.PW_GW_PWD, None),
+            CONFIG_TYPE.PW_HEALTH_CHECK: bool((get_env_value(CONFIG_TYPE.PW_HEALTH_CHECK, "yes") or "yes").lower() == "yes"),
             CONFIG_TYPE.PW_HOST: get_env_value(CONFIG_TYPE.PW_HOST, ""),
             CONFIG_TYPE.PW_HTTPS: (get_env_value(CONFIG_TYPE.PW_HTTPS, "no") or "no").lower(),
             CONFIG_TYPE.PW_NEG_SOLAR: bool((get_env_value(CONFIG_TYPE.PW_NEG_SOLAR, "yes") or "yes").lower() == "yes"),
+            CONFIG_TYPE.PW_NETWORK_ERROR_RATE_LIMIT: int(get_env_value(CONFIG_TYPE.PW_NETWORK_ERROR_RATE_LIMIT, "5")),
             CONFIG_TYPE.PW_PASSWORD: get_env_value(CONFIG_TYPE.PW_PASSWORD, ""),
             CONFIG_TYPE.PW_POOL_MAXSIZE: int(get_env_value(CONFIG_TYPE.PW_POOL_MAXSIZE, "15")),
             CONFIG_TYPE.PW_PORT: int(get_env_value(CONFIG_TYPE.PW_PORT, "8675")),
             CONFIG_TYPE.PW_SITEID: get_env_value(CONFIG_TYPE.PW_SITEID, None),
             CONFIG_TYPE.PW_STYLE: str(get_env_value(CONFIG_TYPE.PW_STYLE, "clear")) + ".js",
+            CONFIG_TYPE.PW_SUPPRESS_NETWORK_ERRORS: bool((get_env_value(CONFIG_TYPE.PW_SUPPRESS_NETWORK_ERRORS, "no") or "no").lower() == "yes"),
             CONFIG_TYPE.PW_TIMEOUT: int(get_env_value(CONFIG_TYPE.PW_TIMEOUT, "5")),
             CONFIG_TYPE.PW_TIMEZONE: get_env_value(CONFIG_TYPE.PW_TIMEZONE, "America/Los_Angeles")
         }
