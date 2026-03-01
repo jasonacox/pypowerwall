@@ -811,6 +811,12 @@ class TEDAPI:
             battery_type = battery['type']
             if "Powerwall3" not in battery_type:
                 continue
+            # v1r cannot route queries to follower Powerwalls — the gateway
+            # returns leader data regardless of recipient DIN. Skip followers
+            # to prevent duplicate vitals entries.
+            if self.v1r and pw_din != self.din:
+                log.debug("v1r: Skipping follower %s (per-device queries not yet supported)", pw_din)
+                continue
             # Fetch Device ComponentsQuery from each Powerwall
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -980,7 +986,11 @@ class TEDAPI:
         if not din:
             log.error("No DIN specified - Unable to get battery block")
             return None
-        
+        # v1r cannot route queries to follower Powerwalls
+        if self.v1r and din != self.din:
+            log.debug("v1r: Cannot query follower battery block %s (not yet supported)", din)
+            return None
+
         # Check Cache BEFORE acquiring lock
         if not force and din in self.pwcachetime:
             if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
