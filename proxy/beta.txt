@@ -8,3 +8,4 @@ python-dateutil
 ## TEMPORARY: Use local TeslaPy until next release is published to PyPI
 requests-oauthlib>=1.3.0
 websocket-client>=0.59.0
+cryptography

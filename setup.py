@@ -35,6 +35,7 @@ setuptools.setup(
         'python-dateutil',
         'requests-oauthlib',
         'websocket-client>=0.59.0',
+        'cryptography',
     ],
     package_data={
         'pypowerwall.cloud.teslapy': ['endpoints.json', 'option_codes.json'],

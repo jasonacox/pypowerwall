@@ -186,6 +186,7 @@ if authpath:
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
+rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
@@ -254,6 +255,7 @@ proxystats = {
         "PW_CACHE_FILE": cachefile,
         "PW_CONTROL_SECRET": "*" * len(control_secret) if control_secret else None,
         "PW_GW_PWD": "*" * len(gw_pwd) if gw_pwd else None,
+        "PW_RSA_KEY_PATH": rsa_key_path,
         "PW_NEG_SOLAR": neg_solar,
         "PW_SUPPRESS_NETWORK_ERRORS": suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": network_error_rate_limit,
@@ -809,6 +811,7 @@ try:
         auto_select=True,
         retry_modes=True,
         gw_pwd=gw_pwd,
+        rsa_key_path=rsa_key_path,
     )
 except Exception as e:
     log.error(f"Powerwall Connection Error: {str(e)}")

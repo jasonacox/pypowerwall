@@ -1,0 +1,303 @@
+// Combined Tesla TEDAPI Protocol Buffer Definition
+// Combines tesla_signed.proto and tedapi_nexarian.proto into one file
+//
+// Create Python bindings:
+//     protoc --python_out=. tedapi_combined.proto
+//
+// This will generate: tedapi_combined_pb2.py
+//
+// Credits:
+// - @Matthew1471's Tesla-API repository (signing protocol)
+// - @Nexarian's TEDAPI protocol updates (Feb 12, 2026)
+
+syntax = "proto3";
+
+package tedapi_combined;
+
+// ===================================================================
+// PART 1: Tesla Signed Message Protocol
+// (originally from tesla.proto.universal_message.v1)
+// ===================================================================
+
+enum Domain {
+  DOMAIN_BROADCAST          = 0;
+  DOMAIN_VEHICLE_SECURITY   = 2;
+  DOMAIN_INFOTAINMENT       = 3;
+  DOMAIN_AUTHD              = 5;
+  DOMAIN_ENERGY_DEVICE      = 7;
+  DOMAIN_ENERGY_DEVICE_AUTH = 8;
+}
+
+message Destination {
+  oneof sub_destination{
+    Domain domain          = 1;
+    bytes routing_address = 2;
+  }
+}
+
+enum Flags {
+  FLAGS_NONE = 0;
+}
+
+enum MessageFault_E {
+  MESSAGEFAULT_ERROR_NONE                                = 0;
+  MESSAGEFAULT_ERROR_BUSY                                = 1;
+  MESSAGEFAULT_ERROR_TIMEOUT                             = 2;
+  MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID                      = 3;
+  MESSAGEFAULT_ERROR_INACTIVE_KEY                        = 4;
+  MESSAGEFAULT_ERROR_INVALID_SIGNATURE                   = 5;
+  MESSAGEFAULT_ERROR_INVALID_TOKEN_OR_COUNTER            = 6;
+  MESSAGEFAULT_ERROR_INSUFFICIENT_PRIVILEGES             = 7;
+  MESSAGEFAULT_ERROR_INVALID_DOMAINS                     = 8;
+  MESSAGEFAULT_ERROR_INVALID_COMMAND                     = 9;
+  MESSAGEFAULT_ERROR_DECODING                            = 10;
+  MESSAGEFAULT_ERROR_INTERNAL                            = 11;
+  MESSAGEFAULT_ERROR_WRONG_PERSONALIZATION               = 12;
+  MESSAGEFAULT_ERROR_BAD_PARAMETER                       = 13;
+  MESSAGEFAULT_ERROR_KEYCHAIN_IS_FULL                    = 14;
+  MESSAGEFAULT_ERROR_INCORRECT_EPOCH                     = 15;
+  MESSAGEFAULT_ERROR_IV_INCORRECT_LENGTH                 = 16;
+  MESSAGEFAULT_ERROR_TIME_EXPIRED                        = 17;
+  MESSAGEFAULT_ERROR_NOT_PROVISIONED_WITH_IDENTITY       = 18;
+  MESSAGEFAULT_ERROR_COULD_NOT_HASH_METADATA             = 19;
+  MESSAGEFAULT_ERROR_TIME_TO_LIVE_TOO_LONG               = 20;
+  MESSAGEFAULT_ERROR_REMOTE_ACCESS_DISABLED              = 21;
+  MESSAGEFAULT_ERROR_REMOTE_SERVICE_REQUEST_NOT_SUPPORTED = 22;
+}
+
+message MessageStatus {
+  MessageFault_E message_fault = 1;
+}
+
+message KeyIdentity {
+  oneof identity_type {
+    bytes public_key = 1;
+    uint32 handle = 3;
+  }
+}
+
+message RsaSignatureData {
+  fixed32 expires_at = 1;
+  bytes signature    = 2;
+}
+
+message SignatureData {
+  KeyIdentity signer_identity = 1;
+
+  oneof sig_type {
+    RsaSignatureData rsa_data = 7;
+  }
+}
+
+enum SignatureType {
+  SIGNATURE_TYPE_AES_GCM              = 0;
+  SIGNATURE_TYPE_ECDSA                = 1;
+  SIGNATURE_TYPE_PRESENT_KEY          = 2;
+  SIGNATURE_TYPE_AES_GCM_TOKEN        = 3;
+  SIGNATURE_TYPE_ECDSA_PERSONALIZED   = 4;
+  SIGNATURE_TYPE_AES_GCM_PERSONALIZED = 5;
+  SIGNATURE_TYPE_HMAC                 = 6;
+  SIGNATURE_TYPE_RSA                  = 7;
+  SIGNATURE_TYPE_HMAC_PERSONALIZED    = 8;
+  SIGNATURE_TYPE_AES_GCM_RESPONSE     = 9;
+}
+
+enum Tag {
+  TAG_SIGNATURE_TYPE  = 0;
+  TAG_DOMAIN          = 1;
+  TAG_PERSONALIZATION = 2;
+  TAG_EPOCH           = 3;
+  TAG_EXPIRES_AT      = 4;
+  TAG_COUNTER         = 5;
+  TAG_CHALLENGE       = 6;
+  TAG_FLAGS           = 7;
+  TAG_REQUEST_HASH    = 8;
+  TAG_FAULT           = 9;
+  TAG_END             = 255;
+}
+
+message RoutableMessage {
+  Destination to_destination   = 6;
+  Destination from_destination = 7;
+
+  oneof payload {
+    bytes protobuf_message_as_bytes = 10;
+  }
+
+  SignatureData signature_data = 13;
+
+  MessageStatus signed_message_status = 12;
+  bytes request_uuid                  = 50;
+  bytes uuid                          = 51;
+  Flags flags                         = 52;
+}
+
+// ===================================================================
+// PART 2: TEDAPI Message Protocol
+// (originally from tedapi_nexarian package)
+// ===================================================================
+
+message AuthEnvelope {
+  bytes payload = 1;
+  oneof auth {
+    ExternalAuth externalAuth = 2;
+  }
+}
+
+message ExternalAuth {
+  ExternalAuthType type = 1;
+}
+
+enum ExternalAuthType {
+  EXTERNAL_AUTH_TYPE_INVALID = 0;
+  EXTERNAL_AUTH_TYPE_PRESENCE = 1;
+  EXTERNAL_AUTH_TYPE_MTLS = 2;
+  EXTERNAL_AUTH_TYPE_HERMES_COMMAND = 4;
+}
+
+enum DeliveryChannel {
+  DELIVERY_CHANNEL_INVALID = 0;
+  DELIVERY_CHANNEL_LOCAL_HTTPS = 1;
+  DELIVERY_CHANNEL_HERMES_COMMAND = 2;
+  DELIVERY_CHANNEL_BLE = 3;
+}
+
+enum LocalParticipant {
+  LOCAL_PARTICIPANT_INVALID = 0;
+  LOCAL_PARTICIPANT_INSTALLER = 1;
+  LOCAL_PARTICIPANT_CUSTOMER = 2;
+}
+
+enum TeslaService {
+  TESLA_SERVICE_INVALID = 0;
+  TESLA_SERVICE_COMMAND = 1;
+}
+
+enum AuthorizedClientType {
+  AUTHORIZED_CLIENT_TYPE_INVALID = 0;
+  AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP = 1;
+  AUTHORIZED_CLIENT_TYPE_VEHICLE = 2;
+}
+
+message Message {
+  MessageEnvelope message = 1;
+  Tail tail = 2;
+}
+
+message MessageEnvelope {
+  DeliveryChannel deliveryChannel = 1;
+  Participant sender = 2;
+  Participant recipient = 3;
+
+  oneof payload {
+    CommonMessages common = 4;
+    TEGMessages teg = 5;
+    WCMessages wc = 6;
+    NeurioMeterMessages neuriometer = 9;
+    EnergySiteNetMessages energysitenet = 10;
+    AuthorizationMessages authorization = 12;
+    FileStoreMessages filestore = 15;
+    GraphQLMessages graphql = 16;
+  }
+}
+
+message Participant {
+  oneof id {
+    string din = 1;
+    int32 teslaService = 2;
+    int32 local = 3;
+    int32 authorizedClient = 4;
+  }
+}
+
+message Tail {
+  int32 value = 1;
+}
+
+message CommonMessages {
+  bytes placeholder = 1;
+}
+
+message TEGMessages {
+  bytes placeholder = 1;
+}
+
+message WCMessages {
+  bytes placeholder = 1;
+}
+
+message NeurioMeterMessages {
+  bytes placeholder = 1;
+}
+
+message EnergySiteNetMessages {
+  bytes placeholder = 1;
+}
+
+message AuthorizationMessages {
+  bytes placeholder = 1;
+}
+
+message GraphQLMessages {
+  bytes placeholder = 1;
+}
+
+message FileStoreMessages {
+  oneof message {
+    FileStoreAPIReadFileRequest readFileRequest = 1;
+    FileStoreAPIReadFileResponse readFileResponse = 2;
+    FileStoreAPIForceWriteFileRequest forceWriteFileRequest = 3;
+    FileStoreAPIForceWriteFileResponse forceWriteFileResponse = 4;
+    FileStoreAPIUpdateFileRequest updateFileRequest = 5;
+    FileStoreAPIUpdateFileResponse updateFileResponse = 6;
+  }
+}
+
+enum FileStoreAPIDomain {
+  FILE_STORE_API_DOMAIN_INVALID = 0;
+  FILE_STORE_API_DOMAIN_CONFIG_JSON = 1;
+  FILE_STORE_API_DOMAIN_GRID_CODE_REGIONS_CSV = 2;
+  FILE_STORE_API_DOMAIN_CERTIFIED_INSTALLERS_CSV = 3;
+  FILE_STORE_API_DOMAIN_SUPERCHARGER_FILES = 4;
+  FILE_STORE_API_DOMAIN_OPTICASTER_FILES = 5;
+  FILE_STORE_API_DOMAIN_WALLBOX_CONFIG = 6;
+  FILE_STORE_API_DOMAIN_OCPP_CSMS_ROOT_CA = 7;
+}
+
+message FileStoreAPIFile {
+  string name = 1;
+  oneof content {
+    bytes blob = 100;
+  }
+}
+
+message FileStoreAPIReadFileRequest {
+  FileStoreAPIDomain domain = 1;
+  string name = 2;
+  bytes ifDifferentHash = 3;
+}
+
+message FileStoreAPIReadFileResponse {
+  FileStoreAPIFile file = 1;
+  bytes hash = 2;
+}
+
+message FileStoreAPIUpdateFileRequest {
+  FileStoreAPIDomain domain = 1;
+  FileStoreAPIFile file = 2;
+  bytes hash = 3;
+}
+
+message FileStoreAPIUpdateFileResponse {
+  FileStoreAPIFile file = 1;
+  bytes hash = 2;
+}
+
+message FileStoreAPIForceWriteFileRequest {
+  FileStoreAPIDomain domain = 1;
+  FileStoreAPIFile file = 2;
+}
+
+message FileStoreAPIForceWriteFileResponse {
+  bytes hash = 1;
+}
