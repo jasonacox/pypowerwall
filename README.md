@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems. For Powerwall 3 on wired LAN, the v1r TEDapi mode provides full local access using RSA-signed protobuf messages without needing Wi-Fi access.
+pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems. For Powerwall 3 on wired LAN, the v1r TEDAPI mode provides full local access using RSA-signed protobuf messages without needing Wi-Fi access.
 
 > ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
@@ -18,7 +18,7 @@ This Python module can be used to monitor and control Tesla Energy Powerwalls. I
 pyPowerwall will cache the authentication headers and API call responses to help reduce the number of calls made to the Gateway (useful if you are polling the Powerwall frequently for trending data).
 
 * Works with Tesla Energy Gateways - Powerwall, Powerwall+ and Powerwall 3
-* Access provided via Local Gateway APIs, Tesla FleetAPI (official), Tesla Owners API (unofficial), and v1r LAN TEDapi (Powerwall 3).
+* Access provided via Local Gateway APIs, Tesla FleetAPI (official), Tesla Owners API (unofficial), and v1r LAN TEDAPI (Powerwall 3).
 * Will cache authentication to reduce load on Powerwall Gateway
 * Will cache responses to limit the number of calls to the Powerwall Gateway or cloud (optional/user‑definable)
 * Will re-use HTTP connections to the Powerwall Gateway for reduced load and faster response times
@@ -51,7 +51,7 @@ python3 -m pypowerwall tedapi
 
 The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based Web Portal and API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. 
 
-The Powerwall 3 does not have a traditional Web Portal or API but you can access it via the cloud (see options 2 and 3), via the TEDAPI Wi-Fi access point (option 4), or via the wired LAN using v1r TEDapi (option 5).
+The Powerwall 3 does not have a traditional Web Portal or API but you can access it via the cloud (see options 2 and 3), via the TEDAPI Wi-Fi access point (option 4), or via the wired LAN using v1r TEDAPI (option 5).
 
 Locally accessible extended device vitals metrics are available using the TEDAPI method (see options 4 and 5 below).
 
@@ -163,7 +163,7 @@ If you only need core power, battery, and grid data over the wired LAN, you can 
 import pypowerwall
 
 pw = pypowerwall.Powerwall(
-    host="10.0.1.50",                # Powerwall wired LAN IP (vendor subnet)
+    host="10.42.1.40",                # Powerwall wired LAN IP (vendor subnet)
     password="XXXXX",                 # Customer password (last 5 of GW password)
     email="user@example.com",
     timezone="America/Los_Angeles"
@@ -241,7 +241,7 @@ After the breaker toggle, wait for the Powerwall status light to turn from red b
 import pypowerwall
 
 pw = pypowerwall.Powerwall(
-    host="10.0.1.50",                          # Powerwall wired LAN IP (vendor subnet)
+    host="10.42.1.40",                         # Powerwall wired LAN IP (vendor subnet)
     gw_pwd="ABCDEXXXXX",                       # Full gateway password (last 5 auto-derived)
     email="user@example.com",
     timezone="America/Los_Angeles",
@@ -274,7 +274,7 @@ pw.poll(‘/api/operation’)                      # Operation mode
 For always-on monitoring (e.g., with [Powerwall-Dashboard](https://github.com/jasonacox/Powerwall-Dashboard)), configure the proxy container with these environment variables:
 
 ```env
-PW_HOST=10.0.1.50                    # Powerwall wired LAN IP (vendor subnet)
+PW_HOST=10.42.1.40                  # Powerwall wired LAN IP (vendor subnet)
 PW_GW_PWD=ABCDEXXXXX                # Full gateway password (last 5 auto-derived for login)
 PW_TIMEZONE=America/Los_Angeles
 PW_RSA_KEY_PATH=/app/.auth/tedapi_rsa_private.pem

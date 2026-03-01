@@ -1,5 +1,18 @@
 # RELEASE NOTES
 
+## v0.15.0 - Powerwall 3 Wired LAN TEDAPI Support (v1r)
+
+* Add `/tedapi/v1r` transport for Powerwall 3 wired LAN access without requiring WiFi connection to `192.168.91.1` - by @nalditopr in https://github.com/jasonacox/pypowerwall/pull/265
+    * New `tedapi_v1r.py` RSA-signed transport class — handles TLV payload construction, PKCS1v15+SHA512 signing, RoutableMessage protobuf wrapping, and Bearer token authentication
+    * New `tedapi_combined_pb2.py` — compiled protobuf definitions for v1r message format (`RoutableMessage`, `MessageEnvelope`, etc.)
+    * New `pypowerwall register` CLI command (and `fleet_register.py` script) for generating an RSA-4096 key pair and registering it with the Powerwall via Tesla Fleet API OAuth
+    * `Powerwall()` constructor accepts new `rsa_key_path` parameter — when provided alongside `password`/`gw_pwd`, the library automatically selects v1r mode
+    * `gw_pwd` (full 10-character QR code password from the Powerwall sticker) auto-derives the last-5-character Basic API password, simplifying configuration
+    * Proxy server supports new `PW_RSA_KEY_PATH` environment variable to pass the RSA key path through to `Powerwall()`
+    * `cryptography` package added to `install_requires` for RSA key loading and signing
+    * Full feature parity with WiFi TEDAPI (mode 4): config, status, vitals, firmware version, power, battery level, grid status, per-device vitals, and component queries
+    * Requires the Powerwall 3 leader's ethernet port to be on a routable subnet (`10.42.1.x/24` is the TEG's dedicated wired interface); see PR notes for bridge setup examples
+
 ## v0.14.10 - Host Port Support
 
 * Add support for `host:port` format in the `host` parameter for local mode connections - Fix for https://github.com/jasonacox/pypowerwall/issues/254
