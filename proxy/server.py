@@ -421,6 +421,13 @@ def track_endpoint_call(endpoint: str, success: bool = True) -> None:
             _endpoint_stats[endpoint]['failed_calls'] += 1
             _endpoint_stats[endpoint]['last_failure_time'] = current_time
 
+        # Limit endpoint stats size to prevent memory growth
+        if len(_endpoint_stats) > 100:
+            oldest_endpoint = min(_endpoint_stats,
+                                  key=lambda k: max(_endpoint_stats[k]['last_success_time'] or 0,
+                                                    _endpoint_stats[k]['last_failure_time'] or 0))
+            del _endpoint_stats[oldest_endpoint]
+
 
 def configure_pw_control(pw: pypowerwall.Powerwall, configuration: PROXY_CONFIG) -> pypowerwall.Powerwall:
     if not configuration[CONFIG_TYPE.PW_CONTROL_SECRET]:
@@ -498,6 +505,19 @@ class Handler(BaseHTTPRequestHandler):
         Returns None on any exception and logs a clean error message.
         Includes health tracking, fail-fast mode, and rate-limited logging.
         """
+        def get_descriptive_name():
+            """Build descriptive function name with arguments for better debugging."""
+            func_name = getattr(pw_func, "__name__", str(pw_func))
+            if func_name == "poll" and args:
+                # For poll() calls, include the URI endpoint being called
+                return f"{func_name}('{args[0]}')" if args[0] else func_name
+            elif args:
+                # For other functions, show first argument if it exists
+                first_arg = str(args[0])[:50]  # Limit to 50 chars to keep logs readable
+                return f"{func_name}({first_arg})"
+            else:
+                return func_name
+
         # In fail-fast mode with degraded connection, return None immediately
         if self.configuration[CONFIG_TYPE.PW_FAIL_FAST] and self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
             with _connection_health_lock:
@@ -506,7 +526,8 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             result = pw_func(*args, **kwargs)
-            if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
+            # Only count as success if we got a real result (not None from rate-limit/cooldown)
+            if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK] and result is not None:
                 update_connection_health(success=True)
             return result
         except (PyPowerwallInvalidConfigurationParameter,
@@ -525,8 +546,8 @@ class Handler(BaseHTTPRequestHandler):
                 PyPowerwallCloudInvalidPayload,
                 LoginError,
                 PowerwallConnectionError) as e:
-            func_name = getattr(pw_func, '__name__', str(pw_func))
-            log.warning(f"Powerwall API Error in {func_name}: {e}")
+            descriptive_name = get_descriptive_name()
+            log.warning(f"Powerwall API Error in {descriptive_name}: {e}")
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
             return None
         except (ConnectionError,
@@ -542,6 +563,7 @@ class Handler(BaseHTTPRequestHandler):
                 urllib3.exceptions.TimeoutError,
                 urllib3.exceptions.MaxRetryError) as e:
             func_name = getattr(pw_func, '__name__', str(pw_func))
+            descriptive_name = get_descriptive_name()
             error_type = type(e).__name__
 
             if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
@@ -552,23 +574,27 @@ class Handler(BaseHTTPRequestHandler):
             rate_limit = self.configuration[CONFIG_TYPE.PW_NETWORK_ERROR_RATE_LIMIT]
             if not self.configuration[CONFIG_TYPE.PW_SUPPRESS_NETWORK_ERRORS] and should_log_network_error(func_name, rate_limit):
                 if "timeout" in error_type.lower():
-                    log.info(f"Network timeout in {func_name}: {error_type}")
+                    log.info(f"Network timeout in {descriptive_name}: {error_type}")
                 else:
-                    log.info(f"Network error in {func_name}: {error_type}")
+                    log.info(f"Network error in {descriptive_name}: {error_type}")
 
             self.proxystats[PROXY_STATS_TYPE.TIMEOUT] += 1
             return None
         except Exception as e:
-            func_name = getattr(pw_func, '__name__', str(pw_func))
+            descriptive_name = get_descriptive_name()
             error_type = type(e).__name__
 
             if self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK]:
                 update_connection_health(success=False)
 
-            if SERVER_DEBUG:
-                log.error(f"Unexpected error in {func_name}: {error_type}: {e}")
+            # Log unexpected errors - focus on function and likely payload issues
+            if error_type == "TypeError":
+                log.warning(f"Bad payload response in {descriptive_name} - likely null/malformed data from Powerwall")
             else:
-                log.warning(f"Unexpected error in {func_name}: {error_type}")
+                if SERVER_DEBUG:
+                    log.error(f"Unexpected error in {descriptive_name}: {error_type}: {e}")
+                else:
+                    log.warning(f"Unexpected error in {descriptive_name}: {error_type}")
             self.proxystats[PROXY_STATS_TYPE.ERRORS] += 1
             return None
 
@@ -997,6 +1023,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_health(self) -> str:
         health_info = {
+            'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
             'cache_ttl_seconds': self.configuration[CONFIG_TYPE.PW_CACHE_TTL],
             'graceful_degradation': self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION],
             'fail_fast_mode': self.configuration[CONFIG_TYPE.PW_FAIL_FAST],
