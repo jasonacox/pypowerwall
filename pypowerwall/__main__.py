@@ -44,6 +44,9 @@ def main():
 
     setup_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
 
+    register_args = subparsers.add_parser("register",
+                                          help='Register RSA key with Powerwall via Tesla Fleet API (for v1r LAN mode)')
+
     scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
     scan_args.add_argument("-timeout", type=float, default=timeout,
                            help=f"Seconds to wait per host [Default={timeout:.1f}]")
@@ -139,6 +142,11 @@ def main():
     elif command == 'tedapi':
         from pypowerwall.tedapi.__main__ import run_tedapi_test
         run_tedapi_test(auto=True, debug=args.debug)
+
+    # Fleet API RSA Key Registration (v1r LAN mode)
+    elif command == 'register':
+        from pypowerwall.fleet_register import main as fleet_register_main
+        fleet_register_main()
 
     # Run Scan
     elif command == 'scan':
