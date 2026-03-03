@@ -849,10 +849,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and aggregates and 'solar' in aggregates:
             solar = aggregates['solar']
             if solar and 'instant_power' in solar and solar['instant_power'] < 0:
-                solar['instant_power'] = 0
                 # Shift energy from solar to load
                 if 'load' in aggregates and 'instant_power' in aggregates['load']:
                     aggregates['load']['instant_power'] -= solar['instant_power']
+                # Finally, clamp solar to 0
+                solar['instant_power'] = 0
             else:
                 load = aggregates.get("load", {})
                 if load:
@@ -1353,85 +1354,8 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_POD_nom_full_pack_energy": get_value(data, 'POD_nom_full_pack_energy')
             })
 
-        # Add expansion packs from TEDAPI get_blocks()
-        # Calculate expansion energy by subtracting known batteries from system totals
-        if self.pw.tedapi:
-            try:
-                tedapi_blocks = self.pw.tedapi.get_blocks()
-                if tedapi_blocks:
-                    # Get system totals (includes all batteries)
-                    status = self.pw.tedapi.get_status()
-                    tedapi_system_status = (status or {}).get("control", {}).get("systemStatus", {})
-                    system_full = tedapi_system_status.get("nominalFullPackEnergyWh") or 0
-                    system_remaining = tedapi_system_status.get("nominalEnergyRemainingWh") or 0
-
-                    # Sum up non-expansion batteries and count expansions
-                    known_full = 0
-                    known_remaining = 0
-                    expansion_count = 0
-                    expansion_serials = []
-                    for serial, block_data in tedapi_blocks.items():
-                        if block_data.get("Type") == "BatteryExpansion":
-                            expansion_count += 1
-                            expansion_serials.append(serial)
-                        else:
-                            known_full += block_data.get("nominal_full_pack_energy") or 0
-                            known_remaining += block_data.get("nominal_energy_remaining") or 0
-
-                    # Calculate combined expansion energy by subtraction
-                    expansion_full = system_full - known_full if system_full > known_full else None
-                    expansion_remaining = system_remaining - known_remaining if system_remaining > known_remaining else None
-
-                    # Add expansion pack entries
-                    for i, serial in enumerate(expansion_serials):
-                        block_data = tedapi_blocks.get(serial, {})
-                        part_number = block_data.get("PackagePartNumber", "")
-
-                        # For multiple expansions, show combined total on first, null on others
-                        if expansion_count > 1:
-                            if i == 0:
-                                # First expansion shows combined total
-                                exp_name = f"TEPOD--{part_number}--{serial} (combined)"
-                                exp_remaining = expansion_remaining
-                                exp_full = expansion_full
-                                # Prevent negative values
-                                if expansion_full and expansion_remaining:
-                                    exp_to_charge = max(0, expansion_full - expansion_remaining)
-                                else:
-                                    exp_to_charge = None
-                            else:
-                                # Additional expansions show null (individual data unavailable)
-                                exp_name = f"TEPOD--{part_number}--{serial}"
-                                exp_remaining = None
-                                exp_to_charge = None
-                                exp_full = None
-                        else:
-                            # Single expansion - show calculated values
-                            exp_name = f"TEPOD--{part_number}--{serial}"
-                            exp_remaining = expansion_remaining
-                            exp_full = expansion_full
-                            # Prevent negative values
-                            if expansion_full and expansion_remaining:
-                                exp_to_charge = max(0, expansion_full - expansion_remaining)
-                            else:
-                                exp_to_charge = None
-
-                        idx += 1
-                        pod[f"PW{idx}_name"] = exp_name
-                        pod[f"PW{idx}_POD_ActiveHeating"] = 0
-                        pod[f"PW{idx}_POD_ChargeComplete"] = 0
-                        pod[f"PW{idx}_POD_ChargeRequest"] = 0
-                        pod[f"PW{idx}_POD_DischargeComplete"] = 0
-                        pod[f"PW{idx}_POD_PermanentlyFaulted"] = 0
-                        pod[f"PW{idx}_POD_PersistentlyFaulted"] = 0
-                        pod[f"PW{idx}_POD_enable_line"] = 0
-                        pod[f"PW{idx}_POD_available_charge_power"] = None
-                        pod[f"PW{idx}_POD_available_dischg_power"] = None
-                        pod[f"PW{idx}_POD_nom_energy_remaining"] = exp_remaining
-                        pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = exp_to_charge
-                        pod[f"PW{idx}_POD_nom_full_pack_energy"] = exp_full
-            except Exception as e:
-                log.debug(f"Error getting expansion packs: {e}")
+        # Note: Expansion packs are now included in vitals() as TEPOD entries,
+        # so they're automatically picked up by the loop above.
 
         pod.update({
             "nominal_full_pack_energy": get_value(system_status, 'nominal_full_pack_energy'),

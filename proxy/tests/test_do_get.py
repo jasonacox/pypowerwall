@@ -134,6 +134,43 @@ class BaseDoGetTest(unittest.TestCase):
         self.assertEqual(result[expected_key], expected_value)
 
 
+class TestDoGetAggregatesEndpoints(BaseDoGetTest):
+    """Test cases for aggregates-related endpoints."""
+
+    def test_aggregates_endpoint(self):
+        """Test /api/meters/aggregates endpoint returns expected fields."""
+        self.handler.path = "/api/meters/aggregates"
+        self.mock_pw.poll = Mock(return_value={
+            "solar": {"instant_power": 1000}
+        })
+        self.mock_pw.pw_din_suffix = "DIN123"
+
+        self.handler.do_GET()
+
+        self.handler.send_response.assert_called_with(200)
+        result = self.get_written_json()
+        self.assertEqual(result["DIN123_solar"]["instant_power"], 1000)
+
+    def test_aggregates_with_negative_solar_adjustment(self):
+        """Test aggregates with negative solar power adjustment."""
+        self.handler.path = "/api/meters/aggregates"
+        self.mock_pw.poll = Mock(return_value={
+            "solar": {"instant_power": -500},
+            "load": {"instant_power": 2000}
+        })
+        self.mock_pw.pw_din_suffix = "DIN123"
+
+        self.handler.do_GET()
+
+        self.handler.send_response.assert_called_with(200)
+        result = self.get_written_json()
+        # Solar should be clamped to 0
+        self.assertEqual(result["DIN123_solar"]["instant_power"], 0)
+        # Load should be increased by the magnitude of negative solar: 2000 - (-500) = 2500
+        self.assertIn("DIN123_load", result)
+        self.assertEqual(result["DIN123_load"]["instant_power"], 2500)
+
+
 class TestDoGetStatsEndpoints(BaseDoGetTest):
     """Test cases for stats-related endpoints."""
 
