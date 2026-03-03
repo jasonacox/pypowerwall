@@ -59,7 +59,17 @@ import psutil
 import requests
 import urllib3
 from pyroute2 import IPRoute
-from proxy.transform import get_static, inject_js
+# Robust import of transform helpers to support multiple invocation patterns:
+# 1. python -m proxy.server (package-relative import works)
+# 2. python proxy/server.py from project root (absolute package import works)
+# 3. Executing from within the proxy directory (plain module import)
+try:  # Prefer relative when executed as a package module
+    from .transform import get_static, inject_js  # type: ignore
+except ImportError:  # noqa: BLE001 - fall back to other strategies
+    try:
+        from proxy.transform import get_static, inject_js  # type: ignore
+    except ImportError:  # noqa: BLE001
+        from transform import get_static, inject_js  # type: ignore  # Last resort
 
 import pypowerwall
 from pypowerwall import parse_version
@@ -1322,9 +1332,11 @@ class Handler(BaseHTTPRequestHandler):
             })
 
         vitals = self.safe_pw_call(self.pw.vitals) or {}
-        for idx, (device, data) in enumerate(vitals.items(), 1):
+        idx = len(blocks)
+        for device, data in vitals.items():
             if not device.startswith('TEPOD'):
                 continue
+            idx += 1
             pod.update({
                 f"PW{idx}_name": device,
                 f"PW{idx}_POD_ActiveHeating": int(get_value(data, 'POD_ActiveHeating') or 0),
@@ -1340,6 +1352,78 @@ class Handler(BaseHTTPRequestHandler):
                 f"PW{idx}_POD_nom_energy_to_be_charged": get_value(data, 'POD_nom_energy_to_be_charged'),
                 f"PW{idx}_POD_nom_full_pack_energy": get_value(data, 'POD_nom_full_pack_energy')
             })
+
+        # Add expansion packs from TEDAPI get_blocks()
+        # Calculate expansion energy by subtracting known batteries from system totals
+        if self.pw.tedapi:
+            try:
+                tedapi_blocks = self.pw.tedapi.get_blocks()
+                if tedapi_blocks:
+                    # Get system totals (includes all batteries)
+                    status = self.pw.tedapi.get_status()
+                    tedapi_system_status = (status or {}).get("control", {}).get("systemStatus", {})
+                    system_full = tedapi_system_status.get("nominalFullPackEnergyWh") or 0
+                    system_remaining = tedapi_system_status.get("nominalEnergyRemainingWh") or 0
+
+                    # Sum up non-expansion batteries and count expansions
+                    known_full = 0
+                    known_remaining = 0
+                    expansion_count = 0
+                    expansion_serials = []
+                    for serial, block_data in tedapi_blocks.items():
+                        if block_data.get("Type") == "BatteryExpansion":
+                            expansion_count += 1
+                            expansion_serials.append(serial)
+                        else:
+                            known_full += block_data.get("nominal_full_pack_energy") or 0
+                            known_remaining += block_data.get("nominal_energy_remaining") or 0
+
+                    # Calculate combined expansion energy by subtraction
+                    expansion_full = system_full - known_full if system_full > known_full else None
+                    expansion_remaining = system_remaining - known_remaining if system_remaining > known_remaining else None
+
+                    # Add expansion pack entries
+                    for i, serial in enumerate(expansion_serials):
+                        block_data = tedapi_blocks.get(serial, {})
+                        part_number = block_data.get("PackagePartNumber", "")
+
+                        # For multiple expansions, show combined total on first, null on others
+                        if expansion_count > 1:
+                            if i == 0:
+                                # First expansion shows combined total
+                                exp_name = f"TEPOD--{part_number}--{serial} (combined)"
+                                exp_remaining = round(expansion_remaining, 2) if expansion_remaining else None
+                                exp_to_charge = round(expansion_full - expansion_remaining, 2) if expansion_full and expansion_remaining else None
+                                exp_full = round(expansion_full, 2) if expansion_full else None
+                            else:
+                                # Additional expansions show null (individual data unavailable)
+                                exp_name = f"TEPOD--{part_number}--{serial}"
+                                exp_remaining = None
+                                exp_to_charge = None
+                                exp_full = None
+                        else:
+                            # Single expansion - show calculated values
+                            exp_name = f"TEPOD--{part_number}--{serial}"
+                            exp_remaining = round(expansion_remaining, 2) if expansion_remaining else None
+                            exp_to_charge = round(expansion_full - expansion_remaining, 2) if expansion_full and expansion_remaining else None
+                            exp_full = round(expansion_full, 2) if expansion_full else None
+
+                        idx += 1
+                        pod[f"PW{idx}_name"] = exp_name
+                        pod[f"PW{idx}_POD_ActiveHeating"] = 0
+                        pod[f"PW{idx}_POD_ChargeComplete"] = 0
+                        pod[f"PW{idx}_POD_ChargeRequest"] = 0
+                        pod[f"PW{idx}_POD_DischargeComplete"] = 0
+                        pod[f"PW{idx}_POD_PermanentlyFaulted"] = 0
+                        pod[f"PW{idx}_POD_PersistentlyFaulted"] = 0
+                        pod[f"PW{idx}_POD_enable_line"] = 0
+                        pod[f"PW{idx}_POD_available_charge_power"] = None
+                        pod[f"PW{idx}_POD_available_dischg_power"] = None
+                        pod[f"PW{idx}_POD_nom_energy_remaining"] = exp_remaining
+                        pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = exp_to_charge
+                        pod[f"PW{idx}_POD_nom_full_pack_energy"] = exp_full
+            except Exception as e:
+                log.debug(f"Error getting expansion packs: {e}")
 
         pod.update({
             "nominal_full_pack_energy": get_value(system_status, 'nominal_full_pack_energy'),
