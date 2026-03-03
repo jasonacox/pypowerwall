@@ -59,7 +59,7 @@ import psutil
 import requests
 import urllib3
 from pyroute2 import IPRoute
-from transform import get_static, inject_js
+from proxy.transform import get_static, inject_js
 
 import pypowerwall
 from pypowerwall import parse_version
