@@ -355,6 +355,10 @@ _connection_health_lock = threading.RLock()
 _last_good_responses: Dict[str, tuple] = {}
 _last_good_responses_lock = threading.RLock()
 
+# Performance cache for frequently-hit endpoints (separate from degradation cache)
+_performance_cache: Dict[str, tuple] = {}
+_performance_cache_lock = threading.RLock()
+
 # Endpoint call tracking for success/failure statistics
 _endpoint_stats: Dict[str, Dict[str, Any]] = {}
 _endpoint_stats_lock = threading.RLock()
@@ -409,6 +413,72 @@ def cache_response(endpoint: str, response: Any) -> None:
         if len(_last_good_responses) > 50:
             oldest_key = min(_last_good_responses, key=lambda k: _last_good_responses[k][1])
             del _last_good_responses[oldest_key]
+
+
+def get_performance_cached(cache_key: str, cache_ttl: int) -> Any:
+    """
+    Get cached endpoint response for performance optimization.
+
+    Args:
+        cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
+        cache_ttl: Cache TTL in seconds
+
+    Returns:
+        Cached response string if available and fresh, None otherwise
+    """
+    with _performance_cache_lock:
+        if cache_key not in _performance_cache:
+            return None
+
+        data, timestamp = _performance_cache[cache_key]
+        age = time.time() - timestamp
+
+        if age < cache_ttl:
+            log.debug(f"Performance cache hit for {cache_key} (age: {age:.2f}s)")
+            return data
+        else:
+            log.debug(f"Performance cache expired for {cache_key} (age: {age:.2f}s)")
+            return None
+
+
+def cache_performance_response(cache_key: str, data: Any) -> None:
+    """
+    Cache endpoint response for performance optimization.
+
+    Args:
+        cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
+        data: The response string to cache
+    """
+    with _performance_cache_lock:
+        _performance_cache[cache_key] = (data, time.time())
+        log.debug(f"Cached performance response for {cache_key}")
+
+
+def cached_route_handler(cache_key: str, data_generator, cache_ttl: int) -> Any:
+    """
+    Helper function for performance-cached route handling.
+
+    Args:
+        cache_key: The cache key to use for this route
+        data_generator: Function that generates the response data
+        cache_ttl: Cache TTL in seconds
+
+    Returns:
+        Cached response if available, otherwise fresh data (and caches it)
+    """
+    # Try cache first
+    cached_response = get_performance_cached(cache_key, cache_ttl)
+    if cached_response is not None:
+        return cached_response
+
+    # Cache miss - generate fresh data
+    result = data_generator()
+
+    # Only cache non-None results
+    if result is not None:
+        cache_performance_response(cache_key, result)
+
+    return result
 
 
 def track_endpoint_call(endpoint: str, success: bool = True) -> None:
@@ -986,12 +1056,35 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_json(self) -> str:
         # JSON - Grid,Home,Solar,Battery,SoE,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
+        # Try performance cache
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/json", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
+
+        # Cache miss - generate fresh data
+        # Optimization: Use single aggregates call for all power values
+        aggregates = self.safe_pw_call(self.pw.poll, '/api/meters/aggregates')
+        if aggregates:
+            grid = aggregates.get('site', {}).get('instant_power', 0)
+            solar = aggregates.get('solar', {}).get('instant_power', 0)
+            battery = aggregates.get('battery', {}).get('instant_power', 0)
+            home = aggregates.get('load', {}).get('instant_power', 0)
+        else:
+            grid = solar = battery = home = 0
+
+        # Apply negative solar correction if configured
+        if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
+            home -= solar
+            solar = 0
+
+        # Get remaining data
         d = self.safe_pw_call(self.pw.system_status) or {}
         values = {
-            'grid': self.safe_pw_call(self.pw.grid) or 0,
-            'home': self.safe_pw_call(self.pw.home) or 0,
-            'solar': self.safe_pw_call(self.pw.solar) or 0,
-            'battery': self.safe_pw_call(self.pw.battery) or 0,
+            'grid': grid,
+            'home': home,
+            'solar': solar,
+            'battery': battery,
             'soe': self.safe_pw_call(self.pw.level) or 0,
             'grid_status': int(self.safe_pw_call(self.pw.grid_status) == 'UP'),
             'reserve': self.safe_pw_call(self.pw.get_reserve) or 0,
@@ -1000,48 +1093,77 @@ class Handler(BaseHTTPRequestHandler):
             'energy_remaining': get_value(d, 'nominal_energy_remaining') or 0,
             'strings': self.safe_pw_call(self.pw.strings, jsonformat=False) or {},
         }
-        if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and values['solar'] < 0:
-            # Shift negative solar to load
-            values['home'] -= values['solar']
-            values['solar'] = 0
+        message = json.dumps(values)
+        cache_performance_response("/json", message)
         return self.send_json_response(values)
 
 
     def handle_csv(self) -> str:
         # Grid,Home,Solar,Battery,BatteryLevel[,GridStatus,Reserve] - CSV
-        grid = self.safe_pw_call(self.pw.grid) or 0
-        solar = self.safe_pw_call(self.pw.solar) or 0
-        battery = self.safe_pw_call(self.pw.battery) or 0
-        home = self.safe_pw_call(self.pw.home) or 0
+        is_v2 = self.path.startswith('/csv/v2')
+        include_headers = "headers" in self.path
+        cache_key = f"/csv/v2{'_headers' if include_headers else ''}" if is_v2 else f"/csv{'_headers' if include_headers else ''}"
+
+        # Try performance cache
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached(cache_key, cache_ttl)
+        if cached is not None:
+            return self.send_json_response(cached)
+
+        # Cache miss - generate fresh data
+        # Optimization: Use single aggregates call for all power values
+        aggregates = self.safe_pw_call(self.pw.poll, '/api/meters/aggregates')
+        if aggregates:
+            grid = aggregates.get('site', {}).get('instant_power', 0)
+            solar = aggregates.get('solar', {}).get('instant_power', 0)
+            battery = aggregates.get('battery', {}).get('instant_power', 0)
+            home = aggregates.get('load', {}).get('instant_power', 0)
+        else:
+            grid = solar = battery = home = 0
+
+        # Apply negative solar correction if configured
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
-            solar = 0
             # Shift energy from solar to load
             home -= solar
+            solar = 0
+
         fields = [grid, home, solar, battery, self.safe_pw_call(self.pw.level) or 0]
         headers = ["Grid", "Home", "Solar", "Battery", "BatteryLevel"]
-        if self.path.startswith('/csv/v2'):
+        if is_v2:
             fields.append(1 if self.safe_pw_call(self.pw.grid_status) == 'UP' else 0)
             fields.append(self.safe_pw_call(self.pw.get_reserve) or 0)
             headers += ["GridStatus", "Reserve"]
         message = ""
-        if "headers" in self.path:
+        if include_headers:
             message += ",".join(headers) + "\n"
         message += ",".join(f"{v:.2f}" if isinstance(v, float) else str(v) for v in fields) + "\n"
+        cache_performance_response(cache_key, message)
         return self.send_json_response(message)
 
 
     def handle_vitals(self) -> str:
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/vitals", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
         vitals = self.safe_endpoint_call('/vitals', self.pw.vitals, jsonformat=True)
+        if vitals:
+            cache_performance_response("/vitals", vitals)
         return self.send_json_response(json.loads(vitals) if vitals else None)
 
 
     def handle_strings(self) -> str:
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/strings", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
         strings = self.safe_endpoint_call('/strings', self.pw.strings, jsonformat=True)
         if not strings:
             return self.send_json_response(None)
         output = json.loads(strings)
         if len(self.all_pws) > 1:
             output = {f"{key}_{self.pw.pw_din_suffix}": value for key, value in output.items()}
+        cache_performance_response("/strings", json.dumps(output))
         return self.send_json_response(output)
 
 
@@ -1068,6 +1190,52 @@ class Handler(BaseHTTPRequestHandler):
                     'last_success_time': _connection_health['last_success_time'],
                     'cache_size': len(_last_good_responses) if self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION] else 0,
                 }
+        # Add cache memory usage statistics
+        mem_cache = {}
+        with _error_counts_lock:
+            mem_cache["error_counts"] = {
+                "entries": len(_error_counts),
+                "size_bytes": sys.getsizeof(_error_counts) + sum(
+                    sys.getsizeof(k) + sys.getsizeof(v) for k, v in _error_counts.items()
+                ),
+            }
+            mem_cache["network_error_summary"] = {
+                "entries": len(_network_error_summary),
+                "size_bytes": sys.getsizeof(_network_error_summary) + sum(
+                    sys.getsizeof(k) + sys.getsizeof(v) + sum(
+                        sys.getsizeof(ek) + sys.getsizeof(ev) for ek, ev in v.items()
+                    ) for k, v in _network_error_summary.items()
+                ),
+            }
+        with _last_good_responses_lock:
+            mem_cache["degradation_cache"] = {
+                "entries": len(_last_good_responses),
+                "size_bytes": sys.getsizeof(_last_good_responses) + sum(
+                    sys.getsizeof(k) + sys.getsizeof(v) + sys.getsizeof(v[0]) + sys.getsizeof(v[1])
+                    for k, v in _last_good_responses.items()
+                ),
+            }
+        with _performance_cache_lock:
+            mem_cache["performance_cache"] = {
+                "entries": len(_performance_cache),
+                "size_bytes": sys.getsizeof(_performance_cache) + sum(
+                    sys.getsizeof(k) + sys.getsizeof(v) + sys.getsizeof(v[0]) + sys.getsizeof(v[1])
+                    for k, v in _performance_cache.items()
+                ),
+            }
+        with _endpoint_stats_lock:
+            mem_cache["endpoint_stats"] = {
+                "entries": len(_endpoint_stats),
+                "size_bytes": sys.getsizeof(_endpoint_stats) + sum(
+                    sys.getsizeof(k) + sys.getsizeof(v) + sum(
+                        sys.getsizeof(ek) + sys.getsizeof(ev) for ek, ev in v.items()
+                    ) for k, v in _endpoint_stats.items()
+                ),
+            }
+        total_cache_bytes = sum(c["size_bytes"] for c in mem_cache.values())
+        mem_cache["total_cache_bytes"] = total_cache_bytes
+        mem_cache["total_cache_mb"] = round(total_cache_bytes / 1024 / 1024, 2)
+        self.proxystats["mem_cache"] = mem_cache
         return self.send_json_response(self.proxystats)
 
 
@@ -1086,7 +1254,8 @@ class Handler(BaseHTTPRequestHandler):
     def handle_health(self) -> str:
         health_info = {
             'pypowerwall': f"{pypowerwall.version} Proxy {BUILD}",
-            'cache_ttl_seconds': self.configuration[CONFIG_TYPE.PW_CACHE_TTL],
+            'pypowerwall_cache_expire': self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE],
+            'degradation_cache_ttl_seconds': self.configuration[CONFIG_TYPE.PW_CACHE_TTL],
             'graceful_degradation': self.configuration[CONFIG_TYPE.PW_GRACEFUL_DEGRADATION],
             'fail_fast_mode': self.configuration[CONFIG_TYPE.PW_FAIL_FAST],
             'health_check_enabled': self.configuration[CONFIG_TYPE.PW_HEALTH_CHECK],
@@ -1233,8 +1402,13 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_temps_pw(self) -> str:
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/temps/pw", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
         temps = self.safe_pw_call(self.pw.temps) or {}
         pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
+        cache_performance_response("/temps/pw", json.dumps(pw_temp))
         return self.send_json_response(pw_temp)
 
 
@@ -1247,13 +1421,26 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def handle_alerts_pw(self) -> str:
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/alerts/pw", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
         alerts = self.safe_pw_call(self.pw.alerts) or []
         if len(self.all_pws) > 1:
             alerts = {f"{self.pw.pw_din_suffix}_{alert}": 1 for alert in alerts}
+        result = json.dumps(alerts)
+        cache_performance_response("/alerts/pw", result)
         return self.send_json_response(alerts)
 
 
     def handle_freq(self) -> str:
+        # Try performance cache
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/freq", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
+
+        # Cache miss - generate fresh data
         fcv = {}
         system_status = self.safe_pw_call(self.pw.system_status) or {}
         blocks = system_status.get("battery_blocks", [])
@@ -1284,11 +1471,19 @@ class Handler(BaseHTTPRequestHandler):
             if device.startswith(('PVAC', 'TESYNC', 'TEMSA')):
                 fcv.update({(f"{key}" if not din_suffix else f"{din_suffix}_{key}"): value for key, value in data.items() if key.startswith(('ISLAND', 'METER', 'PVAC_Fan_Speed', 'PVAC_Fout', 'PVAC_VL'))})
         fcv["grid_status"] = self.safe_pw_call(self.pw.grid_status, type="numeric")
+        cache_performance_response("/freq", json.dumps(fcv))
         return self.send_json_response(fcv)
 
 
     def handle_pod(self) -> str:
         # Powerwall Battery Data
+        # Try performance cache
+        cache_ttl = self.configuration[CONFIG_TYPE.PW_CACHE_EXPIRE]
+        cached = get_performance_cached("/pod", cache_ttl)
+        if cached is not None:
+            return self.send_json_response(json.loads(cached))
+
+        # Cache miss - generate fresh data
         pod = {}
         # Get Individual Powerwall Battery Data
         system_status = self.safe_pw_call(self.pw.system_status) or {}
@@ -1363,6 +1558,7 @@ class Handler(BaseHTTPRequestHandler):
             "time_remaining_hours": self.safe_pw_call(self.pw.get_time_remaining),
             "backup_reserve_percent": self.safe_pw_call(self.pw.get_reserve)
         })
+        cache_performance_response("/pod", json.dumps(pod))
         return self.send_json_response(pod)
 
 
