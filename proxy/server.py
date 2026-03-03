@@ -683,6 +683,37 @@ class Handler(BaseHTTPRequestHandler):
                     {"error": "Control Command Value Invalid"},
                     status_code=HTTPStatus.BAD_REQUEST
                 )
+        elif action == 'grid_charging':
+            if not value:
+                grid_charging = self.safe_pw_call(self.pw_control.get_grid_charging)
+                self.send_json_response({"grid_charging": grid_charging if grid_charging is not None else False})
+                return True
+            elif isinstance(value, str) and value.lower() in ['true', 'false']:
+                bool_value = value.lower() == 'true'
+                result = self.safe_pw_call(self.pw_control.set_grid_charging, bool_value)
+                log.info(f"Control Command: Set Grid Charging to {value}")
+                self.send_json_response(result if result is not None else {"error": "Failed to set grid_charging"})
+                return True
+            else:
+                self.send_json_response(
+                    {"error": "Control Command Value Invalid"},
+                    status_code=HTTPStatus.BAD_REQUEST
+                )
+        elif action == 'grid_export':
+            if not value:
+                grid_export = self.safe_pw_call(self.pw_control.get_grid_export)
+                self.send_json_response({"grid_export": grid_export if grid_export is not None else "unknown"})
+                return True
+            elif isinstance(value, str) and value.lower() in ['battery_ok', 'pv_only', 'never']:
+                result = self.safe_pw_call(self.pw_control.set_grid_export, value.lower())
+                log.info(f"Control Command: Set Grid Export to {value}")
+                self.send_json_response(result if result is not None else {"error": "Failed to set grid_export"})
+                return True
+            else:
+                self.send_json_response(
+                    {"error": "Control Command Value Invalid"},
+                    status_code=HTTPStatus.BAD_REQUEST
+                )
         else:
             self.send_json_response(
                 {"error": "Invalid Command Action"},
@@ -768,6 +799,20 @@ class Handler(BaseHTTPRequestHandler):
                 result = self.send_json_response({"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"})
             else:
                 result = self.send_json_response({"mode": self.safe_pw_call(self.pw_control.get_mode)})
+        elif path.startswith('/control/grid_charging'):
+            # Current grid charging state
+            if not self.pw_control:
+                result = self.send_json_response({"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"})
+            else:
+                charging = self.safe_pw_call(self.pw_control.get_grid_charging)
+                result = self.send_json_response({"grid_charging": True if charging else False})
+        elif path.startswith('/control/grid_export'):
+            # Current grid export state (battery_ok, pv_only, or never)
+            if not self.pw_control:
+                result = self.send_json_response({"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"})
+            else:
+                export = self.safe_pw_call(self.pw_control.get_grid_export)
+                result = self.send_json_response({"grid_export": export or "unknown"})
         else:
             result = self.handle_static_content(path)
 
