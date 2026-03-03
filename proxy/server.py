@@ -692,7 +692,10 @@ class Handler(BaseHTTPRequestHandler):
                 bool_value = value.lower() == 'true'
                 result = self.safe_pw_call(self.pw_control.set_grid_charging, bool_value)
                 log.info(f"Control Command: Set Grid Charging to {value}")
-                self.send_json_response(result if result is not None else {"error": "Failed to set grid_charging"})
+                if result is not None:
+                    self.send_json_response({"grid_charging": "Set Successfully"})
+                else:
+                    self.send_json_response({"error": "Failed to set grid_charging"})
                 return True
             else:
                 self.send_json_response(
@@ -707,7 +710,10 @@ class Handler(BaseHTTPRequestHandler):
             elif isinstance(value, str) and value.lower() in ['battery_ok', 'pv_only', 'never']:
                 result = self.safe_pw_call(self.pw_control.set_grid_export, value.lower())
                 log.info(f"Control Command: Set Grid Export to {value}")
-                self.send_json_response(result if result is not None else {"error": "Failed to set grid_export"})
+                if result is not None:
+                    self.send_json_response({"grid_export": "Set Successfully"})
+                else:
+                    self.send_json_response({"error": "Failed to set grid_export"})
                 return True
             else:
                 self.send_json_response(
