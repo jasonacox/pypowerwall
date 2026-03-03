@@ -1,6 +1,6 @@
 beautifulsoup4
 bs4
-protobuf
+protobuf>=7.0.0
 psutil
 pypowerwall
 pyroute2

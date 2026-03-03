@@ -27,7 +27,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'requests',      
-        'protobuf>=3.20.0',        
+        'protobuf>=7.0.0',        
         'teslapy',
         'setuptools>=42',
         'wheel',

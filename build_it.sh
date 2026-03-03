@@ -1,1 +1,1 @@
-docker build -f proxy/Dockerfile -t jasonacox/pypowerwall:0.12.6.t221 .
+docker buildx build --platform linux/amd64,linux/arm64 -f proxy/Dockerfile -t nexarian/pypowerwall-nexarian:0.0.2 --push .
