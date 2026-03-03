@@ -1392,9 +1392,13 @@ class Handler(BaseHTTPRequestHandler):
                             if i == 0:
                                 # First expansion shows combined total
                                 exp_name = f"TEPOD--{part_number}--{serial} (combined)"
-                                exp_remaining = round(expansion_remaining, 2) if expansion_remaining else None
-                                exp_to_charge = round(expansion_full - expansion_remaining, 2) if expansion_full and expansion_remaining else None
-                                exp_full = round(expansion_full, 2) if expansion_full else None
+                                exp_remaining = expansion_remaining
+                                exp_full = expansion_full
+                                # Prevent negative values
+                                if expansion_full and expansion_remaining:
+                                    exp_to_charge = max(0, expansion_full - expansion_remaining)
+                                else:
+                                    exp_to_charge = None
                             else:
                                 # Additional expansions show null (individual data unavailable)
                                 exp_name = f"TEPOD--{part_number}--{serial}"
@@ -1404,9 +1408,13 @@ class Handler(BaseHTTPRequestHandler):
                         else:
                             # Single expansion - show calculated values
                             exp_name = f"TEPOD--{part_number}--{serial}"
-                            exp_remaining = round(expansion_remaining, 2) if expansion_remaining else None
-                            exp_to_charge = round(expansion_full - expansion_remaining, 2) if expansion_full and expansion_remaining else None
-                            exp_full = round(expansion_full, 2) if expansion_full else None
+                            exp_remaining = expansion_remaining
+                            exp_full = expansion_full
+                            # Prevent negative values
+                            if expansion_full and expansion_remaining:
+                                exp_to_charge = max(0, expansion_full - expansion_remaining)
+                            else:
+                                exp_to_charge = None
 
                         idx += 1
                         pod[f"PW{idx}_name"] = exp_name

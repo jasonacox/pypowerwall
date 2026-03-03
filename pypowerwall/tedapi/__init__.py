@@ -153,7 +153,9 @@ QUERY_DEVICE_CONTROLLER = (
     'ss phase}}}components{msa:components(filter:{types:[TEMSA]}){partNumber serialNumber signals(names:['
     '"MSA_pcbaId" "MSA_usageId" "MSA_appGitHash" "MSA_HeatingRateOccurred" "METER_Z_CTA_InstRealPower" "M'
     'ETER_Z_CTA_InstReactivePower" "METER_Z_CTA_I" "METER_Z_VL1G" "METER_Z_CTB_InstRealPower" "METER_Z_CT'
-    'B_InstReactivePower" "METER_Z_CTB_I" "METER_Z_VL2G"]){name value textValue boolValue}activeAlerts{na'
+    'B_InstReactivePower" "METER_Z_CTB_I" "METER_Z_VL2G" "METER_Z_CTC_InstRealPower" "METER_Z_CTC_InstRea'
+    'ctivePower" "METER_Z_CTC_I" "METER_Z_VL3G" "METER_Z_LifetimeEnergyExport" "METER_Z_LifetimeEnergyImp'
+    'ort"]){name value textValue boolValue}activeAlerts{na'
     'me}}}}'
 )
 
@@ -1075,10 +1077,12 @@ class TEDAPI:
                     nom_energy_remaining = 0
                     nom_full_pack_energy = 0
                     for signal in signals:
-                        if "BMS_nominalEnergyRemaining" == signal['name']:
-                            nom_energy_remaining = int(signal['value'] * 1000) # Convert to Wh
-                        elif "BMS_nominalFullPackEnergy" == signal['name']:
-                            nom_full_pack_energy = int(signal['value'] * 1000) # Convert to Wh
+                        signal_name = signal.get('name')
+                        signal_value = signal.get('value')
+                        if signal_name == 'BMS_nominalEnergyRemaining' and signal_value is not None:
+                            nom_energy_remaining = int(signal_value * 1000) # Convert to Wh
+                        elif signal_name == 'BMS_nominalFullPackEnergy' and signal_value is not None:
+                            nom_full_pack_energy = int(signal_value * 1000) # Convert to Wh
                     response[f"TEPOD--{pw_din}"] = {
                         "alerts": alerts,
                         "POD_nom_energy_remaining": nom_energy_remaining,
@@ -1922,6 +1926,74 @@ class TEDAPI:
             }
         }
 
+        # Create TEMSA block - Backup Switch
+        temsa = {}
+        msa = lookup(status, ['esCan', 'bus', 'MSA']) or {}
+        msa_packagePartNumber = msa.get('packagePartNumber', None)
+        msa_packageSerialNumber = msa.get('packageSerialNumber', None)
+
+        # For Powerwall 3, MSA data comes from components.msa with signals format
+        if not msa_packageSerialNumber:
+            for component in lookup(status, ['components', 'msa']) or []:
+                if component.get('serialNumber') and any(
+                    s.get('name', '').startswith('METER_Z') for s in component.get('signals', [])
+                ):
+                    msa_packagePartNumber = component.get('partNumber')
+                    msa_packageSerialNumber = component.get('serialNumber')
+                    # Convert signals array to dict keyed by name
+                    signals_dict = {s['name']: s.get('value') for s in component.get('signals', []) if 'name' in s}
+                    # Create a fake METER_Z_AcMeasurements structure for compatibility
+                    # PW3 uses VL1G/VL2G (ground-ref), map to VL1N/VL2N for consistency
+                    msa = {
+                        'packagePartNumber': msa_packagePartNumber,
+                        'packageSerialNumber': msa_packageSerialNumber,
+                        'METER_Z_AcMeasurements': {
+                            'METER_Z_CTA_I': signals_dict.get('METER_Z_CTA_I'),
+                            'METER_Z_CTA_InstReactivePower': signals_dict.get('METER_Z_CTA_InstReactivePower'),
+                            'METER_Z_CTA_InstRealPower': signals_dict.get('METER_Z_CTA_InstRealPower'),
+                            'METER_Z_CTB_I': signals_dict.get('METER_Z_CTB_I'),
+                            'METER_Z_CTB_InstReactivePower': signals_dict.get('METER_Z_CTB_InstReactivePower'),
+                            'METER_Z_CTB_InstRealPower': signals_dict.get('METER_Z_CTB_InstRealPower'),
+                            'METER_Z_CTC_I': signals_dict.get('METER_Z_CTC_I'),
+                            'METER_Z_CTC_InstReactivePower': signals_dict.get('METER_Z_CTC_InstReactivePower'),
+                            'METER_Z_CTC_InstRealPower': signals_dict.get('METER_Z_CTC_InstRealPower'),
+                            'METER_Z_VL1N': signals_dict.get('METER_Z_VL1G'),
+                            'METER_Z_VL2N': signals_dict.get('METER_Z_VL2G'),
+                            'METER_Z_VL3N': signals_dict.get('METER_Z_VL3G'),
+                            'METER_Z_LifetimeEnergyExport': signals_dict.get('METER_Z_LifetimeEnergyExport'),
+                            'METER_Z_LifetimeEnergyImport': signals_dict.get('METER_Z_LifetimeEnergyImport'),
+                        }
+                    }
+                    break
+
+        if msa_packageSerialNumber:
+            name = f"TEMSA--{msa_packagePartNumber}--{msa_packageSerialNumber}"
+            temsa[name] = {
+                "METER_Z_CTA_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_I']),
+                "METER_Z_CTA_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_InstReactivePower']),
+                "METER_Z_CTA_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTA_InstRealPower']),
+                "METER_Z_CTB_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_I']),
+                "METER_Z_CTB_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_InstReactivePower']),
+                "METER_Z_CTB_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTB_InstRealPower']),
+                "METER_Z_CTC_I": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_I']),
+                "METER_Z_CTC_InstReactivePower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_InstReactivePower']),
+                "METER_Z_CTC_InstRealPower": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_CTC_InstRealPower']),
+                "METER_Z_LifetimeEnergyExport": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_LifetimeEnergyExport']),
+                "METER_Z_LifetimeEnergyImport": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_LifetimeEnergyImport']),
+                "METER_Z_VL1N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL1N']),
+                "METER_Z_VL2N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL2N']),
+                "METER_Z_VL3N": lookup(msa, ['METER_Z_AcMeasurements', 'METER_Z_VL3N']),
+                "alerts": lookup(msa, ['alerts', 'active']) or [],
+                "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
+                "firmwareVersion": None,
+                "manufacturer": "TESLA",
+                "partNumber": msa_packagePartNumber,
+                "serialNumber": msa_packageSerialNumber,
+                "teslaEnergyEcuAttributes": {
+                    "ecuType": 300
+                }
+            }
+
         # Create TESLA block - tied to TESYNC
         name = f"TESLA--{packageSerialNumber}"
         tesla[name] = {
@@ -1943,6 +2015,7 @@ class TEDAPI:
             **pvac,
             **pvs,
             **ststsm,
+            **temsa,
             **tepinv,
             **tepod,
             **tesla,
@@ -1959,7 +2032,10 @@ class TEDAPI:
 
     def get_blocks(self, force=False):
         """
-        Get the list of battery blocks from the Powerwall Gateway
+        Get the list of battery blocks from the Powerwall Gateway.
+
+        This includes both regular Powerwall units (with inverters) and battery
+        expansion packs (battery-only units without inverters).
         """
         status = self.get_status(force=force)
         config = self.get_config(force=force)
@@ -1967,7 +2043,7 @@ class TEDAPI:
         if not isinstance(status, dict) or not isinstance(config, dict):
             return None
         block = {}
-        # Loop through each THC device serial number
+        # Loop through each THC device serial number (Powerwall units with inverters)
         for i, p in enumerate(lookup(status, ['esCan', 'bus', 'THC']) or {}):
             if not p['packageSerialNumber']:
                 continue
@@ -2016,6 +2092,71 @@ class TEDAPI:
                 "p_out": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
                 "v_out": lookup(pinv, ['PINV_Status', 'PINV_Vout']),
             })
+
+        # Add battery expansion packs (battery-only units without inverters)
+        if config and 'battery_blocks' in config:
+            for battery in config['battery_blocks']:
+                # Check if this battery has expansions
+                if 'battery_expansions' in battery and battery['battery_expansions']:
+                    for expansion in battery['battery_expansions']:
+                        exp_din = expansion.get('din')
+                        if not exp_din:
+                            continue
+
+                        # Extract part and serial from DIN (format: "1807000-10-B--TG125035000A5E")
+                        exp_parts = exp_din.split('--')
+                        if len(exp_parts) < 2:
+                            log.debug(f"Skipping battery expansion with invalid DIN format: {exp_din}")
+                            continue
+                        exp_part = exp_parts[0]
+                        exp_serial = exp_parts[1]
+                        exp_name = exp_serial  # Use serial number as key
+
+                        log.debug(f"Fetching battery expansion data for {exp_serial} ({exp_din})")
+                        # Fetch battery block data for this expansion
+                        exp_data = self.get_battery_block(self.get_blocks, din=exp_din, force=force)
+
+                        # Extract BMS data from expansion
+                        nom_energy_remaining = None
+                        nom_full_pack_energy = None
+                        if exp_data and 'components' in exp_data:
+                            bms_components = exp_data['components'].get('bms', [])
+                            if bms_components and len(bms_components) > 0:
+                                bms_signals = bms_components[0].get('signals', [])
+                                for signal in bms_signals:
+                                    signal_name = signal.get('name')
+                                    signal_value = signal.get('value')
+                                    if signal_name == 'BMS_nominalEnergyRemaining' and signal_value is not None:
+                                        nom_energy_remaining = int(signal_value * 1000)  # Convert kWh to Wh
+                                    elif signal_name == 'BMS_nominalFullPackEnergy' and signal_value is not None:
+                                        nom_full_pack_energy = int(signal_value * 1000)  # Convert kWh to Wh
+
+                        # Add expansion to blocks (expansions don't have inverter data)
+                        block[exp_name] = {
+                            "Type": "BatteryExpansion",
+                            "PackagePartNumber": exp_part,
+                            "PackageSerialNumber": exp_serial,
+                            "disabled_reasons": [],
+                            "pinv_state": None,
+                            "pinv_grid_state": None,
+                            "nominal_energy_remaining": nom_energy_remaining,
+                            "nominal_full_pack_energy": nom_full_pack_energy,
+                            "p_out": None,
+                            "q_out": None,
+                            "v_out": None,
+                            "f_out": None,
+                            "i_out": None,
+                            "energy_charged": None,
+                            "energy_discharged": None,
+                            "off_grid": None,
+                            "vf_mode": None,
+                            "wobble_detected": None,
+                            "charge_power_clamped": None,
+                            "backup_ready": None,
+                            "OpSeqState": None,
+                            "version": None
+                        }
+
         return block
 
     # End of TEDAPI Class
