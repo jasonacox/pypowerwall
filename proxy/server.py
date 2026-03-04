@@ -980,10 +980,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
 
             # Get values with defaults to avoid None values
-            site_power = site.get("instant_power", 0)
-            site_current = site.get("instant_average_current", 0)
-            solar_power = solar.get("instant_power", 0)
-            solar_voltage = solar.get("instant_average_voltage", 0)
+            site_power = site.get("instant_power", 0) or 0
+            site_current = site.get("instant_average_current", 0) or 0
+            solar_power = solar.get("instant_power", 0) or 0
+            solar_voltage = solar.get("instant_average_voltage", 0) or 0
 
             # Calculate load power as the sum of solar and site power
             load_power = solar_power + site_power

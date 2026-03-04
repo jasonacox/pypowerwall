@@ -153,9 +153,7 @@ QUERY_DEVICE_CONTROLLER = (
     'ss phase}}}components{msa:components(filter:{types:[TEMSA]}){partNumber serialNumber signals(names:['
     '"MSA_pcbaId" "MSA_usageId" "MSA_appGitHash" "MSA_HeatingRateOccurred" "METER_Z_CTA_InstRealPower" "M'
     'ETER_Z_CTA_InstReactivePower" "METER_Z_CTA_I" "METER_Z_VL1G" "METER_Z_CTB_InstRealPower" "METER_Z_CT'
-    'B_InstReactivePower" "METER_Z_CTB_I" "METER_Z_VL2G" "METER_Z_CTC_InstRealPower" "METER_Z_CTC_InstRea'
-    'ctivePower" "METER_Z_CTC_I" "METER_Z_VL3G" "METER_Z_LifetimeEnergyExport" "METER_Z_LifetimeEnergyImp'
-    'ort"]){name value textValue boolValue}activeAlerts{na'
+    'B_InstReactivePower" "METER_Z_CTB_I" "METER_Z_VL2G"]){name value textValue boolValue}activeAlerts{na'
     'me}}}}'
 )
 
