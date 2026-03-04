@@ -441,6 +441,22 @@ def get_performance_cached(cache_key: str, cache_ttl: int) -> Any:
             return None
 
 
+def get_performance_stale(cache_key: str) -> Any:
+    """
+    Get stale cached response as fallback when fresh data is unavailable.
+
+    Returns:
+        Previously cached response regardless of age, or None if never cached
+    """
+    with _performance_cache_lock:
+        if cache_key in _performance_cache:
+            data, timestamp = _performance_cache[cache_key]
+            age = time.time() - timestamp
+            log.debug(f"Using stale performance cache for {cache_key} (age: {age:.2f}s)")
+            return data
+    return None
+
+
 def cache_performance_response(cache_key: str, data: Any) -> None:
     """
     Cache endpoint response for performance optimization.
@@ -1149,7 +1165,12 @@ class Handler(BaseHTTPRequestHandler):
         vitals = self.safe_endpoint_call('/vitals', self.pw.vitals, jsonformat=True)
         if vitals:
             cache_performance_response("/vitals", vitals)
-        return self.send_json_response(json.loads(vitals) if vitals else None)
+            return self.send_json_response(json.loads(vitals))
+        # Fresh data unavailable - fall back to stale cache
+        stale = get_performance_stale("/vitals")
+        if stale is not None:
+            return self.send_json_response(json.loads(stale))
+        return self.send_json_response(None)
 
 
     def handle_strings(self) -> str:
@@ -1158,13 +1179,17 @@ class Handler(BaseHTTPRequestHandler):
         if cached is not None:
             return self.send_json_response(json.loads(cached))
         strings = self.safe_endpoint_call('/strings', self.pw.strings, jsonformat=True)
-        if not strings:
-            return self.send_json_response(None)
-        output = json.loads(strings)
-        if len(self.all_pws) > 1:
-            output = {f"{key}_{self.pw.pw_din_suffix}": value for key, value in output.items()}
-        cache_performance_response("/strings", json.dumps(output))
-        return self.send_json_response(output)
+        if strings:
+            output = json.loads(strings)
+            if len(self.all_pws) > 1:
+                output = {f"{key}_{self.pw.pw_din_suffix}": value for key, value in output.items()}
+            cache_performance_response("/strings", json.dumps(output))
+            return self.send_json_response(output)
+        # Fresh data unavailable - fall back to stale cache
+        stale = get_performance_stale("/strings")
+        if stale is not None:
+            return self.send_json_response(json.loads(stale))
+        return self.send_json_response(None)
 
 
     def handle_stats(self) -> str:
@@ -1406,10 +1431,16 @@ class Handler(BaseHTTPRequestHandler):
         cached = get_performance_cached("/temps/pw", cache_ttl)
         if cached is not None:
             return self.send_json_response(json.loads(cached))
-        temps = self.safe_pw_call(self.pw.temps) or {}
-        pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
-        cache_performance_response("/temps/pw", json.dumps(pw_temp))
-        return self.send_json_response(pw_temp)
+        temps = self.safe_pw_call(self.pw.temps)
+        if temps:
+            pw_temp = {f"PW{idx}_temp": temp for idx, temp in enumerate(temps.values(), 1)}
+            cache_performance_response("/temps/pw", json.dumps(pw_temp))
+            return self.send_json_response(pw_temp)
+        # Fresh data unavailable - fall back to stale cache
+        stale = get_performance_stale("/temps/pw")
+        if stale is not None:
+            return self.send_json_response(json.loads(stale))
+        return self.send_json_response({})
 
 
     def handle_alerts(self) -> str:
@@ -1425,12 +1456,17 @@ class Handler(BaseHTTPRequestHandler):
         cached = get_performance_cached("/alerts/pw", cache_ttl)
         if cached is not None:
             return self.send_json_response(json.loads(cached))
-        alerts = self.safe_pw_call(self.pw.alerts) or []
-        if len(self.all_pws) > 1:
-            alerts = {f"{self.pw.pw_din_suffix}_{alert}": 1 for alert in alerts}
-        result = json.dumps(alerts)
-        cache_performance_response("/alerts/pw", result)
-        return self.send_json_response(alerts)
+        alerts = self.safe_pw_call(self.pw.alerts)
+        if alerts:
+            if len(self.all_pws) > 1:
+                alerts = {f"{self.pw.pw_din_suffix}_{alert}": 1 for alert in alerts}
+            cache_performance_response("/alerts/pw", json.dumps(alerts))
+            return self.send_json_response(alerts)
+        # Fresh data unavailable - fall back to stale cache
+        stale = get_performance_stale("/alerts/pw")
+        if stale is not None:
+            return self.send_json_response(json.loads(stale))
+        return self.send_json_response([])
 
 
     def handle_freq(self) -> str:
@@ -1471,7 +1507,13 @@ class Handler(BaseHTTPRequestHandler):
             if device.startswith(('PVAC', 'TESYNC', 'TEMSA')):
                 fcv.update({(f"{key}" if not din_suffix else f"{din_suffix}_{key}"): value for key, value in data.items() if key.startswith(('ISLAND', 'METER', 'PVAC_Fan_Speed', 'PVAC_Fout', 'PVAC_VL'))})
         fcv["grid_status"] = self.safe_pw_call(self.pw.grid_status, type="numeric")
-        cache_performance_response("/freq", json.dumps(fcv))
+        if fcv.get("grid_status") is not None or blocks or vitals:
+            cache_performance_response("/freq", json.dumps(fcv))
+            return self.send_json_response(fcv)
+        # Fresh data unavailable - fall back to stale cache
+        stale = get_performance_stale("/freq")
+        if stale is not None:
+            return self.send_json_response(json.loads(stale))
         return self.send_json_response(fcv)
 
 
@@ -1558,7 +1600,13 @@ class Handler(BaseHTTPRequestHandler):
             "time_remaining_hours": self.safe_pw_call(self.pw.get_time_remaining),
             "backup_reserve_percent": self.safe_pw_call(self.pw.get_reserve)
         })
-        cache_performance_response("/pod", json.dumps(pod))
+        if blocks or vitals:
+            cache_performance_response("/pod", json.dumps(pod))
+            return self.send_json_response(pod)
+        # Fresh data unavailable - fall back to stale cache
+        stale = get_performance_stale("/pod")
+        if stale is not None:
+            return self.send_json_response(json.loads(stale))
         return self.send_json_response(pod)
 
 
