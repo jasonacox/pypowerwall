@@ -1106,6 +1106,34 @@ class Handler(BaseHTTPRequestHandler):
                                     message = (
                                         '{"error": "Control Command Value Invalid"}'
                                     )
+                            elif action == "max_backup":
+                                if not pw.tedapi or not pw.tedapi.v1r:
+                                    message = '{"error": "max_backup requires v1r LAN transport"}'
+                                elif not value:
+                                    # Return current backup events
+                                    result = safe_pw_call(pw.tedapi.get_backup_events)
+                                    message = json.dumps(
+                                        result if result is not None
+                                        else {"error": "Failed to get backup events"}
+                                    )
+                                elif value.lower() == "cancel":
+                                    result = safe_pw_call(pw.tedapi.cancel_max_backup)
+                                    if result:
+                                        message = '{"max_backup": "Cancelled"}'
+                                    else:
+                                        message = '{"error": "Failed to cancel max backup"}'
+                                    log.info("Control Command: Cancel Max Backup")
+                                elif value.isdigit():
+                                    result = safe_pw_call(
+                                        pw.tedapi.schedule_max_backup, int(value)
+                                    )
+                                    if result:
+                                        message = '{"max_backup": "Scheduled for %s seconds"}' % value
+                                    else:
+                                        message = '{"error": "Failed to schedule max backup"}'
+                                    log.info(f"Control Command: Schedule Max Backup for {value}s")
+                                else:
+                                    message = '{"error": "Control Command Value Invalid - use seconds or cancel"}'
                             else:
                                 message = '{"error": "Invalid Command Action"}'
                         else:
@@ -1887,6 +1915,23 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"grid_export": "%s"}' % (
                     safe_pw_call(pw_control.get_grid_export) or "unknown"
                 )
+        elif request_path.startswith("/control/max_backup"):
+            # Current backup events (requires v1r)
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            elif not pw.tedapi or not pw.tedapi.v1r:
+                message = '{"error": "max_backup requires v1r LAN transport"}'
+            else:
+                result = safe_pw_call(pw.tedapi.get_backup_events)
+                if result is not None:
+                    # Auto-cancel expired events (gateway leaves them lingering)
+                    mb = result.get('manual_backup')
+                    if mb and not mb.get('active'):
+                        safe_pw_call(pw.tedapi.cancel_max_backup)
+                        result['manual_backup'] = None
+                    message = json.dumps(result)
+                else:
+                    message = '{"error": "Failed to get backup events"}'
         elif request_path == "/fans":
             # Fan speeds in raw format
             message = json.dumps(

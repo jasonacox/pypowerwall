@@ -835,6 +835,18 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             return True
         return None
 
+    def schedule_max_backup(self, duration_seconds=7200):
+        """Schedule manual backup event (max backup / storm watch mode)."""
+        return self.tedapi.schedule_max_backup(duration_seconds=duration_seconds)
+
+    def cancel_max_backup(self):
+        """Cancel the current manual backup event."""
+        return self.tedapi.cancel_max_backup()
+
+    def get_backup_events(self):
+        """Get current backup events."""
+        return self.tedapi.get_backup_events()
+
 
 if __name__ == "__main__":
     import sys

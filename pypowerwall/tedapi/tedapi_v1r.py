@@ -366,6 +366,37 @@ class TEDAPIv1r:
         log.error("write_config_v1r: unexpected response")
         return False
 
+    # ── TEGMessages Command ───────────────────────────────────────────
+
+    def send_teg_message(self, din: str, teg_message) -> Optional[combined_pb2.MessageEnvelope]:
+        """
+        Send a TEGMessages command via v1r, return parsed response envelope.
+
+        Args:
+            din: Device DIN (leader)
+            teg_message: A populated TEGMessages protobuf instance
+
+        Returns:
+            Parsed MessageEnvelope from the response, or None on error.
+        """
+        msg = combined_pb2.MessageEnvelope()
+        msg.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+        msg.sender.authorizedClient = 1  # CUSTOMER_MOBILE_APP
+        msg.recipient.din = din
+        msg.teg.CopyFrom(teg_message)
+
+        envelope_bytes = msg.SerializeToString()
+        inner = self.post_v1r(envelope_bytes, din)
+        if not inner:
+            return None
+        try:
+            resp = combined_pb2.MessageEnvelope()
+            resp.ParseFromString(inner)
+            return resp
+        except Exception as e:
+            log.error(f"send_teg_message: failed to parse response: {e}")
+            return None
+
     # ── Standard API (Bearer token) ──────────────────────────────────
 
     def api_get(self, path: str) -> Optional[dict]:

@@ -64,6 +64,7 @@ from pypowerwall import __version__
 from pypowerwall.api_lock import acquire_lock_with_backoff
 
 from . import tedapi_pb2
+from . import tedapi_combined_pb2 as combined_pb2
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -380,6 +381,140 @@ class TEDAPI:
         except Exception as e:
             log.error(f"Error writing config: {e}")
             return False
+
+    # ── Max Backup (TEGMessages) ─────────────────────────────────────
+
+    def schedule_max_backup(self, duration_seconds=7200):
+        """
+        Schedule manual backup event (max backup / storm watch mode).
+
+        Sets reserve to 100% for the specified duration via TEGMessages.
+        Automatically cancels any existing backup event first — the gateway
+        requires cancel before setting a new one.
+
+        Args:
+            duration_seconds: Duration in seconds (default 7200 = 2 hours, min 60)
+
+        Returns:
+            True on success, False on error.
+        """
+        if not self.v1r or not self.v1r_transport:
+            log.error("schedule_max_backup requires v1r transport")
+            return False
+        if not self.din:
+            if not self.connect():
+                log.error("Not connected - unable to schedule max backup")
+                return False
+        duration_seconds = max(60, int(duration_seconds))
+        try:
+            # Must cancel any existing (active or expired) before scheduling new
+            self.cancel_max_backup()
+            from google.protobuf.timestamp_pb2 import Timestamp
+            teg = combined_pb2.TEGMessages()
+            req = teg.schedule_manual_backup_event_request
+            req.scheduling_info.start_time.CopyFrom(Timestamp(seconds=int(time.time())))
+            req.scheduling_info.duration_seconds = duration_seconds
+            req.scheduling_info.priority = (1 << 64) - 1  # MAX_UINT64 = highest priority
+            resp = self.v1r_transport.send_teg_message(self.din, teg)
+            if resp is None:
+                log.error("schedule_max_backup: no response")
+                return False
+            if resp.HasField('teg') and resp.teg.HasField('schedule_manual_backup_event_response'):
+                log.info(f"Max backup scheduled for {duration_seconds}s")
+                return True
+            log.warning(f"schedule_max_backup: unexpected response payload")
+            return False
+        except Exception as e:
+            log.error(f"schedule_max_backup error: {e}")
+            return False
+
+    def cancel_max_backup(self):
+        """
+        Cancel the current manual backup event.
+
+        Returns:
+            True on success, False on error.
+        """
+        if not self.v1r or not self.v1r_transport:
+            log.error("cancel_max_backup requires v1r transport")
+            return False
+        if not self.din:
+            if not self.connect():
+                log.error("Not connected - unable to cancel max backup")
+                return False
+        try:
+            teg = combined_pb2.TEGMessages()
+            teg.cancel_manual_backup_event_request.SetInParent()
+            resp = self.v1r_transport.send_teg_message(self.din, teg)
+            if resp is None:
+                log.error("cancel_max_backup: no response")
+                return False
+            if resp.HasField('teg') and resp.teg.HasField('cancel_manual_backup_event_response'):
+                log.info("Max backup cancelled")
+                return True
+            log.warning(f"cancel_max_backup: unexpected response payload")
+            return False
+        except Exception as e:
+            log.error(f"cancel_max_backup error: {e}")
+            return False
+
+    def get_backup_events(self):
+        """
+        Get current backup events.
+
+        Returns:
+            Dict with 'manual_backup' (dict or None) and 'backup_events' (list),
+            or None on error.
+        """
+        if not self.v1r or not self.v1r_transport:
+            log.error("get_backup_events requires v1r transport")
+            return None
+        if not self.din:
+            if not self.connect():
+                log.error("Not connected - unable to get backup events")
+                return None
+        try:
+            teg = combined_pb2.TEGMessages()
+            teg.get_backup_events_request.SetInParent()
+            resp = self.v1r_transport.send_teg_message(self.din, teg)
+            if resp is None:
+                log.error("get_backup_events: no response")
+                return None
+            if resp.HasField('teg') and resp.teg.HasField('get_backup_events_response'):
+                events_resp = resp.teg.get_backup_events_response
+                result = {
+                    'manual_backup': None,
+                    'backup_events': []
+                }
+                # Parse manual backup event if present
+                if events_resp.HasField('manual_backup_event'):
+                    mbe = events_resp.manual_backup_event
+                    si = mbe.scheduling_info
+                    end_time = si.start_time.seconds + si.duration_seconds
+                    active = int(time.time()) < end_time
+                    result['manual_backup'] = {
+                        'start_time': si.start_time.seconds,
+                        'duration_seconds': si.duration_seconds,
+                        'end_time': end_time,
+                        'active': active,
+                        'priority': si.priority,
+                    }
+                # Parse scheduled backup events
+                for evt in events_resp.backup_events:
+                    si = evt.scheduling_info
+                    result['backup_events'].append({
+                        'id': evt.id,
+                        'name': evt.name,
+                        'start_time': si.start_time.seconds,
+                        'duration_seconds': si.duration_seconds,
+                        'priority': si.priority,
+                    })
+                return result
+            log.warning(f"get_backup_events: unexpected response payload")
+            return None
+        except Exception as e:
+            log.error(f"get_backup_events error: {e}")
+            return None
 
     @uses_api_lock
     def get_status(self, self_function=None, force=False) -> Optional[Dict[Any, Any]]:
