@@ -187,6 +187,7 @@ cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
+wifi_host = os.getenv("PW_WIFI_HOST", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
@@ -256,6 +257,7 @@ proxystats = {
         "PW_CONTROL_SECRET": "*" * len(control_secret) if control_secret else None,
         "PW_GW_PWD": "*" * len(gw_pwd) if gw_pwd else None,
         "PW_RSA_KEY_PATH": rsa_key_path,
+        "PW_WIFI_HOST": wifi_host,
         "PW_NEG_SOLAR": neg_solar,
         "PW_SUPPRESS_NETWORK_ERRORS": suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": network_error_rate_limit,
@@ -812,6 +814,7 @@ try:
         retry_modes=True,
         gw_pwd=gw_pwd,
         rsa_key_path=rsa_key_path,
+        wifi_host=wifi_host,
     )
 except Exception as e:
     log.error(f"Powerwall Connection Error: {str(e)}")
@@ -841,7 +844,6 @@ if pw.cloudmode or pw.fleetapi:
                 except (KeyboardInterrupt, SystemExit):
                     sys.exit(0)
 else:
-    proxystats["mode"] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
     if pw.tedapi:
@@ -849,6 +851,8 @@ else:
         proxystats["tedapi_mode"] = pw.tedapi_mode
         proxystats["pw3"] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
+    # Set mode string with transport detail
+    proxystats["mode"] = f"Local ({pw.tedapi_mode})" if pw.tedapi else "Local"
 
 pw_control = None
 if control_secret:
@@ -872,9 +876,64 @@ if control_secret:
         control_secret = ""
     if pw_control:
         log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
+        # Update mode string to include control transport
+        if not pw.cloudmode and not pw.fleetapi and pw.tedapi:
+            proxystats["mode"] = f"Local ({pw.tedapi_mode}+control)"
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = None
+
+
+def get_transport_health():
+    """Build transport health status dict for /health endpoint."""
+    transports = {}
+    tedapi = getattr(pw, 'tedapi', None)
+    if tedapi and hasattr(tedapi, 'v1r') and tedapi.v1r:
+        # v1r LAN transport
+        v1r_info = {
+            "active": True,
+            "status": "ok" if tedapi.din else "unavailable",
+            "host": tedapi.gw_ip,
+            "leader_din": tedapi.din,
+        }
+        if tedapi.wifi_last_success:
+            v1r_info["last_success_age_seconds"] = round(time.time() - tedapi.wifi_last_success, 1)
+        transports["v1r_lan"] = v1r_info
+        # WiFi TEDAPI transport (follower fallback)
+        if tedapi.wifi_session:
+            cooldown_remaining = max(0, tedapi.wifi_cooldown - time.time())
+            if tedapi.wifi_available:
+                wifi_status = "ok"
+            elif cooldown_remaining > 0:
+                wifi_status = "degraded"
+            else:
+                wifi_status = "unavailable"
+            transports["wifi_tedapi"] = {
+                "active": True,
+                "status": wifi_status,
+                "host": tedapi.wifi_host,
+                "available": tedapi.wifi_available,
+                "cooldown_remaining_seconds": round(cooldown_remaining, 0),
+            }
+        else:
+            transports["wifi_tedapi"] = {"active": False}
+    elif tedapi:
+        # Standard WiFi TEDAPI
+        transports["wifi_tedapi"] = {
+            "active": True,
+            "status": "ok" if tedapi.din else "unavailable",
+            "host": tedapi.gw_ip,
+        }
+    # Cloud control transport
+    if pw_control:
+        transports["cloud_control"] = {
+            "active": True,
+            "status": "ok",
+            "mode": getattr(pw_control, 'mode', 'unknown'),
+        }
+    elif control_secret:
+        transports["cloud_control"] = {"active": False, "status": "failed"}
+    return transports
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -1289,6 +1348,8 @@ class Handler(BaseHTTPRequestHandler):
             # Connection Health and Cache Status
             health_info = {
                 "pypowerwall": "%s Proxy %s" % (pypowerwall.version, BUILD),
+                "mode": proxystats.get("mode", "Unknown"),
+                "tedapi_mode": proxystats.get("tedapi_mode", "off"),
                 "pypowerwall_cache_expire": cache_expire,
                 "degradation_cache_ttl_seconds": degradation_cache_ttl_seconds,
                 "graceful_degradation": graceful_degradation,
@@ -1299,6 +1360,9 @@ class Handler(BaseHTTPRequestHandler):
                 ).isoformat(),
                 "current_time": datetime.datetime.now().isoformat(),
             }
+
+            # Add transport status for v1r/hybrid modes
+            health_info["transports"] = get_transport_health()
 
             # Add overall proxy response counters
             with proxystats_lock:

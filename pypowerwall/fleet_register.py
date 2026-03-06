@@ -304,6 +304,81 @@ def step3_get_site_id(token, fleet_api_base):
     return selected["energy_site_id"], selected["gateway_din"]
 
 
+def _check_key_state(resp):
+    """Extract client state from Fleet API registration/list response.
+
+    Returns the state integer if found, None otherwise.
+    State values: 1=PENDING, 2=PENDING_VERIFICATION, 3=VERIFIED
+    """
+    try:
+        msg = resp["response"]["message"]["Payload"]["Authorization"]["Message"]
+    except (KeyError, TypeError):
+        try:
+            msg = resp["response"]["message"]["payload"]["authorization"]["message"]
+        except (KeyError, TypeError):
+            return None
+
+    # Check AddAuthorizedClientResponse (registration response)
+    for key in ("AddAuthorizedClientResponse", "add_authorized_client_response"):
+        if key in msg:
+            client = msg[key].get("client") or msg[key].get("Client")
+            if client:
+                state = client.get("state") or client.get("State")
+                if state is not None:
+                    return int(state)
+
+    # Check ListAuthorizedClientsResponse (list response)
+    for key in ("ListAuthorizedClientsResponse", "list_authorized_clients_response"):
+        if key in msg:
+            clients = msg[key].get("clients") or msg[key].get("Clients") or []
+            for client in clients:
+                state = client.get("state") or client.get("State")
+                if state is not None:
+                    return int(state)
+
+    return None
+
+
+def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5):
+    """Poll list_authorized_clients_request to check key verification state.
+
+    Returns the state integer of the most recently registered key, or None.
+    """
+    verify_payload = {
+        "command_properties": {
+            "message": {
+                "authorization": {
+                    "list_authorized_clients_request": {}
+                }
+            },
+            "identifier_type": 1,
+        },
+        "command_type": "grpc_command",
+    }
+
+    for attempt in range(attempts):
+        if attempt > 0:
+            time.sleep(delay)
+        code, resp = api_call(
+            f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command",
+            method="POST",
+            data=verify_payload,
+            token=token,
+        )
+        print(f"  Poll attempt {attempt + 1}/{attempts}: ({code})")
+        state = _check_key_state(resp)
+        if state is not None:
+            print(f"  Key state: {state} ({'VERIFIED' if state == 3 else 'PENDING' if state < 3 else 'UNKNOWN'})")
+            if state == 3:
+                return state
+        else:
+            # Show raw response for debugging if state couldn't be parsed
+            if isinstance(resp, dict):
+                print(f"  {json.dumps(resp, indent=2)[:2000]}")
+
+    return state
+
+
 def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
     """Register RSA public key with the Powerwall via Fleet API."""
     print()
@@ -337,57 +412,52 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
         token=token,
     )
 
-    print(f"\n  Response ({code}): {json.dumps(resp, indent=2)}")
-
     if code != 200:
-        print("\n  Key registration failed!")
+        print(f"\n  Registration failed ({code}): {json.dumps(resp, indent=2)}")
         sys.exit(1)
 
-    print()
-    print("=" * 70)
-    print("  STEP 5: Physical confirmation required")
-    print("=" * 70)
-    print()
-    print("  Toggle ONE Powerwall breaker OFF, wait 2 seconds, then back ON.")
-    print("  This confirms the key registration on the device.")
-    print()
-    input("  Press Enter after toggling the breaker...")
+    # Check if cloud registration auto-verified the key
+    state = _check_key_state(resp)
+    if state == 3:
+        print("\n  Key verified automatically via cloud — no breaker toggle needed!")
+    else:
+        if state is not None:
+            print(f"\n  Registration response state: {state} (not yet verified)")
+        else:
+            print(f"\n  Response ({code}): {json.dumps(resp, indent=2)}")
+        # Poll to see if state transitions to VERIFIED
+        print("\n  Checking key verification status...")
+        state = _poll_key_state(token, energy_site_id, fleet_api_base)
+        if state == 3:
+            print("\n  Key verified via cloud!")
+        else:
+            # Fallback: physical confirmation
+            print()
+            print("=" * 70)
+            print("  STEP 5: Physical confirmation required")
+            print("=" * 70)
+            print()
+            print("  Cloud auto-verification did not complete.")
+            print("  Toggle ONE Powerwall breaker OFF, wait 2 seconds, then back ON.")
+            print("  This confirms the key registration on the device.")
+            print()
+            input("  Press Enter after toggling the breaker...")
+            print("\n  Verifying key registration...")
+            state = _poll_key_state(token, energy_site_id, fleet_api_base, attempts=6)
 
-    # Verify
-    print("\n  Verifying key registration...")
-    verify_payload = {
-        "command_properties": {
-            "message": {
-                "authorization": {
-                    "list_authorized_clients_request": {}
-                }
-            },
-            "identifier_type": 1,
-        },
-        "command_type": "grpc_command",
-    }
-
-    for attempt in range(6):
-        code, resp = api_call(
-            f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command",
-            method="POST",
-            data=verify_payload,
-            token=token,
-        )
-        print(f"  Attempt {attempt + 1}: ({code})")
-        if isinstance(resp, dict):
-            print(f"  {json.dumps(resp, indent=2)[:2000]}")
-        if attempt < 5:
-            time.sleep(5)
-
+    # Done
+    verified = state == 3
     print()
     print("=" * 70)
-    print("  Done!")
+    print(f"  {'Registration complete!' if verified else 'Registration sent.'}")
     print("=" * 70)
     print()
-    print("  If the response shows the key as 'authorized', registration")
-    print("  was successful. Your RSA private key is at:")
-    print(f"    {RSA_PRIVATE_KEY_FILE}")
+    if verified:
+        print("  Key is VERIFIED and ready for use.")
+    else:
+        print("  Key state could not be confirmed as verified.")
+        print("  It may still be pending — check again later with list_authorized_clients.")
+    print(f"\n  RSA private key: {RSA_PRIVATE_KEY_FILE}")
     print()
     print("  Next steps (library usage):")
     print("    import pypowerwall")
