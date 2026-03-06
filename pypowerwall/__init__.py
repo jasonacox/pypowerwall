@@ -183,7 +183,7 @@ class Powerwall(object):
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
-        self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r+wifi fallback
+        self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r wifi fallback
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -262,12 +262,10 @@ class Powerwall(object):
                             log.debug("Derived customer password from gw_pwd (last 5 characters)")
                         if not pw:
                             raise ValueError("v1r mode requires password or gw_pwd")
-                        # v1r+wifi mode when gw_pwd is provided alongside rsa_key_path
+                        self.tedapi_mode = "v1r"
                         if self.gw_pwd:
-                            self.tedapi_mode = "v1r+wifi"
-                            log.debug("TEDAPI ** v1r+wifi **")
+                            log.debug("TEDAPI ** v1r (wifi fallback available) **")
                         else:
-                            self.tedapi_mode = "v1r"
                             log.debug("TEDAPI ** v1r **")
                         self.client = PyPowerwallTEDAPI(
                             gw_pwd=self.gw_pwd or "",

@@ -312,11 +312,9 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 | Multi-PW follower queries | Yes | Yes |
 | LAN control (reserve/mode/grid) | No | Yes |
 
-#### v1r+WiFi Hybrid Mode
+#### v1r WiFi Fallback
 
-When both the wired LAN (v1r) and WiFi TEDAPI connections are available, pyPowerwall can combine them into a hybrid transport. This is automatically enabled when the proxy detects both transports. The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`).
-
-Hybrid mode uses the fastest available transport for each request and provides redundancy — if one transport is temporarily unavailable, the other continues serving data.
+When both the wired LAN (v1r) and WiFi TEDAPI connections are available, pyPowerwall transparently uses WiFi as a fallback transport for follower queries. This is automatically enabled when `PW_GW_PWD` is set alongside the v1r configuration. The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`), and the mode string dynamically reflects what's active (e.g., `Local (v1r+wifi+control)`).
 
 #### LAN Control (v1r)
 

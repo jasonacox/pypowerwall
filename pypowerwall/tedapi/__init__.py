@@ -856,7 +856,7 @@ class TEDAPI:
                     log.debug("v1r: Skipping follower %s (no WiFi session)", pw_din)
                     continue
                 use_wifi = True
-                log.debug("v1r+wifi: Querying follower %s via WiFi", pw_din)
+                log.debug("v1r: Querying follower %s via WiFi", pw_din)
             # Fetch Device ComponentsQuery from each Powerwall
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -1037,7 +1037,7 @@ class TEDAPI:
                 log.debug("v1r: Cannot query follower battery block %s (no WiFi session)", din)
                 return None
             use_wifi = True
-            log.debug("v1r+wifi: Querying follower battery block %s via WiFi", din)
+            log.debug("v1r: Querying follower battery block %s via WiFi", din)
 
         # Check Cache BEFORE acquiring lock
         if not force and din in self.pwcachetime:
@@ -1130,7 +1130,7 @@ class TEDAPI:
         return session
 
     def _init_wifi_session(self, gw_pwd: str):
-        """Initialize WiFi TEDAPI session for follower queries in v1r+wifi mode."""
+        """Initialize WiFi TEDAPI session for follower queries in v1r mode."""
         session = requests.Session()
         if self.poolmaxsize > 0:
             retries = urllib3.Retry(
@@ -1169,7 +1169,7 @@ class TEDAPI:
 
     def _post_tedapi_wifi(self, pb_bytes: bytes, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
         """
-        POST protobuf bytes via WiFi TEDAPI (used for follower queries in v1r+wifi mode).
+        POST protobuf bytes via WiFi TEDAPI (used for follower queries in v1r mode).
 
         Args:
             pb_bytes: Serialized protobuf payload (full tedapi_pb2.Message).

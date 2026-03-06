@@ -852,7 +852,18 @@ else:
         proxystats["pw3"] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
     # Set mode string with transport detail
-    proxystats["mode"] = f"Local ({pw.tedapi_mode})" if pw.tedapi else "Local"
+    def build_mode_string(control=False):
+        """Build mode display string from active transports."""
+        if not pw.tedapi:
+            return "Local"
+        parts = [pw.tedapi_mode]
+        tedapi = pw.tedapi
+        if getattr(tedapi, 'v1r', False) and getattr(tedapi, 'wifi_session', None):
+            parts.append("wifi")
+        if control:
+            parts.append("control")
+        return f"Local ({'+'.join(parts)})"
+    proxystats["mode"] = build_mode_string()
 
 pw_control = None
 if control_secret:
@@ -884,7 +895,7 @@ if control_secret:
             log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
         # Update mode string to include control transport
         if not pw.cloudmode and not pw.fleetapi and pw.tedapi:
-            proxystats["mode"] = f"Local ({pw.tedapi_mode}+control)"
+            proxystats["mode"] = build_mode_string(control=True)
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = None
