@@ -277,6 +277,95 @@ class TEDAPIv1r:
 
         return None
 
+    def write_config_v1r(self, din: str, updates: dict) -> bool:
+        """
+        Write config.json via v1r using FileStore updateFileRequest (read-modify-write).
+
+        1. Read current config via readFileRequest to get blob + hash
+        2. Apply updates (dotted-path keys) to the config dict
+        3. Write back via updateFileRequest with the original hash (optimistic lock)
+
+        Args:
+            din: Device DIN
+            updates: dict of dotted paths to values, e.g. {'site_info.backup_reserve_percent': 5}
+        Returns:
+            True on success, False on error.
+        """
+        # Step 1: Read current config + hash
+        msg = combined_pb2.Message()
+        msg.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+        msg.message.sender.authorizedClient = 1
+        msg.message.recipient.din = din
+        msg.message.filestore.readFileRequest.domain = combined_pb2.FILE_STORE_API_DOMAIN_CONFIG_JSON
+        msg.message.filestore.readFileRequest.name = 'config.json'
+
+        envelope_bytes = msg.message.SerializeToString()
+        inner = self.post_v1r(envelope_bytes, din)
+        if not inner:
+            log.error("write_config_v1r: failed to read current config")
+            return False
+
+        # Parse response to get blob + hash
+        try:
+            resp_envelope = combined_pb2.MessageEnvelope()
+            resp_envelope.ParseFromString(inner)
+            if not resp_envelope.HasField('filestore'):
+                log.error("write_config_v1r: no filestore in response")
+                return False
+            blob = resp_envelope.filestore.readFileResponse.file.blob
+            config_hash = resp_envelope.filestore.readFileResponse.hash
+            config = json.loads(blob.decode('utf-8'))
+        except Exception as e:
+            log.error(f"write_config_v1r: failed to parse config response: {e}")
+            return False
+
+        # Step 2: Apply updates
+        for dotted_path, value in updates.items():
+            keys = dotted_path.split('.')
+            d = config
+            for key in keys[:-1]:
+                if key not in d or not isinstance(d[key], dict):
+                    d[key] = {}
+                d = d[key]
+            d[keys[-1]] = value
+        log.debug(f"write_config_v1r: applying updates {updates}")
+
+        # Step 3: Write back via updateFileRequest
+        write_msg = combined_pb2.Message()
+        write_msg.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+        write_msg.message.sender.authorizedClient = 1
+        write_msg.message.recipient.din = din
+        update_req = write_msg.message.filestore.updateFileRequest
+        update_req.domain = combined_pb2.FILE_STORE_API_DOMAIN_CONFIG_JSON
+        update_req.file.name = 'config.json'
+        update_req.file.blob = json.dumps(config).encode('utf-8')
+        update_req.hash = config_hash
+
+        write_envelope = write_msg.message.SerializeToString()
+        write_inner = self.post_v1r(write_envelope, din)
+        if not write_inner:
+            log.error("write_config_v1r: failed to write config")
+            return False
+
+        # Parse write response
+        try:
+            write_resp = combined_pb2.MessageEnvelope()
+            write_resp.ParseFromString(write_inner)
+            if write_resp.HasField('filestore'):
+                # updateFileResponse means success
+                log.info(f"write_config_v1r: config updated successfully: {list(updates.keys())}")
+                return True
+            # Check for error
+            if write_resp.HasField('error'):
+                log.error(f"write_config_v1r: error response: {write_resp.error}")
+                return False
+        except Exception as e:
+            log.error(f"write_config_v1r: failed to parse write response: {e}")
+            return False
+
+        log.error("write_config_v1r: unexpected response")
+        return False
+
     # ── Standard API (Bearer token) ──────────────────────────────────
 
     def api_get(self, path: str) -> Optional[dict]:

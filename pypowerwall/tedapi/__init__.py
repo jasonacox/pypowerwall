@@ -353,6 +353,33 @@ class TEDAPI:
                 data = None
         return data
 
+    def _write_config(self, updates: dict) -> bool:
+        """
+        Write config.json via v1r filestore updateFileRequest (read-modify-write).
+
+        Args:
+            updates: dict of dotted paths to values, e.g. {'site_info.backup_reserve_percent': 5}
+        Returns:
+            True on success, False on error.
+        """
+        if not self.v1r or not self.v1r_transport:
+            log.error("_write_config requires v1r transport")
+            return False
+        if not self.din:
+            if not self.connect():
+                log.error("Not connected - unable to write config")
+                return False
+        try:
+            result = self.v1r_transport.write_config_v1r(self.din, updates)
+            if result:
+                # Invalidate config cache
+                self.pwcache.pop("config", None)
+                self.pwcachetime.pop("config", None)
+                return True
+            return False
+        except Exception as e:
+            log.error(f"Error writing config: {e}")
+            return False
 
     @uses_api_lock
     def get_status(self, self_function=None, force=False) -> Optional[Dict[Any, Any]]:
@@ -825,8 +852,8 @@ class TEDAPI:
             is_follower = (pw_din != self.din)
             use_wifi = False
             if self.v1r and is_follower:
-                if not self.wifi_session or not self.wifi_available:
-                    log.debug("v1r: Skipping follower %s (WiFi fallback not available)", pw_din)
+                if not self.wifi_session:
+                    log.debug("v1r: Skipping follower %s (no WiFi session)", pw_din)
                     continue
                 use_wifi = True
                 log.debug("v1r+wifi: Querying follower %s via WiFi", pw_din)
@@ -1006,8 +1033,8 @@ class TEDAPI:
         # v1r cannot route queries to follower Powerwalls — use WiFi fallback
         use_wifi = False
         if self.v1r and din != self.din:
-            if not self.wifi_session or not self.wifi_available:
-                log.debug("v1r: Cannot query follower battery block %s (WiFi fallback not available)", din)
+            if not self.wifi_session:
+                log.debug("v1r: Cannot query follower battery block %s (no WiFi session)", din)
                 return None
             use_wifi = True
             log.debug("v1r+wifi: Querying follower battery block %s via WiFi", din)
@@ -1158,6 +1185,13 @@ class TEDAPI:
             remaining = self.wifi_cooldown - time.time()
             log.debug("WiFi cooldown active (%.0fs remaining), skipping", remaining)
             return None
+        # Re-test WiFi if previously unavailable and cooldown has expired
+        if not self.wifi_available:
+            self._test_wifi_path()
+            if not self.wifi_available:
+                # Still down — set another cooldown
+                self.wifi_cooldown = time.time() + 60
+                return None
         url = f'https://{self.wifi_host}{url_suffix}'
         try:
             r = self.wifi_session.post(url, data=pb_bytes, timeout=self.timeout)

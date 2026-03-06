@@ -677,7 +677,7 @@ class Powerwall(object):
             percent = float(data['backup_reserve_percent'])
             if scale:
                 # Get percentage based on Tesla App scale
-                percent = float((percent / 0.95) - (5 / 0.95))
+                percent = max(0, float((percent / 0.95) - (5 / 0.95)))
             return percent
         return None
 

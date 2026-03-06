@@ -760,7 +760,37 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return self.tedapi.vitals()
 
     def post_api_operation(self, **kwargs):
-        log.error("No support for TEDAPI POST APIs.")
+        """Set operation mode and/or backup reserve via LAN config write."""
+        if not self.tedapi.v1r:
+            log.error("post_api_operation requires v1r transport")
+            return None
+        payload = kwargs.get('payload', {})
+        if not payload:
+            return None
+        updates = {}
+        if 'backup_reserve_percent' in payload:
+            level = payload['backup_reserve_percent']
+            if level is False:
+                level = 0
+            updates['site_info.backup_reserve_percent'] = level
+        if 'real_mode' in payload:
+            updates['default_real_mode'] = payload['real_mode']
+        if not updates:
+            return {"error": "No valid operation parameters"}
+        if self.tedapi._write_config(updates):
+            result = {}
+            if 'site_info.backup_reserve_percent' in updates:
+                result['set_backup_reserve_percent'] = {
+                    'backup_reserve_percent': updates['site_info.backup_reserve_percent'],
+                    'result': {'response': {'Message': 'Backup reserve updated', 'Code': 200}}
+                }
+            if 'default_real_mode' in updates:
+                result['set_operation'] = {
+                    'real_mode': updates['default_real_mode'],
+                    'result': {'response': {'Message': 'Operation mode updated', 'Code': 200}}
+                }
+            return result
+        return {"error": "Failed to write config"}
 
 
 if __name__ == "__main__":

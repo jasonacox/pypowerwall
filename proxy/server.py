@@ -860,6 +860,9 @@ if control_secret:
     try:
         if pw.cloudmode or pw.fleetapi:
             pw_control = pw
+        elif pw.tedapi and pw.tedapi.v1r:
+            pw_control = pw
+            log.info("Control Mode: Using TEDapi LAN control (v1r filestore)")
         else:
             pw_control = pypowerwall.Powerwall(
                 "",
@@ -875,7 +878,10 @@ if control_secret:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = ""
     if pw_control:
-        log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
+        if pw.tedapi and pw.tedapi.v1r and not pw.cloudmode and not pw.fleetapi:
+            log.info(f"Control Mode Enabled: LAN Mode ({pw.tedapi_mode}+control)")
+        else:
+            log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
         # Update mode string to include control transport
         if not pw.cloudmode and not pw.fleetapi and pw.tedapi:
             proxystats["mode"] = f"Local ({pw.tedapi_mode}+control)"
@@ -924,13 +930,20 @@ def get_transport_health():
             "status": "ok" if tedapi.din else "unavailable",
             "host": tedapi.gw_ip,
         }
-    # Cloud control transport
+    # Control transport
     if pw_control:
-        transports["cloud_control"] = {
-            "active": True,
-            "status": "ok",
-            "mode": getattr(pw_control, 'mode', 'unknown'),
-        }
+        if tedapi and tedapi.v1r:
+            transports["lan_control"] = {
+                "active": True,
+                "status": "ok",
+                "mode": "v1r_filestore",
+            }
+        else:
+            transports["cloud_control"] = {
+                "active": True,
+                "status": "ok",
+                "mode": getattr(pw_control, 'mode', 'unknown'),
+            }
     elif control_secret:
         transports["cloud_control"] = {"active": False, "status": "failed"}
     return transports
@@ -983,8 +996,9 @@ class Handler(BaseHTTPRequestHandler):
                     message = '{"error": "Control Command Error: Invalid Request"}'
                     log.error(f"Control Command Error: {er}")
                 if not message:
-                    # Check if unable to connect to cloud
-                    if pw_control.client is None:
+                    # Check if unable to connect (cloud mode needs client, tedapi needs tedapi)
+                    has_tedapi_control = pw.tedapi and pw.tedapi.v1r
+                    if not has_tedapi_control and pw_control.client is None:
                         message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
                         log.error(
                             "Control Command Error: Unable to connect to cloud mode - Run Setup"
