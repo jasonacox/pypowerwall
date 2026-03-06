@@ -310,6 +310,73 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 | Component queries (PCH/BMS/HVP) | Yes | Yes |
 | Solar string data | Yes | Yes |
 | Multi-PW follower queries | Yes | Yes |
+| LAN control (reserve/mode/grid) | No | Yes |
+
+#### v1r+WiFi Hybrid Mode
+
+When both the wired LAN (v1r) and WiFi TEDAPI connections are available, pyPowerwall can combine them into a hybrid transport. This is automatically enabled when the proxy detects both transports. The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`).
+
+Hybrid mode uses the fastest available transport for each request and provides redundancy — if one transport is temporarily unavailable, the other continues serving data.
+
+#### LAN Control (v1r)
+
+In v1r mode, pyPowerwall can control the Powerwall directly over the wired LAN without requiring cloud access. Control commands are sent as config updates via the v1r filestore `updateFileRequest` mechanism (read-modify-write with optimistic locking).
+
+Supported control operations:
+
+| Control | Method | Values |
+|---------|--------|--------|
+| Backup reserve | `set_reserve(level)` | 0-100 (percentage) |
+| Operation mode | `set_mode(mode)` | `self_consumption`, `backup` |
+| Grid charging | `set_grid_charging(enable)` | `True` / `False` |
+| Grid export | `set_grid_export(mode)` | `battery_ok`, `pv_only`, `never` |
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(
+    host="10.42.1.40",
+    gw_pwd="ABCDEXXXXX",
+    rsa_key_path="/path/to/tedapi_rsa_private.pem"
+)
+
+# Read current settings
+print(pw.get_mode())            # "self_consumption"
+print(pw.get_reserve())         # 20
+print(pw.get_grid_charging())   # False
+print(pw.get_grid_export())     # "pv_only"
+
+# Set new values
+pw.set_reserve(30)
+pw.set_mode("backup")
+pw.set_grid_charging(True)
+pw.set_grid_export("battery_ok")
+```
+
+For proxy usage, set `PW_CONTROL_SECRET` and use the `/control/*` endpoints — no cloud setup needed when using v1r mode:
+
+```env
+PW_HOST=10.42.1.40
+PW_GW_PWD=ABCDEXXXXX
+PW_RSA_KEY_PATH=/app/.auth/tedapi_rsa_private.pem
+PW_CONTROL_SECRET=YourSecretToken
+```
+
+```bash
+# Read settings
+curl http://localhost:8675/control/mode
+curl http://localhost:8675/control/reserve
+curl http://localhost:8675/control/grid_charging
+curl http://localhost:8675/control/grid_export
+
+# Set values
+curl -X POST -d "value=backup&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
+curl -X POST -d "value=30&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
+curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_charging
+curl -X POST -d "value=pv_only&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_export
+```
+
+> **Note:** LAN control requires v1r mode (RSA key registered). Basic LAN mode (no RSA key) does not support control operations. WiFi TEDAPI (mode 4) does not support LAN control — use FleetAPI cloud control instead.
 
 ### FreeBSD Install
 
