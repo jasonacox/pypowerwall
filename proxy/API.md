@@ -158,7 +158,7 @@ curl -X POST -d 'value=cancel&token=<secret>' http://localhost:8675/control/max_
 
 POST success responses return a JSON object with the updated field, or an error object on failure. GET requests return the current setting. Missing or invalid `token` returns an authorization error.
 
-Max backup sets the Powerwall reserve to 100% for the specified duration (like Storm Watch in the Tesla app). It uses the TEGMessages protobuf command pathway over v1r LAN — only available in v1r mode. The gateway requires cancelling any existing event before scheduling a new one; `schedule` does this automatically. Expired events are auto-cleaned on GET queries.
+Max backup sets the Powerwall reserve to 100% for the specified duration (like Storm Watch in the Tesla app). It uses the TEGMessages protobuf command pathway over v1r LAN — only available in v1r mode. The gateway requires cancelling any existing event before scheduling a new one; `schedule` does this automatically. The gateway leaves expired events lingering; the proxy automatically cancels them when detected on GET (mirroring Tesla app behavior).
 
 Mode clarification:
 - `self_consumption` / `autonomous`: Maximize local solar usage (firmware may use either term; treat as equivalent).
