@@ -81,7 +81,8 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
 class PyPowerwallTEDAPI(PyPowerwallBase):
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
-                 v1r: bool = False, password: str = None, rsa_key_path: str = None) -> None:
+                 v1r: bool = False, password: str = None, rsa_key_path: str = None,
+                 wifi_host: str = None) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout
@@ -101,7 +102,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.tedapi = TEDAPI(gw_pwd=self.gw_pwd, debug=self.debug, host=self.host,
                              timeout=self.timeout, pwcacheexpire=self.pwcacheexpire,
                              pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
-                             v1r=v1r, password=password, rsa_key_path=rsa_key_path)
+                             v1r=v1r, password=password, rsa_key_path=rsa_key_path,
+                             wifi_host=wifi_host)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")

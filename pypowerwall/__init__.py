@@ -132,7 +132,7 @@ class Powerwall(object):
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
-                 rsa_key_path=None):
+                 rsa_key_path=None, wifi_host=None):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -183,6 +183,7 @@ class Powerwall(object):
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
+        self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r+wifi fallback
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -261,15 +262,22 @@ class Powerwall(object):
                             log.debug("Derived customer password from gw_pwd (last 5 characters)")
                         if not pw:
                             raise ValueError("v1r mode requires password or gw_pwd")
-                        log.debug("TEDAPI ** v1r **")
-                        self.tedapi_mode = "v1r"
+                        # v1r+wifi mode when gw_pwd is provided alongside rsa_key_path
+                        if self.gw_pwd:
+                            self.tedapi_mode = "v1r+wifi"
+                            log.debug("TEDAPI ** v1r+wifi **")
+                        else:
+                            self.tedapi_mode = "v1r"
+                            log.debug("TEDAPI ** v1r **")
                         self.client = PyPowerwallTEDAPI(
+                            gw_pwd=self.gw_pwd or "",
                             pwcacheexpire=self.pwcacheexpire,
                             pwconfigexpire=self.pwcacheexpire,
                             timeout=self.timeout, host=self.host,
                             poolmaxsize=self.poolmaxsize,
                             v1r=True, password=pw,
-                            rsa_key_path=self.rsa_key_path)
+                            rsa_key_path=self.rsa_key_path,
+                            wifi_host=self.wifi_host)
                     elif not self.password and self.gw_pwd:  # Full TEDAPI WiFi (mode 4)
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"

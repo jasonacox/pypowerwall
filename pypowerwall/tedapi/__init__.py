@@ -135,7 +135,8 @@ def decompress_response(content: bytes) -> bytes:
 class TEDAPI:
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
-                 v1r: bool = False, password: str = None, rsa_key_path: str = None) -> None:
+                 v1r: bool = False, password: str = None, rsa_key_path: str = None,
+                 wifi_host: str = None) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication."""
         self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
@@ -150,6 +151,12 @@ class TEDAPI:
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
         self.v1r = v1r
         self.v1r_transport = None
+        # WiFi fallback for v1r mode (follower queries)
+        self.wifi_host = wifi_host or GW_IP
+        self.wifi_session = None
+        self.wifi_available = False
+        self.wifi_cooldown = 0  # timestamp when cooldown expires
+        self.wifi_last_success = 0  # timestamp of last successful WiFi call
         if v1r:
             if not password or not rsa_key_path:
                 raise ValueError("v1r mode requires password and rsa_key_path")
@@ -158,7 +165,10 @@ class TEDAPI:
                 host=host, password=password, rsa_key_path=rsa_key_path,
                 timeout=timeout, poolmaxsize=poolmaxsize
             )
-            self.gw_pwd = ""
+            self.gw_pwd = gw_pwd or ""
+            # If gw_pwd is provided alongside v1r, enable WiFi fallback for followers
+            if gw_pwd:
+                self._init_wifi_session(gw_pwd)
         else:
             if not gw_pwd:
                 raise ValueError("Missing gw_pwd")
@@ -811,12 +821,15 @@ class TEDAPI:
             battery_type = battery['type']
             if "Powerwall3" not in battery_type:
                 continue
-            # v1r cannot route queries to follower Powerwalls — the gateway
-            # returns leader data regardless of recipient DIN. Skip followers
-            # to prevent duplicate vitals entries.
-            if self.v1r and pw_din != self.din:
-                log.debug("v1r: Skipping follower %s (per-device queries not yet supported)", pw_din)
-                continue
+            # Determine if this is a follower that needs WiFi fallback
+            is_follower = (pw_din != self.din)
+            use_wifi = False
+            if self.v1r and is_follower:
+                if not self.wifi_session or not self.wifi_available:
+                    log.debug("v1r: Skipping follower %s (WiFi fallback not available)", pw_din)
+                    continue
+                use_wifi = True
+                log.debug("v1r+wifi: Querying follower %s via WiFi", pw_din)
             # Fetch Device ComponentsQuery from each Powerwall
             pb = tedapi_pb2.Message()
             pb.message.deliveryChannel = 1
@@ -836,9 +849,13 @@ class TEDAPI:
                 pb.tail.value = 2
                 pb.message.sender.din = din  # DIN of Primary Powerwall 3 / System
                 url_suffix = f'/tedapi/device/{pw_din}/v1'
-            api_response = self._post_tedapi(pb.SerializeToString(), din=pw_din, url_suffix=url_suffix)
+            if use_wifi:
+                # WiFi fallback for follower — use WiFi session (standard protobuf response)
+                api_response = self._post_tedapi_wifi(pb.SerializeToString(), url_suffix=url_suffix)
+            else:
+                api_response = self._post_tedapi(pb.SerializeToString(), din=pw_din, url_suffix=url_suffix)
             if api_response is not None:
-                if self.v1r:
+                if self.v1r and not use_wifi:
                     payload = self._parse_v1r_query_response(api_response)
                 else:
                     tedapi = tedapi_pb2.Message()
@@ -986,10 +1003,14 @@ class TEDAPI:
         if not din:
             log.error("No DIN specified - Unable to get battery block")
             return None
-        # v1r cannot route queries to follower Powerwalls
+        # v1r cannot route queries to follower Powerwalls — use WiFi fallback
+        use_wifi = False
         if self.v1r and din != self.din:
-            log.debug("v1r: Cannot query follower battery block %s (not yet supported)", din)
-            return None
+            if not self.wifi_session or not self.wifi_available:
+                log.debug("v1r: Cannot query follower battery block %s (WiFi fallback not available)", din)
+                return None
+            use_wifi = True
+            log.debug("v1r+wifi: Querying follower battery block %s via WiFi", din)
 
         # Check Cache BEFORE acquiring lock
         if not force and din in self.pwcachetime:
@@ -1030,11 +1051,15 @@ class TEDAPI:
             pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
             pb.tail.value = 2
             try:
-                response = self._post_tedapi(pb.SerializeToString(), din=din,
-                                             url_suffix=f'/tedapi/device/{din}/v1')
+                url_suffix = f'/tedapi/device/{din}/v1'
+                if use_wifi:
+                    response = self._post_tedapi_wifi(pb.SerializeToString(), url_suffix=url_suffix)
+                else:
+                    response = self._post_tedapi(pb.SerializeToString(), din=din,
+                                                 url_suffix=url_suffix)
                 if response is None:
                     return None
-                if self.v1r:
+                if self.v1r and not use_wifi:
                     # v1r battery block config — try parsing as query response first
                     payload_text = self._parse_v1r_query_response(response)
                     if payload_text:
@@ -1077,6 +1102,83 @@ class TEDAPI:
         session.headers.update({'Content-type': 'application/octet-string'})
         return session
 
+    def _init_wifi_session(self, gw_pwd: str):
+        """Initialize WiFi TEDAPI session for follower queries in v1r+wifi mode."""
+        session = requests.Session()
+        if self.poolmaxsize > 0:
+            retries = urllib3.Retry(
+                total=2,
+                backoff_factor=0.5,
+                status_forcelist=RETRY_FORCE_CODES,
+                raise_on_status=False
+            )
+            adapter = HTTPAdapter(max_retries=retries, pool_connections=self.poolmaxsize, pool_maxsize=self.poolmaxsize, pool_block=True)
+            session.mount("https://", adapter)
+        else:
+            session.headers.update({'Connection': 'close'})
+        session.verify = False
+        session.auth = ('Tesla_Energy_Device', gw_pwd)
+        session.headers.update({'Content-type': 'application/octet-string'})
+        self.wifi_session = session
+        log.debug(f"WiFi fallback session initialized for {self.wifi_host}")
+
+    def _test_wifi_path(self):
+        """Test WiFi TEDAPI connectivity by fetching DIN. Non-blocking."""
+        if not self.wifi_session:
+            return
+        try:
+            url = f'https://{self.wifi_host}/tedapi/din'
+            r = self.wifi_session.get(url, timeout=self.timeout)
+            if r.status_code == HTTPStatus.OK:
+                self.wifi_available = True
+                self.wifi_last_success = time.time()
+                log.info("WiFi follower path verified (%s)", self.wifi_host)
+            else:
+                self.wifi_available = False
+                log.warning("WiFi path returned status %d, followers will be skipped", r.status_code)
+        except Exception as e:
+            self.wifi_available = False
+            log.warning("WiFi path unreachable (%s), followers will be skipped: %s", self.wifi_host, e)
+
+    def _post_tedapi_wifi(self, pb_bytes: bytes, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
+        """
+        POST protobuf bytes via WiFi TEDAPI (used for follower queries in v1r+wifi mode).
+
+        Args:
+            pb_bytes: Serialized protobuf payload (full tedapi_pb2.Message).
+            url_suffix: URL suffix (e.g., '/tedapi/v1' or '/tedapi/device/{din}/v1')
+
+        Returns:
+            Raw response content bytes, or None on error.
+        """
+        if not self.wifi_session:
+            return None
+        # Check WiFi cooldown (60s after failure)
+        if self.wifi_cooldown > time.time():
+            remaining = self.wifi_cooldown - time.time()
+            log.debug("WiFi cooldown active (%.0fs remaining), skipping", remaining)
+            return None
+        url = f'https://{self.wifi_host}{url_suffix}'
+        try:
+            r = self.wifi_session.post(url, data=pb_bytes, timeout=self.timeout)
+            if r.status_code in BUSY_CODES:
+                log.warning("WiFi TEDAPI rate limited, activating 60s cooldown")
+                self.wifi_cooldown = time.time() + 60
+                return None
+            if r.status_code != HTTPStatus.OK:
+                log.error("WiFi TEDAPI error for %s: %s", url_suffix, r.status_code)
+                self.wifi_cooldown = time.time() + 60
+                self.wifi_available = False
+                return None
+            self.wifi_available = True
+            self.wifi_last_success = time.time()
+            return decompress_response(r.content)
+        except Exception as e:
+            log.error("WiFi TEDAPI request failed: %s", e)
+            self.wifi_cooldown = time.time() + 60
+            self.wifi_available = False
+            return None
+
     def connect(self):
         """Connect to the Powerwall Gateway and retrieve the DIN."""
         if self.v1r:
@@ -1113,6 +1215,9 @@ class TEDAPI:
                 log.error("v1r: Failed to get DIN")
                 return None
             log.debug(f"v1r: Connected, DIN={self.din}")
+            # Test WiFi fallback path if configured
+            if self.wifi_session:
+                self._test_wifi_path()
         except Exception as e:
             log.error(f"v1r: Connection error: {e}")
         return self.din
