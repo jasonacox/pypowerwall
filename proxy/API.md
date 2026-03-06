@@ -93,6 +93,7 @@ curl "http://localhost:8675/csv/v2?headers"
 | `/control/mode`         | Get/set battery mode (POST/GET)                  |
 | `/control/grid_charging`| Get/set grid charging enable (POST/GET)          |
 | `/control/grid_export`  | Get/set grid export policy (POST/GET)            |
+| `/control/max_backup`   | Schedule/cancel/query max backup event (POST/GET, v1r only) |
 
 > **Note:** Control endpoints require `PW_CONTROL_SECRET` to be set. See [Control Examples](#control-examples) below.
 
@@ -116,6 +117,7 @@ Supported control values:
 - Mode: `self_consumption`, `backup`, `autonomous`, `time_of_use`
 - Grid Charging: `true` or `false`
 - Grid Export: `battery_ok`, `pv_only`, `never`
+- Max Backup: duration in seconds (min 60), or `cancel` to stop (v1r only)
 
 ### Control Examples
 
@@ -143,9 +145,20 @@ curl 'http://localhost:8675/control/grid_export?token=<secret>'
 
 # Set grid export policy (options: battery_ok, pv_only, never)
 curl -X POST -d 'value=pv_only&token=<secret>' http://localhost:8675/control/grid_export
+
+# Get max backup event status (v1r only)
+curl http://localhost:8675/control/max_backup
+
+# Schedule max backup for 1 hour (v1r only)
+curl -X POST -d 'value=3600&token=<secret>' http://localhost:8675/control/max_backup
+
+# Cancel max backup (v1r only)
+curl -X POST -d 'value=cancel&token=<secret>' http://localhost:8675/control/max_backup
 ```
 
 POST success responses return a JSON object with the updated field, or an error object on failure. GET requests return the current setting. Missing or invalid `token` returns an authorization error.
+
+Max backup sets the Powerwall reserve to 100% for the specified duration (like Storm Watch in the Tesla app). It uses the TEGMessages protobuf command pathway over v1r LAN — only available in v1r mode. The gateway requires cancelling any existing event before scheduling a new one; `schedule` does this automatically. Expired events are auto-cleaned on GET queries.
 
 Mode clarification:
 - `self_consumption` / `autonomous`: Maximize local solar usage (firmware may use either term; treat as equivalent).
@@ -317,6 +330,18 @@ Sample JSON Snippets:
 // POST /control/reserve invalid token
 {"error": "Unauthorized"}
 
+// GET /control/max_backup (active event)
+{"manual_backup": {"start_time": 1772813197, "duration_seconds": 3600, "end_time": 1772816797, "active": true, "priority": 18446744073709551615}, "backup_events": []}
+
+// GET /control/max_backup (no active event)
+{"manual_backup": null, "backup_events": []}
+
+// POST /control/max_backup schedule success
+{"max_backup": "Scheduled for 3600 seconds"}
+
+// POST /control/max_backup cancel success
+{"max_backup": "Cancelled"}
+
 // /fans/pw
 {"FAN1_actual": 1180, "FAN1_target": 1200, "FAN2_actual": 1175, "FAN2_target": 1200}
 ```
@@ -332,4 +357,4 @@ For configuration options, see [proxy/README.md](https://github.com/jasonacox/py
 - For more details, see the main project [README.md](https://github.com/jasonacox/pypowerwall/blob/main/README.md).
 
 ### API Changes
-Refer to `proxy/RELEASE.md` for history (e.g., t82 added `/control/grid_charging` & `/control/grid_export`).
+Refer to `proxy/RELEASE.md` for history (e.g., t82 added `/control/grid_charging` & `/control/grid_export`, t89 added `/control/max_backup`).

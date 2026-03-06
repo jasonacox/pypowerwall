@@ -347,11 +347,18 @@ curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/cont
 # Set Grid Export (battery_ok, pv_only, or never)
 curl -X POST -d "value=battery_ok&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_export
 
+# Schedule Max Backup for 1 hour (v1r only - sets reserve to 100%)
+curl -X POST -d "value=3600&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
+
+# Cancel Max Backup (v1r only)
+curl -X POST -d "value=cancel&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
+
 # Read Settings
 curl http://localhost:8675/control/mode
 curl http://localhost:8675/control/reserve
 curl http://localhost:8675/control/grid_charging
 curl http://localhost:8675/control/grid_export
+curl http://localhost:8675/control/max_backup
 ```
 
 ## Performance Testing

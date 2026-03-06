@@ -349,6 +349,11 @@ pw.set_reserve(30)
 pw.set_mode("backup")
 pw.set_grid_charging(True)
 pw.set_grid_export("battery_ok")
+
+# Max backup (v1r only) - sets reserve to 100% for duration
+pw.schedule_max_backup(3600)        # 1 hour
+pw.cancel_max_backup()
+print(pw.get_backup_events())       # {"manual_backup": {...}, "backup_events": [...]}
 ```
 
 For proxy usage, set `PW_CONTROL_SECRET` and use the `/control/*` endpoints — no cloud setup needed when using v1r mode:
@@ -366,12 +371,15 @@ curl http://localhost:8675/control/mode
 curl http://localhost:8675/control/reserve
 curl http://localhost:8675/control/grid_charging
 curl http://localhost:8675/control/grid_export
+curl http://localhost:8675/control/max_backup
 
 # Set values
 curl -X POST -d "value=backup&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
 curl -X POST -d "value=30&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_charging
 curl -X POST -d "value=pv_only&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_export
+curl -X POST -d "value=3600&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
+curl -X POST -d "value=cancel&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
 ```
 
 > **Note:** LAN control requires v1r mode (RSA key registered). Basic LAN mode (no RSA key) does not support control operations. WiFi TEDAPI (mode 4) does not support LAN control — use FleetAPI cloud control instead.
