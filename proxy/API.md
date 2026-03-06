@@ -100,6 +100,10 @@ curl "http://localhost:8675/csv/v2?headers"
 
 Control operations are DISABLED by default. To enable, set the environment variable `PW_CONTROL_SECRET` (any non-empty value). All control POST requests must include a `token` parameter matching this secret.
 
+**v1r LAN mode:** Control commands are sent directly over the wired LAN via config file writes — no cloud setup or Tesla account needed. Just set `PW_CONTROL_SECRET` alongside your v1r configuration (`PW_HOST`, `PW_GW_PWD`, `PW_RSA_KEY_PATH`).
+
+**Other modes (WiFi TEDAPI, local, cloud):** Control requires FleetAPI or Cloud API access. Set `PW_EMAIL` and run cloud setup before using control endpoints.
+
 Security guidelines:
 1. Use HTTPS (terminate TLS at a reverse proxy like nginx, Caddy, Traefik) if exposing beyond localhost.
 2. Do not expose the control endpoints publicly unless necessary. Prefer firewall / VPN restrictions.
