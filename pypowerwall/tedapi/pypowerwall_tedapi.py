@@ -793,6 +793,49 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return {"error": "Failed to write config"}
 
 
+    def get_grid_charging(self, force=False) -> Optional[bool]:
+        """Get grid charging status from config."""
+        config = self.tedapi.get_config(force=force)
+        if not isinstance(config, dict):
+            return None
+        disallow = lookup(config, ["site_info", "disallow_charge_from_grid_with_solar_installed"])
+        if disallow is None:
+            return True  # Field absent means not disallowed = charging enabled
+        return not disallow  # True = charging enabled
+
+    def set_grid_charging(self, mode) -> Optional[bool]:
+        """Set grid charging via LAN config write."""
+        if not self.tedapi.v1r:
+            log.error("set_grid_charging requires v1r transport")
+            return None
+        enable = bool(mode)
+        # Config field is inverted: disallow=True means charging disabled
+        updates = {'site_info.disallow_charge_from_grid_with_solar_installed': not enable}
+        if self.tedapi._write_config(updates):
+            return True
+        return None
+
+    def get_grid_export(self, force=False) -> Optional[str]:
+        """Get grid export mode from config."""
+        config = self.tedapi.get_config(force=force)
+        if not isinstance(config, dict):
+            return None
+        return lookup(config, ["site_info", "customer_preferred_export_rule"])
+
+    def set_grid_export(self, mode: str) -> Optional[bool]:
+        """Set grid export mode via LAN config write."""
+        if not self.tedapi.v1r:
+            log.error("set_grid_export requires v1r transport")
+            return None
+        if mode not in ('battery_ok', 'pv_only', 'never'):
+            log.error(f"Invalid grid export mode: {mode}")
+            return None
+        updates = {'site_info.customer_preferred_export_rule': mode}
+        if self.tedapi._write_config(updates):
+            return True
+        return None
+
+
 if __name__ == "__main__":
     import sys
 
