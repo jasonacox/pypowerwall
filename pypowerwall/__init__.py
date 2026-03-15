@@ -880,8 +880,12 @@ class Powerwall(object):
         """
         Get the current grid charging mode
 
+        Note:
+            This function requires FleetAPI or Cloud mode. It is not available
+            in local TEDAPI mode. Returns None if not supported by the current mode.
+
         Returns:
-            True if grid charging is enabled, False if it is disabled
+            True if grid charging is enabled, False if it is disabled, None if unsupported
         """
         return self.client.get_grid_charging()
 
@@ -904,8 +908,12 @@ class Powerwall(object):
         """
         Get the current grid export mode
 
+        Note:
+            This function requires FleetAPI or Cloud mode. It is not available
+            in local TEDAPI mode. Returns None if not supported by the current mode.
+
         Returns:
-            The current grid export mode
+            The current grid export mode, or None if unsupported
         """
         return self.client.get_grid_export()
 

@@ -78,6 +78,8 @@ With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway
 
 Tip: `gw_pwd` is the local Gateway Wi‑Fi password. Leaving `password` empty with `gw_pwd` set will auto‑enable full TEDAPI mode; on PW2/+ you can also combine customer `password`/`email` with `gw_pwd` for a hybrid mode.
 
+> ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode and will return `None` in local TEDAPI mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
+
 In the examples below, change **192.168.0.100** to the IP address of the Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
 
 #### Linux Ubuntu and RPi
