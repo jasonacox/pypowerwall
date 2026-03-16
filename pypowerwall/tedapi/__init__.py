@@ -71,12 +71,6 @@ urllib3.disable_warnings(InsecureRequestWarning)
 # TEDAPI Fixed Gateway IP Address
 GW_IP = "192.168.91.1"
 
-# Sentinel: distinguishes "caller provided no preference" from "caller explicitly passed None"
-# to disable WiFi fallback.  Functions that forward wifi_host should use this as their
-# own default so that an explicit None propagates all the way to TEDAPI without being
-# silently replaced by GW_IP.
-_WIFI_HOST_DEFAULT = object()
-
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
 RETRY_FORCE_CODES: Final[List[int]] = [int(i) for i in [
@@ -143,7 +137,7 @@ class TEDAPI:
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str = None, rsa_key_path: str = None,
-                 wifi_host=_WIFI_HOST_DEFAULT) -> None:
+                 wifi_host: str = None) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication."""
         self.debug = debug
         self.pwcachetime = {}  # holds the cached data timestamps for api
@@ -159,9 +153,8 @@ class TEDAPI:
         self.v1r = v1r
         self.v1r_transport = None
         # WiFi fallback for v1r mode (follower queries).
-        # _WIFI_HOST_DEFAULT means "caller didn't specify; use GW_IP".
-        # Explicit None means "caller wants WiFi fallback disabled".
-        self.wifi_host = GW_IP if wifi_host is _WIFI_HOST_DEFAULT else wifi_host
+        # Only enabled when the caller explicitly provides a wifi_host string.
+        self.wifi_host = wifi_host
         self.wifi_session = None
         self.wifi_available = False
         self.wifi_cooldown = 0  # timestamp when cooldown expires
@@ -175,8 +168,7 @@ class TEDAPI:
                 timeout=timeout, poolmaxsize=poolmaxsize
             )
             self.gw_pwd = gw_pwd or ""
-            # If gw_pwd is provided alongside v1r, enable WiFi fallback for followers
-            # (only when wifi_host is not explicitly disabled via None)
+            # Enable WiFi fallback only when an explicit wifi_host was provided
             if gw_pwd and self.wifi_host:
                 self._init_wifi_session(gw_pwd)
         else:
