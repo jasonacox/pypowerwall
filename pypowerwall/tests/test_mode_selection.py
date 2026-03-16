@@ -37,7 +37,7 @@ class TestV1rPasswordDerivation:
             gw_pwd="ABCDELNDYT",
             rsa_key_path="/tmp/fake_key.pem",
         )
-        assert pw.tedapi_mode == "v1r+wifi"
+        assert pw.tedapi_mode == "v1r"
         # Verify PyPowerwallTEDAPI was called with derived password (last 5 chars)
         mock_clients['tedapi'].assert_called_once()
         call_kwargs = mock_clients['tedapi'].call_args
@@ -65,7 +65,7 @@ class TestV1rPasswordDerivation:
             gw_pwd="ABCDELNDYT",
             rsa_key_path="/tmp/fake_key.pem",
         )
-        assert pw.tedapi_mode == "v1r+wifi"
+        assert pw.tedapi_mode == "v1r"
         call_kwargs = mock_clients['tedapi'].call_args
         assert call_kwargs.kwargs.get('password') == "EXPLICIT"
 
@@ -199,7 +199,7 @@ class TestMode4HybridTEDAPI:
             gw_pwd="ABCDELNDYT",
             rsa_key_path="/tmp/fake_key.pem",
         )
-        assert pw.tedapi_mode == "v1r+wifi"
+        assert pw.tedapi_mode == "v1r"
         mock_clients['tedapi'].assert_called_once()
         mock_clients['local'].assert_not_called()
 
