@@ -104,6 +104,7 @@ from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
 from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
 from pypowerwall.regex import EMAIL_REGEX, HOST_REGEX, IPV4_6_REGEX
+from pypowerwall.tedapi import _WIFI_HOST_DEFAULT
 from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
 
 urllib3.disable_warnings()  # Disable SSL warnings
@@ -132,7 +133,7 @@ class Powerwall(object):
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
-                 rsa_key_path=None, wifi_host=None):
+                 rsa_key_path=None, wifi_host=_WIFI_HOST_DEFAULT):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -263,7 +264,7 @@ class Powerwall(object):
                         if not pw:
                             raise ValueError("v1r mode requires password or gw_pwd")
                         self.tedapi_mode = "v1r"
-                        if self.gw_pwd:
+                        if self.gw_pwd and self.wifi_host is not None:
                             log.debug("TEDAPI ** v1r (wifi fallback available) **")
                         else:
                             log.debug("TEDAPI ** v1r **")
