@@ -1,38 +1,124 @@
-// Tesla tedapi API Protocol Buffer definition (tedapi.proto) 
+// Tesla TEDAPI Protocol Buffer definition
 //
-// Create tedapi_pb2.py for use in projects using the protoc compiler:
+// VERIFIED against APK JavaScript bundle (index.android.bundle)
+// Package: tesla.proto.energy_device.v1
+//
+// This is the GROUND TRUTH extracted from the Tesla One app's
+// protobufjs encode/decode functions. All field numbers verified
+// against uint32() wire tags in the minified JS.
+//
+// Create Python bindings:
 //     protoc --python_out=. tedapi.proto
-// 
-// Author: Jason A. Cox - Date: 22 Nov 2023 - Version: 1.1
+// Or:
+//     python -m grpc_tools.protoc --python_out=. --proto_path=. tedapi.proto
 //
-// For more information see https://github.com/jasonacox/pypowerwall
+// Date: 12 Feb 2026
 
 syntax = "proto3";
 
 package tedapi;
 
-// ***** Message *****
+// ===================================================================
+// Auth Envelope (outermost wrapper for all TEDAPI messages)
+// ===================================================================
+
+message AuthEnvelope {
+  bytes payload = 1;                    // Serialized MessageEnvelope
+  oneof auth {
+    ExternalAuth externalAuth = 2;
+  }
+}
+
+message ExternalAuth {
+  ExternalAuthType type = 1;
+}
+
+enum ExternalAuthType {
+  EXTERNAL_AUTH_TYPE_INVALID = 0;
+  EXTERNAL_AUTH_TYPE_PRESENCE = 1;      // Local network presence auth
+  EXTERNAL_AUTH_TYPE_MTLS = 2;          // Mutual TLS (device-to-device)
+  // 3 is intentionally skipped
+  EXTERNAL_AUTH_TYPE_HERMES_COMMAND = 4; // Cloud/Hermes command auth
+}
+
+// ===================================================================
+// Enums
+// ===================================================================
+
+enum DeliveryChannel {
+  DELIVERY_CHANNEL_INVALID = 0;
+  DELIVERY_CHANNEL_LOCAL_HTTPS = 1;
+  DELIVERY_CHANNEL_HERMES_COMMAND = 2;
+  DELIVERY_CHANNEL_BLE = 3;
+}
+
+enum LocalParticipant {
+  LOCAL_PARTICIPANT_INVALID = 0;
+  LOCAL_PARTICIPANT_INSTALLER = 1;
+  LOCAL_PARTICIPANT_CUSTOMER = 2;
+}
+
+enum TeslaService {
+  TESLA_SERVICE_INVALID = 0;
+  TESLA_SERVICE_COMMAND = 1;
+}
+
+enum AuthorizedClientType {
+  AUTHORIZED_CLIENT_TYPE_INVALID = 0;
+  AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP = 1;
+  AUTHORIZED_CLIENT_TYPE_VEHICLE = 2;
+}
+
+// ===================================================================
+// Top-level Message wrapper
+// ===================================================================
 
 message Message {
   MessageEnvelope message = 1;
   Tail tail = 2;
 }
 
+// ===================================================================
+// MessageEnvelope - the core message structure
+//
+// CRITICAL: field numbers verified against JS uint32() wire tags:
+//   field 4  = uint32(34)  = common
+//   field 5  = uint32(42)  = teg
+//   field 6  = uint32(50)  = wc
+//   field 9  = uint32(74)  = neuriometer
+//   field 10 = uint32(82)  = energysitenet
+//   field 12 = uint32(98)  = authorization
+//   field 15 = uint32(122) = filestore    <-- NOT config, NOT field 17!
+//   field 16 = uint32(130) = graphql      <-- NOT query!
+// ===================================================================
+
 message MessageEnvelope {
-  int32 deliveryChannel = 1;
+  DeliveryChannel deliveryChannel = 1;
   Participant sender = 2;
   Participant recipient = 3;
-  FirmwareType firmware = 4;
-  optional ConfigType config = 15;
-  optional QueryType payload = 16;
+
+  // NO firmware field! NO standalone fields outside this oneof!
+  oneof payload {
+    CommonMessages common = 4;
+    TEGMessages teg = 5;
+    WCMessages wc = 6;
+    // fields 7-8 unused
+    NeurioMeterMessages neuriometer = 9;
+    EnergySiteNetMessages energysitenet = 10;
+    // field 11 unused
+    AuthorizationMessages authorization = 12;
+    // fields 13-14 unused
+    FileStoreMessages filestore = 15;          // DIRECTLY FileStoreMessages, no wrapper!
+    GraphQLMessages graphql = 16;
+  }
 }
 
 message Participant {
   oneof id {
     string din = 1;
-    int32 teslaService = 2;
-    int32 local = 3;
-    int32 authorizedClient = 4;
+    int32 teslaService = 2;                    // TeslaService enum
+    int32 local = 3;                           // LocalParticipant enum (int32 on wire)
+    int32 authorizedClient = 4;                // AuthorizedClientType enum
   }
 }
 
@@ -40,269 +126,667 @@ message Tail {
   int32 value = 1;
 }
 
-// ***** Query = 4 ****
+// ===================================================================
+// CommonMessages (field 4 of MessageEnvelope payload oneof)
+//
+// Contains 45+ request/response pairs. Only error handling and
+// key operations defined here.
+// ===================================================================
 
-message FirmwareType {
-  oneof id {
-    string request = 2;
-    FirmwarePayload system = 3;
+message CommonMessages {
+  oneof message {
+    ErrorResponse errorResponse = 1;
+    CommonAPIGetSystemInfoRequest getSystemInfoRequest = 2;
+    CommonAPIGetSystemInfoResponse getSystemInfoResponse = 3;
+    CommonAPISetLocalSiteConfigRequest setLocalSiteConfigRequest = 4;
+    CommonAPISetLocalSiteConfigResponse setLocalSiteConfigResponse = 5;
+    CommonAPIPerformUpdateRequest performUpdateRequest = 6;
+    CommonAPIPerformUpdateResponse performUpdateResponse = 7;
+    CommonAPIFactoryResetRequest factoryResetRequest = 8;
+    CommonAPIFactoryResetResponse factoryResetResponse = 9;
+    CommonAPIWifiScanRequest wifiScanRequest = 10;
+    CommonAPIWifiScanResponse wifiScanResponse = 11;
+    CommonAPIConfigureWifiRequest configureWifiRequest = 12;
+    CommonAPIConfigureWifiResponse configureWifiResponse = 13;
+    CommonAPICheckForUpdateRequest checkForUpdateRequest = 14;
+    CommonAPICheckForUpdateResponse checkForUpdateResponse = 15;
+    CommonAPIClearUpdateRequest clearUpdateRequest = 16;
+    CommonAPIClearUpdateResponse clearUpdateResponse = 17;
+    CommonAPIDeviceCertRequest deviceCertRequest = 18;
+    CommonAPIDeviceCertResponse deviceCertResponse = 19;
+    CommonAPIConfigureWifiEncryptedRequest configureWifiEncryptedRequest = 20;
+    CommonAPIConfigureWifiEncryptedResponse configureWifiEncryptedResponse = 21;
+    CommonAPIGetNetworkingStatusRequest getNetworkingStatusRequest = 22;
+    CommonAPIGetNetworkingStatusResponse getNetworkingStatusResponse = 23;
+    CommonAPIGetCellularInfoRequest getCellularInfoRequest = 24;
+    CommonAPIGetCellularInfoResponse getCellularInfoResponse = 25;
+    CommonAPIConfigureEthernetRequest configureEthernetRequest = 26;
+    CommonAPIConfigureEthernetResponse configureEthernetResponse = 27;
+    CommonAPIForgetWifiNetworkRequest forgetWifiNetworkRequest = 28;
+    CommonAPIForgetWifiNetworkResponse forgetWifiNetworkResponse = 29;
+    CommonAPICheckInternetRequest checkInternetRequest = 30;
+    CommonAPICheckInternetResponse checkInternetResponse = 31;
+    // fields 32-37: checkForUpdateUrgency, negotiateUpdateLocal, prepareRegistration
   }
 }
 
-message FirmwarePayload {
-  EcuId gateway = 1;
-  string din = 2;
-  FirmwareVersion version = 3;
-  FirmwareFive five = 5;
-  int32 six = 6;
-  DeviceArray wireless = 7;
-  bytes field8 = 8;
-  bytes field9 = 9;
+message ErrorResponse {
+  Status status = 1;
 }
 
-message EcuId {
-    string partNumber = 1;
-    string serialNumber = 2;
+// google.rpc.Status
+message Status {
+  int32 code = 1;
+  string message = 2;
+  // repeated google.protobuf.Any details = 3;  // exists but omitted for simplicity
 }
 
-message FirmwareVersion {
-  string text = 1;
-  bytes githash = 2;
+// Placeholder messages for CommonAPI operations
+message CommonAPIGetSystemInfoRequest {}
+message CommonAPIGetSystemInfoResponse {}
+message CommonAPISetLocalSiteConfigRequest {}
+message CommonAPISetLocalSiteConfigResponse {}
+message CommonAPIPerformUpdateRequest {}
+message CommonAPIPerformUpdateResponse {}
+message CommonAPIFactoryResetRequest {}
+message CommonAPIFactoryResetResponse {}
+message CommonAPICheckForUpdateRequest {}
+message CommonAPICheckForUpdateResponse {}
+message CommonAPIClearUpdateRequest {}
+message CommonAPIClearUpdateResponse {}
+message CommonAPICheckInternetRequest {}
+message CommonAPIForgetWifiNetworkResponse {}
+
+// ===================================================================
+// WiFi messages
+// ===================================================================
+
+message CommonAPIWifiScanRequest {
+  uint32 maxScanDurationS = 1;
+  repeated int32 desiredSecurityTypes = 2;   // packed
+  uint32 maximumTotalAps = 3;
 }
 
-message FirmwareFive {
-  int32 d = 2;
+message CommonAPIWifiScanResponse {
+  repeated WifiNetwork wifiNetworks = 1;
 }
 
-message DeviceArray {
-  repeated DeviceInfo device = 1;
+message WifiNetwork {
+  bytes placeholder = 1;  // structure TBD
 }
 
-message DeviceInfo {
-  StringValue company = 1;
-  StringValue model = 2;
-  StringValue fcc_id = 3;
-  StringValue ic = 4;
+message CommonAPIConfigureWifiRequest {
+  bool enabled = 1;
+  WifiConfig wifiConfig = 2;
 }
 
-// ***** Query = 16 *****
-
-message QueryType {  // 16
-  optional PayloadQuerySend send = 1;
-  optional PayloadString recv = 2;
+message CommonAPIConfigureWifiResponse {
+  WifiConfig wifiConfig = 1;
+  NetworkInterface wifi = 2;
 }
 
-message PayloadQuerySend {  // 1
-  optional int32 num = 1;
-  optional PayloadString payload = 2;
-  optional bytes code = 3;
-  optional StringValue b = 4;
+message CommonAPIConfigureWifiEncryptedRequest {
+  bool enabled = 1;
+  WifiConfig wifiConfig = 2;
+  bytes encryptedPassword = 3;
 }
 
-// ***** Config = 15 *****
-
-message ConfigType { // 15
-  oneof config {
-    PayloadConfigSend send = 1;
-    PayloadConfigRecv recv = 2;
-  }
+message CommonAPIConfigureWifiEncryptedResponse {
+  WifiConfig wifiConfig = 1;
+  NetworkInterface wifi = 2;
+  WifiConfigureResult result = 3;
 }
 
-message PayloadConfigSend { // 1
-  int32 num = 1;
-  string file = 2;
+message CommonAPIDeviceCertRequest {}
+
+message CommonAPIDeviceCertResponse {
+  int32 format = 1;
+  bytes deviceCert = 2;
 }
 
-message PayloadConfigRecv { // 2
-  ConfigString file = 1;
-  bytes code = 2;
+message CommonAPIGetCellularInfoRequest {}
+
+message CommonAPIGetCellularInfoResponse {
+  CellularEID eid = 1;
 }
 
-message ConfigString {
-  string name = 1;
-  string text = 100;
+message CommonAPIForgetWifiNetworkRequest {
+  string ssid = 1;
 }
 
-// ***** General *****
+// ===================================================================
+// Network configuration messages (verified against APK JS bundle)
+//
+// IP addresses are fixed32 (4-byte little-endian unsigned integers)
+// e.g. 192.168.1.1 = bytes [192,168,1,1] = LE uint32 0x0101A8C0
+// Python: struct.unpack('<I', socket.inet_aton(ip))[0]
+// ===================================================================
 
-message PayloadString {
-  int32 value = 1;
-  string text = 2;
+message CommonAPIGetNetworkingStatusRequest {}
+
+message CommonAPIGetNetworkingStatusResponse {
+  WifiConfig wifiConfig = 1;
+  NetworkInterface wifi = 2;
+  NetworkInterface eth = 3;
+  NetworkInterface gsm = 4;
 }
 
-message StringValue {
+message CommonAPIConfigureEthernetRequest {
+  NetworkInterfaceIPv4Config ipv4Config = 1;
+}
+
+message CommonAPIConfigureEthernetResponse {
+  NetworkInterface eth = 1;
+}
+
+message CommonAPICheckInternetResponse {
+  NetworkInterface wifi = 1;
+  NetworkInterface eth = 2;
+  NetworkInterface gsm = 3;
+}
+
+// ===================================================================
+// Network shared types
+// ===================================================================
+
+message NetworkInterfaceIPv4Config {
+  // field 1 unused/reserved
+  bool dhcpEnabled = 2;
+  fixed32 address = 3;              // IP as 4-byte LE uint32
+  fixed32 subnetMask = 4;           // Subnet as 4-byte LE uint32
+  fixed32 gateway = 5;              // Gateway as 4-byte LE uint32
+  repeated fixed32 dns = 6;         // DNS servers, packed repeated
+}
+
+message NetworkInterface {
+  bytes macAddress = 1;
+  bool enabled = 2;
+  bool activeRoute = 3;
+  NetworkInterfaceIPv4Config ipv4Config = 4;
+  NetworkConnectivityStatus connectivityStatus = 5;
+}
+
+message NetworkConnectivityStatus {
+  bool connectedPhysical = 1;
+  bool connectedInternet = 2;
+  bool connectedTesla = 3;
+  // field 4: Rssi rssi (omitted for simplicity)
+  // field 5: Int32Value snr (omitted for simplicity)
+}
+
+message WifiConfig {
+  string ssid = 1;
+  WifiPassword password = 2;
+  WifiNetworkSecurityType securityType = 3;
+}
+
+message WifiPassword {
   string value = 1;
 }
 
-// ***** BASED ON RAW DECODED PAYLOADS *****
+message CellularEID {
+  string value = 1;
+}
+
+enum WifiNetworkSecurityType {
+  WIFI_NETWORK_SECURITY_TYPE_INVALID = 0;
+  WIFI_NETWORK_SECURITY_TYPE_NONE = 1;
+  WIFI_NETWORK_SECURITY_TYPE_DYNAMIC_WEP = 2;
+  WIFI_NETWORK_SECURITY_TYPE_WPA2_PERSONAL = 3;
+  WIFI_NETWORK_SECURITY_TYPE_WPA2_ENTERPRISE = 4;
+}
+
+enum WifiConfigureResult {
+  WIFI_CONFIGURE_RESULT_INVALID = 0;
+  WIFI_CONFIGURE_RESULT_SUCCESS = 1;
+  WIFI_CONFIGURE_RESULT_FAILURE_GENERIC = 2;
+  WIFI_CONFIGURE_RESULT_FAILED_WITH_INVALID_CONFIG = 3;
+  WIFI_CONFIGURE_RESULT_FAILED_TO_CONNECT = 4;
+}
+
+// ===================================================================
+// TEGMessages (field 5) - Tesla Energy Gateway specific
+// ===================================================================
+
+message TEGMessages {
+  // TEG-specific operations (getConfig, setIslandMode, etc.)
+  // 74 field numbers covering 37 request/response pairs
+  bytes placeholder = 1;
+}
+
+// ===================================================================
+// WCMessages (field 6) - Wall Connector
+// ===================================================================
+
+message WCMessages {
+  bytes placeholder = 1;
+}
+
+// ===================================================================
+// NeurioMeterMessages (field 9 of MessageEnvelope payload oneof)
 //
-// REQUEST - config
-// 1 {
-//   1: 1
-//   2 {
-//     3: 1
-//   }
-//   3 {
-//     1: "1232100-00-E--TG123456789012"
-//   }
-//   15 {
-//     1 {
-//       1: 1
-//       2: "config.json"
-//     }
-//   }
-// }
-// 2 {
-//   1: 1
-// }
+// Verified from APK JS bundle encode/decode functions (line 4641-4643).
+// Handles Neurio energy meter add/remove/configure operations.
 //
-// RESPONSE - config
-// 1 {
-//   1: 1
-//   2 {
-//     1: "1232100-00-E--TG123456789012"
-//   }
-//   3 {
-//     3: 1
-//   }
-//   15 {
-//     2 {
-//       1 {
-//         1: "config.json"
-//         100: "{}"
-//       }
-//       2: "\255\177t+5\35..."
-//     }
-//   }
-// }
-// 2 {
-//   1: 1
-// }
+// Field numbers verified against uint32() wire tags:
+//   addMeterRequest=1      uint32(10)
+//   addMeterResponse=2     uint32(18)
+//   removeMeterRequest=3   uint32(26)
+//   removeMeterResponse=4  uint32(34)
+//   configureCtsRequest=5  uint32(42)
+//   configureCtsResponse=6 uint32(50)
+// ===================================================================
+
+// Connection status enum
+enum NeurioConnectionStatus {
+  NEURIO_CONNECTION_STATUS_INVALID = 0;
+  NEURIO_CONNECTION_STATUS_NO_COMMS = 1;
+  NEURIO_CONNECTION_STATUS_PAIRING = 2;
+  NEURIO_CONNECTION_STATUS_CONNECTED = 3;
+  NEURIO_CONNECTION_STATUS_CONFIG_CHANGE_UNDERWAY = 4;
+}
+
+// Connection error enum
+enum NeurioConnectionError {
+  NEURIO_CONNECTION_ERROR_INVALID = 0;
+  NEURIO_CONNECTION_ERROR_NONE = 1;
+  NEURIO_CONNECTION_ERROR_UNKNOWN = 2;
+  NEURIO_CONNECTION_ERROR_WIFI_AP = 3;
+  NEURIO_CONNECTION_ERROR_PAIRING_COMMAND = 4;
+  NEURIO_CONNECTION_ERROR_REBOOT_COMMAND = 5;
+}
+
+// CT (Current Transformer) configuration
+message NeurioCTConfig {
+  int32 location = 1;                   // CT location (see notes below)
+  float realPowerScaleFactor = 2;       // Power scaling factor
+}
+// CT location values (from APK UI components):
+//   METER_CT_LOCATION_INVALID = 0
+//   METER_CT_LOCATION_NONE = 1
+//   METER_CT_LOCATION_SITE = 2         (grid/site meter)
+//   METER_CT_LOCATION_SOLAR = 3        (solar production)
+//   METER_CT_LOCATION_SOLAR_RGM = 4    (solar revenue grade)
+//   METER_CT_LOCATION_BATTERY = 5      (battery meter)
+//   METER_CT_LOCATION_LOAD = 6         (load meter)
+//   METER_CT_LOCATION_CONDUCTOR = 7    (individual conductor)
+
+// Meter configuration - the core data structure
+message NeurioMeterConfig {
+  string shortId = 1;                   // 5-digit Neurio short ID (e.g. "56206")
+  string serial = 2;                    // 13-char serial (e.g. "OBB3081102431")
+  repeated NeurioCTConfig ctConfig = 3; // CT configuration array
+}
+
+// Meter connection state (read-only, returned by gateway)
+message NeurioMeterConnection {
+  NeurioConnectionStatus connectionStatus = 1;
+  NeurioConnectionError connectionError = 2;
+  Rssi rssi = 3;
+  string firmwareVersion = 4;
+  NeurioMeterReadings meterReadings = 5;
+}
+
+message Rssi {
+  sint32 value = 1;
+  uint32 signalStrengthPercent = 2;     // wrapped UInt32Value in APK
+}
+
+// CT power reading
+message NeurioCTReading {
+  float realPowerW = 1;                 // Raw power in watts (fixed32 wire type)
+  float scaledRealPowerW = 2;           // Scaled power in watts
+  float currentAmps = 3;               // Current in amps
+}
+
+message NeurioMeterReadings {
+  repeated NeurioCTReading ctReadings = 1;
+}
+
+// Combined meter interface (config + connection state)
+message NeurioMeterInterface {
+  NeurioMeterConfig config = 1;
+  NeurioMeterConnection connection = 2;
+}
+
+// --- API Request/Response messages ---
+
+message NeurioMeterAPIAddMeterRequest {
+  NeurioMeterConfig config = 1;         // shortId + serial (+ optional ctConfig)
+}
+
+message NeurioMeterAPIAddMeterResponse {
+  NeurioMeterConfig config = 1;         // Confirmed config from gateway
+}
+
+message NeurioMeterAPIRemoveMeterRequest {
+  string serial = 1;                    // Serial of meter to remove
+}
+
+message NeurioMeterAPIRemoveMeterResponse {}  // empty
+
+message NeurioMeterAPIConfigureCtsRequest {
+  string serial = 1;                    // Serial of meter to configure
+  repeated NeurioCTConfig ctConfig = 2; // New CT configuration
+}
+
+message NeurioMeterAPIConfigureCtsResponse {
+  repeated NeurioCTConfig ctConfig = 1; // Confirmed CT configuration
+}
+
+// --- Top-level NeurioMeterMessages oneof ---
+
+message NeurioMeterMessages {
+  oneof message {
+    NeurioMeterAPIAddMeterRequest addMeterRequest = 1;
+    NeurioMeterAPIAddMeterResponse addMeterResponse = 2;
+    NeurioMeterAPIRemoveMeterRequest removeMeterRequest = 3;
+    NeurioMeterAPIRemoveMeterResponse removeMeterResponse = 4;
+    NeurioMeterAPIConfigureCtsRequest configureCtsRequest = 5;
+    NeurioMeterAPIConfigureCtsResponse configureCtsResponse = 6;
+  }
+}
+
+// ===================================================================
+// EnergySiteNetMessages (field 10)
+// ===================================================================
+
+message EnergySiteNetMessages {
+  bytes placeholder = 1;
+}
+
+// ===================================================================
+// AuthorizationMessages (field 12 of MessageEnvelope payload oneof)
 //
+// Verified from APK JS bundle encode/decode functions.
+// Handles device authorization/pairing for MTLS access.
+// ===================================================================
+
+// Enums for authorization
+
+enum AuthorizationRole {
+  AUTHORIZATION_ROLE_INVALID = 0;
+  AUTHORIZATION_ROLE_CUSTOMER = 1;
+  AUTHORIZATION_ROLE_VEHICLE = 2;
+}
+
+enum AuthorizedState {
+  AUTHORIZED_STATE_INVALID = 0;
+  AUTHORIZED_STATE_PENDING_VERIFICATION = 1;
+  AUTHORIZED_STATE_PENDING_VERIFICATION_TIMEOUT = 2;
+  AUTHORIZED_STATE_VERIFIED = 3;
+  AUTHORIZED_STATE_REMOVED = 4;
+}
+
+enum AuthorizedVerificationType {
+  AUTHORIZED_VERIFICATION_TYPE_INVALID = 0;
+  AUTHORIZED_VERIFICATION_TYPE_PRESENCE_PROOF = 1;
+  // 2-3 unused
+  AUTHORIZED_VERIFICATION_TYPE_HERMES_COMMAND = 4;
+}
+
+enum AuthorizedKeyType {
+  AUTHORIZED_KEY_TYPE_INVALID = 0;
+  AUTHORIZED_KEY_TYPE_RSA = 1;
+  AUTHORIZED_KEY_TYPE_ECC = 2;
+}
+
+// Authorization record returned in list/add responses
+
+message AuthorizationRecord {
+  AuthorizedClientType type = 1;
+  string description = 2;
+  AuthorizedKeyType keyType = 3;
+  bytes publicKey = 4;
+  repeated AuthorizationRole roles = 5;       // packed
+  AuthorizedState state = 6;
+  AuthorizedVerificationType verification = 7;
+  // field 8 = Timestamp addedTime (omitted - requires google.protobuf.Timestamp)
+  string identifier = 9;
+  bytes authorizedByPublicKey = 10;
+}
+
+// AuthorizationMessages oneof
+
+message AuthorizationMessages {
+  oneof message {
+    AuthorizationAPIAddAuthorizedClientRequest addAuthorizedClientRequest = 1;
+    AuthorizationAPIAddAuthorizedClientResponse addAuthorizedClientResponse = 2;
+    AuthorizationAPIRemoveAuthorizedClientRequest removeAuthorizedClientRequest = 3;
+    AuthorizationAPIRemoveAuthorizedClientResponse removeAuthorizedClientResponse = 4;
+    AuthorizationAPIListAuthorizedClientsRequest listAuthorizedClientsRequest = 5;
+    AuthorizationAPIListAuthorizedClientsResponse listAuthorizedClientsResponse = 6;
+    AuthorizationAPIGetSignedCommandsPublicKeyRequest getSignedCommandsPublicKeyRequest = 7;
+    AuthorizationAPIGetSignedCommandsPublicKeyResponse getSignedCommandsPublicKeyResponse = 8;
+    AuthorizationAPIAddAuthorizedClientByTrustedSignatureRequest addAuthorizedClientByTrustedSignatureRequest = 9;
+    AuthorizationAPIAddAuthorizedClientByTrustedSignatureResponse addAuthorizedClientByTrustedSignatureResponse = 10;
+    AuthorizationAPIConfigureRemoteServiceRequest configureRemoteServiceRequest = 11;
+    AuthorizationAPIConfigureRemoteServiceResponse configureRemoteServiceResponse = 12;
+  }
+}
+
+// Add a new authorized client (via WiFi/PRESENCE auth)
+message AuthorizationAPIAddAuthorizedClientRequest {
+  AuthorizedClientType type = 1;              // CUSTOMER_MOBILE_APP=1, VEHICLE=2
+  string description = 2;                     // e.g. "Home LAN Server"
+  AuthorizedKeyType keyType = 3;              // RSA=1, ECC=2
+  bytes publicKey = 4;                        // Public key bytes
+}
+
+message AuthorizationAPIAddAuthorizedClientResponse {
+  AuthorizationRecord client = 1;
+}
+
+// Remove an authorized client by public key
+message AuthorizationAPIRemoveAuthorizedClientRequest {
+  bytes publicKey = 1;
+}
+
+message AuthorizationAPIRemoveAuthorizedClientResponse {}  // empty
+
+// List all authorized clients
+message AuthorizationAPIListAuthorizedClientsRequest {}    // empty
+
+message AuthorizationAPIListAuthorizedClientsResponse {
+  repeated AuthorizationRecord clients = 1;
+  bool enableLineSwitchOff = 2;
+}
+
+// Get the device's signed commands public key
+message AuthorizationAPIGetSignedCommandsPublicKeyRequest {}  // empty
+
+message AuthorizationAPIGetSignedCommandsPublicKeyResponse {
+  bytes pubKeyEcc = 1;
+}
+
+// Add authorized client by trusted signature (with roles)
+message AuthorizationAPIAddAuthorizedClientByTrustedSignatureRequest {
+  AuthorizedClientType type = 1;
+  string description = 2;
+  AuthorizedKeyType keyType = 3;
+  bytes publicKey = 4;
+  repeated AuthorizationRole roles = 5;       // packed
+  string identifier = 6;
+}
+
+message AuthorizationAPIAddAuthorizedClientByTrustedSignatureResponse {
+  AuthorizationRecord client = 1;
+}
+
+// Configure remote service access (time-limited)
+message AuthorizationAPIConfigureRemoteServiceRequest {
+  uint32 durationSeconds = 1;
+  string sessionId = 2;
+  string requesterEmail = 3;
+}
+
+message AuthorizationAPIConfigureRemoteServiceResponse {
+  // fields 1-2: beginTime, expiryTime (Timestamps - omitted)
+}
+
+// ===================================================================
+// GraphQLMessages (field 16 of MessageEnvelope payload oneof)
 //
-// REQUEST - query
-// 1 {
-//   1: 1
-//   2 {
-//     3: 1
-//   }
-//   3 {
-//     1: "1232100-00-E--TG123456789012"
-//   }
-//   16 {
-//     1 {
-//       1: 2
-//       2 {
-//         1: 1
-//         2: " query DeviceControllerQuery {..."
-//       }
-//       3: "0\201\210\002B\0026\335T\310\02..."
-//       4 {
-//         1: "{}"
-//       }
-//     }
-//   }
-// }
-// 2 {
-//   1: 1
-// }
+// Verified from APK JS bundle: tesla.proto.energy_device.v1
+// The actual types are GraphQLAPIQueryRequest/Response, NOT the
+// legacy QueryType/PayloadQuerySend from the old proto.
 //
-// RESPONSE - query
-// 1 {
-//   1: 1
-//   2 {
-//     1: "1232100-00-E--TG123456789012"
-//   }
-//   3 {
-//     3: 1
-//   }
-//   16 {
-//     2 {
-//       1: 1
-//       2: "{...}"
-//     }
-//   }
-// }
-// 2 {
-//   1: 1
-// }
+// Key insight: field 2 (query) in GraphQLAPIQueryRequest is NOT raw
+// query text - it's a serialized SignedGraphQLQuery protobuf containing
+// {version:2, query:queryText}. The ECDSA-P521 signature in field 3
+// is computed over these serialized SignedGraphQLQuery bytes.
+// ===================================================================
+
+message GraphQLMessages {
+  oneof message {
+    GraphQLAPIQueryRequest send = 1;
+    GraphQLAPIQueryResponse recv = 2;
+  }
+}
+
+// GraphQLQueryFormat enum
+// GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1 = 2 is used for all signed queries
+enum GraphQLQueryFormat {
+  GRAPH_QL_QUERY_FORMAT_INVALID = 0;
+  GRAPH_QL_QUERY_FORMAT_RAW = 1;
+  GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1 = 2;
+}
+
+// The query wrapper that gets serialized into GraphQLAPIQueryRequest.query
+message SignedGraphQLQuery {
+  uint32 version = 1;             // always 2 in current APK
+  bytes query = 2;                // the actual GraphQL query text
+}
+
+// Request: sent as GraphQLMessages.send (field 1)
+message GraphQLAPIQueryRequest {
+  GraphQLQueryFormat format = 1;  // = SIGNED_SHA256_ECDSA_ASN1 (2)
+  bytes query = 2;                // serialized SignedGraphQLQuery bytes
+  bytes signature = 3;            // ECDSA-P521 signature over query bytes
+  GraphQLStringValue variablesJson = 4;  // google.protobuf.StringValue wrapping JSON
+}
+
+// Response: received as GraphQLMessages.recv (field 2)
+message GraphQLAPIQueryResponse {
+  int32 status = 1;               // GraphQLStatus enum (1=SUCCESS)
+  string data = 2;                // JSON response data
+  repeated GraphQLError errors = 3;
+}
+
+message GraphQLError {
+  repeated string path = 1;
+  int32 code = 2;
+  string message = 3;
+}
+
+message GraphQLStringValue {
+  string value = 1;
+}
+
+// ===================================================================
+// FileStoreMessages (field 15 of MessageEnvelope payload oneof)
+// ===================================================================
+
+
+message FileStoreMessages {
+  oneof message {
+    FileStoreAPIReadFileRequest readFileRequest = 1;
+    FileStoreAPIReadFileResponse readFileResponse = 2;
+    FileStoreAPIForceWriteFileRequest forceWriteFileRequest = 3;    // WAS 5 in old proto!
+    FileStoreAPIForceWriteFileResponse forceWriteFileResponse = 4;  // WAS 6 in old proto!
+    FileStoreAPIUpdateFileRequest updateFileRequest = 5;             // WAS 3 in old proto!
+    FileStoreAPIUpdateFileResponse updateFileResponse = 6;           // WAS 4 in old proto!
+  }
+}
+
+// ===================================================================
+// FileStore API Domain enum
+// ===================================================================
+
+enum FileStoreAPIDomain {
+  FILE_STORE_API_DOMAIN_INVALID = 0;
+  FILE_STORE_API_DOMAIN_CONFIG_JSON = 1;
+  FILE_STORE_API_DOMAIN_GRID_CODE_REGIONS_CSV = 2;
+  FILE_STORE_API_DOMAIN_CERTIFIED_INSTALLERS_CSV = 3;
+  FILE_STORE_API_DOMAIN_SUPERCHARGER_FILES = 4;
+  FILE_STORE_API_DOMAIN_OPTICASTER_FILES = 5;
+  FILE_STORE_API_DOMAIN_WALLBOX_CONFIG = 6;        // NEW - missing from old proto
+  FILE_STORE_API_DOMAIN_OCPP_CSMS_ROOT_CA = 7;    // NEW - missing from old proto
+}
+
+// ===================================================================
+// FileStoreAPIFile
+// ===================================================================
+
+message FileStoreAPIFile {
+  string name = 1;
+  oneof content {
+    bytes blob = 100;              // Wire tag 802. Was nested in FileStoreAPIFileContent at field 2.1!
+    // string text = 101;          // May exist but not seen in JS encode functions
+  }
+}
+
+// ===================================================================
+// FileStore API Request/Response messages
+// ===================================================================
+
+// Read File Request
+message FileStoreAPIReadFileRequest {
+  FileStoreAPIDomain domain = 1;
+  string name = 2;                     // Was "filename" in old proto
+  bytes ifDifferentHash = 3;           // NEW - missing from old proto (conditional read)
+}
+
+// Read File Response
+message FileStoreAPIReadFileResponse {
+  FileStoreAPIFile file = 1;
+  bytes hash = 2;
+}
+
+// Update File Request (compare-and-swap with hash)
+message FileStoreAPIUpdateFileRequest {
+  FileStoreAPIDomain domain = 1;
+  FileStoreAPIFile file = 2;
+  bytes hash = 3;                      // Previous hash for optimistic concurrency
+}
+
+// Update File Response - NOT empty! Returns new file state
+message FileStoreAPIUpdateFileResponse {
+  FileStoreAPIFile file = 1;           // Was empty in old proto!
+  bytes hash = 2;                      // New hash after update
+}
+
+// Force Write File Request (no hash check)
+message FileStoreAPIForceWriteFileRequest {
+  FileStoreAPIDomain domain = 1;
+  FileStoreAPIFile file = 2;
+}
+
+// Force Write File Response
+message FileStoreAPIForceWriteFileResponse {
+  bytes hash = 1;                      // Was empty in old proto!
+}
+
+// ===================================================================
+// Legacy types (kept for backward compatibility with config reading)
 //
-// REQUEST - firmware
-// 1 {
-//   1: 1
-//   2 {
-//     3: 1
-//   }
-//   3 {
-//     1: "1707000-00-J--TG9999999999XP"
-//   }
-//   4 {
-//     2: ""
-//   }
-// }
-// 2 {
-//   1: 1
-// }
+// These are NOT real TEDAPI types. ConfigType at field 15 happens to
+// be WIRE-COMPATIBLE with FileStoreMessages for read operations:
+//   ConfigType.send(1) <-> FileStoreMessages.readFileRequest(1)
+//   PayloadConfigSend.num=1,file="config.json" <-> ReadFileReq.domain=1,name="config.json"
+//   ConfigType.recv(2) <-> FileStoreMessages.readFileResponse(2)
+//   PayloadConfigRecv.file(1) <-> ReadFileResp.file(1)
+//   PayloadConfigRecv.code(2) <-> ReadFileResp.hash(2)
+//   ConfigString.text(100) <-> FileStoreAPIFile.blob(100)
 //
-// RESPONSE - firmware
-// 1 {
-//   1: 1
-//   2 {
-//     1: "1707000-00-J--TG9999999999XP"
+// This is why old code that uses ConfigType for reading config.json
+// works - it's accidentally wire-compatible with the FileStore API!
+// ===================================================================
+
+// NOT USED - for documentation only
+// message ConfigType {
+//   oneof config {
+//     PayloadConfigSend send = 1;     // wire-compat with readFileRequest
+//     PayloadConfigRecv recv = 2;     // wire-compat with readFileResponse
 //   }
-//   3 {
-//     3: 1
-//   }
-//   4 {
-//     3 {
-//       1 {
-//         1: "1707000-00-J"
-//         2: "TG9999999999XP"
-//       }
-//       2: "1707000-00-J--TG9999999999XP"
-//       3 {
-//         1: "24.12.6-PW3-AFCI 008bf6ff"    <--- PW3 firmware version
-//         2: "\000\213\366\...Redacted..."
-//       }
-//       5 {
-//         2: 1
-//       }
-//       6: 4
-//       7 {
-//         1 {
-//           1 {
-//             1: "Quectel"
-//           }
-//           2 {
-//             1: "BG95-M2"
-//           }
-//           3 {
-//             1: "XMR2020BG95M2"
-//           }
-//           4 {
-//             1: "10224A-2020BG95M2"
-//           }
-//         }
-//         1 {
-//           1 {
-//             1: "Texas Instruments"
-//           }
-//           2 {
-//             1: "WL18MODGI"
-//           }
-//           3 {
-//             1: "Z64-WL18DBMOD"
-//           }
-//           4 {
-//             1: "451I-WL18DBMOD"
-//           }
-//         }
-//       }
-//       8: "\370!s\306\212...Redacted..."
-//       9: "\373U\353\322...Redacted..."
-//     }
-//   }
-// }
-// 2 {
-//   1: 1
 // }

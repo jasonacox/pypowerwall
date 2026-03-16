@@ -80,9 +80,10 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
 # noinspection PyMethodMayBeStatic
 class PyPowerwallTEDAPI(PyPowerwallBase):
     def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10) -> None:
+                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
+                 auth_mode: str = "basic") -> None:
         super().__init__("nobody@nowhere.com")
-        self.tedapi = None
+        self.tedapi: Optional[TEDAPI] = None
         self.timeout = timeout
         self.pwcacheexpire = pwcacheexpire
         self.pwconfigexpire = pwconfigexpire
@@ -90,15 +91,17 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.host = host
         self.gw_pwd = gw_pwd
         self.debug = debug
+        self.auth_mode = auth_mode
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
         self.siteid = None
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize TEDAPI
-        self.tedapi = TEDAPI(gw_pwd=self.gw_pwd, debug=self.debug, host=self.host, 
+        self.tedapi = TEDAPI(gw_pwd=self.gw_pwd, debug=self.debug, host=self.host,
                              timeout=self.timeout, pwcacheexpire=self.pwcacheexpire,
-                             pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize)
+                             pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
+                             auth_mode=self.auth_mode)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
@@ -123,7 +126,6 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
             "/api/system_status/soe": self.get_api_system_status_soe,
             "/vitals": self.vitals,
-            # Possible Actions
             "/api/login/Basic": self.api_login_basic,
             "/api/logout": self.api_logout,
             # Mock Actions
@@ -642,15 +644,26 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         })
         return data
 
-    # pylint: disable=unused-argument
-    # noinspection PyUnusedLocal
-    @not_implemented_mock_data
     def api_logout(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """Logout from the Tesla Gateway, invalidating the bearer token session."""
+        if self.auth_mode == "bearer":
+            self.tedapi._bearer_logout()
         return {"status": "ok"}
 
-    # noinspection PyUnusedLocal
-    @not_implemented_mock_data
     def api_login_basic(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """Login to the Tesla Gateway via bearer token auth.
+
+        In bearer mode, delegates to the TEDAPI bearer login which POSTs to
+        /api/login/Basic with stored credentials. In basic mode, auth is handled
+        via HTTP Basic Auth so this is a no-op.
+        """
+        if self.auth_mode == "bearer":
+            try:
+                self.tedapi._bearer_login()
+                return {"status": "ok", "token": self.tedapi.token}
+            except Exception as e:
+                log.error(f"api_login_basic: {e}")
+                return {"status": "error", "message": str(e)}
         return {"status": "ok"}
 
     # noinspection PyUnusedLocal
