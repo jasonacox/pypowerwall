@@ -754,6 +754,22 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return self.tedapi.vitals()
 
+    def get_grid_charging(self) -> None:
+        """
+        Not implemented in TEDAPI mode. Returns None.
+        Use FleetAPI or Cloud mode to access grid charging settings.
+        """
+        log.warning("get_grid_charging() is not available in TEDAPI mode. Use FleetAPI or Cloud mode.")
+        return None
+
+    def get_grid_export(self) -> None:
+        """
+        Not implemented in TEDAPI mode. Returns None.
+        Use FleetAPI or Cloud mode to access grid export settings.
+        """
+        log.warning("get_grid_export() is not available in TEDAPI mode. Use FleetAPI or Cloud mode.")
+        return None
+
     def post_api_operation(self, **kwargs):
         log.error("No support for TEDAPI POST APIs.")
 
