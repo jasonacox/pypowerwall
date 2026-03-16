@@ -183,7 +183,7 @@ class Powerwall(object):
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
-        self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r+wifi fallback
+        self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r wifi fallback
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -262,12 +262,10 @@ class Powerwall(object):
                             log.debug("Derived customer password from gw_pwd (last 5 characters)")
                         if not pw:
                             raise ValueError("v1r mode requires password or gw_pwd")
-                        # v1r+wifi mode when gw_pwd is provided alongside rsa_key_path
+                        self.tedapi_mode = "v1r"
                         if self.gw_pwd:
-                            self.tedapi_mode = "v1r+wifi"
-                            log.debug("TEDAPI ** v1r+wifi **")
+                            log.debug("TEDAPI ** v1r (wifi fallback available) **")
                         else:
-                            self.tedapi_mode = "v1r"
                             log.debug("TEDAPI ** v1r **")
                         self.client = PyPowerwallTEDAPI(
                             gw_pwd=self.gw_pwd or "",
@@ -746,6 +744,18 @@ class Powerwall(object):
         result = self.post(api='/api/operation', payload=payload, din=self.din(), jsonformat=jsonformat)
         return result
 
+    def schedule_max_backup(self, duration_seconds=7200):
+        """Schedule manual backup event (max backup / storm watch mode) via v1r TEGMessages."""
+        return self.client.schedule_max_backup(duration_seconds=duration_seconds)
+
+    def cancel_max_backup(self):
+        """Cancel the current manual backup event via v1r TEGMessages."""
+        return self.client.cancel_max_backup()
+
+    def get_backup_events(self):
+        """Get current backup events via v1r TEGMessages."""
+        return self.client.get_backup_events()
+
     # noinspection PyShadowingBuiltins
     def grid_status(self, output_type="string", type=None) -> Optional[Union[str, int]]:
         """
@@ -911,8 +921,12 @@ class Powerwall(object):
         """
         Get the current grid charging mode
 
+        Note:
+            This function requires FleetAPI or Cloud mode. It is not available
+            in local TEDAPI mode. Returns None if not supported by the current mode.
+
         Returns:
-            True if grid charging is enabled, False if it is disabled
+            True if grid charging is enabled, False if it is disabled, None if unsupported
         """
         return self.client.get_grid_charging()
 
@@ -935,8 +949,12 @@ class Powerwall(object):
         """
         Get the current grid export mode
 
+        Note:
+            This function requires FleetAPI or Cloud mode. It is not available
+            in local TEDAPI mode. Returns None if not supported by the current mode.
+
         Returns:
-            The current grid export mode
+            The current grid export mode, or None if unsupported
         """
         return self.client.get_grid_export()
 

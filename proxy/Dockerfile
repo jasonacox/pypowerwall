@@ -2,12 +2,17 @@ FROM python:3.10-alpine
 
 WORKDIR /app
 
-# Install git (and build dependencies if needed)
+# Install system dependencies
 RUN apk add --no-cache git curl
 
-COPY requirements.txt /app/requirements.txt
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install proxy extra dependencies first
+RUN pip3 install --no-cache-dir bs4
 
-COPY . .
-EXPOSE 8675 
+# Copy full source and install pypowerwall from local source
+COPY . /build
+RUN pip3 install --no-cache-dir /build && rm -rf /build
+
+# Copy proxy server files
+COPY proxy/ /app/
+EXPOSE 8675
 CMD ["python3", "server.py"]

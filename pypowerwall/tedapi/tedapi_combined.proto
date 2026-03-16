@@ -14,6 +14,8 @@ syntax = "proto3";
 
 package tedapi_combined;
 
+import "google/protobuf/timestamp.proto";
+
 // ===================================================================
 // PART 1: Tesla Signed Message Protocol
 // (originally from tesla.proto.universal_message.v1)
@@ -218,8 +220,48 @@ message CommonMessages {
   bytes placeholder = 1;
 }
 
+message ControlEventSchedulingInfo {
+  google.protobuf.Timestamp start_time = 1;
+  uint32 duration_seconds              = 2;
+  uint64 priority                      = 3;
+}
+
+message TEGAPIScheduleManualBackupEventRequest {
+  ControlEventSchedulingInfo scheduling_info = 1;
+}
+
+message TEGAPIScheduleManualBackupEventResponse {}
+
+message TEGAPICancelManualBackupEventRequest {}
+
+message TEGAPICancelManualBackupEventResponse {}
+
+message TEGAPIGetBackupEventsRequest {}
+
+message TEGAPIGetBackupEventsResponse {
+  ManualBackupEvent manual_backup_event = 1;
+  repeated BackupEvent backup_events    = 2;
+}
+
+message ManualBackupEvent {
+  ControlEventSchedulingInfo scheduling_info = 1;
+}
+
+message BackupEvent {
+  string id                                  = 1;
+  string name                                = 2;
+  ControlEventSchedulingInfo scheduling_info = 3;
+}
+
 message TEGMessages {
-  bytes placeholder = 1;
+  oneof message {
+    TEGAPIScheduleManualBackupEventRequest schedule_manual_backup_event_request   = 45;
+    TEGAPIScheduleManualBackupEventResponse schedule_manual_backup_event_response = 46;
+    TEGAPICancelManualBackupEventRequest cancel_manual_backup_event_request       = 47;
+    TEGAPICancelManualBackupEventResponse cancel_manual_backup_event_response     = 48;
+    TEGAPIGetBackupEventsRequest get_backup_events_request                        = 49;
+    TEGAPIGetBackupEventsResponse get_backup_events_response                      = 50;
+  }
 }
 
 message WCMessages {

@@ -12,7 +12,7 @@
     * `cryptography` package added to `install_requires` for RSA key loading and signing
     * Full feature parity with WiFi TEDAPI (mode 4): config, status, vitals, firmware version, power, battery level, grid status, per-device vitals, and component queries
     * LAN control support — set backup reserve, operation mode, grid charging, and grid export directly over the wired LAN via v1r filestore config writes (no cloud API needed)
-    * Hybrid v1r+WiFi transport — when both wired LAN and WiFi TEDAPI are available, the proxy automatically combines them for redundancy and optimal performance
+    * WiFi fallback transport — when both wired LAN and WiFi TEDAPI are available, v1r mode transparently uses WiFi for follower queries; mode string dynamically reflects active transports (e.g., `Local (v1r+wifi+control)`)
     * Requires the Powerwall 3 leader's ethernet port to be on a routable subnet (`10.42.1.x/24` is the TEG's dedicated wired interface); see PR notes for bridge setup examples
 
 ## v0.14.10 - Host Port Support

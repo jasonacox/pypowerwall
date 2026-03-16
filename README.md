@@ -93,6 +93,8 @@ Your machine must be able to reach `192.168.91.1`. Options:
 
 > **Note:** Some firmware versions (25.10.0+) may block routed access to 192.168.91.1. In that case, connect directly to the Gateway Wi‑Fi.
 
+> ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally — these return `None` in TEDAPI mode with a log warning. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
+
 In the examples below, change **192.168.0.100** to the IP address of the Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
 
 #### Linux Ubuntu and RPi
@@ -312,11 +314,9 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 | Multi-PW follower queries | Yes | Yes |
 | LAN control (reserve/mode/grid) | No | Yes |
 
-#### v1r+WiFi Hybrid Mode
+#### v1r WiFi Fallback
 
-When both the wired LAN (v1r) and WiFi TEDAPI connections are available, pyPowerwall can combine them into a hybrid transport. This is automatically enabled when the proxy detects both transports. The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`).
-
-Hybrid mode uses the fastest available transport for each request and provides redundancy — if one transport is temporarily unavailable, the other continues serving data.
+When both the wired LAN (v1r) and WiFi TEDAPI connections are available, pyPowerwall transparently uses WiFi as a fallback transport for follower queries. This is automatically enabled when `PW_GW_PWD` is set alongside the v1r configuration. The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`), and the mode string dynamically reflects what's active (e.g., `Local (v1r+wifi+control)`).
 
 #### LAN Control (v1r)
 
@@ -351,6 +351,11 @@ pw.set_reserve(30)
 pw.set_mode("backup")
 pw.set_grid_charging(True)
 pw.set_grid_export("battery_ok")
+
+# Max backup (v1r only) - sets reserve to 100% for duration
+pw.schedule_max_backup(3600)        # 1 hour
+pw.cancel_max_backup()
+print(pw.get_backup_events())       # {"manual_backup": {...}, "backup_events": [...]}
 ```
 
 For proxy usage, set `PW_CONTROL_SECRET` and use the `/control/*` endpoints — no cloud setup needed when using v1r mode:
@@ -368,12 +373,15 @@ curl http://localhost:8675/control/mode
 curl http://localhost:8675/control/reserve
 curl http://localhost:8675/control/grid_charging
 curl http://localhost:8675/control/grid_export
+curl http://localhost:8675/control/max_backup
 
 # Set values
 curl -X POST -d "value=backup&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
 curl -X POST -d "value=30&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_charging
 curl -X POST -d "value=pv_only&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_export
+curl -X POST -d "value=3600&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
+curl -X POST -d "value=cancel&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
 ```
 
 > **Note:** LAN control requires v1r mode (RSA key registered). Basic LAN mode (no RSA key) does not support control operations. WiFi TEDAPI (mode 4) does not support LAN control — use FleetAPI cloud control instead.

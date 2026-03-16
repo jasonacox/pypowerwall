@@ -759,6 +759,22 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return self.tedapi.vitals()
 
+    def get_grid_charging(self) -> None:
+        """
+        Not implemented in TEDAPI mode. Returns None.
+        Use FleetAPI or Cloud mode to access grid charging settings.
+        """
+        log.warning("get_grid_charging() is not available in TEDAPI mode. Use FleetAPI or Cloud mode.")
+        return None
+
+    def get_grid_export(self) -> None:
+        """
+        Not implemented in TEDAPI mode. Returns None.
+        Use FleetAPI or Cloud mode to access grid export settings.
+        """
+        log.warning("get_grid_export() is not available in TEDAPI mode. Use FleetAPI or Cloud mode.")
+        return None
+
     def post_api_operation(self, **kwargs):
         """Set operation mode and/or backup reserve via LAN config write."""
         if not self.tedapi.v1r:
@@ -834,6 +850,18 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if self.tedapi._write_config(updates):
             return True
         return None
+
+    def schedule_max_backup(self, duration_seconds=7200):
+        """Schedule manual backup event (max backup / storm watch mode)."""
+        return self.tedapi.schedule_max_backup(duration_seconds=duration_seconds)
+
+    def cancel_max_backup(self):
+        """Cancel the current manual backup event."""
+        return self.tedapi.cancel_max_backup()
+
+    def get_backup_events(self):
+        """Get current backup events."""
+        return self.tedapi.get_backup_events()
 
 
 if __name__ == "__main__":
