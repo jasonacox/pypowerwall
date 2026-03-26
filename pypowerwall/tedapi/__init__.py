@@ -166,6 +166,7 @@ class TEDAPI:
         self.lan_failed = False     # True when wired LAN is unreachable
         self.lan_fail_count = 0     # consecutive LAN failures
         self.lan_recover_after = 0  # timestamp after which to retry LAN
+        self.lan_last_success = 0   # timestamp of last successful LAN call
         if v1r:
             if not password or not rsa_key_path:
                 raise ValueError("v1r mode requires password and rsa_key_path")
@@ -1527,8 +1528,9 @@ class TEDAPI:
                         self.lan_fail_count, backoff
                     )
             else:
-                # Successful LAN call — reset counter
+                # Successful LAN call — reset counter and record timestamp
                 self.lan_fail_count = 0
+                self.lan_last_success = time.time()
             return inner
         else:
             url = f'https://{self.gw_ip}{url_suffix}'

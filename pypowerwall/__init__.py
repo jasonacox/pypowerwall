@@ -746,14 +746,23 @@ class Powerwall(object):
 
     def schedule_max_backup(self, duration_seconds=7200):
         """Schedule manual backup event (max backup / storm watch mode) via v1r TEGMessages."""
+        if self.tedapi_mode != "v1r":
+            log.error("schedule_max_backup requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
+            return None
         return self.client.schedule_max_backup(duration_seconds=duration_seconds)
 
     def cancel_max_backup(self):
         """Cancel the current manual backup event via v1r TEGMessages."""
+        if self.tedapi_mode != "v1r":
+            log.error("cancel_max_backup requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
+            return None
         return self.client.cancel_max_backup()
 
     def get_backup_events(self):
         """Get current backup events via v1r TEGMessages."""
+        if self.tedapi_mode != "v1r":
+            log.error("get_backup_events requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
+            return None
         return self.client.get_backup_events()
 
     # noinspection PyShadowingBuiltins

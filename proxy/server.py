@@ -913,8 +913,8 @@ def get_transport_health():
             "host": tedapi.gw_ip,
             "leader_din": tedapi.din,
         }
-        if tedapi.wifi_last_success:
-            v1r_info["last_success_age_seconds"] = round(time.time() - tedapi.wifi_last_success, 1)
+        if tedapi.lan_last_success:
+            v1r_info["last_success_age_seconds"] = round(time.time() - tedapi.lan_last_success, 1)
         transports["v1r_lan"] = v1r_info
         # WiFi TEDAPI transport (follower fallback)
         if tedapi.wifi_session:

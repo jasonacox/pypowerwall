@@ -443,9 +443,15 @@ class TEDAPIv1r:
 
         The inner tedapi_pb2.Message bytes are placed inside a MessageEnvelope
         using deliveryChannel=HERMES_COMMAND and sender.authorizedClient=1.
+
+        NOTE: This method is not used by the current transport.  The active v1r
+        transport path in TEDAPI._post_tedapi() extracts the MessageEnvelope
+        directly from a tedapi_pb2.Message rather than building a combined_pb2
+        wrapper.  This stub is retained for reference but raises NotImplementedError
+        to prevent accidental use with incorrect (empty) output.
         """
-        msg = combined_pb2.Message()
-        msg.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
-        msg.message.sender.authorizedClient = 1
-        msg.message.recipient.din = din
-        return msg.message.SerializeToString()
+        raise NotImplementedError(
+            "build_query_envelope is not implemented. "
+            "Use TEDAPI._post_tedapi() which extracts the envelope from a "
+            "tedapi_pb2.Message directly."
+        )

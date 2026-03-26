@@ -3,30 +3,24 @@
 Tesla RSA Key Registration for Powerwall LAN TEDapi v1r
 
 Generates an RSA-4096 key pair, registers it with the Powerwall via
-Tesla Fleet API OAuth, and saves the private key for use with
-pypowerwall's v1r LAN mode.
+Tesla Owner API (recommended) or Fleet API OAuth, and saves the
+private key for use with pypowerwall's v1r LAN mode.
 
-Credentials can be provided via environment variables or entered interactively.
+Two authentication paths are supported:
 
-Prerequisites:
-  1. Create a Tesla developer app at https://developer.tesla.com/
-  2. Host your EC public key at:
-       https://your-domain.com/.well-known/appspecific/com.tesla.3p.public-key.pem
-     (a Cloudflare Worker works well for this — see README.md)
-  3. Copy your CLIENT_ID and CLIENT_SECRET from the developer portal
+  Owner API (recommended — no developer app needed):
+    Just your Tesla account email and password, same login as
+    'python -m pypowerwall setup' (Cloud Mode).
+    python -m pypowerwall register
 
-Usage:
-  # Via pip install:
-  python -m pypowerwall register
-
-  # Fleet API mode via environment variables:
-  export TESLA_CLIENT_ID="your-client-id"
-  export TESLA_CLIENT_SECRET="your-client-secret"
-  export TESLA_REDIRECT_URI="https://your-domain.com/callback"
-  python -m pypowerwall register --fleet
-
-  # Or just run it and enter credentials interactively:
-  python -m pypowerwall register
+  Fleet API (requires a Tesla developer app):
+    Needs CLIENT_ID, CLIENT_SECRET, and a hosted redirect URI.
+    See https://developer.tesla.com/ to set up an app first.
+    Credentials can be passed via environment variables:
+      export TESLA_CLIENT_ID="your-client-id"
+      export TESLA_CLIENT_SECRET="your-client-secret"
+      export TESLA_REDIRECT_URI="https://your-domain.com/callback"
+    python -m pypowerwall register
 """
 
 import json
@@ -44,6 +38,8 @@ import secrets
 AUTH_BASE = "https://auth.tesla.com"
 TOKEN_BASE = "https://fleet-auth.prd.vn.cloud.tesla.com"
 SCOPE = "openid offline_access energy_device_data energy_cmds"
+OWNER_API_BASE = "https://owner-api.teslamotors.com"
+OWNER_AUTHFILE = ".pypowerwall.auth"  # Shared with Cloud Mode
 
 CERT_DIR = os.getcwd()
 RSA_PRIVATE_KEY_FILE = os.path.join(CERT_DIR, "tedapi_rsa_private.pem")
@@ -265,6 +261,10 @@ def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api
     return tokens["access_token"]
 
 
+class _TokenExpiredError(Exception):
+    """Raised when the API returns 401 (token expired)."""
+
+
 def step3_get_site_id(token, fleet_api_base):
     """Get energy_site_id from Tesla API."""
     print()
@@ -273,6 +273,8 @@ def step3_get_site_id(token, fleet_api_base):
     print("=" * 70)
 
     code, resp = api_call(f"{fleet_api_base}/api/1/products", token=token)
+    if code == 401:
+        raise _TokenExpiredError(resp)
     if code != 200:
         print(f"\n  Failed to get products ({code}): {resp}")
         sys.exit(1)
@@ -474,32 +476,148 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
     print()
 
 
-def main():
-    client_id, client_secret, redirect_uri, fleet_api_base = get_config()
+def owner_api_login(email=None, authpath="", force_reauth=False):
+    """
+    Authenticate with the Tesla Owner API using teslapy.
 
+    This is the same login flow as 'python -m pypowerwall setup' (Cloud Mode).
+    No developer app or hosted key is required — just your Tesla account
+    email and password.
+
+    Args:
+        email:        Tesla account email (prompted if not provided).
+        authpath:     Directory containing the auth cache file.
+        force_reauth: If True, delete the cached token and require a fresh login.
+
+    Returns the Bearer access token string on success.
+    """
+    from pypowerwall.cloud.teslapy import Tesla
+
+    authfile = os.path.join(authpath, OWNER_AUTHFILE) if authpath else OWNER_AUTHFILE
+
+    print("=" * 70)
+    print("  Tesla Owner API — Login")
+    print("=" * 70)
+    print()
+
+    if force_reauth:
+        if os.path.exists(authfile):
+            os.remove(authfile)
+            print(f"  Removed expired token cache ({authfile})")
+        print("  Please log in again to obtain a fresh token.")
+        print()
+    else:
+        print("  This is the same login used by Cloud Mode (python -m pypowerwall setup).")
+        print("  No developer app setup required.")
+        print()
+
+    if not email:
+        while True:
+            email = input("  Tesla account email: ").strip()
+            if "@" in email:
+                break
+            print("  Invalid email address, please try again.")
+
+    tesla = Tesla(email, cache_file=authfile)
+
+    if tesla.authorized and not force_reauth:
+        print(f"  Using cached credentials from {authfile}")
+    else:
+        # PKCE OAuth flow — mirrors PyPowerwallCloud.setup()
+        state = tesla.new_state()
+        code_verifier = tesla.new_code_verifier()
+
+        try:
+            auth_url = tesla.authorization_url(state=state, code_verifier=code_verifier)
+        except Exception as e:
+            print(f"\n  ERROR: Could not generate login URL — {e}")
+            sys.exit(1)
+
+        print("  Open this URL in your browser to log in to your Tesla account:")
+        print()
+        print(f"  {auth_url}")
+        print()
+        print("  After logging in, you will be redirected to a 'Page Not Found' page.")
+        print("  Copy the FULL URL from your browser's address bar and paste it below.")
+        print()
+
+        tesla.close()
+        tesla = Tesla(email, state=state, code_verifier=code_verifier, cache_file=authfile)
+
+        if not tesla.authorized:
+            try:
+                tesla.fetch_token(authorization_response=input("  Paste the redirect URL: ").strip())
+            except Exception as e:
+                print(f"\n  ERROR: Login failed — {e}")
+                sys.exit(1)
+
+        print(f"\n  Login successful, credentials cached to {authfile}")
+
+    token = (tesla.token or {}).get("access_token")
+    if not token:
+        print("  ERROR: Could not retrieve access token.")
+        sys.exit(1)
+    return token
+
+
+def main():
+    print("=" * 70)
+    print("  Tesla RSA Key Registration for Powerwall v1r LAN Mode")
+    print("=" * 70)
+    print()
+    print("  Choose how to authenticate with Tesla:")
+    print()
+    print("    [1] Owner API  (recommended — just your Tesla email and password,")
+    print("                   same login as 'python -m pypowerwall setup')")
+    print("    [2] Fleet API  (requires a developer app at developer.tesla.com)")
+    print()
+    choice = input("  Select [1]: ").strip() or "1"
+
+    print()
     print("=" * 70)
     print("  Generating RSA key pair...")
     print("=" * 70)
     print()
     private_key, public_key_der = generate_rsa_key()
 
-    # Check for existing tokens
-    if os.path.exists(TOKENS_FILE):
-        with open(TOKENS_FILE) as f:
-            tokens = json.load(f)
-        token = tokens.get("access_token")
-        print(f"\n  Found existing tokens from {tokens.get('obtained_at', '?')}")
-        use = input("  Use existing token? [Y/n]: ").strip().lower()
-        if use != "n":
-            site_id, din = step3_get_site_id(token, fleet_api_base)
-            step4_register_key(token, site_id, public_key_der, fleet_api_base)
-            return
+    if choice == "2":
+        # ── Fleet API path ────────────────────────────────────────────────────
+        client_id, client_secret, redirect_uri, fleet_api_base = get_config()
 
-    # Full OAuth flow
-    code = step1_get_auth_code(client_id, redirect_uri)
-    token = step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api_base)
-    site_id, din = step3_get_site_id(token, fleet_api_base)
-    step4_register_key(token, site_id, public_key_der, fleet_api_base)
+        # Check for existing Fleet API tokens
+        if os.path.exists(TOKENS_FILE):
+            with open(TOKENS_FILE) as f:
+                tokens = json.load(f)
+            token = tokens.get("access_token")
+            print(f"\n  Found existing Fleet API tokens from {tokens.get('obtained_at', '?')}")
+            use = input("  Use existing token? [Y/n]: ").strip().lower()
+            if use != "n":
+                site_id, din = step3_get_site_id(token, fleet_api_base)
+                step4_register_key(token, site_id, public_key_der, fleet_api_base)
+                return
+
+        code = step1_get_auth_code(client_id, redirect_uri)
+        token = step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api_base)
+        site_id, din = step3_get_site_id(token, fleet_api_base)
+        step4_register_key(token, site_id, public_key_der, fleet_api_base)
+    else:
+        # ── Owner API path (default) ──────────────────────────────────────────
+        email = None
+        for attempt in range(2):
+            token = owner_api_login(email=email, force_reauth=(attempt > 0))
+            try:
+                site_id, din = step3_get_site_id(token, OWNER_API_BASE)
+                break
+            except _TokenExpiredError as e:
+                if attempt == 0:
+                    print(f"\n  Token expired ({e}).")
+                    print("  Clearing cached credentials and requesting a new login...")
+                    # Preserve the email so the re-auth prompt is skipped
+                    email = input("  Confirm your Tesla account email (or press Enter to re-enter): ").strip() or None
+                else:
+                    print("\n  ERROR: Authentication failed after token refresh. Please try again.")
+                    sys.exit(1)
+        step4_register_key(token, site_id, public_key_der, OWNER_API_BASE)
 
 
 if __name__ == "__main__":
