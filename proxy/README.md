@@ -277,12 +277,32 @@ UI and Advanced Settings
 
 ## Control Mode
 
-If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will attempt to connect to the cloud in addition to local mode setup (if you are using local mode). The `PW_EMAIL` must match your Tesla account and you need to **Setup Cloud** (see details below in script) before using this mode.
+If the `PW_CONTROL_SECRET` environmental variable is set, the proxy will activate control endpoints for setting backup reserve, operation mode, grid charging, and grid export.
+
+**v1r LAN Control (Powerwall 3):** In v1r mode, control commands are sent directly over the wired LAN via config file writes — no cloud setup or Tesla account needed. Just set `PW_CONTROL_SECRET` alongside your v1r configuration.
+
+**Cloud Control (all other modes):** For WiFi TEDAPI, local, or cloud modes, the proxy connects to the Tesla cloud (FleetAPI or Cloud API) for control commands. The `PW_EMAIL` must match your Tesla account and you need to **Setup Cloud** (see details below in script) before using this mode.
 
 _WARNING_: Activating control mode means that the proxy can make changes to your system. This will be available to anyone who can access the proxy. For safety reasons, this mode is disabled by default and should be used with caution.
 
 ```bash
-# Run Proxy - Example using local TEDAPI full mode
+# Run Proxy - v1r LAN mode with control (no cloud needed)
+docker run \
+    -d \
+    -p 8675:8675 \
+    -e PW_PORT='8675' \
+    -e PW_HOST='10.42.1.40' \
+    -e PW_GW_PWD='Gateway_Password' \
+    -e PW_TIMEZONE='America/Los_Angeles' \
+    -e TZ='America/Los_Angeles' \
+    -e PW_RSA_KEY_PATH='/app/.auth/tedapi_rsa_private.pem' \
+    -e PW_CONTROL_SECRET='YourSecretToken' \
+    -v /path/to/tedapi_rsa_private.pem:/app/.auth/tedapi_rsa_private.pem:ro \
+    --name pypowerwall \
+    --restart unless-stopped \
+    jasonacox/pypowerwall
+
+# Run Proxy - TEDAPI/local mode with cloud control
 docker run \
     -d \
     -p 8675:8675 \
@@ -297,7 +317,7 @@ docker run \
     --restart unless-stopped \
     jasonacox/pypowerwall
 
-# Setup Cloud
+# Setup Cloud (only needed for non-v1r modes)
 docker exec -it pypowerwall python3 -m pypowerwall setup -email=email@example.com
 docker restart pypowerwall
 ```
@@ -327,11 +347,18 @@ curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/cont
 # Set Grid Export (battery_ok, pv_only, or never)
 curl -X POST -d "value=battery_ok&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_export
 
+# Schedule Max Backup for 1 hour (v1r only - sets reserve to 100%)
+curl -X POST -d "value=3600&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
+
+# Cancel Max Backup (v1r only)
+curl -X POST -d "value=cancel&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
+
 # Read Settings
 curl http://localhost:8675/control/mode
 curl http://localhost:8675/control/reserve
 curl http://localhost:8675/control/grid_charging
 curl http://localhost:8675/control/grid_export
+curl http://localhost:8675/control/max_backup
 ```
 
 ## Performance Testing

@@ -186,6 +186,8 @@ if authpath:
 cachefile = os.getenv("PW_CACHE_FILE", cf)
 control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
+rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
+wifi_host = os.getenv("PW_WIFI_HOST", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
@@ -254,6 +256,8 @@ proxystats = {
         "PW_CACHE_FILE": cachefile,
         "PW_CONTROL_SECRET": "*" * len(control_secret) if control_secret else None,
         "PW_GW_PWD": "*" * len(gw_pwd) if gw_pwd else None,
+        "PW_RSA_KEY_PATH": rsa_key_path,
+        "PW_WIFI_HOST": wifi_host,
         "PW_NEG_SOLAR": neg_solar,
         "PW_SUPPRESS_NETWORK_ERRORS": suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": network_error_rate_limit,
@@ -809,6 +813,8 @@ try:
         auto_select=True,
         retry_modes=True,
         gw_pwd=gw_pwd,
+        rsa_key_path=rsa_key_path,
+        wifi_host=wifi_host,
     )
 except Exception as e:
     log.error(f"Powerwall Connection Error: {str(e)}")
@@ -838,7 +844,6 @@ if pw.cloudmode or pw.fleetapi:
                 except (KeyboardInterrupt, SystemExit):
                     sys.exit(0)
 else:
-    proxystats["mode"] = "Local"
     log.info("pyPowerwall Proxy Server - Local Mode")
     log.info("Connected to Energy Gateway %s (%s)" % (host, site_name.strip()))
     if pw.tedapi:
@@ -846,6 +851,19 @@ else:
         proxystats["tedapi_mode"] = pw.tedapi_mode
         proxystats["pw3"] = pw.tedapi.pw3
         log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
+    # Set mode string with transport detail
+    def build_mode_string(control=False):
+        """Build mode display string from active transports."""
+        if not pw.tedapi:
+            return "Local"
+        parts = [pw.tedapi_mode]
+        tedapi = pw.tedapi
+        if getattr(tedapi, 'v1r', False) and getattr(tedapi, 'wifi_session', None):
+            parts.append("wifi")
+        if control:
+            parts.append("control")
+        return f"Local ({'+'.join(parts)})"
+    proxystats["mode"] = build_mode_string()
 
 pw_control = None
 if control_secret:
@@ -853,6 +871,9 @@ if control_secret:
     try:
         if pw.cloudmode or pw.fleetapi:
             pw_control = pw
+        elif pw.tedapi and pw.tedapi.v1r:
+            pw_control = pw
+            log.info("Control Mode: Using TEDapi LAN control (v1r filestore)")
         else:
             pw_control = pypowerwall.Powerwall(
                 "",
@@ -868,10 +889,75 @@ if control_secret:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = ""
     if pw_control:
-        log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
+        if pw.tedapi and pw.tedapi.v1r and not pw.cloudmode and not pw.fleetapi:
+            log.info(f"Control Mode Enabled: LAN Mode ({pw.tedapi_mode}+control)")
+        else:
+            log.info(f"Control Mode Enabled: Cloud Mode ({pw_control.mode}) Connected")
+        # Update mode string to include control transport
+        if not pw.cloudmode and not pw.fleetapi and pw.tedapi:
+            proxystats["mode"] = build_mode_string(control=True)
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = None
+
+
+def get_transport_health():
+    """Build transport health status dict for /health endpoint."""
+    transports = {}
+    tedapi = getattr(pw, 'tedapi', None)
+    if tedapi and hasattr(tedapi, 'v1r') and tedapi.v1r:
+        # v1r LAN transport
+        v1r_info = {
+            "active": True,
+            "status": "ok" if tedapi.din else "unavailable",
+            "host": tedapi.gw_ip,
+            "leader_din": tedapi.din,
+        }
+        if tedapi.lan_last_success:
+            v1r_info["last_success_age_seconds"] = round(time.time() - tedapi.lan_last_success, 1)
+        transports["v1r_lan"] = v1r_info
+        # WiFi TEDAPI transport (follower fallback)
+        if tedapi.wifi_session:
+            cooldown_remaining = max(0, tedapi.wifi_cooldown - time.time())
+            if tedapi.wifi_available:
+                wifi_status = "ok"
+            elif cooldown_remaining > 0:
+                wifi_status = "degraded"
+            else:
+                wifi_status = "unavailable"
+            transports["wifi_tedapi"] = {
+                "active": True,
+                "status": wifi_status,
+                "host": tedapi.wifi_host,
+                "available": tedapi.wifi_available,
+                "cooldown_remaining_seconds": round(cooldown_remaining, 0),
+            }
+        else:
+            transports["wifi_tedapi"] = {"active": False}
+    elif tedapi:
+        # Standard WiFi TEDAPI
+        transports["wifi_tedapi"] = {
+            "active": True,
+            "status": "ok" if tedapi.din else "unavailable",
+            "host": tedapi.gw_ip,
+        }
+    # Control transport
+    if pw_control:
+        if tedapi and tedapi.v1r:
+            transports["lan_control"] = {
+                "active": True,
+                "status": "ok",
+                "mode": "v1r_filestore",
+            }
+        else:
+            transports["cloud_control"] = {
+                "active": True,
+                "status": "ok",
+                "mode": getattr(pw_control, 'mode', 'unknown'),
+            }
+    elif control_secret:
+        transports["cloud_control"] = {"active": False, "status": "failed"}
+    return transports
 
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
@@ -921,8 +1007,9 @@ class Handler(BaseHTTPRequestHandler):
                     message = '{"error": "Control Command Error: Invalid Request"}'
                     log.error(f"Control Command Error: {er}")
                 if not message:
-                    # Check if unable to connect to cloud
-                    if pw_control.client is None:
+                    # Check if unable to connect (cloud mode needs client, tedapi needs tedapi)
+                    has_tedapi_control = pw.tedapi and pw.tedapi.v1r
+                    if not has_tedapi_control and pw_control.client is None:
                         message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
                         log.error(
                             "Control Command Error: Unable to connect to cloud mode - Run Setup"
@@ -1019,6 +1106,34 @@ class Handler(BaseHTTPRequestHandler):
                                     message = (
                                         '{"error": "Control Command Value Invalid"}'
                                     )
+                            elif action == "max_backup":
+                                if not pw.tedapi or not pw.tedapi.v1r:
+                                    message = '{"error": "max_backup requires v1r LAN transport"}'
+                                elif not value:
+                                    # Return current backup events
+                                    result = safe_pw_call(pw.tedapi.get_backup_events)
+                                    message = json.dumps(
+                                        result if result is not None
+                                        else {"error": "Failed to get backup events"}
+                                    )
+                                elif value.lower() == "cancel":
+                                    result = safe_pw_call(pw.tedapi.cancel_max_backup)
+                                    if result:
+                                        message = '{"max_backup": "Cancelled"}'
+                                    else:
+                                        message = '{"error": "Failed to cancel max backup"}'
+                                    log.info("Control Command: Cancel Max Backup")
+                                elif value.isdigit():
+                                    result = safe_pw_call(
+                                        pw.tedapi.schedule_max_backup, int(value)
+                                    )
+                                    if result:
+                                        message = '{"max_backup": "Scheduled for %s seconds"}' % value
+                                    else:
+                                        message = '{"error": "Failed to schedule max backup"}'
+                                    log.info(f"Control Command: Schedule Max Backup for {value}s")
+                                else:
+                                    message = '{"error": "Control Command Value Invalid - use seconds or cancel"}'
                             else:
                                 message = '{"error": "Invalid Command Action"}'
                         else:
@@ -1286,6 +1401,8 @@ class Handler(BaseHTTPRequestHandler):
             # Connection Health and Cache Status
             health_info = {
                 "pypowerwall": "%s Proxy %s" % (pypowerwall.version, BUILD),
+                "mode": proxystats.get("mode", "Unknown"),
+                "tedapi_mode": proxystats.get("tedapi_mode", "off"),
                 "pypowerwall_cache_expire": cache_expire,
                 "degradation_cache_ttl_seconds": degradation_cache_ttl_seconds,
                 "graceful_degradation": graceful_degradation,
@@ -1296,6 +1413,9 @@ class Handler(BaseHTTPRequestHandler):
                 ).isoformat(),
                 "current_time": datetime.datetime.now().isoformat(),
             }
+
+            # Add transport status for v1r/hybrid modes
+            health_info["transports"] = get_transport_health()
 
             # Add overall proxy response counters
             with proxystats_lock:
@@ -1795,6 +1915,23 @@ class Handler(BaseHTTPRequestHandler):
                 message = '{"grid_export": "%s"}' % (
                     safe_pw_call(pw_control.get_grid_export) or "unknown"
                 )
+        elif request_path.startswith("/control/max_backup"):
+            # Current backup events (requires v1r)
+            if not pw_control:
+                message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
+            elif not pw.tedapi or not pw.tedapi.v1r:
+                message = '{"error": "max_backup requires v1r LAN transport"}'
+            else:
+                result = safe_pw_call(pw.tedapi.get_backup_events)
+                if result is not None:
+                    # Auto-cancel expired events (gateway leaves them lingering)
+                    mb = result.get('manual_backup')
+                    if mb and not mb.get('active'):
+                        safe_pw_call(pw.tedapi.cancel_max_backup)
+                        result['manual_backup'] = None
+                    message = json.dumps(result)
+                else:
+                    message = '{"error": "Failed to get backup events"}'
         elif request_path == "/fans":
             # Fan speeds in raw format
             message = json.dumps(

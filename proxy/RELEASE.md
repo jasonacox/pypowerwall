@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t89 (6 Mar 2026)
+
+* Added `/control/max_backup` endpoint for scheduling, cancelling, and querying max backup events over v1r LAN
+* Uses TEGMessages protobuf commands (fields 45-50) — same mechanism as the Tesla app's Storm Watch
+* Auto-cancels existing events before scheduling new ones; auto-cleans expired events on GET queries
+
 ### Proxy t88 (6 Jan 2026)
 
 * Upgraded to pyPowerwall v0.14.6 with support for firmware 25.42.2+ gzip-compressed TEDAPI responses
