@@ -213,7 +213,7 @@ import pypowerwall
 pw = pypowerwall.Powerwall(
     host="10.42.1.40",                              # Powerwall vendor subnet IP
     gw_pwd="ABCDEXXXXX",                            # Full gateway password from QR sticker
-    rsa_key_path="/path/to/tedapi_rsa_private.pem"   # RSA key from fleet_register.py
+    rsa_key_path="/path/to/tedapi_rsa_private.pem"   # RSA key from v1r_register.py
 )
 
 # Monitor

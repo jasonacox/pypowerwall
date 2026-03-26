@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Tesla Fleet API — RSA Key Registration for Powerwall LAN TEDapi v1r
+Tesla RSA Key Registration for Powerwall LAN TEDapi v1r
 
-Generates an RSA-4096 key pair, registers it with Tesla via Fleet API OAuth,
-and saves the private key for use with pypowerwall's v1r LAN mode.
+Generates an RSA-4096 key pair, registers it with the Powerwall via
+Tesla Fleet API OAuth, and saves the private key for use with
+pypowerwall's v1r LAN mode.
 
 Credentials can be provided via environment variables or entered interactively.
 
@@ -18,11 +19,11 @@ Usage:
   # Via pip install:
   python -m pypowerwall register
 
-  # Via environment variables:
+  # Fleet API mode via environment variables:
   export TESLA_CLIENT_ID="your-client-id"
   export TESLA_CLIENT_SECRET="your-client-secret"
   export TESLA_REDIRECT_URI="https://your-domain.com/callback"
-  python -m pypowerwall register
+  python -m pypowerwall register --fleet
 
   # Or just run it and enter credentials interactively:
   python -m pypowerwall register

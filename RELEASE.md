@@ -5,7 +5,7 @@
 * Add `/tedapi/v1r` transport for Powerwall 3 wired LAN access without requiring WiFi connection to `192.168.91.1` - by @nalditopr in https://github.com/jasonacox/pypowerwall/pull/265
     * New `tedapi_v1r.py` RSA-signed transport class — handles TLV payload construction, PKCS1v15+SHA512 signing, RoutableMessage protobuf wrapping, and Bearer token authentication
     * New `tedapi_combined_pb2.py` — compiled protobuf definitions for v1r message format (`RoutableMessage`, `MessageEnvelope`, etc.)
-    * New `pypowerwall register` CLI command (and `fleet_register.py` script) for generating an RSA-4096 key pair and registering it with the Powerwall via Tesla Fleet API OAuth
+    * New `pypowerwall register` CLI command (and `v1r_register.py` script) for generating an RSA-4096 key pair and registering it with the Powerwall via Tesla Owner API (default) or Fleet API OAuth
     * `Powerwall()` constructor accepts new `rsa_key_path` parameter — when provided alongside `password`/`gw_pwd`, the library automatically selects v1r mode
     * `gw_pwd` (full 10-character QR code password from the Powerwall sticker) auto-derives the last-5-character Basic API password, simplifying configuration
     * Proxy server supports new `PW_RSA_KEY_PATH` environment variable to pass the RSA key path through to `Powerwall()`

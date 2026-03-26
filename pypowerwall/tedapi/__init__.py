@@ -152,13 +152,20 @@ class TEDAPI:
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
         self.v1r = v1r
         self.v1r_transport = None
-        # WiFi fallback for v1r mode (follower queries).
+        # WiFi fallback for v1r mode.
+        # - Follower queries always use wifi_host when set.
+        # - Primary queries fall back to wifi_host when the wired LAN (v1r) is down.
         # Only enabled when the caller explicitly provides a wifi_host string.
         self.wifi_host = wifi_host
         self.wifi_session = None
         self.wifi_available = False
-        self.wifi_cooldown = 0  # timestamp when cooldown expires
+        self.wifi_cooldown = 0      # timestamp when follower WiFi cooldown expires
         self.wifi_last_success = 0  # timestamp of last successful WiFi call
+        self.wifi_fail_count = 0    # consecutive follower WiFi failures (exponential backoff)
+        # LAN (v1r) failure tracking — triggers full fallback to WiFi TEDAPI v1
+        self.lan_failed = False     # True when wired LAN is unreachable
+        self.lan_fail_count = 0     # consecutive LAN failures
+        self.lan_recover_after = 0  # timestamp after which to retry LAN
         if v1r:
             if not password or not rsa_key_path:
                 raise ValueError("v1r mode requires password and rsa_key_path")
@@ -209,6 +216,22 @@ class TEDAPI:
         # Fetch DIN from Powerwall
         log.debug("Fetching DIN from Powerwall...")
         if self.v1r:
+            # When LAN is down, fetch DIN from wifi_host instead
+            if self.lan_failed:
+                if not self.wifi_session:
+                    return None
+                try:
+                    url = f'https://{self.wifi_host}/tedapi/din'
+                    r = self.wifi_session.get(url, timeout=self.timeout)
+                    if r.status_code == HTTPStatus.OK:
+                        content = decompress_response(r.content)
+                        din = content.decode('utf-8').strip()
+                        self.pwcachetime["din"] = time.time()
+                        self.pwcache["din"] = din
+                        return din
+                except Exception as e:
+                    log.error("get_din WiFi fallback failed: %s", e)
+                return None
             din = self.v1r_transport.get_din()
             if din:
                 self.pwcachetime["din"] = time.time()
@@ -308,15 +331,43 @@ class TEDAPI:
             log.debug("Get Configuration from Powerwall")
             if self.v1r:
                 # v1r uses FileStore protobuf format for config
-                try:
-                    data = self.v1r_transport.get_config_v1r(self.din)
-                    if data:
-                        log.debug(f"Configuration (v1r): {data}")
-                        self.pwcachetime["config"] = time.time()
-                        self.pwcache["config"] = data
-                except Exception as e:
-                    log.error(f"Error fetching config via v1r: {e}")
-                    data = None
+                # When LAN is down, fall back to WiFi TEDAPI v1 config path
+                if self.lan_failed and self.wifi_session:
+                    log.debug("get_config: LAN down, falling back to WiFi TEDAPI")
+                    pb = tedapi_pb2.Message()
+                    pb.message.deliveryChannel = 1
+                    pb.message.sender.local = 1
+                    pb.message.recipient.din = self.din
+                    pb.message.config.send.num = 1
+                    pb.message.config.send.file = "config.json"
+                    pb.tail.value = 1
+                    try:
+                        raw = self._post_tedapi_wifi(pb.SerializeToString())
+                        if raw:
+                            tedapi = tedapi_pb2.Message()
+                            tedapi.ParseFromString(raw)
+                            payload = tedapi.message.config.recv.file.text
+                            try:
+                                data = json.loads(payload)
+                            except json.JSONDecodeError:
+                                data = {}
+                            if 'battery_blocks' not in data:
+                                data["battery_blocks"] = []
+                            self.pwcachetime["config"] = time.time()
+                            self.pwcache["config"] = data
+                    except Exception as e:
+                        log.error(f"get_config WiFi fallback error: {e}")
+                        data = None
+                else:
+                    try:
+                        data = self.v1r_transport.get_config_v1r(self.din)
+                        if data:
+                            log.debug(f"Configuration (v1r): {data}")
+                            self.pwcachetime["config"] = time.time()
+                            self.pwcache["config"] = data
+                    except Exception as e:
+                        log.error(f"Error fetching config via v1r: {e}")
+                        data = None
             else:
                 # Build Protobuf to fetch config (WiFi v1 format)
                 pb = tedapi_pb2.Message()
@@ -1318,7 +1369,7 @@ class TEDAPI:
         """
         if not self.wifi_session:
             return None
-        # Check WiFi cooldown (60s after failure)
+        # Exponential backoff for follower WiFi failures (60s * 2^fail_count, max 128 min)
         if self.wifi_cooldown > time.time():
             remaining = self.wifi_cooldown - time.time()
             log.debug("WiFi cooldown active (%.0fs remaining), skipping", remaining)
@@ -1327,27 +1378,37 @@ class TEDAPI:
         if not self.wifi_available:
             self._test_wifi_path()
             if not self.wifi_available:
-                # Still down — set another cooldown
-                self.wifi_cooldown = time.time() + 60
+                self.wifi_fail_count += 1
+                backoff = min(60 * (2 ** self.wifi_fail_count), 7680)  # caps at ~128 min
+                self.wifi_cooldown = time.time() + backoff
+                log.debug("WiFi unavailable, next retry in %.0fs (failure #%d)",
+                           backoff, self.wifi_fail_count)
                 return None
         url = f'https://{self.wifi_host}{url_suffix}'
         try:
             r = self.wifi_session.post(url, data=pb_bytes, timeout=self.timeout)
             if r.status_code in BUSY_CODES:
                 log.warning("WiFi TEDAPI rate limited, activating 60s cooldown")
+                self.wifi_fail_count += 1
                 self.wifi_cooldown = time.time() + 60
                 return None
             if r.status_code != HTTPStatus.OK:
                 log.error("WiFi TEDAPI error for %s: %s", url_suffix, r.status_code)
-                self.wifi_cooldown = time.time() + 60
+                self.wifi_fail_count += 1
+                backoff = min(60 * (2 ** self.wifi_fail_count), 7680)
+                self.wifi_cooldown = time.time() + backoff
                 self.wifi_available = False
                 return None
+            # Success — reset failure tracking
             self.wifi_available = True
+            self.wifi_fail_count = 0
             self.wifi_last_success = time.time()
             return decompress_response(r.content)
         except Exception as e:
             log.error("WiFi TEDAPI request failed: %s", e)
-            self.wifi_cooldown = time.time() + 60
+            self.wifi_fail_count += 1
+            backoff = min(60 * (2 ** self.wifi_fail_count), 7680)
+            self.wifi_cooldown = time.time() + backoff
             self.wifi_available = False
             return None
 
@@ -1387,6 +1448,10 @@ class TEDAPI:
                 log.error("v1r: Failed to get DIN")
                 return None
             log.debug(f"v1r: Connected, DIN={self.din}")
+            # On successful LAN connect, clear any prior failure state
+            self.lan_failed = False
+            self.lan_fail_count = 0
+            self.lan_recover_after = 0
             # Test WiFi fallback path if configured
             if self.wifi_session:
                 self._test_wifi_path()
@@ -1413,6 +1478,29 @@ class TEDAPI:
             For v1r: the inner protobuf_message_as_bytes from the RoutableMessage response
         """
         if self.v1r:
+            # ── LAN recovery probe ────────────────────────────────────────────
+            # If LAN was marked failed but recovery window has passed, attempt
+            # a reconnect before routing this request over WiFi.
+            if self.lan_failed and time.time() >= self.lan_recover_after:
+                log.info("v1r: LAN recovery window reached — attempting reconnect")
+                if self._connect_v1r():  # clears lan_failed on success
+                    log.info("v1r: LAN recovered — resuming wired transport")
+                else:
+                    # Still down — extend backoff and continue on WiFi
+                    self.lan_fail_count += 1
+                    backoff = min(60 * (2 ** self.lan_fail_count), 7680)
+                    self.lan_recover_after = time.time() + backoff
+                    log.warning("v1r: LAN still unreachable, next retry in %.0fs", backoff)
+
+            # ── LAN failed → full WiFi TEDAPI v1 fallback ────────────────────
+            if self.lan_failed:
+                if not self.wifi_session:
+                    log.error("v1r: LAN down and no WiFi fallback configured")
+                    return None
+                log.debug("v1r: LAN down — routing primary query via WiFi TEDAPI")
+                return self._post_tedapi_wifi(pb_bytes, url_suffix)
+
+            # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message
             # wrapper with tail). Extract the envelope from the full Message.
             try:
@@ -1426,6 +1514,21 @@ class TEDAPI:
             # on the leader only. The follower DIN is in the envelope's recipient
             # field for routing, but TLV personalization must match the leader.
             inner = self.v1r_transport.post_v1r(envelope_bytes, self.din)
+            if inner is None:
+                # LAN call failed — track for failover
+                self.lan_fail_count += 1
+                if self.lan_fail_count >= 3:
+                    self.lan_failed = True
+                    backoff = min(60 * (2 ** self.lan_fail_count), 7680)
+                    self.lan_recover_after = time.time() + backoff
+                    log.warning(
+                        "v1r: LAN failed %d consecutive times — switching to WiFi TEDAPI fallback"
+                        " (retry LAN in %.0fs)",
+                        self.lan_fail_count, backoff
+                    )
+            else:
+                # Successful LAN call — reset counter
+                self.lan_fail_count = 0
             return inner
         else:
             url = f'https://{self.gw_ip}{url_suffix}'

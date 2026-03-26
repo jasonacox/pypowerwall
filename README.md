@@ -136,7 +136,7 @@ python3 -m pypowerwall tedapi
 - Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
 - QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
-### v1r LAN TEDapi Setup - Option 5
+### v1r LAN TEDapi Setup - Option 5 (Powerwall 3 Wired LAN)
 
 The Powerwall 3 exposes endpoints on the **wired LAN** (the vendor/third-party Ethernet port) that provide local access to Powerwall data without needing Wi-Fi access to `192.168.91.1`. This is especially useful for always-on monitoring setups where a wired Ethernet connection to the Powerwall gateway is available.
 
@@ -204,38 +204,37 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://10.0.1.50/api/system_status/g
 
 #### Full v1r LAN Access (RSA Key Required)
 
-With an RSA key registered via `fleet_register.py`, you get full TEDapi access over the wired LAN — equivalent to what was previously only available over Wi-Fi:
+With an RSA key registered via `v1r_register.py`, you get full TEDapi access over the wired LAN — equivalent to what was previously only available over Wi-Fi:
 
-> **Note:** This requires a Tesla developer account with Fleet API access to register the RSA key. If you already have FleetAPI set up (Option 2), you can reuse those credentials. If not, expect the one-time setup to take some effort — see the [FleetAPI Cloud Setup](#fleetapi-cloud-setup---option-2) section for the developer account requirements.
+> **Note:** The easiest way to register is using the Tesla Owner API (no developer app required) — just sign in with your Tesla account. Run `python -m pypowerwall register` and select option 1. If you already have FleetAPI set up (Option 2), you can also use those credentials by selecting option 2.
 
 ##### Requirements
 
 1. **Wired LAN connection** to the Powerwall 3 gateway vendor subnet (see Network Requirements above)
-2. **RSA-4096 key pair** registered with the Powerwall via Tesla Fleet API
+2. **RSA-4096 key pair** registered with the Powerwall via Tesla Owner API or Fleet API
 3. **Gateway password** (`gw_pwd` — from the QR sticker on the gateway; the last 5 characters are auto-derived for login)
-4. **Tesla developer account** with Fleet API credentials (CLIENT_ID, CLIENT_SECRET)
 
 ##### RSA Key Registration
 
-Use `fleet_register.py` (or `python -m pypowerwall register` after pip install) to generate and register an RSA-4096 key pair with the Powerwall:
+Use `v1r_register.py` (or `python -m pypowerwall register` after pip install) to generate and register an RSA-4096 key pair with the Powerwall:
 
 ```bash
-python3 fleet_register.py
+python3 v1r_register.py
 ```
 
-The script will interactively prompt you for:
-- Tesla Fleet API credentials (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI)
-- Fleet API region (North America, Europe, or China)
+When prompted, select the registration method:
+- **Option 1 — Tesla Owner API** (recommended): Just sign in with your Tesla account. No developer app needed.
+- **Option 2 — Tesla Fleet API**: Requires a registered developer application (CLIENT_ID, CLIENT_SECRET, REDIRECT_URI).
 
-It will then:
+The script will then:
 1. Generate an RSA-4096 key pair (saves private key to `tedapi_rsa_private.pem`)
-2. Walk you through Tesla OAuth to authorize the application
-3. Register the public key with the Powerwall via Fleet API
-4. Prompt you to confirm registration by toggling a Powerwall breaker off and back on
+2. Walk you through Tesla OAuth to authorize the registration
+3. Register the public key with the Powerwall
+4. Prompt you to confirm registration by toggling a Powerwall breaker off and back on (if not auto-verified)
 
 After the breaker toggle, wait for the Powerwall status light to turn from red back to white — this can take 30-60 seconds. The script will poll for confirmation and show whether the key was authorized.
 
-**Note:** Tesla Fleet API requires your application’s public key to be served at `https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem`. A Cloudflare Worker or any static web host can serve this file.
+**Note (Fleet API only):** Tesla Fleet API requires your application’s public key to be served at `https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem`. A Cloudflare Worker or any static web host can serve this file.
 
 ##### Full v1r Python Example
 
@@ -247,7 +246,7 @@ pw = pypowerwall.Powerwall(
     gw_pwd="ABCDEXXXXX",                       # Full gateway password (last 5 auto-derived)
     email="user@example.com",
     timezone="America/Los_Angeles",
-    rsa_key_path="/path/to/tedapi_rsa_private.pem"  # RSA key from fleet_register.py
+    rsa_key_path="/path/to/tedapi_rsa_private.pem"  # RSA key from v1r_register.py
 )
 
 # All standard methods work over v1r:
@@ -459,7 +458,7 @@ if OPTION == 5:
    password = ""                       # Not needed — auto-derived from gw_pwd
    email = ""
    timezone = "America/Los_Angeles"
-   rsa_key_path = "/path/to/tedapi_rsa_private.pem"  # From fleet_register.py
+rsa_key_path = "/path/to/tedapi_rsa_private.pem"  # From v1r_register.py
 
 # Note on gw_pwd (Gateway Password)
 # - `gw_pwd` is the full Gateway Wi‑Fi password printed on the QR label.
@@ -474,7 +473,7 @@ if OPTION == 5:
 #
 # Note on rsa_key_path (v1r LAN TEDapi)
 # - Only needed for Powerwall 3 wired LAN access (mode 5) with full protobuf data.
-# - Requires RSA-4096 key pair registered via Tesla Fleet API (see fleet_register.py).
+# - Requires RSA-4096 key pair registered via Tesla Owner API or Fleet API (see v1r_register.py).
 # - Without rsa_key_path, basic LAN mode still works for core power/battery/grid data.
 
 # Connect to Powerwall - auto_select mode (local, fleetapi, cloud, tedapi, v1r)

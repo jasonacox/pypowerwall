@@ -8,7 +8,7 @@ over the wired LAN using RSA-4096 signed protobuf messages. Unlike the
 WiFi-only /tedapi/v1 endpoint (HTTP Basic auth), /tedapi/v1r uses RSA
 signatures embedded in RoutableMessage protobufs for authentication.
 
-Requires a pre-registered RSA-4096 key pair (see fleet_register.py).
+Requires a pre-registered RSA-4096 key pair (see v1r_register.py).
 """
 
 import json
@@ -51,7 +51,7 @@ class TEDAPIv1r:
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"RSA private key not found at {rsa_key_path}. "
-                "Run fleet_register.py to generate and register a key pair."
+                "Run v1r_register.py (or: python -m pypowerwall register) to generate and register a key pair."
             )
         # Cache DER-encoded public key for signature identity
         self._public_key_der = self._private_key.public_key().public_bytes(
@@ -209,7 +209,7 @@ class TEDAPIv1r:
                 fault_name = combined_pb2.MessageFault_E.Name(fault)
                 if fault == combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID:
                     log.error(f"v1r response fault: {fault_name}")
-                    log.error("RSA key not registered. Run fleet_register.py to register your key.")
+                    log.error("RSA key not registered. Run v1r_register.py (or: python -m pypowerwall register) to register your key.")
                 elif fault == combined_pb2.MESSAGEFAULT_ERROR_TIMEOUT:
                     log.debug(f"v1r response fault: {fault_name} (sub-device may not be routable via v1r)")
                 else:
