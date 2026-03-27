@@ -52,7 +52,8 @@ def main():
                            help=f"Seconds to wait per host [Default={timeout:.1f}]")
     scan_args.add_argument("-nocolor", action="store_true", default=not color,
                            help="Disable color text output.")
-    scan_args.add_argument("-ip", type=str, default=ip, help="IP address within network to scan.")
+    scan_args.add_argument("network", type=str, nargs="?", default=ip, metavar="CIDR",
+                           help="IPv4 CIDR network to scan (e.g. 192.168.1.0/24). Auto-detects if omitted.")
     scan_args.add_argument("-hosts", type=int, default=hosts,
                            help=f"Number of hosts to scan simultaneously [Default={hosts}]")
 
@@ -154,7 +155,7 @@ def main():
 
         print("pyPowerwall [%s] - Scanner\n" % version)
         scan.scan(
-            ip=args.ip,
+            cidr=args.network,
             max_threads=args.hosts,
             timeout=args.timeout,
             color=not args.nocolor,

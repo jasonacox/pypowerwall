@@ -11,15 +11,15 @@
     and/or Powerwall. It uses your local IP address as a default.
 
 """
+import argparse
 import errno
 import ipaddress
 import socket
 import sys
-import threading
 import time
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
-from ipaddress import IPv4Address
 from queue import Queue
 from typing import Any, Dict, Final, List, Optional
 
@@ -89,11 +89,11 @@ def get_my_ip() -> str:
         except Exception:
             raise
 
-def check_connection(addr: IPv4Address, context: ScanContext, port: int = 443, max_retries: int = 10, retry_delay: float = 0.1) -> bool:
+def check_connection(addr: str, context: ScanContext, port: int = 443, max_retries: int = 10, retry_delay: float = 0.1) -> bool:
     """Checks for simple connection status to a provided address.
 
     Args:
-        addr (IPv4Address): The address to attempt connection to.
+        addr (str): The address to attempt connection to.
         context (ScanContext): Context controlling output interactivity, color, and timeout behaviors.
         port (int, optional): The port to connect to. Defaults to 443.
         max_retries (int, optional): Maximum number of retry attempts. Defaults to 10.
@@ -103,20 +103,20 @@ def check_connection(addr: IPv4Address, context: ScanContext, port: int = 443, m
         bool: True if connection is successful, False otherwise.
     """
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
-        conn.settimeout(context.timeout)
-        for _ in range(max_retries):
-            try:
+    for _ in range(max_retries):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
+                conn.settimeout(context.timeout)
                 result = conn.connect_ex((str(addr), port))
                 if result == 0:
                     return True
                 elif result != errno.EAGAIN:
                     return False
-            except Exception as e:
-                if context.interactive:
-                    print(f"An error occurred during connection attempt: {e}")
-                return False
-            time.sleep(retry_delay)
+        except Exception as e:
+            if context.interactive:
+                print(f"An error occurred during connection attempt: {e}")
+            return False
+        time.sleep(retry_delay)
     return False  # Connection failed after max retries
 
 # Example Tesla Inverter response to https://{addr}/api/status
@@ -135,11 +135,11 @@ def check_connection(addr: IPv4Address, context: ScanContext, port: int = 443, m
 #      "can_reboot": false
 # }
 
-def scan_ip(addr: IPv4Address, context: ScanContext, result_queue: Queue) -> None:
+def scan_ip(addr: str, context: ScanContext, result_queue: Queue) -> None:
     """Thread Worker: Scan IP Address for presence of a Tesla Energy Gateway.
 
     Args:
-        addr (IPv4Address): IP address to scan
+        addr (str): IP address to scan
         context (ScanContext): Context controlling output interactivity, color, and timeout behaviors.
         result_queue (Queue): Thread safe queue to store results of the asynchronous scan.
     """
@@ -189,16 +189,12 @@ def scan_ip(addr: IPv4Address, context: ScanContext, result_queue: Queue) -> Non
                 'din': 'Powerwall-3',
                 'firmware': 'Cloud and TEDAPI Mode support only - See https://tinyurl.com/pw3support'
             })
-        elif context.interactive:
-            # Not a Powerwall
-            print(f"{host} OPEN{context.dim()} - Not a Tesla Energy Gateway")
     except Exception:
-        if context.interactive:
-            print(f'{host} OPEN{context.dim()} - Not a Tesla Energy Gateway')
+        pass
 
 
 def scan(
-    ip: Optional[str] = None,
+    cidr: Optional[str] = None,
     max_threads: int = 30,
     timeout: float = 1.0,
     color: bool = False,
@@ -207,7 +203,7 @@ def scan(
     """Scan the local network for Tesla Powerwall Gateways.
 
     Args:
-        ip (Optional[str], optional): IP address to determine the network to scan. If None, autodetects.
+        cidr (Optional[str], optional): IPv4 CIDR network to scan (e.g. "10.0.0.0/16"). If None, autodetects as /24.
         max_threads (int, optional): Maximum number of concurrent threads/IP addresses to simultaneously scan. Defaults to 30.
         timeout (float, optional): Timeout in seconds for each host scan. Defaults to 1.0.
         color (bool, optional): If True, use colored output. Defaults to False.
@@ -219,11 +215,15 @@ def scan(
 
     context = ScanContext(timeout=timeout, color=color, interactive=interactive)
 
-    # Fetch my IP address and assume /24 network
+    # Determine network to scan
     # noinspection PyBroadException
     try:
-        ip = get_my_ip() if ip is None else ip
-        network = ipaddress.IPv4Network(ip + '/24', strict=False)
+        if cidr is None:
+            cidr = get_my_ip()
+        # If no CIDR prefix provided (e.g. bare IP), default to /24.
+        if '/' not in cidr:
+            cidr = cidr + '/24'
+        network = ipaddress.IPv4Network(cidr, strict=False)
     except Exception:
         if context.interactive:
             print(f"{context.alert()}ERROR: Unable to determine your IP address and network automatically.{context.normal()}")
@@ -232,8 +232,6 @@ def scan(
     if context.interactive:
         print(f"{context.bold()}\npyPowerwall Network Scanner{context.dim()} [{pypowerwall.version}]{context.normal()}")
         print(f'{context.dim()}Scan local network for Tesla Powerwall Gateways\n')
-
-    max_threads = min(200, max_threads)
 
     if context.timeout < 0.2 and context.interactive:
         print(f'{context.alert()}\tWARNING: Setting a low timeout ({context.timeout}) may cause misses.\n')
@@ -244,7 +242,7 @@ def scan(
 
         # noinspection PyBroadException
         try:
-            response = input(f"{context.subbold()}\tEnter {context.bold()}Network{context.subbold()} or press enter to use {network}{context.normal()}")
+            response = input(f"{context.subbold()}\tEnter {context.bold()}Network CIDR{context.subbold()} or press enter to use {network}{context.normal()}")
         except Exception:
             # Assume user aborted
             print(f"{context.alert()}  Cancel\n\n{context.normal()}")
@@ -261,25 +259,18 @@ def scan(
 
         print(f"\n{context.bold()}\tRunning Scan...{context.dim()}")
 
+    # Cap threads to avoid exhausting OS memory (each thread stack uses ~8MB).
+    max_safe_threads = 4000
+    if max_threads > max_safe_threads:
+        if context.interactive:
+            print(f'{context.dim()}\tNote: Capping threads from {max_threads} to {max_safe_threads} (OS safety limit){context.normal()}')
+        max_threads = max_safe_threads
+
     result_queue = Queue()
-    threads: List[threading.Thread] = []
     try:
-        for addr in network.hosts():
-            # Scan each host in a separate thread
-            addr_str: Final = str(addr)
-            thread = threading.Thread(target=scan_ip, args=(addr_str, context, result_queue))
-            thread.start()
-            threads.append(thread)
-
-            # Limit the number of concurrent threads
-            while len(threads) >= max_threads:
-                # Remove completed threads
-                threads = [t for t in threads if t.is_alive()]
-                time.sleep(0.01)
-
-        for thread in threads:
-            # Wait for remaining threads to exit
-            thread.join()
+        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            for addr in network.hosts():
+                executor.submit(scan_ip, str(addr), context, result_queue)
 
         if context.interactive:
             print(f"{context.dim()}\r\t  Done\t\t\t\t\t\t   \n{context.normal()}")
@@ -290,7 +281,7 @@ def scan(
     # Collect results from the queue
     discovered_devices: List[Dict[Any, Any]] = []
     while not result_queue.empty():
-        device_info: Final = result_queue.get()
+        device_info = result_queue.get()
         discovered_devices.append(device_info)
 
     if context.interactive:
