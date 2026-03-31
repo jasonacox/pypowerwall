@@ -384,7 +384,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if not isinstance(config, dict) or not isinstance(status, dict):
             return None
         timestamp = lookup(status, ("system", "time"))
-        data = API_METERS_AGGREGATES_STUB
+        data = API_METERS_AGGREGATES_STUB()
 
         # --- Site (Grid) ---
         site_vals = self._extract_site_section(status, config, force)
@@ -627,7 +627,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
         batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
-        data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
+        data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force)
         b = []
         for bk in blocks:
