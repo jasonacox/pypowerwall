@@ -1081,13 +1081,17 @@ class Handler(BaseHTTPRequestHandler):
         # Cache miss - generate fresh data
         # Optimization: Use single aggregates call for all power values
         aggregates = self.safe_pw_call(self.pw.poll, '/api/meters/aggregates')
-        if aggregates:
-            grid = aggregates.get('site', {}).get('instant_power', 0)
-            solar = aggregates.get('solar', {}).get('instant_power', 0)
-            battery = aggregates.get('battery', {}).get('instant_power', 0)
-            home = aggregates.get('load', {}).get('instant_power', 0)
-        else:
-            grid = solar = battery = home = 0
+        if not aggregates:
+            # Failed to get data - serve stale cache if available, never cache zeros
+            stale = get_performance_stale("/json")
+            if stale is not None:
+                return self.send_json_response(json.loads(stale))
+            return self.send_json_response(None)
+
+        grid = aggregates.get('site', {}).get('instant_power', 0)
+        solar = aggregates.get('solar', {}).get('instant_power', 0)
+        battery = aggregates.get('battery', {}).get('instant_power', 0)
+        home = aggregates.get('load', {}).get('instant_power', 0)
 
         # Apply negative solar correction if configured
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
@@ -1129,13 +1133,17 @@ class Handler(BaseHTTPRequestHandler):
         # Cache miss - generate fresh data
         # Optimization: Use single aggregates call for all power values
         aggregates = self.safe_pw_call(self.pw.poll, '/api/meters/aggregates')
-        if aggregates:
-            grid = aggregates.get('site', {}).get('instant_power', 0)
-            solar = aggregates.get('solar', {}).get('instant_power', 0)
-            battery = aggregates.get('battery', {}).get('instant_power', 0)
-            home = aggregates.get('load', {}).get('instant_power', 0)
-        else:
-            grid = solar = battery = home = 0
+        if not aggregates:
+            # Failed to get data - serve stale cache if available, never cache zeros
+            stale = get_performance_stale(cache_key)
+            if stale is not None:
+                return self.send_json_response(stale)
+            return self.send_json_response(None)
+
+        grid = aggregates.get('site', {}).get('instant_power', 0)
+        solar = aggregates.get('solar', {}).get('instant_power', 0)
+        battery = aggregates.get('battery', {}).get('instant_power', 0)
+        home = aggregates.get('load', {}).get('instant_power', 0)
 
         # Apply negative solar correction if configured
         if not self.configuration[CONFIG_TYPE.PW_NEG_SOLAR] and solar < 0:
