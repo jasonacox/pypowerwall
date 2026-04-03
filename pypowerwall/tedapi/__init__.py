@@ -346,14 +346,23 @@ def decompress_response(content: bytes) -> bytes:
     return content
 
 def uses_api_lock(func):
-    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
-    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
-        func.api_lock = threading.Lock()
+    """Decorator that provides a per-instance lock for TEDAPI methods.
+
+    Each TEDAPI instance gets its own lock per method, so multiple instances
+    (e.g., talking to different gateways) don't block each other.
+    """
+    lock_attr = f'_api_lock_{func.__name__}'
+
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Inject the function object itself into kwargs.
-        kwargs['self_function'] = func
-        return func(*args, **kwargs)
+    def wrapper(self, *args, **kwargs):
+        # Create a per-instance lock on first access
+        if not hasattr(self, lock_attr):
+            setattr(self, lock_attr, threading.Lock())
+        kwargs['self_function'] = wrapper
+        return func(self, *args, **kwargs)
+
+    # Attach the lock_attr name so acquire_lock_with_backoff can find it
+    wrapper._lock_attr = lock_attr
     return wrapper
 
 def _pb_extract(data: bytes, *field_path: int) -> Optional[bytes]:
@@ -538,7 +547,7 @@ class TEDAPI:
 
         # Only acquire lock if we need to make an API call
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout * 2):
+        with acquire_lock_with_backoff(self, self.timeout * 2, func=self_function):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "config" in self.pwcachetime:
                 age = time.time() - self.pwcachetime["config"]
@@ -654,7 +663,7 @@ class TEDAPI:
 
         # Only acquire lock if we need to make an API call
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout * 2):
+        with acquire_lock_with_backoff(self, self.timeout * 2, func=self_function):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "status" in self.pwcachetime:
                 age = time.time() - self.pwcachetime["status"]
@@ -750,7 +759,7 @@ class TEDAPI:
 
         # Only acquire lock if we need to make an API call
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout * 2):
+        with acquire_lock_with_backoff(self, self.timeout * 2, func=self_function):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "controller" in self.pwcachetime:
                 age = time.time() - self.pwcachetime["controller"]
@@ -834,7 +843,7 @@ class TEDAPI:
             return None
 
         payload = None
-        with acquire_lock_with_backoff(self_function, self.timeout * 2):
+        with acquire_lock_with_backoff(self, self.timeout * 2, func=self_function):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "firmware" in self.pwcachetime:
                 if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
@@ -931,7 +940,7 @@ class TEDAPI:
             return None
 
         components = None
-        with acquire_lock_with_backoff(self_function, self.timeout * 2):
+        with acquire_lock_with_backoff(self, self.timeout * 2, func=self_function):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "components" in self.pwcachetime:
                 cache_age = time.time() - self.pwcachetime["components"]
@@ -1233,7 +1242,7 @@ class TEDAPI:
             return None
 
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout * 2):
+        with acquire_lock_with_backoff(self, self.timeout * 2, func=self_function):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and din in self.pwcachetime:
                 if time.time() - self.pwcachetime[din] < self.pwcacheexpire:

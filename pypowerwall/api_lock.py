@@ -26,12 +26,27 @@ def acquire_with_timeout(
 
 
 @contextmanager
-def acquire_lock_with_backoff(func, timeout, **backoff_kwargs):
+def acquire_lock_with_backoff(func_or_instance, timeout, *, func=None, **backoff_kwargs):
     """
     Context manager for acquiring a lock with a timeout.
     Raises TimeoutError if the lock is not acquired in the given timeout.
+
+    Supports three calling conventions:
+      - acquire_lock_with_backoff(instance, timeout, func=wrapper)  # per-instance lock via decorator
+      - acquire_lock_with_backoff(lock, timeout)  # direct lock object (cloud/fleet API)
+      - acquire_lock_with_backoff(func, timeout)  # legacy: lock on function object
     """
-    lock: threading.Lock = func.api_lock
+    if func is not None:
+        # Per-instance lock: look up lock attribute on the instance
+        instance = func_or_instance
+        lock_attr = func._lock_attr
+        lock = getattr(instance, lock_attr)
+    elif hasattr(func_or_instance, 'acquire'):
+        # Direct lock object
+        lock = func_or_instance
+    else:
+        # Legacy: lock stored on the function object
+        lock = func_or_instance.api_lock
     if not acquire_with_timeout(lock, timeout):
         raise TimeoutError("Unable to acquire lock within the specified timeout.")
     try:
