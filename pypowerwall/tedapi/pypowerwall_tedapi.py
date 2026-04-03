@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import math
@@ -406,7 +407,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 count_battery += 1
         vll_battery = sum_vll_battery / count_battery if count_battery else 0
         # Load payload template
-        data = API_METERS_AGGREGATES_STUB
+        data = copy.deepcopy(API_METERS_AGGREGATES_STUB)
         data['site'].update({
             "last_communication_time": timestamp,
             "instant_power": grid_power,
@@ -468,7 +469,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"]) or 0
         batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks) or 0
-        data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
+        data = copy.deepcopy(API_SYSTEM_STATUS_STUB)  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force)
         b = []
         for bk in blocks:

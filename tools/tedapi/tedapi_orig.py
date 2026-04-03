@@ -35,7 +35,7 @@ import json
 import time
 
 # TEDAPI Fixed Gateway IP Address
-GW_IP = "192.168.91.1"
+GW_IP = "192.168.92.100"
 
 # Rate Limit Codes
 BUSY_CODES = [429, 503]
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     print(" - Power Data:")
     nominalEnergyRemainingWh = status.get('control', {}).get('systemStatus', {}).get('nominalEnergyRemainingWh', 0)
     nominalFullPackEnergyWh = status.get('control', {}).get('systemStatus', {}).get('nominalFullPackEnergyWh', 0)
-    soe = round(nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100, 2)
+    soe = round(nominalFullPackEnergyWh and (nominalEnergyRemainingWh / nominalFullPackEnergyWh) * 100 or 0, 2)
     print(f"   - Battery Charge: {soe}% ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
     meterAggregates = status.get('control', {}).get('meterAggregates', [])
     for meter in meterAggregates:

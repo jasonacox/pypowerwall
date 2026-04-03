@@ -266,7 +266,7 @@ def get_local_ip() -> IPv4Address:
 
         iface_name = next(
             (
-                name for key, name in ip.link('get', index=iface_index)[0].get('attrs', [])
+                name for key, name in ip.link('get', index=iface_index)[0].get('attrs', [])  # pylint: disable=unsubscriptable-object
                 if key == 'IFLA_IFNAME'
             ),
             None
@@ -1008,15 +1008,25 @@ class Handler(BaseHTTPRequestHandler):
             # Calculate solar total current if voltage is available
             solar_total_current = solar_power / solar_voltage if solar_voltage else 0
             solar["instant_total_current"] = solar_total_current
-
-            # Calculate load total current by adding site current and solar total current
-            load_current = solar_total_current + site_current
-            load["instant_total_current"] = load_current
-
-            # Update voltages, ensuring we avoid division by zero
-            load["instant_average_voltage"] = abs(load_power) / abs(load_current) if load_current else 0
+            
+            site_voltage = 0
             if not site.get("instant_average_voltage", 0):
-                site["instant_average_voltage"] = abs(site_power) / abs(site_current) if site_current else 0
+                site_voltage = abs(site_power) / abs(site_current) if site_current else 0
+            site["instant_average_voltage"] = site_voltage
+
+            # No easy way to compute load voltage without more data.
+            load["instant_average_voltage"] = site_voltage
+            load["instant_total_current"] = load_power / site_voltage
+
+            # This is probably wrong, redo.
+            # # Calculate load total current by adding site current and solar total current
+            # Cannot add AC currents together without phase calcuations (TODO later)
+            # load_current = solar_total_current + site_current
+            # load["instant_total_current"] = load_current
+
+            # # Update voltages, ensuring we avoid division by zero
+            # load["instant_average_voltage"] = abs(load_power) / abs(load_current) if load_current else 0
+           
 
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := self.safe_pw_call(pws[0].poll, "/api/meters/aggregates"))]
