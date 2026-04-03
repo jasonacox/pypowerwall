@@ -538,7 +538,7 @@ class TEDAPI:
 
         # Only acquire lock if we need to make an API call
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout * 2):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "config" in self.pwcachetime:
                 age = time.time() - self.pwcachetime["config"]
@@ -654,7 +654,7 @@ class TEDAPI:
 
         # Only acquire lock if we need to make an API call
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout * 2):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "status" in self.pwcachetime:
                 age = time.time() - self.pwcachetime["status"]
@@ -750,7 +750,7 @@ class TEDAPI:
 
         # Only acquire lock if we need to make an API call
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout * 2):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "controller" in self.pwcachetime:
                 age = time.time() - self.pwcachetime["controller"]
@@ -834,7 +834,7 @@ class TEDAPI:
             return None
 
         payload = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout * 2):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "firmware" in self.pwcachetime:
                 if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
@@ -931,7 +931,7 @@ class TEDAPI:
             return None
 
         components = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout * 2):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and "components" in self.pwcachetime:
                 cache_age = time.time() - self.pwcachetime["components"]
@@ -1233,7 +1233,7 @@ class TEDAPI:
             return None
 
         data = None
-        with acquire_lock_with_backoff(self_function, self.timeout):
+        with acquire_lock_with_backoff(self_function, self.timeout * 2):
             # Double-check cache after acquiring lock (another thread might have updated it)
             if not force and din in self.pwcachetime:
                 if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
