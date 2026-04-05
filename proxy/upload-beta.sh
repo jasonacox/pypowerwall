@@ -41,7 +41,7 @@ print(pypowerwall.version)" | (cd ..; python3)`
   
   # Build jasonacox/pypowerwall:x.y.z
   echo "* BUILD jasonacox/pypowerwall:${VER}"
-  docker buildx build -f Dockerfile.beta --no-cache --platform linux/amd64,linux/arm64,linux/arm/v7 --push -t jasonacox/pypowerwall:${VER} .
+  docker buildx build -f Dockerfile.beta --no-cache --platform linux/amd64,linux/arm64 --push -t jasonacox/pypowerwall:${VER} .
   echo ""
 
   # Verify

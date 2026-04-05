@@ -19,6 +19,7 @@
     * LAN control support — set backup reserve, operation mode, grid charging, and grid export directly over the wired LAN via v1r filestore config writes (no cloud API needed)
     * WiFi fallback transport — when both wired LAN and WiFi TEDAPI are available, v1r mode transparently uses WiFi for follower queries; mode string dynamically reflects active transports (e.g., `Local (v1r+wifi+control)`)
     * Requires the Powerwall 3 leader's ethernet port to be on a routable subnet (`10.42.1.x/24` is the TEG's dedicated wired interface); see PR notes for bridge setup examples
+* Drop `linux/arm/v7` (32-bit ARMv7) platform support from the pypowerwall proxy Docker container builds
 
 ## v0.14.10 - Host Port Support
 
