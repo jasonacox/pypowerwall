@@ -939,10 +939,18 @@ class Handler(BaseHTTPRequestHandler):
             Numeric values (or None, treated as 0) are added together,
             while non-numeric values (like timestamps) are set only if not already present.
             """
-            SKIP_KEYS: Final[List[str]] = ["instant_average_voltage", "timeout", "disclaimer"]
+            SKIP_KEYS: Final[List[str]] = ["timeout", "disclaimer"]
+            PREFER_NONZERO_KEYS: Final[List[str]] = ["instant_average_voltage"]
             for key, value in src.items():
                 if key in SKIP_KEYS:
                     dest.setdefault(key, value)
+                    continue
+                if key in PREFER_NONZERO_KEYS:
+                    # Prefer non-zero values (e.g. from a PW with a Neurio meter)
+                    if not dest.get(key, 0) and value:
+                        dest[key] = value
+                    elif key not in dest:
+                        dest[key] = value
                     continue
                 if isinstance(value, (int, float)):
                     # Treat None as 0 when summing.
