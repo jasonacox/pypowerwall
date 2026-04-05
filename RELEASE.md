@@ -2,6 +2,11 @@
 
 ## v0.15.0 - Powerwall 3 Wired LAN TEDAPI Support (v1r)
 
+* Docs: Note FleetAPI/Cloud mode requirement for `get_grid_charging()` and `get_grid_export()` - by @jasonacox-sam in https://github.com/jasonacox/pypowerwall/pull/268
+* Insert empty `battery_blocks` array if missing to prevent downstream KeyError - by @zi0r in https://github.com/jasonacox/pypowerwall/pull/269
+* Fix: Prevent shared-state race condition in stubs via factory functions - by @woofiwoof in https://github.com/jasonacox/pypowerwall/pull/270
+    * `API_METERS_AGGREGATES_STUB` and `API_SYSTEM_STATUS_STUB` in cloud/fleetapi/tedapi stubs were module-level mutable dicts; concurrent polling of multiple gateways caused threads to overwrite each other's data
+    * Replaced module-level dicts with `_..._TEMPLATE` constants and factory functions that return `copy.deepcopy()` copies, ensuring each gateway gets an independent data structure
 * Add `/tedapi/v1r` transport for Powerwall 3 wired LAN access without requiring WiFi connection to `192.168.91.1` - by @nalditopr in https://github.com/jasonacox/pypowerwall/pull/265
     * New `tedapi_v1r.py` RSA-signed transport class — handles TLV payload construction, PKCS1v15+SHA512 signing, RoutableMessage protobuf wrapping, and Bearer token authentication
     * New `tedapi_combined_pb2.py` — compiled protobuf definitions for v1r message format (`RoutableMessage`, `MessageEnvelope`, etc.)
@@ -14,6 +19,7 @@
     * LAN control support — set backup reserve, operation mode, grid charging, and grid export directly over the wired LAN via v1r filestore config writes (no cloud API needed)
     * WiFi fallback transport — when both wired LAN and WiFi TEDAPI are available, v1r mode transparently uses WiFi for follower queries; mode string dynamically reflects active transports (e.g., `Local (v1r+wifi+control)`)
     * Requires the Powerwall 3 leader's ethernet port to be on a routable subnet (`10.42.1.x/24` is the TEG's dedicated wired interface); see PR notes for bridge setup examples
+* Drop `linux/arm/v7` (32-bit ARMv7) platform support from the pypowerwall proxy Docker container builds
 
 ## v0.14.10 - Host Port Support
 
