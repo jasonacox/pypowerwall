@@ -566,7 +566,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                 solar_inverters = 1
             else:
                 solar_inverters = 0
-            data = API_METERS_AGGREGATES_STUB
+            data = API_METERS_AGGREGATES_STUB()
             data['site'].update({
                 "last_communication_time": timestamp,
                 "instant_power": grid_power,
@@ -624,7 +624,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                 # "grid_status": "Active"
                 if power.get("grid_status") in ["Active", "Unknown"]:
                     grid_status = "SystemGridConnected"
-            data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
+            data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
             data.update({
                 "nominal_full_pack_energy": total_pack_energy,
                 "nominal_energy_remaining": energy_left,

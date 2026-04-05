@@ -1,4 +1,6 @@
-API_METERS_AGGREGATES_STUB = {
+import copy
+
+_API_METERS_AGGREGATES_TEMPLATE = {
     "site": {
         "last_communication_time": None,
         "instant_power": None,
@@ -80,7 +82,11 @@ API_METERS_AGGREGATES_STUB = {
     }
 }
 
-API_SYSTEM_STATUS_STUB = {  # TODO: Fill in 0 values
+def API_METERS_AGGREGATES_STUB():
+    """Return a fresh copy of the API meters aggregates stub to prevent shared-state mutation."""
+    return copy.deepcopy(_API_METERS_AGGREGATES_TEMPLATE)
+
+_API_SYSTEM_STATUS_TEMPLATE = {  # TODO: Fill in 0 values
     "command_source": "Configuration",
     "battery_target_power": 0,
     "battery_target_reactive_power": 0,
@@ -119,3 +125,7 @@ API_SYSTEM_STATUS_STUB = {  # TODO: Fill in 0 values
     "inverter_nominal_usable_power": 0,
     "expected_energy_remaining": 0
 }
+
+def API_SYSTEM_STATUS_STUB():
+    """Return a fresh copy of the API system status stub to prevent shared-state mutation."""
+    return copy.deepcopy(_API_SYSTEM_STATUS_TEMPLATE)
