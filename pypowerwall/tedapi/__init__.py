@@ -355,13 +355,11 @@ def uses_api_lock(func):
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        # Create a per-instance lock on first access
         if not hasattr(self, lock_attr):
             setattr(self, lock_attr, threading.Lock())
         kwargs['self_function'] = wrapper
         return func(self, *args, **kwargs)
 
-    # Attach the lock_attr name so acquire_lock_with_backoff can find it
     wrapper._lock_attr = lock_attr
     return wrapper
 

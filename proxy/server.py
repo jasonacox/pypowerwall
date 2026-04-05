@@ -467,34 +467,10 @@ def cache_performance_response(cache_key: str, data: Any) -> None:
     """
     with _performance_cache_lock:
         _performance_cache[cache_key] = (data, time.time())
-        log.debug(f"Cached performance response for {cache_key}")
+        if len(_performance_cache) > 100:
+            oldest_key = min(_performance_cache, key=lambda k: _performance_cache[k][1])
+            del _performance_cache[oldest_key]
 
-
-def cached_route_handler(cache_key: str, data_generator, cache_ttl: int) -> Any:
-    """
-    Helper function for performance-cached route handling.
-
-    Args:
-        cache_key: The cache key to use for this route
-        data_generator: Function that generates the response data
-        cache_ttl: Cache TTL in seconds
-
-    Returns:
-        Cached response if available, otherwise fresh data (and caches it)
-    """
-    # Try cache first
-    cached_response = get_performance_cached(cache_key, cache_ttl)
-    if cached_response is not None:
-        return cached_response
-
-    # Cache miss - generate fresh data
-    result = data_generator()
-
-    # Only cache non-None results
-    if result is not None:
-        cache_performance_response(cache_key, result)
-
-    return result
 
 
 def track_endpoint_call(endpoint: str, success: bool = True) -> None:
@@ -1014,24 +990,14 @@ class Handler(BaseHTTPRequestHandler):
             solar_total_current = solar_power / solar_voltage if solar_voltage else 0
             solar["instant_total_current"] = solar_total_current
             
-            site_voltage = 0
-            if not site.get("instant_average_voltage", 0):
+            site_voltage = site.get("instant_average_voltage", 0) or 0
+            if not site_voltage:
                 site_voltage = abs(site_power) / abs(site_current) if site_current else 0
-            site["instant_average_voltage"] = site_voltage
+                site["instant_average_voltage"] = site_voltage
 
-            # No easy way to compute load voltage without more data.
+            # Use site voltage as approximation for load voltage
             load["instant_average_voltage"] = site_voltage
-            load["instant_total_current"] = load_power / site_voltage
-
-            # This is probably wrong, redo.
-            # # Calculate load total current by adding site current and solar total current
-            # Cannot add AC currents together without phase calcuations (TODO later)
-            # load_current = solar_total_current + site_current
-            # load["instant_total_current"] = load_current
-
-            # # Update voltages, ensuring we avoid division by zero
-            # load["instant_average_voltage"] = abs(load_power) / abs(load_current) if load_current else 0
-           
+            load["instant_total_current"] = load_power / site_voltage if site_voltage else 0
 
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := self.safe_pw_call(pws[0].poll, "/api/meters/aggregates"))]
