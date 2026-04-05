@@ -37,6 +37,7 @@
 
 """
 import copy
+import math
 import datetime
 import json
 import logging
@@ -998,6 +999,12 @@ class Handler(BaseHTTPRequestHandler):
             solar_total_current = solar_power / solar_voltage if solar_voltage else 0
             solar["instant_total_current"] = solar_total_current
             
+            # Invert site current to match power sign convention
+            # (positive = importing/consuming, negative = exporting)
+            site_total_current = site.get("instant_total_current", 0) or 0
+            if site_total_current and site_power:
+                site["instant_total_current"] = math.copysign(abs(site_total_current), site_power)
+
             site_voltage = site.get("instant_average_voltage", 0) or 0
             if not site_voltage:
                 site_voltage = abs(site_power) / abs(site_current) if site_current else 0
