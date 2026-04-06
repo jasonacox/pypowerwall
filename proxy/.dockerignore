@@ -1,0 +1,42 @@
+# Credentials and auth files - must never be baked into image
+.powerwall
+.auth
+.pypowerwall.auth
+.pypowerwall.site
+.pypowerwall.fleetapi
+.fleetapi*
+.cachefile
+config.json
+fleet_tokens.json
+tedapi_rsa_*
+
+# Certificates and keys
+*.pem
+*.der
+*.key
+
+# Build/upload scripts and local-only files
+upload.sh
+upload-beta.sh
+.beta_version
+beta.txt
+perf_test.py
+localtest.sh
+testproxy.sh
+uploadtest.sh
+
+# Docs
+API.md
+README.md
+HELP.md
+RELEASE.md
+
+# Symlink / local dev copy (replaced by cp in upload-beta.sh, restored after)
+teslapy
+
+# Dev noise
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+tests/

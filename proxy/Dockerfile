@@ -5,14 +5,12 @@ WORKDIR /app
 # Install system dependencies
 RUN apk add --no-cache git curl
 
-# Install proxy extra dependencies first
-RUN pip3 install --no-cache-dir bs4
+# Install pypowerwall and proxy dependencies
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy full source and install pypowerwall from local source
-COPY . /build
-RUN pip3 install --no-cache-dir /build && rm -rf /build
-
-# Copy proxy server files
-COPY proxy/ /app/
+# Copy proxy server files (only runtime-needed files)
+COPY server.py transform.py __init__.py /app/
+COPY web/ /app/web/
 EXPOSE 8675
 CMD ["python3", "server.py"]
