@@ -38,7 +38,7 @@ except ImportError:
     print("Warning: tedapi_pb2 not found - TEDAPI protobuf support disabled", flush=True)
     TEDAPI_ENABLED = False
 
-version_tuple = (0, 2, 3)
+version_tuple = (0, 2, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
