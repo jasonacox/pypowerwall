@@ -988,19 +988,24 @@ class Handler(BaseHTTPRequestHandler):
             # Get values with defaults to avoid None values
             site_power = site.get("instant_power", 0) or 0
             site_current = site.get("instant_average_current", 0) or 0
+            site_reactive = site.get("instant_reactive_power", 0) or 0
+            site_apparent = site.get("instant_apparent_power", 0) or 0
             solar_power = solar.get("instant_power", 0) or 0
-            solar_voltage = solar.get("instant_average_voltage", 0) or 0
+            solar_reactive = solar.get("instant_reactive_power", 0) or 0
+            solar_apparent = solar.get("instant_apparent_power", 0) or 0
 
             # Calculate load power as the sum of solar and site power
             load_power = solar_power + site_power
             load["instant_power"] = load_power
+            load_reactive = site_reactive + solar_reactive
+            load_apparent = math.sqrt(load_power**2 + load_reactive**2) if load_reactive else abs(load_power)
+            load["instant_reactive_power"] = load_reactive
+            load["instant_apparent_power"] = load_apparent
 
-            # Align site current signs with power sign convention
+            # Align site per-phase current signs with power sign convention
             # (positive = importing/consuming, negative = exporting)
             site_total_current = site.get("instant_total_current", 0) or 0
             if site_total_current and site_power:
-                site["instant_total_current"] = math.copysign(abs(site_total_current), site_power)
-                site["instant_average_current"] = math.copysign(abs(site_current), site_power)
                 for phase_key in ("i_a_current", "i_b_current", "i_c_current"):
                     phase_val = site.get(phase_key, 0) or 0
                     if phase_val:
@@ -1011,12 +1016,17 @@ class Handler(BaseHTTPRequestHandler):
                 site_voltage = abs(site_power) / abs(site_current) if site_current else 0
                 site["instant_average_voltage"] = site_voltage
 
-            # Derive all currents from power / voltage so they are additive:
+            # Derive all currents from apparent power / voltage when available,
+            # falling back to real power / voltage. Using apparent power accounts
+            # for reactive power (e.g. motor loads) for true RMS current.
+            # All currents use site_voltage so they remain additive:
             # site_current + solar_current = load_current
-            site["instant_total_current"] = site_power / site_voltage if site_voltage else 0
-            solar["instant_total_current"] = solar_power / site_voltage if site_voltage else 0
+            site_current_mag = site_apparent / site_voltage if site_voltage and site_apparent else (abs(site_power) / site_voltage if site_voltage else 0)
+            site["instant_total_current"] = math.copysign(site_current_mag, site_power) if site_power else 0
+            solar_current_mag = solar_apparent / site_voltage if site_voltage and solar_apparent else (abs(solar_power) / site_voltage if site_voltage else 0)
+            solar["instant_total_current"] = solar_current_mag
             load["instant_average_voltage"] = site_voltage
-            load["instant_total_current"] = load_power / site_voltage if site_voltage else 0
+            load["instant_total_current"] = load_apparent / site_voltage if site_voltage else 0
 
         # Poll all meter objects and gather non-empty results.
         results = [copy.deepcopy(result) for pws in self.all_pws if (result := self.safe_pw_call(pws[0].poll, "/api/meters/aggregates"))]

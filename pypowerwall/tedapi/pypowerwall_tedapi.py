@@ -344,6 +344,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
         meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
         i_site = i1 = i2 = i3 = 0
+        reactive_power_site = 0
+        reactive_power_solar = 0
         neurio_readings = lookup(status, ("neurio", "readings"))
         if meter_x and not meter_x["isMIA"]:
             i1 = meter_x.get("METER_X_CTA_I", 0)
@@ -359,10 +361,16 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             )
             i = 1
             for data in neurio_data[1].values():
-                if data["Location"] != "site":
+                location = data.get("Location")
+                reactive = data.get("InstReactivePower", 0) or 0
+                if location == "solar":
+                    reactive_power_solar += reactive
+                    continue
+                if location != "site":
                     continue
                 current = math.copysign(data.get("InstCurrent", 0), data.get("InstRealPower", 0))
                 voltage = data.get("InstVoltage", 0)
+                reactive_power_site += reactive
                 if i == 1:
                     i1 = current
                     v1n = voltage
@@ -408,9 +416,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_battery = sum_vll_battery / count_battery if count_battery else 0
         # Load payload template
         data = copy.deepcopy(API_METERS_AGGREGATES_STUB)
+        apparent_power_site = math.sqrt(grid_power**2 + reactive_power_site**2) if reactive_power_site else 0
         data['site'].update({
             "last_communication_time": timestamp,
             "instant_power": grid_power,
+            "instant_reactive_power": reactive_power_site,
+            "instant_apparent_power": apparent_power_site,
             "instant_average_voltage": vll_site,
             "instant_average_current": i_site,
             "i_a_current": i1,
@@ -432,9 +443,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "instant_average_voltage": vll_load,
             "disclaimer": "voltage calculated from tedapi data",
         })
+        apparent_power_solar = math.sqrt(solar_power**2 + reactive_power_solar**2) if reactive_power_solar else 0
         data['solar'].update({
             "last_communication_time": timestamp,
             "instant_power": solar_power,
+            "instant_reactive_power": reactive_power_solar,
+            "instant_apparent_power": apparent_power_solar,
             "num_meters_aggregated": count_solar,
             "instant_average_voltage": vll_solar,
             "i_a_current": yi1,
