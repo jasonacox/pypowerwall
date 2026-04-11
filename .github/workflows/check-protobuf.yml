@@ -1,0 +1,42 @@
+name: Check Protobuf
+
+on:
+  push:
+    paths:
+      - '**.proto'
+      - '**_pb2.py'
+  pull_request:
+    paths:
+      - '**.proto'
+      - '**_pb2.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-protobuf:
+    name: "Verify pb2 files are up to date"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned protobuf tools
+        run: pip install -r tools/requirements-tools.txt
+
+      - name: Regenerate protobuf files
+        run: bash tools/gen_proto.sh
+
+      - name: Check for uncommitted changes
+        run: |
+          git diff --exit-code -- '*_pb2.py' || {
+            echo ""
+            echo "ERROR: pb2 files are out of date with their .proto sources."
+            echo "Run the protoc commands above locally and commit the updated pb2 files."
+            exit 1
+          }

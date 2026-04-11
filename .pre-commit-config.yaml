@@ -1,0 +1,24 @@
+repos:
+  - repo: local
+    hooks:
+      - id: protoc-gen
+        name: Regenerate protobuf Python files
+        language: script
+        entry: tools/gen_proto.sh
+        files: \.proto$
+        pass_filenames: false
+        # Requires: pip install -r tools/requirements-tools.txt
+
+      - id: pylint-pypowerwall
+        name: Pylint (pypowerwall errors)
+        language: system
+        entry: pylint -E pypowerwall/*.py
+        files: ^pypowerwall/[^/]+\.py$
+        pass_filenames: false
+
+      - id: pylint-proxy
+        name: Pylint (proxy errors)
+        language: system
+        entry: pylint -E proxy/*.py
+        files: ^proxy/.*\.py$
+        pass_filenames: false
