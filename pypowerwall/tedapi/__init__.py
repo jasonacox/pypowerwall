@@ -464,7 +464,7 @@ class TEDAPI:
         try:
             # Must cancel any existing (active or expired) before scheduling new
             self.cancel_max_backup()
-            from google.protobuf.timestamp_pb2 import Timestamp
+            from google.protobuf.timestamp_pb2 import Timestamp  # pylint: disable=no-name-in-module
             teg = combined_pb2.TEGMessages()
             req = teg.schedule_manual_backup_event_request
             req.scheduling_info.start_time.CopyFrom(Timestamp(seconds=int(time.time())))

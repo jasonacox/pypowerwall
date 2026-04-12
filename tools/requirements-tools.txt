@@ -1,0 +1,18 @@
+# Pinned build tools for generating protobuf Python bindings.
+#
+# These are DEVELOPER/CI tools only — not runtime dependencies.
+# Install with: pip install -r tools/requirements-tools.txt
+#
+# grpcio-tools 1.62.x ships with protobuf 4.25.x, which generates pb2 files
+# requiring protobuf>=4.25.2 at runtime. This is intentionally pinned to keep
+# the generated files stable and compatible with the widest user base.
+# (protobuf 4.x is in widespread use; 5.x introduces a strict runtime version
+# check that would break users with other packages that require protobuf<5.)
+#
+# If you upgrade these pins you MUST:
+#   1. Run: bash tools/gen_proto.sh
+#   2. Update protobuf floor in requirements.txt and setup.py to match the
+#      "Protobuf Python Version" comment in any regenerated pb2 file.
+#   3. Consider whether the upgrade is a breaking change for library users.
+grpcio-tools==1.62.3
+protobuf==4.25.1

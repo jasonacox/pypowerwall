@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## v0.15.1 - Code Quality and Build Pipeline Improvements
+
+* Fix: Remove duplicate stub methods `get_grid_charging()` and `get_grid_export()` in `pypowerwall_tedapi.py` that were left over from a merge — the real implementations (reading/writing config via v1r transport) were already present and being shadowed
+* Fix: Update `pwsimulator` `stub.py` to use `ssl.SSLContext` API replacing the removed `ssl.wrap_socket()` call, which caused the simulator container to silently exit on Python 3.12+
+* Fix: Remove `linux/arm/v7` platform from `pwsimulator` Docker build (`upload.sh`) — platform is no longer supported
+* Fix: Correct protobuf runtime dependency — `protobuf>=3.20.0` was misleading; pb2 files generated with 4.25.x require `protobuf>=4.25.1,<5`
+* Add: `.pylintrc` with `[MESSAGES CONTROL]` disable list (restored), `[SIMILARITIES]` config, and `ignore-paths` to skip auto-generated `*_pb2.py` files
+* Add: `tools/gen_proto.sh` — script to regenerate all `*_pb2.py` files from `.proto` sources using pinned `grpcio-tools`
+* Add: `tools/requirements-tools.txt` — pinned dev tools (`grpcio-tools<1.64`, `protobuf<5`) to ensure pb2 files are generated consistently with a compatible protobuf version
+* Add: `.pre-commit-config.yaml` — pre-commit hooks for protobuf regeneration and `pylint -E` checks on `pypowerwall/` and `proxy/` before every commit
+* Add: `.github/workflows/check-protobuf.yml` — CI workflow to verify committed `*_pb2.py` files are in sync with their `.proto` sources
+
 ## v0.15.0 - Powerwall 3 Wired LAN TEDAPI Support (v1r)
 
 * Docs: Note FleetAPI/Cloud mode requirement for `get_grid_charging()` and `get_grid_export()` - by @jasonacox-sam in https://github.com/jasonacox/pypowerwall/pull/268

@@ -38,7 +38,7 @@ except ImportError:
     print("Warning: tedapi_pb2 not found - TEDAPI protobuf support disabled", flush=True)
     TEDAPI_ENABLED = False
 
-version_tuple = (0, 2, 4)
+version_tuple = (0, 2, 5)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -727,13 +727,11 @@ def do_test_endpoint(self):
 
 # noinspection PyBroadException
 try:
-    # noinspection PyTypeChecker
     with ThreadingHTTPServer(server_address, Handler) as server:
-        server.socket = ssl.wrap_socket(server.socket,
-                                        server_side=True,
-                                        certfile='localhost.pem',
-                                        ssl_version=ssl.PROTOCOL_TLS)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile='localhost.pem')
+        server.socket = context.wrap_socket(server.socket, server_side=True)
         print("Server configured to handle multiple simultaneous connections", flush=True)
         server.serve_forever()
-except Exception:
-    print(' CANCEL \n')
+except Exception as e:
+    print(f' CANCEL: {e}\n')

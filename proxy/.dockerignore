@@ -19,7 +19,6 @@ tedapi_rsa_*
 upload.sh
 upload-beta.sh
 .beta_version
-beta.txt
 perf_test.py
 localtest.sh
 testproxy.sh
