@@ -27,7 +27,6 @@ def main():
 
     timeout = 1.0
     hosts = 30
-    state = 0
     color = True
     ip = None
     email = None
@@ -40,19 +39,23 @@ def main():
     setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
     setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
 
-    setup_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
+    fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
-    setup_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
+    tedapi_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
 
     scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
     scan_args.add_argument("-timeout", type=float, default=timeout,
                            help=f"Seconds to wait per host [Default={timeout:.1f}]")
     scan_args.add_argument("-nocolor", action="store_true", default=not color,
                            help="Disable color text output.")
-    scan_args.add_argument("network", type=str, nargs="?", default=ip, metavar="CIDR",
+    scan_args.add_argument("network", type=str, nargs="?", default=None, metavar="CIDR",
                            help="IPv4 CIDR network to scan (e.g. 192.168.1.0/24). Auto-detects if omitted.")
+    scan_args.add_argument("-ip", type=str, default=None,
+                           help="IP address within network to scan.")
     scan_args.add_argument("-hosts", type=int, default=hosts,
                            help=f"Number of hosts to scan simultaneously [Default={hosts}]")
+    scan_args.add_argument("-json", action="store_true", default=False,
+                           help="Output discovered gateways as JSON and suppress all other output.")
 
     set_mode_args = subparsers.add_parser("set", help='Set Powerwall Mode and Reserve Level')
     set_mode_args.add_argument("-mode", type=str, default=None,
@@ -144,15 +147,19 @@ def main():
     # Run Scan
     elif command == 'scan':
         from pypowerwall import scan
-
-        print("pyPowerwall [%s] - Scanner\n" % version)
-        scan.scan(
-            cidr=args.network,
+        json_output = args.json
+        if not json_output:
+            print("pyPowerwall [%s] - Scanner\n" % version)
+        results = scan.scan(
+            cidr=args.network or args.ip,
             max_threads=args.hosts,
             timeout=args.timeout,
             color=not args.nocolor,
-            interactive=True
+            interactive=not json_output,
+            json_output=json_output,
         )
+        if json_output:
+            print(json.dumps(results, indent=2))
 
     # Set Powerwall Mode
     elif command == 'set':

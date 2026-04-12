@@ -11,17 +11,14 @@
     and/or Powerwall. It uses your local IP address as a default.
 
 """
-import argparse
-import errno
 import ipaddress
 import socket
 import sys
-import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from queue import Queue
-from typing import Any, Dict, Final, List, Optional
+from typing import Dict, Final, List, Optional
 
 import requests
 
@@ -70,11 +67,13 @@ class ScanContext:
     def alertdim(self):
         return self.colors[self._ALERTDIM]
 
+
 def normalize_caseless(text: str) -> str:
     return unicodedata.normalize("NFKD", text.casefold())
 
 def caseless_equal(left: str, right: str) -> bool:
     return normalize_caseless(left) == normalize_caseless(right)
+
 
 def get_my_ip() -> str:
     """Get the local IP address of the machine.
@@ -83,41 +82,31 @@ def get_my_ip() -> str:
         str: IP address of the localhost.
     """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        try:
-            s.connect(('8.8.8.8', 80))
-            return s.getsockname()[0]
-        except Exception:
-            raise
+        s.connect(('8.8.8.8', 80))
+        return s.getsockname()[0]
 
-def check_connection(addr: str, context: ScanContext, port: int = 443, max_retries: int = 10, retry_delay: float = 0.1) -> bool:
+
+def check_connection(addr: str, context: ScanContext, port: int = 443) -> bool:
     """Checks for simple connection status to a provided address.
 
     Args:
         addr (str): The address to attempt connection to.
         context (ScanContext): Context controlling output interactivity, color, and timeout behaviors.
         port (int, optional): The port to connect to. Defaults to 443.
-        max_retries (int, optional): Maximum number of retry attempts. Defaults to 10.
-        retry_delay (float, optional): Delay between connection retries in seconds. Defaults to 0.1. In the future this should be replaced with exponential backoff and jitter.
 
     Returns:
         bool: True if connection is successful, False otherwise.
     """
 
-    for _ in range(max_retries):
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
-                conn.settimeout(context.timeout)
-                result = conn.connect_ex((str(addr), port))
-                if result == 0:
-                    return True
-                elif result != errno.EAGAIN:
-                    return False
-        except Exception as e:
-            if context.interactive:
-                print(f"An error occurred during connection attempt: {e}")
-            return False
-        time.sleep(retry_delay)
-    return False  # Connection failed after max retries
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as conn:
+            conn.settimeout(context.timeout)
+            return conn.connect_ex((addr, port)) == 0
+    except Exception as e:
+        if context.interactive:
+            print(f"An error occurred during connection attempt: {e}")
+        return False
+
 
 # Example Tesla Inverter response to https://{addr}/api/status
 # {
@@ -134,6 +123,7 @@ def check_connection(addr: str, context: ScanContext, port: int = 443, max_retri
 #      "cellular_disabled": false,
 #      "can_reboot": false
 # }
+
 
 def scan_ip(addr: str, context: ScanContext, result_queue: Queue) -> None:
     """Thread Worker: Scan IP Address for presence of a Tesla Energy Gateway.
@@ -154,17 +144,20 @@ def scan_ip(addr: str, context: ScanContext, result_queue: Queue) -> None:
     # noinspection PyBroadException
     try:
         # Check to see if it is a Powerwall
+        # Note: timeout=5 is intentionally higher than context.timeout (used only for
+        # the TCP probe) to allow enough time for a full HTTP response.
         response = requests.get(f'https://{addr}/api/status', verify=False, timeout=5)
         if response.status_code != HTTPStatus.NOT_FOUND:
-            data: Final[str] = response.json()
-            din: Final[str] = data.get('din', UNKNOWN)
-            version: Final[str] = data.get('version', UNKNOWN)
+            data = response.json()
+            din: str = data.get('din', UNKNOWN)
+            version: str = data.get('version', UNKNOWN)
             if din == UNKNOWN and version == UNKNOWN:
                 return
 
-            up_time: Final[str] = data.get('up_time_seconds', UNKNOWN)
-            type_selector = lambda type: type if not caseless_equal(type, UNKNOWN) else POWERWALL
-            teg_type: Final[str] = type_selector(data.get('teg_type', POWERWALL))
+            up_time: str = data.get('up_time_seconds', UNKNOWN)
+            teg_type: str = data.get('teg_type', POWERWALL)
+            if caseless_equal(teg_type, UNKNOWN):
+                teg_type = POWERWALL
 
             if context.interactive:
                 print(f"{host} OPEN{context.dim()} - {context.subbold()}Found {teg_type} {din}{context.subbold()}\n\t\t\t\t\t [Firmware {version}]{context.normal()}")
@@ -195,24 +188,37 @@ def scan_ip(addr: str, context: ScanContext, result_queue: Queue) -> None:
 
 def scan(
     cidr: Optional[str] = None,
+    ip: Optional[str] = None,
     max_threads: int = 30,
     timeout: float = 1.0,
     color: bool = False,
-    interactive: bool = False
+    interactive: bool = False,
+    json_output: bool = False,
 ) -> List[Dict[str, str]]:
     """Scan the local network for Tesla Powerwall Gateways.
 
     Args:
         cidr (Optional[str], optional): IPv4 CIDR network to scan (e.g. "10.0.0.0/16"). If None, autodetects as /24.
+        ip (Optional[str], optional): IP address within network to scan. Defaults to /24 if no prefix given.
         max_threads (int, optional): Maximum number of concurrent threads/IP addresses to simultaneously scan. Defaults to 30.
         timeout (float, optional): Timeout in seconds for each host scan. Defaults to 1.0.
         color (bool, optional): If True, use colored output. Defaults to False.
         interactive (bool, optional): Whether messages should be printed and input sought from a user. Defaults to False.
+        json_output (bool, optional): If True, suppress all console output (implies non-interactive). Defaults to False.
 
     Returns:
         List[Dict[str, str]]: A list of discovered Tesla Energy Gateway (Powerwall/Inverter) devices.
     """
 
+    # Support ip parameter as alias for cidr
+    if cidr is None and ip is not None:
+        cidr = ip
+
+    # json_output suppresses all console output
+    if json_output:
+        interactive = False
+
+    user_provided = cidr is not None
     context = ScanContext(timeout=timeout, color=color, interactive=interactive)
 
     # Determine network to scan
@@ -236,19 +242,22 @@ def scan(
     if context.timeout < 0.2 and context.interactive:
         print(f'{context.alert()}\tWARNING: Setting a low timeout ({context.timeout}) may cause misses.\n')
 
-    # Ask user to verify network
-    if context.interactive:
+    # Ask user to verify network — skip if they already provided one on the command line
+    if context.interactive and not user_provided:
         print(f'{context.dim()}\tYour network appears to be: {context.bold()}{network}{context.normal()}\n')
 
         # noinspection PyBroadException
         try:
-            response = input(f"{context.subbold()}\tEnter {context.bold()}Network CIDR{context.subbold()} or press enter to use {network}{context.normal()}")
+            response = input(f"{context.subbold()}\tEnter Network CIDR [{context.bold()}{network}{context.subbold()}]: {context.normal()}")
         except Exception:
             # Assume user aborted
             print(f"{context.alert()}  Cancel\n\n{context.normal()}")
             sys.exit()
 
         if response:
+            # Default to /24 if no prefix length given
+            if '/' not in response:
+                response = response + '/24'
             # Verify we have a valid network
             # noinspection PyBroadException
             try:
@@ -257,13 +266,20 @@ def scan(
                 print(f'\n{context.alert()}\tERROR: {response} is not a valid network.{context.normal()}')
                 print(f'{context.dim()}\t\t   Proceeding with {network} instead.')
 
-        print(f"\n{context.bold()}\tRunning Scan...{context.dim()}")
+    if context.interactive:
+        print(f"\n{context.bold()}\tRunning Scan on {context.subbold()}{network}{context.bold()}...{context.dim()}")
 
-    # Cap threads to avoid exhausting OS memory (each thread stack uses ~8MB).
-    max_safe_threads = 4000
+    # Warn if the network is larger than a /24 (254 hosts) — large subnets can
+    # exhaust file descriptors and ephemeral ports.
+    if network.prefixlen < 24 and context.interactive:
+        print(f'{context.alert()}\tWARNING: Scanning a /{network.prefixlen} network ({network.num_addresses - 2} hosts). '
+              f'This may take a while and can strain system resources.{context.normal()}')
+
+    # Cap threads to a safe maximum to avoid exhausting OS file descriptors.
+    max_safe_threads = 256
     if max_threads > max_safe_threads:
         if context.interactive:
-            print(f'{context.dim()}\tNote: Capping threads from {max_threads} to {max_safe_threads} (OS safety limit){context.normal()}')
+            print(f'{context.dim()}\tNote: Capping threads from {max_threads} to {max_safe_threads} (resource safety limit){context.normal()}')
         max_threads = max_safe_threads
 
     result_queue = Queue()
@@ -279,7 +295,7 @@ def scan(
             print(f"{context.dim()}\r\t  ** Interrupted by user **\t\t\t\t\t\t\n{context.normal()}")
 
     # Collect results from the queue
-    discovered_devices: List[Dict[Any, Any]] = []
+    discovered_devices: List[Dict[str, str]] = []
     while not result_queue.empty():
         device_info = result_queue.get()
         discovered_devices.append(device_info)
