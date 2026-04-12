@@ -1,6 +1,6 @@
 # This file is used to install the necessary Python packages for the project.
 requests
-protobuf>=4.25.1,<5
+protobuf>=4.25.1
 python-dotenv
 pyroute2
 bs4

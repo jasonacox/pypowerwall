@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## v0.15.2 - Minor Fixes
+
+* Fix: Remove `<5` upper cap on `protobuf` runtime dependency — constraint is now `protobuf>=4.25.1`; pb2 files generated with 4.25.x are compatible with 5.x, 6.x, and 7.x runtimes (confirmed tested up to 7.34.1) and the cap was causing pip conflicts for users with newer protobuf versions installed (e.g. via TensorFlow)
+
 ## v0.15.1 - Code Quality and Build Pipeline Improvements
 
 * Fix: Remove duplicate stub methods `get_grid_charging()` and `get_grid_export()` in `pypowerwall_tedapi.py` that were left over from a merge — the real implementations (reading/writing config via v1r transport) were already present and being shadowed
