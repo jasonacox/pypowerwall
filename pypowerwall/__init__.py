@@ -967,6 +967,47 @@ class Powerwall(object):
         """
         return self.client.get_grid_export()
 
+    def go_off_grid(self) -> Optional[dict]:
+        """
+        Physically disconnect the Powerwall from the grid (open contactor).
+
+        Sends setIslandModeRequest(mode=6) which physically opens the grid
+        contactor, islanding the home. Solar continues producing and the
+        battery serves home load. Causes ~30s solar dropout during the
+        contactor transition.
+
+        Note:
+            On Powerwall 3, this requires a signed RoutableMessage via the
+            device_command endpoint's routable_message field. The unsigned
+            grpc_command path is accepted but does not physically operate
+            the contactor.
+
+            On Powerwall 2, this uses the local REST endpoint
+            /api/v2/islanding/mode.
+
+        Returns:
+            Dictionary with operation results, or None if unsupported.
+        """
+        if hasattr(self.client, 'go_off_grid'):
+            return self.client.go_off_grid()
+        log.error("go_off_grid is not supported in the current mode")
+        return None
+
+    def reconnect_grid(self) -> Optional[dict]:
+        """
+        Reconnect the Powerwall to the grid (close contactor).
+
+        Sends setIslandModeRequest(mode=1) which physically closes the
+        grid contactor, reconnecting the home to the utility grid.
+
+        Returns:
+            Dictionary with operation results, or None if unsupported.
+        """
+        if hasattr(self.client, 'reconnect_grid'):
+            return self.client.reconnect_grid()
+        log.error("reconnect_grid is not supported in the current mode")
+        return None
+
     def _validate_init_configuration(self):
 
         # Basic user input validation for starters. Can be expanded to limit other parameters such as cache
