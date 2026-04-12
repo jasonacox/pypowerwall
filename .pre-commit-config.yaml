@@ -12,8 +12,8 @@ repos:
       - id: pylint-pypowerwall
         name: Pylint (pypowerwall errors)
         language: system
-        entry: pylint -E pypowerwall/*.py
-        files: ^pypowerwall/[^/]+\.py$
+        entry: pylint -E pypowerwall/
+        files: ^pypowerwall/.*\.py$
         pass_filenames: false
 
       - id: pylint-proxy

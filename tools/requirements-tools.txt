@@ -14,5 +14,5 @@
 #   2. Update protobuf floor in requirements.txt and setup.py to match the
 #      "Protobuf Python Version" comment in any regenerated pb2 file.
 #   3. Consider whether the upgrade is a breaking change for library users.
-grpcio-tools>=1.60.0,<1.64.0
-protobuf>=4.25.0,<5
+grpcio-tools==1.62.3
+protobuf==4.25.1

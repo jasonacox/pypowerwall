@@ -19,13 +19,12 @@
 #   pip install -r tools/requirements-tools.txt
 #
 # IMPORTANT - VERSION PINNING:
-#   The generated pb2 files embed the exact protobuf version used to generate
-#   them (see ValidateProtobufRuntimeVersion in each pb2 file). The floor in
-#   requirements.txt and setup.py MUST match this version exactly.
-#   tools/requirements-tools.txt pins the generator to protobuf 5.x so that
-#   the library can be used by anyone with protobuf>=5.29.0.
+#   tools/requirements-tools.txt currently pins the generator to protobuf
+#   4.25.x, and the generated pb2 files currently target protobuf>=4.25.1.
+#   (protobuf 4.25.x does NOT embed ValidateProtobufRuntimeVersion, so any
+#   4.x runtime is compatible — but 5.x is not.)
 #   If you upgrade tools/requirements-tools.txt you MUST also update the
-#   protobuf floor in requirements.txt and setup.py to match.
+#   protobuf floor/cap in requirements.txt and setup.py to stay aligned.
 #
 # USAGE:
 #   bash tools/gen_proto.sh

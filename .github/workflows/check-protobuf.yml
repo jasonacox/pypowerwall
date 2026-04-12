@@ -34,7 +34,7 @@ jobs:
 
       - name: Check for uncommitted changes
         run: |
-          git diff --exit-code -- '*_pb2.py' || {
+          git diff --exit-code -- '**/*_pb2.py' || {
             echo ""
             echo "ERROR: pb2 files are out of date with their .proto sources."
             echo "Run the protoc commands above locally and commit the updated pb2 files."
