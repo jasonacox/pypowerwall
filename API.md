@@ -47,7 +47,8 @@ pw = pypowerwall.Powerwall(
     fleetapi=False,
     auto_select=False,
     retry_modes=False,
-    gw_pwd=None
+    gw_pwd=None,
+    rsa_key_path=None
 )
 ```
 
@@ -67,7 +68,8 @@ pw = pypowerwall.Powerwall(
 - `fleetapi`: Use Tesla FleetAPI (default: False)
 - `auto_select`: Auto-select best connection mode
 - `retry_modes`: Retry connection attempts
-- `gw_pwd`: Gateway password for TEDAPI mode
+- `gw_pwd`: Full gateway password from QR sticker (used for TEDAPI and v1r modes; last 5 chars auto-derived for Basic login)
+- `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 wired LAN)
 
 ---
 
@@ -148,41 +150,45 @@ pw = pypowerwall.Powerwall(
 
 ### Battery and Operation
 
-- `get_reserve(scale=True, force=False)` → float/None  
+- `get_reserve(scale=True, force=False)` → float/None
   Get battery reserve percentage.
 
-- `get_mode(force=False)` → str/None  
+- `get_mode(force=False)` → str/None
   Get current battery operation mode.
 
-- `set_reserve(level)` → dict/None  
-  Set battery reserve percentage.
+- `set_reserve(level)` → dict/None
+  Set battery reserve percentage (0-100).
 
-- `set_mode(mode)` → dict/None  
-  Set current battery operation mode.
+- `set_mode(mode)` → dict/None
+  Set current battery operation mode (`self_consumption`, `backup`, `autonomous`).
 
-- `set_operation(level=None, mode=None, jsonformat=False)` → dict/str/None  
+- `set_operation(level=None, mode=None, jsonformat=False)` → dict/str/None
   Set battery reserve percentage and/or operation mode.
 
-- `get_time_remaining()` → float/None  
+- `get_time_remaining()` → float/None
   Get the backup time remaining on the battery (in hours).
 
 ### Grid and Export
 
-- `set_grid_charging(mode)` → dict/None  
+- `set_grid_charging(mode)` → dict/None
   Enable or disable grid charging (`mode` = True/False).
 
-- `get_grid_charging()` → bool/None  
+- `get_grid_charging()` → bool/None
   Get the current grid charging mode.
 
-- `set_grid_export(mode)` → dict/None  
+- `set_grid_export(mode)` → dict/None
   Set grid export mode (`mode` = "battery_ok", "pv_only", "never").
 
-- `get_grid_export()` → str/None  
+- `get_grid_export()` → str/None
   Get the current grid export mode.
+
+> **v1r LAN Control:** In v1r mode (Powerwall 3 wired LAN with RSA key), all control methods work directly over the local network via config file writes — no cloud API or Tesla account needed. In other modes (WiFi TEDAPI, local), control requires FleetAPI or Cloud API access.
 
 ---
 
 ## Example Usage
+
+### Local Mode (Powerwall 2/+)
 
 ```python
 import pypowerwall
@@ -199,6 +205,35 @@ else:
     print("Failed to connect to Powerwall.")
 ```
 
+### v1r LAN Mode (Powerwall 3 — full local control)
+
+```python
+import pypowerwall
+
+pw = pypowerwall.Powerwall(
+    host="10.42.1.40",                              # Powerwall vendor subnet IP
+    gw_pwd="ABCDEXXXXX",                            # Full gateway password from QR sticker
+    rsa_key_path="/path/to/tedapi_rsa_private.pem"   # RSA key from v1r_register.py
+)
+
+# Monitor
+print("Battery:", pw.level(), "%")
+print("Power:", pw.power())
+print("Vitals:", pw.vitals())
+
+# Read control settings
+print("Mode:", pw.get_mode())
+print("Reserve:", pw.get_reserve())
+print("Grid Charging:", pw.get_grid_charging())
+print("Grid Export:", pw.get_grid_export())
+
+# Set control values (no cloud needed)
+pw.set_mode("self_consumption")
+pw.set_reserve(20)
+pw.set_grid_charging(False)
+pw.set_grid_export("pv_only")
+```
+
 ---
 
 ## Advanced Topics
@@ -206,6 +241,7 @@ else:
 - **Cloud Mode:** Set `cloudmode=True` and provide your Tesla account email to use the Tesla Cloud API.
 - **FleetAPI:** Set `fleetapi=True` to use Tesla FleetAPI (requires setup).
 - **TEDAPI:** Use `gw_pwd` for TEDAPI mode (advanced/local diagnostics).
+- **v1r LAN:** Use `gw_pwd` + `rsa_key_path` for Powerwall 3 wired LAN access with full local control.
 - **Caching:** The library caches API responses for 5 seconds by default (`pwcacheexpire`).
 - **Authentication:** Supports both cookie and bearer token authentication (`authmode`).
 

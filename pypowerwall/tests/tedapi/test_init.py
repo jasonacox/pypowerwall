@@ -1,5 +1,7 @@
+import json
+import logging
 import time
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 import math
 
 from pypowerwall.tedapi import TEDAPI
@@ -154,3 +156,162 @@ class TestComputeLLVoltage:
         assert compute_LL_voltage(120, 120, None) == 240
         assert compute_LL_voltage(120, None, 120) == 240
         assert compute_LL_voltage(None, 120, 120) == 240
+
+
+# --- v1r follower skip tests ---
+
+LEADER_DIN = "1707000-11-J--TG12000000001Z"
+FOLLOWER1_DIN = "1707000-11-J--TG12000000002Z"
+FOLLOWER2_DIN = "1707000-11-J--TG12000000003Z"
+EXPANSION_DIN = "2707000-11-J--TG12000000004Z"
+
+# Minimal ComponentsQuery response payload — enough for get_pw3_vitals() to parse
+LEADER_PAYLOAD = json.dumps({
+    "components": {
+        "pws": [{"signals": [], "activeAlerts": []}],
+        "pch": [{"signals": [
+            {"name": "PCH_PvState_A", "value": 0, "textValue": "Pv_Active", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_PvVoltageA", "value": 300, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_PvCurrentA", "value": 5, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcFrequency", "value": 60.0, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcVoltageAN", "value": 120, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcVoltageBN", "value": 120, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcVoltageAB", "value": 240, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_BatteryPower", "value": 1000, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcMode", "value": 0, "textValue": "AC_Connected", "boolValue": False, "timestamp": 0},
+        ], "activeAlerts": []}],
+        "bms": [
+            {"signals": [
+                {"name": "BMS_nominalEnergyRemaining", "value": 10.0, "textValue": "", "boolValue": False, "timestamp": 0},
+                {"name": "BMS_nominalFullPackEnergy", "value": 13.5, "textValue": "", "boolValue": False, "timestamp": 0},
+            ], "activeAlerts": []},
+            {"signals": [
+                {"name": "BMS_nominalEnergyRemaining", "value": 9.0, "textValue": "", "boolValue": False, "timestamp": 0},
+                {"name": "BMS_nominalFullPackEnergy", "value": 13.5, "textValue": "", "boolValue": False, "timestamp": 0},
+            ], "activeAlerts": []},
+        ],
+        "hvp": [
+            {"partNumber": "1707000-11-J", "serialNumber": "TG12000000001Z", "signals": [], "activeAlerts": []},
+            {"partNumber": "2707000-11-J", "serialNumber": "TG12000000004Z", "signals": [], "activeAlerts": []},
+        ],
+        "baggr": [{"signals": [], "activeAlerts": []}],
+    }
+})
+
+BATTERY_BLOCKS = [
+    {
+        "vin": LEADER_DIN,
+        "type": "Powerwall3",
+        "battery_expansions": [
+            {"din": EXPANSION_DIN},
+        ],
+    },
+    {
+        "vin": FOLLOWER1_DIN,
+        "type": "Powerwall3",
+        "battery_expansions": [],
+    },
+    {
+        "vin": FOLLOWER2_DIN,
+        "type": "Powerwall3",
+        "battery_expansions": [],
+    },
+]
+
+
+@pytest.fixture
+def mock_v1r_tedapi():
+    """Create a TEDAPI v1r instance with caches pre-seeded (3 battery blocks)."""
+    with patch('pypowerwall.tedapi.TEDAPI.connect', return_value=LEADER_DIN), \
+         patch('pypowerwall.tedapi.tedapi_v1r.TEDAPIv1r.__init__', return_value=None):
+        api = TEDAPI(
+            gw_pwd="", v1r=True, password="test", rsa_key_path="/dev/null",
+            pwcacheexpire=300, pwconfigexpire=300,
+        )
+    api.din = LEADER_DIN
+    # Seed config and components caches — get_pw3_vitals delegates to these
+    api.pwcache["config"] = {"battery_blocks": BATTERY_BLOCKS}
+    api.pwcachetime["config"] = time.time()
+    api.pwcache["components"] = {"components": {}}
+    api.pwcachetime["components"] = time.time()
+    return api
+
+
+class TestV1rFollowerSkip:
+    """Tests for v1r follower data duplication fix."""
+
+    def test_get_pw3_vitals_skips_followers(self, mock_v1r_tedapi):
+        """Only leader-DIN-keyed entries should appear in vitals."""
+        api = mock_v1r_tedapi
+        with patch.object(api, '_post_tedapi', return_value=b'mock') as mock_post, \
+             patch.object(api, '_parse_v1r_query_response', return_value=LEADER_PAYLOAD):
+            result = api.get_pw3_vitals()
+
+        assert result is not None
+        # Leader entries present
+        assert f"PVAC--{LEADER_DIN}" in result
+        assert f"PVS--{LEADER_DIN}" in result
+        assert f"TEPINV--{LEADER_DIN}" in result
+        assert f"TEPOD--{LEADER_DIN}" in result
+        # Expansion pack TEPOD present (from leader's battery_expansions)
+        assert f"TEPOD--{EXPANSION_DIN}" in result
+        # Follower entries must NOT be present
+        for follower in (FOLLOWER1_DIN, FOLLOWER2_DIN):
+            assert f"PVAC--{follower}" not in result
+            assert f"PVS--{follower}" not in result
+            assert f"TEPINV--{follower}" not in result
+            assert f"TEPOD--{follower}" not in result
+
+    def test_post_tedapi_called_once_for_leader(self, mock_v1r_tedapi):
+        """_post_tedapi should be called exactly once (leader only), not 3 times."""
+        api = mock_v1r_tedapi
+        with patch.object(api, '_post_tedapi', return_value=b'mock') as mock_post, \
+             patch.object(api, '_parse_v1r_query_response', return_value=LEADER_PAYLOAD):
+            api.get_pw3_vitals()
+
+        assert mock_post.call_count == 1
+
+    def test_get_pw3_vitals_logs_follower_skip(self, mock_v1r_tedapi, caplog):
+        """Debug log should mention skipping each follower."""
+        api = mock_v1r_tedapi
+        with patch.object(api, '_post_tedapi', return_value=b'mock'), \
+             patch.object(api, '_parse_v1r_query_response', return_value=LEADER_PAYLOAD), \
+             caplog.at_level(logging.DEBUG, logger="pypowerwall.tedapi"):
+            api.get_pw3_vitals()
+
+        log_text = caplog.text
+        assert "Skipping follower" in log_text
+        assert FOLLOWER1_DIN in log_text
+        assert FOLLOWER2_DIN in log_text
+
+    def test_get_battery_block_returns_none_for_follower(self, mock_v1r_tedapi):
+        """get_battery_block() should return None for a follower DIN in v1r mode."""
+        api = mock_v1r_tedapi
+        result = api.get_battery_block(din=FOLLOWER1_DIN)
+        assert result is None
+
+    def test_wifi_mode_queries_all_blocks(self):
+        """With v1r=False, _post_tedapi should be called once per battery block."""
+        with patch('pypowerwall.tedapi.TEDAPI.connect', return_value=LEADER_DIN):
+            api = TEDAPI("test_password", pwcacheexpire=300, pwconfigexpire=300)
+        api.din = LEADER_DIN
+        api.v1r = False
+        api.pwcache["config"] = {"battery_blocks": BATTERY_BLOCKS}
+        api.pwcachetime["config"] = time.time()
+        api.pwcache["components"] = {"components": {}}
+        api.pwcachetime["components"] = time.time()
+
+        # Mock _post_tedapi and the protobuf parsing path (non-v1r)
+        from pypowerwall.tedapi import tedapi_pb2
+        real_message_cls = tedapi_pb2.Message
+
+        def fake_post_tedapi(data, **kwargs):
+            resp = real_message_cls()
+            resp.message.payload.recv.text = LEADER_PAYLOAD
+            return resp.SerializeToString()
+
+        with patch.object(api, '_post_tedapi', side_effect=fake_post_tedapi) as mock_post:
+            api.get_pw3_vitals()
+
+        # Should be called 3 times — once per battery block
+        assert mock_post.call_count == 3

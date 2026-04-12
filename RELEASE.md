@@ -1,5 +1,42 @@
 # RELEASE NOTES
 
+## v0.15.2 - Minor Fixes
+
+* Fix: Remove `<5` upper cap on `protobuf` runtime dependency — constraint is now `protobuf>=4.25.1`; pb2 files generated with 4.25.x are compatible with 5.x, 6.x, and 7.x runtimes (confirmed and tested up to 7.34.1) and the cap was causing pip conflicts for users with newer protobuf versions installed (e.g. via TensorFlow)
+
+## v0.15.1 - Code Quality and Build Pipeline Improvements
+
+* Fix: Remove duplicate stub methods `get_grid_charging()` and `get_grid_export()` in `pypowerwall_tedapi.py` that were left over from a merge — the real implementations (reading/writing config via v1r transport) were already present and being shadowed
+* Fix: Update `pwsimulator` `stub.py` to use `ssl.SSLContext` API replacing the removed `ssl.wrap_socket()` call, which caused the simulator container to silently exit on Python 3.12+
+* Fix: Remove `linux/arm/v7` platform from `pwsimulator` Docker build (`upload.sh`) — platform is no longer supported
+* Fix: Correct protobuf runtime dependency — `protobuf>=3.20.0` was misleading; set floor to `protobuf>=4.25.1` (the `<5` upper cap added here was subsequently lifted in v0.15.2)
+* Add: `.pylintrc` with `[MESSAGES CONTROL]` disable list (restored), `[SIMILARITIES]` config, and `ignore-paths` to skip auto-generated `*_pb2.py` files
+* Add: `tools/gen_proto.sh` — script to regenerate all `*_pb2.py` files from `.proto` sources using pinned `grpcio-tools`
+* Add: `tools/requirements-tools.txt` — pinned dev tools (`grpcio-tools<1.64`, `protobuf<5`) to ensure pb2 files are generated consistently with a compatible protobuf version
+* Add: `.pre-commit-config.yaml` — pre-commit hooks for protobuf regeneration and `pylint -E` checks on `pypowerwall/` and `proxy/` before every commit
+* Add: `.github/workflows/check-protobuf.yml` — CI workflow to verify committed `*_pb2.py` files are in sync with their `.proto` sources
+
+## v0.15.0 - Powerwall 3 Wired LAN TEDAPI Support (v1r)
+
+* Docs: Note FleetAPI/Cloud mode requirement for `get_grid_charging()` and `get_grid_export()` - by @jasonacox-sam in https://github.com/jasonacox/pypowerwall/pull/268
+* Insert empty `battery_blocks` array if missing to prevent downstream KeyError - by @zi0r in https://github.com/jasonacox/pypowerwall/pull/269
+* Fix: Prevent shared-state race condition in stubs via factory functions - by @woofiwoof in https://github.com/jasonacox/pypowerwall/pull/270
+    * `API_METERS_AGGREGATES_STUB` and `API_SYSTEM_STATUS_STUB` in cloud/fleetapi/tedapi stubs were module-level mutable dicts; concurrent polling of multiple gateways caused threads to overwrite each other's data
+    * Replaced module-level dicts with `_..._TEMPLATE` constants and factory functions that return `copy.deepcopy()` copies, ensuring each gateway gets an independent data structure
+* Add `/tedapi/v1r` transport for Powerwall 3 wired LAN access without requiring WiFi connection to `192.168.91.1` - by @nalditopr in https://github.com/jasonacox/pypowerwall/pull/265
+    * New `tedapi_v1r.py` RSA-signed transport class — handles TLV payload construction, PKCS1v15+SHA512 signing, RoutableMessage protobuf wrapping, and Bearer token authentication
+    * New `tedapi_combined_pb2.py` — compiled protobuf definitions for v1r message format (`RoutableMessage`, `MessageEnvelope`, etc.)
+    * New `pypowerwall register` CLI command (and `v1r_register.py` script) for generating an RSA-4096 key pair and registering it with the Powerwall via Tesla Owner API (default) or Fleet API OAuth
+    * `Powerwall()` constructor accepts new `rsa_key_path` parameter — when provided alongside `password`/`gw_pwd`, the library automatically selects v1r mode
+    * `gw_pwd` (full 10-character QR code password from the Powerwall sticker) auto-derives the last-5-character Basic API password, simplifying configuration
+    * Proxy server supports new `PW_RSA_KEY_PATH` environment variable to pass the RSA key path through to `Powerwall()`
+    * `cryptography` package added to `install_requires` for RSA key loading and signing
+    * Full feature parity with WiFi TEDAPI (mode 4): config, status, vitals, firmware version, power, battery level, grid status, per-device vitals, and component queries
+    * LAN control support — set backup reserve, operation mode, grid charging, and grid export directly over the wired LAN via v1r filestore config writes (no cloud API needed)
+    * WiFi fallback transport — when both wired LAN and WiFi TEDAPI are available, v1r mode transparently uses WiFi for follower queries; mode string dynamically reflects active transports (e.g., `Local (v1r+wifi+control)`)
+    * Requires the Powerwall 3 leader's ethernet port to be on a routable subnet (`10.42.1.x/24` is the TEG's dedicated wired interface); see PR notes for bridge setup examples
+* Drop `linux/arm/v7` (32-bit ARMv7) platform support from the pypowerwall proxy Docker container builds
+
 ## v0.14.10 - Host Port Support
 
 * Add support for `host:port` format in the `host` parameter for local mode connections - Fix for https://github.com/jasonacox/pypowerwall/issues/254

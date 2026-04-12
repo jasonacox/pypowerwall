@@ -89,7 +89,7 @@ import time
 from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 14, 10)
+version_tuple = (0, 15, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -131,7 +131,8 @@ class Powerwall(object):
     def __init__(self, host="", password="", email="nobody@nowhere.com",
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
-                 fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None):
+                 fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
+                 rsa_key_path=None, wifi_host=None):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -140,21 +141,23 @@ class Powerwall(object):
                           include a port for non-standard HTTPS access (e.g. 10.0.1.99:8443);
                           defaults to port 443 when no port is specified
             password    = Customer password set up on Powerwall gateway
-            email       = Customer email 
-            timezone    = Timezone for location of Powerwall 
-                (see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 
+            email       = Customer email
+            timezone    = Timezone for location of Powerwall
+                (see https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
             pwcacheexpire = Seconds to expire cached entries
             timeout      = Seconds for the timeout on http requests
             poolmaxsize  = Pool max size for http connection re-use (persistent connections disabled if zero)
             cloudmode    = If True, use Tesla cloud for data (default is False)
-            siteid       = If cloudmode is True, use this siteid (default is None)  
+            siteid       = If cloudmode is True, use this siteid (default is None)
             authpath     = Path to cloud auth and site cache files (default current directory)
             authmode     = "cookie" (default) or "token" - use cookie or bearer token for authorization
             cachefile    = Path to cache file (default current directory)
             fleetapi     = If True, use Tesla FleetAPI for data (default is False)
             auto_select  = If True, select the best available mode to connect (default is False)
             retry_modes  = If True, retry connection to Powerwall
-            gw_pwd       = TEG Gateway password (used for local mode access to tedapi)
+            gw_pwd       = Full gateway password from QR sticker; used for TEDAPI (mode 4)
+                           and auto-derived (last 5 chars) for v1r login (mode 5)
+            rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
         """
 
         # Attributes
@@ -179,6 +182,8 @@ class Powerwall(object):
         self.retry_modes = retry_modes
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
+        self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
+        self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r wifi fallback
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -245,16 +250,40 @@ class Powerwall(object):
                 time.sleep(30)
                 count = 0
             if self.mode == "local":
-                log.debug(f"password = {self.password}, gw_pwd = {self.gw_pwd}")
+                log.debug(f"password = {'[set]' if self.password else '[empty]'}, "
+                          f"gw_pwd = {'[set]' if self.gw_pwd else '[empty]'}, "
+                          f"rsa_key_path = {'[set]' if self.rsa_key_path else '[empty]'}")
                 try:
-                    if not self.password and self.gw_pwd:  # Use full TEDAPI mode
+                    if self.rsa_key_path:  # v1r LAN TEDapi mode (mode 5)
+                        # Auto-derive customer password from gw_pwd if not explicitly set
+                        pw = self.password
+                        if not pw and self.gw_pwd:
+                            pw = self.gw_pwd[-5:]
+                            log.debug("Derived customer password from gw_pwd (last 5 characters)")
+                        if not pw:
+                            raise ValueError("v1r mode requires password or gw_pwd")
+                        self.tedapi_mode = "v1r"
+                        if self.gw_pwd and self.wifi_host:
+                            log.debug("TEDAPI ** v1r (wifi fallback available) **")
+                        else:
+                            log.debug("TEDAPI ** v1r **")
+                        self.client = PyPowerwallTEDAPI(
+                            gw_pwd=self.gw_pwd or "",
+                            pwcacheexpire=self.pwcacheexpire,
+                            pwconfigexpire=self.pwcacheexpire,
+                            timeout=self.timeout, host=self.host,
+                            poolmaxsize=self.poolmaxsize,
+                            v1r=True, password=pw,
+                            rsa_key_path=self.rsa_key_path,
+                            wifi_host=self.wifi_host)
+                    elif not self.password and self.gw_pwd:  # Full TEDAPI WiFi (mode 4)
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host,
                                                         poolmaxsize=self.poolmaxsize)
-                    else:
+                    else:  # Hybrid (password + gw_pwd) or local-only (password only)
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
                                                        self.pwcacheexpire, self.poolmaxsize, self.authmode, self.cachefile,
@@ -646,7 +675,7 @@ class Powerwall(object):
             percent = float(data['backup_reserve_percent'])
             if scale:
                 # Get percentage based on Tesla App scale
-                percent = float((percent / 0.95) - (5 / 0.95))
+                percent = max(0, float((percent / 0.95) - (5 / 0.95)))
             return percent
         return None
 
@@ -714,6 +743,27 @@ class Powerwall(object):
 
         result = self.post(api='/api/operation', payload=payload, din=self.din(), jsonformat=jsonformat)
         return result
+
+    def schedule_max_backup(self, duration_seconds=7200):
+        """Schedule manual backup event (max backup / storm watch mode) via v1r TEGMessages."""
+        if self.tedapi_mode != "v1r":
+            log.error("schedule_max_backup requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
+            return None
+        return self.client.schedule_max_backup(duration_seconds=duration_seconds)
+
+    def cancel_max_backup(self):
+        """Cancel the current manual backup event via v1r TEGMessages."""
+        if self.tedapi_mode != "v1r":
+            log.error("cancel_max_backup requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
+            return None
+        return self.client.cancel_max_backup()
+
+    def get_backup_events(self):
+        """Get current backup events via v1r TEGMessages."""
+        if self.tedapi_mode != "v1r":
+            log.error("get_backup_events requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
+            return None
+        return self.client.get_backup_events()
 
     # noinspection PyShadowingBuiltins
     def grid_status(self, output_type="string", type=None) -> Optional[Union[str, int]]:
@@ -880,8 +930,12 @@ class Powerwall(object):
         """
         Get the current grid charging mode
 
+        Note:
+            This function requires FleetAPI or Cloud mode. It is not available
+            in local TEDAPI mode. Returns None if not supported by the current mode.
+
         Returns:
-            True if grid charging is enabled, False if it is disabled
+            True if grid charging is enabled, False if it is disabled, None if unsupported
         """
         return self.client.get_grid_charging()
 
@@ -904,8 +958,12 @@ class Powerwall(object):
         """
         Get the current grid export mode
 
+        Note:
+            This function requires FleetAPI or Cloud mode. It is not available
+            in local TEDAPI mode. Returns None if not supported by the current mode.
+
         Returns:
-            The current grid export mode
+            The current grid export mode, or None if unsupported
         """
         return self.client.get_grid_export()
 

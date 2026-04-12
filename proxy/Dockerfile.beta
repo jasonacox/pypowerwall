@@ -8,6 +8,10 @@ RUN apk add --no-cache git curl
 COPY beta.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy proxy server files (only runtime-needed files)
+COPY server.py transform.py __init__.py /app/
+COPY web/ /app/web/
+# Copy local pypowerwall source for beta testing (placed here by upload-beta.sh)
+COPY pypowerwall/ /app/pypowerwall/
 EXPOSE 8675
 CMD ["python3", "server.py"]

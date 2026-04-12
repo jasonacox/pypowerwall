@@ -79,8 +79,10 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
 # pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
 class PyPowerwallTEDAPI(PyPowerwallBase):
-    def __init__(self, gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10) -> None:
+    def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
+                 pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
+                 v1r: bool = False, password: str = None, rsa_key_path: str = None,
+                 wifi_host: str = None) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout
@@ -90,15 +92,18 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.host = host
         self.gw_pwd = gw_pwd
         self.debug = debug
+        self.v1r = v1r
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
         self.siteid = None
         self.auth = {'AuthCookie': 'local', 'UserRecord': 'local'}  # Bogus local auth record
 
         # Initialize TEDAPI
-        self.tedapi = TEDAPI(gw_pwd=self.gw_pwd, debug=self.debug, host=self.host, 
+        self.tedapi = TEDAPI(gw_pwd=self.gw_pwd, debug=self.debug, host=self.host,
                              timeout=self.timeout, pwcacheexpire=self.pwcacheexpire,
-                             pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize)
+                             pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
+                             v1r=v1r, password=password, rsa_key_path=rsa_key_path,
+                             wifi_host=wifi_host)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
@@ -379,7 +384,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if not isinstance(config, dict) or not isinstance(status, dict):
             return None
         timestamp = lookup(status, ("system", "time"))
-        data = API_METERS_AGGREGATES_STUB
+        data = API_METERS_AGGREGATES_STUB()
 
         # --- Site (Grid) ---
         site_vals = self._extract_site_section(status, config, force)
@@ -622,7 +627,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
         batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
-        data = API_SYSTEM_STATUS_STUB  # TODO: see inside API_SYSTEM_STATUS_STUB definition
+        data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force)
         b = []
         for bk in blocks:
@@ -754,8 +759,95 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return self.tedapi.vitals()
 
+
+
     def post_api_operation(self, **kwargs):
-        log.error("No support for TEDAPI POST APIs.")
+        """Set operation mode and/or backup reserve via LAN config write."""
+        if not self.tedapi.v1r:
+            log.error("post_api_operation requires v1r transport")
+            return None
+        payload = kwargs.get('payload', {})
+        if not payload:
+            return None
+        updates = {}
+        if 'backup_reserve_percent' in payload:
+            level = payload['backup_reserve_percent']
+            if level is False:
+                level = 0
+            updates['site_info.backup_reserve_percent'] = level
+        if 'real_mode' in payload:
+            updates['default_real_mode'] = payload['real_mode']
+        if not updates:
+            return {"error": "No valid operation parameters"}
+        if self.tedapi._write_config(updates):
+            result = {}
+            if 'site_info.backup_reserve_percent' in updates:
+                result['set_backup_reserve_percent'] = {
+                    'backup_reserve_percent': updates['site_info.backup_reserve_percent'],
+                    'result': {'response': {'Message': 'Backup reserve updated', 'Code': 200}}
+                }
+            if 'default_real_mode' in updates:
+                result['set_operation'] = {
+                    'real_mode': updates['default_real_mode'],
+                    'result': {'response': {'Message': 'Operation mode updated', 'Code': 200}}
+                }
+            return result
+        return {"error": "Failed to write config"}
+
+
+    def get_grid_charging(self, force=False) -> Optional[bool]:
+        """Get grid charging status from config."""
+        config = self.tedapi.get_config(force=force)
+        if not isinstance(config, dict):
+            return None
+        disallow = lookup(config, ["site_info", "disallow_charge_from_grid_with_solar_installed"])
+        if disallow is None:
+            return True  # Field absent means not disallowed = charging enabled
+        return not disallow  # True = charging enabled
+
+    def set_grid_charging(self, mode) -> Optional[bool]:
+        """Set grid charging via LAN config write."""
+        if not self.tedapi.v1r:
+            log.error("set_grid_charging requires v1r transport")
+            return None
+        enable = bool(mode)
+        # Config field is inverted: disallow=True means charging disabled
+        updates = {'site_info.disallow_charge_from_grid_with_solar_installed': not enable}
+        if self.tedapi._write_config(updates):
+            return True
+        return None
+
+    def get_grid_export(self, force=False) -> Optional[str]:
+        """Get grid export mode from config."""
+        config = self.tedapi.get_config(force=force)
+        if not isinstance(config, dict):
+            return None
+        return lookup(config, ["site_info", "customer_preferred_export_rule"])
+
+    def set_grid_export(self, mode: str) -> Optional[bool]:
+        """Set grid export mode via LAN config write."""
+        if not self.tedapi.v1r:
+            log.error("set_grid_export requires v1r transport")
+            return None
+        if mode not in ('battery_ok', 'pv_only', 'never'):
+            log.error(f"Invalid grid export mode: {mode}")
+            return None
+        updates = {'site_info.customer_preferred_export_rule': mode}
+        if self.tedapi._write_config(updates):
+            return True
+        return None
+
+    def schedule_max_backup(self, duration_seconds=7200):
+        """Schedule manual backup event (max backup / storm watch mode)."""
+        return self.tedapi.schedule_max_backup(duration_seconds=duration_seconds)
+
+    def cancel_max_backup(self):
+        """Cancel the current manual backup event."""
+        return self.tedapi.cancel_max_backup()
+
+    def get_backup_events(self):
+        """Get current backup events."""
+        return self.tedapi.get_backup_events()
 
 
 if __name__ == "__main__":
