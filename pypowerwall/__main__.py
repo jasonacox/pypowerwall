@@ -56,7 +56,7 @@ def main():
     scan_args.add_argument("-ip", type=str, default=None,
                            help="IP address within network to scan.")
     scan_args.add_argument("-hosts", type=int, default=hosts,
-                           help=f"Number of hosts to scan simultaneously [Default={hosts}]")
+                           help=f"Number of hosts to scan simultaneously [Default={hosts}, Max=256]")
     scan_args.add_argument("-json", action="store_true", default=False,
                            help="Output discovered gateways as JSON and suppress all other output.")
 
