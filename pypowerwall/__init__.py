@@ -971,26 +971,29 @@ class Powerwall(object):
         """
         Physically disconnect the Powerwall from the grid (open contactor).
 
-        Sends setIslandModeRequest(mode=6) which physically opens the grid
-        contactor, islanding the home. Solar continues producing and the
-        battery serves home load. Causes ~30s solar dropout during the
-        contactor transition.
+        Sends setIslandModeRequest(mode=6, force=True) which physically
+        opens the grid contactor, islanding the home. Solar continues
+        producing and the battery serves home load. Causes ~30s solar
+        dropout during the contactor transition.
 
         Note:
-            On Powerwall 3, this requires a signed RoutableMessage via the
-            device_command endpoint's routable_message field. The unsigned
-            grpc_command path is accepted but does not physically operate
-            the contactor.
+            On both Powerwall 2 and Powerwall 3, this requires a signed
+            RoutableMessage via the cloud device_command endpoint's
+            routable_message field. The unsigned grpc_command path is
+            accepted by the gateway but does not physically operate the
+            contactor. The local REST endpoint /api/v2/islanding/mode
+            requires installer-level auth and is not usable with the
+            customer login role.
 
-            On Powerwall 2, this uses the local REST endpoint
-            /api/v2/islanding/mode.
+            force=True is required — without it the gateway acknowledges
+            the command but does not open the contactor.
 
         Returns:
             Dictionary with operation results, or None if unsupported.
         """
         if hasattr(self.client, 'go_off_grid'):
             return self.client.go_off_grid()
-        log.error("go_off_grid is not supported in the current mode")
+        log.error("go_off_grid is not supported by %s backend", type(self.client).__name__)
         return None
 
     def reconnect_grid(self) -> Optional[dict]:
@@ -1005,7 +1008,7 @@ class Powerwall(object):
         """
         if hasattr(self.client, 'reconnect_grid'):
             return self.client.reconnect_grid()
-        log.error("reconnect_grid is not supported in the current mode")
+        log.error("reconnect_grid is not supported by %s backend", type(self.client).__name__)
         return None
 
     def _validate_init_configuration(self):
