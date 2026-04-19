@@ -967,6 +967,56 @@ class Powerwall(object):
         """
         return self.client.get_grid_export()
 
+    def go_off_grid(self, confirm: bool = False) -> Optional[dict]:
+        """
+        Physically disconnect the Powerwall from the grid (open contactor).
+
+        Sends setIslandModeRequest(mode=6, force=True) which physically
+        opens the grid contactor, islanding the home. Solar continues
+        producing and the battery serves home load. Causes ~30s solar
+        dropout during the contactor transition.
+
+        Note:
+            This operation requires explicit confirmation. Pass
+            confirm=True to send the command.
+
+            On both Powerwall 2 and Powerwall 3, this requires a signed
+            RoutableMessage via the cloud device_command endpoint's
+            routable_message field. The unsigned grpc_command path is
+            accepted by the gateway but does not physically operate the
+            contactor. The local REST endpoint /api/v2/islanding/mode
+            requires installer-level auth and is not usable with the
+            customer login role.
+
+            force=True is required — without it the gateway acknowledges
+            the command but does not open the contactor.
+
+        Returns:
+            Dictionary with operation results, or None if unsupported.
+        """
+        if not confirm:
+            log.error("go_off_grid requires confirm=True")
+            return None
+        if hasattr(self.client, 'go_off_grid'):
+            return self.client.go_off_grid()
+        log.error("go_off_grid is not supported by %s backend", type(self.client).__name__)
+        return None
+
+    def reconnect_grid(self) -> Optional[dict]:
+        """
+        Reconnect the Powerwall to the grid (close contactor).
+
+        Sends setIslandModeRequest(mode=1) which physically closes the
+        grid contactor, reconnecting the home to the utility grid.
+
+        Returns:
+            Dictionary with operation results, or None if unsupported.
+        """
+        if hasattr(self.client, 'reconnect_grid'):
+            return self.client.reconnect_grid()
+        log.error("reconnect_grid is not supported by %s backend", type(self.client).__name__)
+        return None
+
     def _validate_init_configuration(self):
 
         # Basic user input validation for starters. Can be expanded to limit other parameters such as cache
