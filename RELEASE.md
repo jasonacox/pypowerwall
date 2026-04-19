@@ -1,7 +1,23 @@
 # RELEASE NOTES
 
+## v0.15.3 - PW3 No-Solar None Handling
+
+* Update scanner to use cidr by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/266
+* Add go_off_grid() and reconnect_grid() for Powerwall island mode control by @bolagnaise in https://github.com/jasonacox/pypowerwall/pull/277
+* Fix: Prevent `TypeError` in Powerwall 3 TEDAPI vitals parsing when `PCH_PvVoltage*` or `PCH_PvCurrent*` signals are `None` on systems without solar panels - by @anopheles in https://github.com/jasonacox/pypowerwall/pull/278
+     * `get_pw3_vitals()` now guards `None` values before performing `> 0` comparisons
+     * PV measured voltage, current, and power now safely report `0` when the gateway returns missing PV values
+     * Prevents downstream failures in endpoints derived from PW3 vitals, including `/api/meters/aggregates`
+     * Adds regression coverage for PW3 systems without solar panels so the no-solar path no longer raises and remains locked in by tests
+
+* Release prep:
+     * Bump library version to `0.15.3`
+     * Update proxy pinned dependency to `pypowerwall==0.15.3`
+     * Fix PyPI upload cleanup script to remove `pypowerwall.egg-info` instead of stale `tinytuya.egg-info`
+
 ## v0.15.2 - Minor Fixes
 
+* v0.15.2 - Protobuf Support by @jasonacox in https://github.com/jasonacox/pypowerwall/pull/276
 * Fix: Remove `<5` upper cap on `protobuf` runtime dependency — constraint is now `protobuf>=4.25.1`; pb2 files generated with 4.25.x are compatible with 5.x, 6.x, and 7.x runtimes (confirmed and tested up to 7.34.1) and the cap was causing pip conflicts for users with newer protobuf versions installed (e.g. via TensorFlow)
 
 ## v0.15.1 - Code Quality and Build Pipeline Improvements
