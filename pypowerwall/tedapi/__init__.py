@@ -1163,9 +1163,9 @@ class TEDAPI:
                                 if f'PCH_PvState_{n}' == signal['name']:
                                     pv_state = signal['textValue']
                                 elif f'PCH_PvVoltage{n}' == signal['name']:
-                                    pv_voltage = signal['value'] if signal['value'] > 0 else 0
+                                    pv_voltage = signal['value'] if signal['value'] is not None and signal['value'] > 0 else 0
                                 elif f'PCH_PvCurrent{n}' == signal['name']:
-                                    pv_current = signal['value'] if signal['value'] > 0 else 0
+                                    pv_current = signal['value'] if signal['value'] is not None and signal['value'] > 0 else 0
                                 elif 'PCH_AcFrequency' == signal['name']:
                                     response[f"PVAC--{pw_din}"]["PVAC_Fout"] = signal['value']
                                     response[f"TEPINV--{pw_din}"]["PINV_Fout"] = signal['value']

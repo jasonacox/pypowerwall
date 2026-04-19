@@ -198,6 +198,33 @@ LEADER_PAYLOAD = json.dumps({
     }
 })
 
+NONE_SOLAR_PAYLOAD = json.dumps({
+    "components": {
+        "pws": [{"signals": [], "activeAlerts": []}],
+        "pch": [{"signals": [
+            {"name": "PCH_PvState_A", "value": 0, "textValue": "Pv_Standby", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_PvVoltageA", "value": None, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_PvCurrentA", "value": None, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcFrequency", "value": 60.0, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcVoltageAN", "value": 120, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcVoltageBN", "value": 120, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcVoltageAB", "value": 240, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_BatteryPower", "value": 0, "textValue": "", "boolValue": False, "timestamp": 0},
+            {"name": "PCH_AcMode", "value": 0, "textValue": "AC_Connected", "boolValue": False, "timestamp": 0},
+        ], "activeAlerts": []}],
+        "bms": [
+            {"signals": [
+                {"name": "BMS_nominalEnergyRemaining", "value": 10.0, "textValue": "", "boolValue": False, "timestamp": 0},
+                {"name": "BMS_nominalFullPackEnergy", "value": 13.5, "textValue": "", "boolValue": False, "timestamp": 0},
+            ], "activeAlerts": []},
+        ],
+        "hvp": [
+            {"partNumber": "1707000-11-J", "serialNumber": "TG12000000001Z", "signals": [], "activeAlerts": []},
+        ],
+        "baggr": [{"signals": [], "activeAlerts": []}],
+    }
+})
+
 BATTERY_BLOCKS = [
     {
         "vin": LEADER_DIN,
@@ -315,3 +342,28 @@ class TestV1rFollowerSkip:
 
         # Should be called 3 times — once per battery block
         assert mock_post.call_count == 3
+
+
+class TestPW3NullSolarSignals:
+    """Regression tests for PW3 systems without solar panels (PCH_PvVoltage*/PvCurrent* = None)."""
+
+    def test_get_pw3_vitals_none_pv_signals_no_raise(self, mock_v1r_tedapi):
+        """get_pw3_vitals() must not raise TypeError when PV voltage/current signals are None."""
+        api = mock_v1r_tedapi
+        with patch.object(api, '_post_tedapi', return_value=b'mock'), \
+             patch.object(api, '_parse_v1r_query_response', return_value=NONE_SOLAR_PAYLOAD):
+            result = api.get_pw3_vitals()
+
+        assert result is not None
+
+    def test_get_pw3_vitals_none_pv_signals_reported_as_zero(self, mock_v1r_tedapi):
+        """PV measured voltage, current, and power must be 0 when signal values are None."""
+        api = mock_v1r_tedapi
+        with patch.object(api, '_post_tedapi', return_value=b'mock'), \
+             patch.object(api, '_parse_v1r_query_response', return_value=NONE_SOLAR_PAYLOAD):
+            result = api.get_pw3_vitals()
+
+        pvac = result[f"PVAC--{LEADER_DIN}"]
+        assert pvac["PVAC_PVMeasuredVoltage_A"] == 0
+        assert pvac["PVAC_PVCurrent_A"] == 0
+        assert pvac["PVAC_PVMeasuredPower_A"] == 0

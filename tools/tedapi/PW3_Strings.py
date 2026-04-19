@@ -224,9 +224,9 @@ for battery in battery_blocks:
                         if f'PCH_PvState_{n}' == signal['name']:
                             pv_state = signal['textValue']
                         elif f'PCH_PvVoltage{n}' == signal['name']:
-                            pv_voltage = signal['value']
+                            pv_voltage = signal['value'] if signal['value'] is not None else 0
                         elif f'PCH_PvCurrent{n}' == signal['name']:
-                            pv_current = signal['value']
+                            pv_current = signal['value'] if signal['value'] is not None else 0
                 pv_power = pv_voltage * pv_current
                 i = n + string_suffix[battery_i]
                 # Print and record the strings data
