@@ -967,7 +967,7 @@ class Powerwall(object):
         """
         return self.client.get_grid_export()
 
-    def go_off_grid(self) -> Optional[dict]:
+    def go_off_grid(self, confirm: bool = False) -> Optional[dict]:
         """
         Physically disconnect the Powerwall from the grid (open contactor).
 
@@ -977,6 +977,9 @@ class Powerwall(object):
         dropout during the contactor transition.
 
         Note:
+            This operation requires explicit confirmation. Pass
+            confirm=True to send the command.
+
             On both Powerwall 2 and Powerwall 3, this requires a signed
             RoutableMessage via the cloud device_command endpoint's
             routable_message field. The unsigned grpc_command path is
@@ -991,6 +994,9 @@ class Powerwall(object):
         Returns:
             Dictionary with operation results, or None if unsupported.
         """
+        if not confirm:
+            log.error("go_off_grid requires confirm=True")
+            return None
         if hasattr(self.client, 'go_off_grid'):
             return self.client.go_off_grid()
         log.error("go_off_grid is not supported by %s backend", type(self.client).__name__)

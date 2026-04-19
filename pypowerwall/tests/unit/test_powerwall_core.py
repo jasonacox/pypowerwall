@@ -60,6 +60,16 @@ class StubClient(PyPowerwallBase):
     def get_time_remaining(self):
         return 4.5
 
+
+class StubClientWithIslanding(StubClient):
+    def __init__(self):
+        super().__init__()
+        self.go_off_grid_calls = 0
+
+    def go_off_grid(self):
+        self.go_off_grid_calls += 1
+        return {'result': 'ok'}
+
 @pytest.fixture(name="pw")
 def fixture_powerwall():
     # Instantiate Powerwall but replace its client with our stub
@@ -135,6 +145,20 @@ def test_temps(pw):
 
 def test_site_name(pw):
     assert pw.site_name() == 'Test Site'
+
+
+def test_go_off_grid_requires_confirm(pw):
+    pw.client = StubClientWithIslanding()
+    out = pw.go_off_grid()
+    assert out is None
+    assert pw.client.go_off_grid_calls == 0
+
+
+def test_go_off_grid_with_confirm_delegates(pw):
+    pw.client = StubClientWithIslanding()
+    out = pw.go_off_grid(confirm=True)
+    assert out == {'result': 'ok'}
+    assert pw.client.go_off_grid_calls == 1
 
 
 # ---------------------------------------------------------------------------
