@@ -1,5 +1,15 @@
 # RELEASE NOTES
 
+## v0.15.4 - CLI Enhancements and Safety Guards
+
+* Feat: `pypowerwall tedapi` CLI now accepts `-host HOST`, `-gw_pwd GW_PWD`, `-v1r`, `-password PASSWORD`, `-rsa_key_path RSA_KEY_PATH`, and `-wifi_host WIFI_HOST` flags, enabling full PW3 wired LAN (v1r) access directly from the command line
+* Feat: `go_off_grid()` now requires `confirm=True` to prevent accidental islanding — calling without the flag logs an error and returns `None`
+* Fix: Unsupported-method error logs in `go_off_grid()` and `reconnect_grid()` now include the backend class name for easier diagnosis
+* Add: Unit tests for `go_off_grid()` confirm guard and CLI v1r argument forwarding/password derivation
+* Release prep:
+     * Bump library version to `0.15.4`
+     * Update proxy pinned dependency to `pypowerwall==0.15.4`
+
 ## v0.15.3 - PW3 No-Solar None Handling
 
 * Update scanner to use cidr by @Nexarian in https://github.com/jasonacox/pypowerwall/pull/266

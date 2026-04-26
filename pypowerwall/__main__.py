@@ -42,6 +42,20 @@ def main():
     fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
     tedapi_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
+    tedapi_args.add_argument("gw_pwd", type=str, nargs="?", default=None,
+                             help="Powerwall Gateway Password")
+    tedapi_args.add_argument("-gw_pwd", dest="gw_pwd_option", metavar="GW_PWD", type=str, default=None,
+                             help="Powerwall Gateway Password")
+    tedapi_args.add_argument("-host", type=str, default=None,
+                             help="IP address of Powerwall Gateway")
+    tedapi_args.add_argument("-v1r", action="store_true", default=False,
+                             help="Use v1r LAN TEDAPI mode")
+    tedapi_args.add_argument("-password", type=str, default=None,
+                             help="Customer password for v1r mode (defaults to last 5 of gw_pwd)")
+    tedapi_args.add_argument("-rsa_key_path", type=str, default=None,
+                             help="Path to RSA private key PEM for v1r mode")
+    tedapi_args.add_argument("-wifi_host", type=str, default=None,
+                             help="Optional WiFi TEDAPI host for v1r follower fallback")
 
     register_args = subparsers.add_parser("register",
                                           help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -145,7 +159,23 @@ def main():
     # TEDAPI Test
     elif command == 'tedapi':
         from pypowerwall.tedapi.__main__ import run_tedapi_test
-        run_tedapi_test(auto=True, debug=args.debug)
+        tedapi_argv = []
+        gw_pwd = args.gw_pwd_option or args.gw_pwd
+        if gw_pwd:
+            tedapi_argv.extend(['-gw_pwd', gw_pwd])
+        if args.host:
+            tedapi_argv.extend(['-host', args.host])
+        if args.v1r:
+            tedapi_argv.append('-v1r')
+        if args.password:
+            tedapi_argv.extend(['-password', args.password])
+        if args.rsa_key_path:
+            tedapi_argv.extend(['-rsa_key_path', args.rsa_key_path])
+        if args.wifi_host:
+            tedapi_argv.extend(['-wifi_host', args.wifi_host])
+        if args.debug:
+            tedapi_argv.append('--debug')
+        run_tedapi_test(argv=tedapi_argv, debug=args.debug)
 
     # Fleet API RSA Key Registration (v1r LAN mode)
     elif command == 'register':
