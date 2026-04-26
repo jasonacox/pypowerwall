@@ -124,8 +124,12 @@ networkingMode=mirrored
 ```
 
 ```bash
-# Test
-python3 -m pypowerwall tedapi
+# Test WiFi TEDAPI
+python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX
+
+# Test v1r LAN TEDAPI
+python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
+   -rsa_key_path /path/to/tedapi_rsa_private.pem
 ```
 
 #### TEDAPI Troubleshooting
