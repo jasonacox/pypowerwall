@@ -1,7 +1,7 @@
 # pyPowerwall - Tesla TEDAPI Class Main
 # -*- coding: utf-8 -*-
 """
- Tesla TEADAPI Class - Command Line Test
+ Tesla TEDAPI Class - Command Line Test
 
  This script tests the TEDAPI class by connecting to a Tesla Powerwall Gateway
 """
@@ -72,6 +72,8 @@ def run_tedapi_test(argv=None, debug=False):
         if not args.password and not gw_pwd:
             parser.error('-v1r requires -password or -gw_pwd')
         password = args.password or gw_pwd[-5:]
+        if gw_pwd is None:
+            gw_pwd = ""
     else:
         password = None
 
@@ -87,7 +89,7 @@ def run_tedapi_test(argv=None, debug=False):
         print(" FAILED")
         print()
         print(f"ERROR: Unable to connect to Powerwall Gateway {host} on port 443.")
-        print("Please verify your your host has a route to the Gateway.")
+        print("Please verify your host has a route to the Gateway.")
         print(f"\nError details: {e}")
         sys.exit(1)
 

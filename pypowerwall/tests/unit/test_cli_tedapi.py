@@ -49,3 +49,35 @@ def test_run_tedapi_test_v1r_derives_password_from_gw_pwd(tmp_path, monkeypatch)
         rsa_key_path='/tmp/test.pem',
         wifi_host=None,
     )
+
+
+def test_run_tedapi_test_v1r_password_only_no_gw_pwd(tmp_path, monkeypatch):
+    """v1r with -password but no -gw_pwd must not hang on interactive input."""
+    from pypowerwall.tedapi.__main__ import run_tedapi_test
+
+    mock_ted = MagicMock()
+    mock_ted.din = 'DIN123'
+    mock_ted.get_config.return_value = {}
+    mock_ted.get_status.return_value = {}
+    monkeypatch.chdir(tmp_path)
+
+    with patch('requests.get') as mock_get, \
+         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted) as mock_tedapi, \
+         patch('builtins.input') as mock_input:
+        mock_get.return_value.status_code = 200
+        run_tedapi_test([
+            '-host', '10.42.1.40',
+            '-v1r',
+            '-password', 'mypass',
+            '-rsa_key_path', '/tmp/test.pem',
+        ])
+
+    mock_input.assert_not_called()
+    mock_tedapi.assert_called_once_with(
+        gw_pwd='',
+        host='10.42.1.40',
+        v1r=True,
+        password='mypass',
+        rsa_key_path='/tmp/test.pem',
+        wifi_host=None,
+    )
