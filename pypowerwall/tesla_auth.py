@@ -179,25 +179,53 @@ def _local_login(email: str = None, region: str = "us") -> str:
         height=750,
     )
 
-    def on_before_load(window, url):
-        """Fires before WKWebView navigates to any URL.
-        pywebview calls with (window, url) when function has 'window' parameter.
-        When Tesla redirects to tesla://auth/callback, capture code and cancel.
-        """
-        if url and url.startswith("tesla://"):
-            parsed = urllib.parse.urlparse(url)
-            params = urllib.parse.parse_qs(parsed.query)
-            code = params.get("code", [None])[0]
-            if code:
-                result["code"] = code
-                try:
-                    window.destroy()
-                except Exception:
-                    pass
-            return False  # cancel navigation
-        return True  # allow all other navigation
+    # Use a JS polling approach: inject a MutationObserver that watches for
+    # Tesla's redirect attempt by overriding XMLHttpRequest and fetch,
+    # then poll evaluate_js every 300ms to read window.__teslaCode
+    js_inject = """
+    if (!window.__teslaPatch) {
+        window.__teslaPatch = true;
+        window.__teslaCode = null;
+        var _origOpen = XMLHttpRequest.prototype.open;
+        // Patch fetch to intercept token responses
+        var _origFetch = window.fetch;
+        window.fetch = function(url, opts) {
+            var p = _origFetch.apply(this, arguments);
+            if (url && url.indexOf('/oauth2/v3/token') > -1) {
+                p.then(function(r) {
+                    r.clone().json().then(function(d) {
+                        if (d && d.refresh_token) window.__teslaRefresh = d.refresh_token;
+                    });
+                });
+            }
+            return p;
+        };
+    }
+    window.__teslaCode || window.__teslaRefresh || '';
+    """
 
-    window.events.before_load += on_before_load
+    import threading, time
+
+    def poll():
+        for _ in range(600):
+            try:
+                val = window.evaluate_js(js_inject)
+                if val and val not in ('', 'null', None):
+                    result['value'] = val
+                    try:
+                        window.destroy()
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                pass
+            time.sleep(0.3)
+
+    def on_loaded():
+        t = threading.Thread(target=poll, daemon=True)
+        t.start()
+
+    window.events.loaded += on_loaded
     webview.start()
 
     auth_code = result.get("code")
