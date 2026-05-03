@@ -176,19 +176,55 @@ def _local_login(email: str = None, region: str = "us") -> str:
 
     result = {}
 
-    def on_navigated(window, url):
-        if url and url.startswith("tesla://"):
+    class TeslaAuthApi:
+        """JS API bridge — called from injected JS when tesla:// redirect fires."""
+        def __init__(self, window_holder):
+            self.window_holder = window_holder
+
+        def capture(self, url):
             parsed = urllib.parse.urlparse(url)
             params = urllib.parse.parse_qs(parsed.query)
             result["code"] = params.get("code", [None])[0]
-            window.destroy()
+            self.window_holder["window"].destroy()
+
+    window_holder = {}
+    api = TeslaAuthApi(window_holder)
+
+    # JS injected on every page load — overrides window.open and link clicks
+    # to intercept the tesla:// redirect before the browser tries to launch it
+    intercept_js = """
+    (function() {
+        var _open = window.open;
+        window.open = function(url, target, features) {
+            if (url && url.indexOf('tesla://') === 0) {
+                window.pywebview.api.capture(url);
+                return;
+            }
+            return _open(url, target, features);
+        };
+        document.addEventListener('click', function(e) {
+            var el = e.target;
+            while (el) {
+                if (el.tagName === 'A' && el.href && el.href.indexOf('tesla://') === 0) {
+                    e.preventDefault();
+                    window.pywebview.api.capture(el.href);
+                    return;
+                }
+                el = el.parentElement;
+            }
+        }, true);
+    })();
+    """
+
+    def on_loaded():
+        window_holder["window"].evaluate_js(intercept_js)
 
     print("Opening Tesla login window...")
     window = webview.create_window(
-        "Tesla Login — pypowerwall", auth_url, width=500, height=750
+        "Tesla Login — pypowerwall", auth_url, width=500, height=750, js_api=api
     )
-    window.events.navigated += on_navigated
-    webview.start()
+    window_holder["window"] = window
+    webview.start(on_loaded)
 
     auth_code = result.get("code")
     if not auth_code:
