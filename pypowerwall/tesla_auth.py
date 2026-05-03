@@ -267,13 +267,12 @@ def _local_login_macos(email: str = None, region: str = "us") -> str:
                     # Exchange code for token (in background to not block the delegate)
                     def do_exchange():
                         try:
-                            token_data = _exchange_code(code, code_verifier, region)
-                            result["token"] = token_data["refresh_token"]
+                            # _exchange_code returns a refresh_token string directly
+                            result["token"] = _exchange_code(code, code_verifier, region)
                         except Exception as e:
                             result["error"] = f"Token exchange failed: {e}"
                         finally:
-                            # Close the window
-                            AppHelper.stopEventLoop()
+                            AppHelper.callAfter(AppHelper.stopEventLoop)
 
                     threading.Thread(target=do_exchange, daemon=True).start()
 
@@ -287,22 +286,27 @@ def _local_login_macos(email: str = None, region: str = "us") -> str:
                 handler(1)  # WKNavigationActionPolicyAllow
 
     def run_window():
+        # Initialize NSApplication on the main thread
+        app = AppKit.NSApplication.sharedApplication()
+        app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+
         # Create WebView configuration
         config = WebKit.WKWebViewConfiguration.alloc().init()
 
         # Create WebView
-        webview = WebKit.WKWebView.alloc().initWithFrame_configuration_(
+        webview_obj = WebKit.WKWebView.alloc().initWithFrame_configuration_(
             Foundation.NSMakeRect(0, 0, 500, 750),
             config,
         )
 
-        # Set navigation delegate
+        # Set navigation delegate (retain it so it's not GC'd)
         delegate = TeslaNavDelegate.alloc().init()
-        webview.setNavigationDelegate_(delegate)
+        delegate.retain()
+        webview_obj.setNavigationDelegate_(delegate)
 
         # Create window
-        window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            Foundation.NSMakeRect(100, 100, 500, 750),
+        ns_window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            Foundation.NSMakeRect(200, 200, 500, 750),
             (
                 AppKit.NSWindowStyleMaskTitled
                 | AppKit.NSWindowStyleMaskClosable
@@ -311,17 +315,21 @@ def _local_login_macos(email: str = None, region: str = "us") -> str:
             AppKit.NSBackingStoreBuffered,
             False,
         )
-        window.setContentView_(webview)
-        window.setTitle_("Tesla Login — pypowerwall")
-        window.makeKeyAndOrderFront_(None)
+        ns_window.setContentView_(webview_obj)
+        ns_window.setTitle_("Tesla Login \u2014 pypowerwall")
+        ns_window.makeKeyAndOrderFront_(None)
+        ns_window.retain()
 
         # Load the auth URL
         req = Foundation.NSURLRequest.requestWithURL_(
             Foundation.NSURL.URLWithString_(auth_url)
         )
-        webview.loadRequest_(req)
+        webview_obj.loadRequest_(req)
 
-        # Run the event loop (blocks until stopEventLoop is called)
+        # Activate the app so the window comes to front
+        app.activateIgnoringOtherApps_(True)
+
+        # Run the event loop (blocks until AppHelper.stopEventLoop is called)
         AppHelper.runEventLoop()
 
     print("Opening Tesla login window...")
