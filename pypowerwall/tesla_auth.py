@@ -5,16 +5,21 @@ pypowerwall.tesla_auth - Pure Python Tesla OAuth 2.0 PKCE authentication
 Replaces the external tesla_auth binary. Users can authenticate with Tesla
 and obtain refresh tokens using only Python — no Rust binary needed.
 
+Tesla requires redirect_uri=tesla://auth/callback for the ownerapi client_id.
+Since this is a custom URI scheme, we cannot use a localhost HTTP server to
+catch the callback automatically. Instead, both interactive and headless modes
+require the user to paste the redirect URL back into the terminal after login.
+
 Supports:
-  - Interactive browser login (opens browser, catches redirect via localhost)
-  - Headless/manual mode (prints URL, user pastes redirect URL back)
+  - Interactive browser login (opens browser, user pastes redirect URL)
+  - Headless/manual mode (prints URL, user opens on another device, pastes URL)
   - Cross-platform: Linux, macOS, Windows, headless servers
+  - Region auto-detection from callback issuer parameter
 
 Usage:
     python -m pypowerwall login
     python -m pypowerwall login --headless
     python -m pypowerwall login --email user@example.com
-    python -m pypowerwall login --region cn
 
 Or programmatically:
     from pypowerwall.tesla_auth import login, save_token
@@ -26,13 +31,10 @@ Based on the OAuth 2.0 PKCE flow from tesla_auth (Rust) by Adrian Kumpf.
 
 import base64
 import hashlib
-import http.server
 import json
 import os
 import secrets
-import socket
 import sys
-import threading
 import urllib.parse
 import webbrowser
 
@@ -54,13 +56,11 @@ TOKEN_URL_US = "https://auth.tesla.com/oauth2/v3/token"
 AUTH_URL_CN = "https://auth.tesla.cn/oauth2/v3/authorize"
 TOKEN_URL_CN = "https://auth.tesla.cn/oauth2/v3/token"
 
-# Tesla's custom URI scheme — used by the native tesla_auth app via WebView interception.
-# We do NOT use this directly; instead we try localhost or fall back to void/callback.
-REDIRECT_URL_CUSTOM = "tesla://auth/callback"
-
-# Tesla's void callback — shows "Page Not Found" but the URL contains the auth code.
-# This is what teslapy uses for the manual paste flow.
-REDIRECT_URL_VOID = "https://auth.tesla.com/void/callback"
+# Tesla only accepts this custom URI scheme for the ownerapi client_id.
+# The native tesla_auth app intercepts this via a WebView navigation handler.
+# We use it in the auth URL; after login, Tesla redirects to this URI with
+# code/state/issuer query params. The user copies the full URL from the browser.
+REDIRECT_URI = "tesla://auth/callback"
 
 SCOPES = ["openid", "email", "offline_access"]
 
@@ -68,27 +68,29 @@ REGION_CONFIG = {
     "us": {
         "auth_url": AUTH_URL_US,
         "token_url": TOKEN_URL_US,
-        "void_redirect": "https://auth.tesla.com/void/callback",
     },
     "cn": {
         "auth_url": AUTH_URL_CN,
         "token_url": TOKEN_URL_CN,
-        "void_redirect": "https://auth.tesla.cn/void/callback",
     },
 }
 
 
 # ---------------------------------------------------------------------------
-# PKCE helpers
+# PKCE helpers — match tesla_auth's oauth2 crate behavior
 # ---------------------------------------------------------------------------
 
 def generate_code_verifier() -> str:
-    """Generate a PKCE code_verifier (43-128 chars, base64url-encoded random bytes)."""
-    return secrets.token_urlsafe(86)  # 86 bytes → ~115 base64url chars
+    """Generate a PKCE code_verifier (base64url-encoded random bytes).
+
+    tesla_auth uses oauth2 crate's PkceCodeChallenge::new_random_sha256()
+    which generates 32 random bytes → base64url (43 chars). We match that.
+    """
+    return secrets.token_urlsafe(32)  # 32 bytes → 43 base64url chars
 
 
 def generate_code_challenge(code_verifier: str) -> str:
-    """Generate S256 code_challenge from code_verifier."""
+    """Generate S256 code_challenge from code_verifier (RFC 7636 §4.2)."""
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
@@ -106,15 +108,14 @@ def build_auth_url(
     code_challenge: str,
     state: str,
     region: str = "us",
-    redirect_uri: str = REDIRECT_URL_VOID,
 ) -> str:
-    """Build the Tesla OAuth authorization URL."""
+    """Build the Tesla OAuth authorization URL with tesla:// redirect."""
     cfg = REGION_CONFIG.get(region, REGION_CONFIG["us"])
     params = {
         "client_id": CLIENT_ID,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",
-        "redirect_uri": redirect_uri,
+        "redirect_uri": REDIRECT_URI,
         "response_type": "code",
         "scope": " ".join(SCOPES),
         "state": state,
@@ -129,28 +130,35 @@ def build_auth_url(
 def exchange_code(
     code: str,
     code_verifier: str,
-    redirect_uri: str,
-    region: str = "us",
+    token_url: str,
 ) -> dict:
     """
     Exchange an authorization code for tokens.
 
-    Returns dict with: access_token, refresh_token, expires_in, token_type, etc.
-    Raises RuntimeError on failure.
+    Args:
+        code: The authorization code from the callback.
+        code_verifier: The PKCE code verifier.
+        token_url: The token endpoint URL (region-specific).
+
+    Returns:
+        dict with: access_token, refresh_token, expires_in, etc.
+
+    Raises:
+        RuntimeError on failure.
+        ImportError if requests is not installed.
     """
     if requests is None:
         raise ImportError("The 'requests' package is required. Install with: pip install requests")
 
-    cfg = REGION_CONFIG.get(region, REGION_CONFIG["us"])
     data = {
         "grant_type": "authorization_code",
         "client_id": CLIENT_ID,
         "code": code,
         "code_verifier": code_verifier,
-        "redirect_uri": redirect_uri,
+        "redirect_uri": REDIRECT_URI,
     }
 
-    resp = requests.post(cfg["token_url"], data=data, timeout=30)
+    resp = requests.post(token_url, data=data, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(
             f"Token exchange failed (HTTP {resp.status_code}): {resp.text}"
@@ -163,116 +171,115 @@ def exchange_code(
     return result
 
 
-# ---------------------------------------------------------------------------
-# Localhost redirect catcher
-# ---------------------------------------------------------------------------
+def refresh_access_token(
+    refresh_token: str,
+    token_url: str = TOKEN_URL_US,
+) -> dict:
+    """
+    Refresh an access token using a refresh token.
 
-def _find_free_port() -> int:
-    """Find a free TCP port on localhost."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    Args:
+        refresh_token: The Tesla refresh token.
+        token_url: The token endpoint URL (region-specific).
 
+    Returns:
+        dict with: access_token, refresh_token, expires_in, etc.
+    """
+    if requests is None:
+        raise ImportError("The 'requests' package is required. Install with: pip install requests")
 
-class _RedirectHandler(http.server.BaseHTTPRequestHandler):
-    """HTTP handler that captures the OAuth redirect."""
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": CLIENT_ID,
+        "refresh_token": refresh_token,
+    }
 
-    auth_result = None  # type: ignore  # set by the handler
-    auth_event = None  # type: ignore  # threading.Event
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        params = urllib.parse.parse_qs(parsed.query)
-
-        code = params.get("code", [None])[0]
-        state = params.get("state", [None])[0]
-        error = params.get("error", [None])[0]
-
-        if error:
-            self._respond(
-                400,
-                "<h1>Authentication Failed</h1>"
-                f"<p>Error: {error}</p>"
-                f"<p>You can close this window.</p>",
-            )
-            _RedirectHandler.auth_result = {"error": error}
-        elif code:
-            self._respond(
-                200,
-                "<h1>&#x2705; Authentication Successful!</h1>"
-                "<p>You can close this window and return to the terminal.</p>",
-            )
-            _RedirectHandler.auth_result = {"code": code, "state": state}
-        else:
-            self._respond(
-                400,
-                "<h1>Invalid Response</h1><p>No authorization code received.</p>",
-            )
-            _RedirectHandler.auth_result = {"error": "no_code"}
-
-        if _RedirectHandler.auth_event:
-            _RedirectHandler.auth_event.set()
-
-    def _respond(self, status: int, html: str):
-        self.send_response(status)
-        self.send_header("Content-Type", "text/html")
-        self.end_headers()
-        self.wfile.write(html.encode())
-
-    def log_message(self, format, *args):
-        """Suppress default stderr logging."""
-        pass
-
-
-def _catch_redirect_on_localhost(port: int, timeout: int = 300) -> dict[str, str]:
-    """Start a localhost HTTP server and wait for the OAuth redirect."""
-    _RedirectHandler.auth_result = None
-    _RedirectHandler.auth_event = threading.Event()
-
-    server = http.server.HTTPServer(("127.0.0.1", port), _RedirectHandler)
-    server.timeout = timeout
-
-    # Run server in a thread
-    server_thread = threading.Thread(target=server.handle_request, daemon=True)
-    server_thread.start()
-
-    # Wait for the redirect or timeout
-    if not _RedirectHandler.auth_event.wait(timeout=timeout):
-        server.server_close()
-        raise TimeoutError(
-            f"Timed out waiting for redirect after {timeout} seconds. "
-            "Try running with --headless instead."
+    resp = requests.post(token_url, data=data, timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Token refresh failed (HTTP {resp.status_code}): {resp.text}"
         )
 
-    server.server_close()
-    return _RedirectHandler.auth_result
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Callback URL parsing
+# ---------------------------------------------------------------------------
+
+def parse_callback_url(callback_url: str) -> dict:
+    """
+    Parse the redirect callback URL to extract code, state, and issuer.
+
+    The callback URL looks like:
+        tesla://auth/callback?code=...&state=...&issuer=https://auth.tesla.com/...
+
+    Returns dict with: code, state, issuer, token_url
+    """
+    parsed = urllib.parse.urlparse(callback_url)
+    params = urllib.parse.parse_qs(parsed.query)
+
+    error = params.get("error", [None])[0]
+    if error:
+        raise RuntimeError(f"Tesla authentication error: {error}")
+
+    code = params.get("code", [None])[0]
+    state = params.get("state", [None])[0]
+    issuer = params.get("issuer", [None])[0]
+
+    if not code:
+        raise RuntimeError("No authorization code found in the redirect URL.")
+    if not state:
+        raise RuntimeError("No state parameter found in the redirect URL.")
+
+    # Determine token_url from issuer (matching tesla_auth's retrieve_tokens)
+    token_url = TOKEN_URL_US  # default
+    if issuer and "auth.tesla.cn" in issuer:
+        token_url = TOKEN_URL_CN
+
+    return {
+        "code": code,
+        "state": state,
+        "issuer": issuer,
+        "token_url": token_url,
+    }
 
 
 # ---------------------------------------------------------------------------
 # Main login function
 # ---------------------------------------------------------------------------
 
+def _has_display() -> bool:
+    """Check if a display is available for opening a browser."""
+    if sys.platform == "win32":
+        return True
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
 def login(
     email: str = None,
     headless: bool = False,
     region: str = "us",
-    timeout: int = 300,
 ) -> str:
     """
     Authenticate with Tesla and return a refresh token.
 
+    Uses the OAuth 2.0 PKCE flow matching tesla_auth. The redirect URI is
+    tesla://auth/callback — Tesla's only accepted redirect for ownerapi.
+    After login, the browser redirects to this custom URI. The user must
+    copy the full URL from the browser's address bar and paste it back.
+
     Args:
         email: Tesla account email (optional, will prompt if needed).
-        headless: If True, skip browser and use manual URL paste mode.
-        region: 'us' (default) or 'cn' for China.
-        timeout: Seconds to wait for browser redirect (default 300).
+        headless: If True, don't open browser (just print URL).
+        region: 'us' (default) or 'cn' for China. Overridden by issuer in callback.
+        timeout: Removed — no server to timeout.
 
     Returns:
         refresh_token string.
 
     Raises:
         RuntimeError: On authentication failure.
-        TimeoutError: If redirect not received within timeout.
     """
     # Generate PKCE parameters
     code_verifier = generate_code_verifier()
@@ -288,118 +295,43 @@ def login(
     print(f"\nTesla login for: {email}")
     print("-" * 60)
 
-    # Try localhost redirect first (unless headless)
+    # Build auth URL
+    auth_url = build_auth_url(code_challenge, state, region)
+
+    # Open browser if not headless and display available
     if not headless and _has_display():
-        refresh_token = _login_interactive(
-            code_verifier, code_challenge, state, region, email, timeout
+        print("Opening browser for Tesla login...")
+        webbrowser.open(auth_url)
+        print(
+            "\nAfter logging in, your browser will show an error or blank page.\n"
+            "This is expected — the URL in the address bar contains your auth code.\n"
+            "Copy the FULL URL from the address bar and paste it below.\n"
         )
-        if refresh_token:
-            return refresh_token
-        # Interactive failed — fall through to manual mode
-        print("\nFalling back to manual mode...")
+    else:
+        print(
+            "\nOpen the following URL in your browser to log into your Tesla account:\n"
+        )
+        print(f"  {auth_url}\n")
+        print(
+            "After logging in, you will be redirected to a tesla:// URL.\n"
+            "Copy the FULL URL from your browser's address bar and paste it below.\n"
+        )
 
-    # Headless / manual mode — use void/callback redirect
-    return _login_manual(code_verifier, code_challenge, state, region, email)
+    callback_url = input("Paste the redirect URL: ").strip()
 
+    if not callback_url:
+        raise RuntimeError("No callback URL provided.")
 
-def _has_display() -> bool:
-    """Check if a display is available for opening a browser."""
-    if sys.platform == "win32":
-        return True
-    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    # Parse callback
+    callback = parse_callback_url(callback_url)
 
-
-def _login_interactive(
-    code_verifier: str,
-    code_challenge: str,
-    state: str,
-    region: str,
-    email: str,
-    timeout: int,
-) -> str | None:
-    """Try interactive browser login with localhost redirect."""
-    port = _find_free_port()
-    redirect_uri = f"http://localhost:{port}/callback"
-
-    auth_url = build_auth_url(code_challenge, state, region, redirect_uri=redirect_uri)
-
-    print(f"Opening browser for Tesla login...")
-    print(f"If the browser doesn't open, visit:\n\n  {auth_url}\n")
-
-    # Open browser
-    webbrowser.open(auth_url)
-
-    # Wait for redirect
-    try:
-        result = _catch_redirect_on_localhost(port, timeout=timeout)
-    except TimeoutError:
-        return None
-
-    if result is None:
-        return None
-
-    # pylint: disable=unsupported-membership-test,unsubscriptable-object
-    if "error" in result:
-        print(f"  Error from Tesla: {result['error']}")
-        return None
-
-    # Validate state
-    if result.get("state") != state:
-        print("  Error: CSRF state mismatch — possible tampering.")
-        return None
-
-    # Exchange code for tokens
-    print("  Exchanging authorization code for tokens...")
-    try:
-        tokens = exchange_code(result["code"], code_verifier, redirect_uri, region)
-    except Exception as e:
-        print(f"  Token exchange failed: {e}")
-        return None
-
-    refresh_token = tokens["refresh_token"]
-    print(f"  ✅ Refresh token obtained (expires in {tokens.get('expires_in', '?')}s)")
-    return refresh_token
-
-
-def _login_manual(
-    code_verifier: str,
-    code_challenge: str,
-    state: str,
-    region: str,
-    email: str,
-) -> str:
-    """Manual mode — user pastes the redirect URL from the browser."""
-    redirect_uri = REDIRECT_URL_VOID
-    auth_url = build_auth_url(code_challenge, state, region, redirect_uri=redirect_uri)
-
-    print("\nOpen the following URL in your browser to log into your Tesla account:\n")
-    print(f"  {auth_url}\n")
-    print(
-        "After logging in, you will be redirected to a 'Page Not Found' page.\n"
-        "Copy the FULL URL from your browser's address bar and paste it below.\n"
-    )
-
-    redirect_response = input("Enter the URL after login: ").strip()
-
-    # Parse the code and state from the redirect URL
-    parsed = urllib.parse.urlparse(redirect_response)
-    params = urllib.parse.parse_qs(parsed.query)
-
-    error = params.get("error", [None])[0]
-    if error:
-        raise RuntimeError(f"Tesla authentication error: {error}")
-
-    code = params.get("code", [None])[0]
-    returned_state = params.get("state", [None])[0]
-
-    if not code:
-        raise RuntimeError("No authorization code found in the redirect URL.")
-
-    if returned_state != state:
+    # Validate state (CSRF protection)
+    if callback["state"] != state:
         raise RuntimeError("CSRF state mismatch — possible tampering.")
 
+    # Exchange code for tokens (use issuer-detected token_url)
     print("  Exchanging authorization code for tokens...")
-    tokens = exchange_code(code, code_verifier, redirect_uri, region)
+    tokens = exchange_code(callback["code"], code_verifier, callback["token_url"])
 
     refresh_token = tokens["refresh_token"]
     print(f"  ✅ Refresh token obtained (expires in {tokens.get('expires_in', '?')}s)")
@@ -452,7 +384,9 @@ def save_token(refresh_token: str, path: str = None, email: str = None):
     }
 
     # Ensure directory exists
-    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    dir_name = os.path.dirname(path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
 
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
@@ -486,10 +420,6 @@ def main():
         "--output", "-o", type=str, default=None,
         help="Path to save the auth file (default: .pypowerwall.auth in current dir)",
     )
-    parser.add_argument(
-        "--timeout", "-t", type=int, default=300,
-        help="Seconds to wait for browser redirect (default: 300)",
-    )
 
     args = parser.parse_args()
 
@@ -501,7 +431,6 @@ def main():
             email=args.email,
             headless=args.headless,
             region=args.region,
-            timeout=args.timeout,
         )
     except (KeyboardInterrupt, EOFError):
         print("\n\nLogin cancelled.")
@@ -515,7 +444,7 @@ def main():
     save_token(refresh_token, path=args.output, email=email)
 
     print("\n✅ Done! You can now use pypowerwall with cloud mode.")
-    print(f"   Run: python -m pypowerwall setup")
+    print("   Run: python -m pypowerwall setup")
 
 
 if __name__ == "__main__":

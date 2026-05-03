@@ -45,8 +45,7 @@ def main():
                            help="Manual mode — paste URL instead of opening browser")
     login_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
-    login_args.add_argument("-timeout", type=int, default=300,
-                           help="Seconds to wait for browser redirect (default: 300)")
+
 
     fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
@@ -160,7 +159,6 @@ def main():
                 email=args.email,
                 headless=args.headless,
                 region=args.region,
-                timeout=args.timeout,
             )
             auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
             save_token(refresh_token, path=auth_file, email=args.email or "")
