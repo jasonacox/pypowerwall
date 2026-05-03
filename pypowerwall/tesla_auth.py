@@ -241,7 +241,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                     except Exception as e:
                         dbg(f"Clipboard error: {e}")
                 elif action == "close":
-                    AppHelper.callAfter(AppHelper.stopEventLoop)
+                    AppHelper.callAfter(_stop_runloop)
                 handler(0)
                 return
 
@@ -257,7 +257,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                         result["error"] = f"Tesla auth error: {error}"
                         dbg(f"Auth error from Tesla: {error}")
                         handler(0)
-                        AppHelper.callAfter(AppHelper.stopEventLoop)
+                        AppHelper.callAfter(_stop_runloop)
                         return
 
                     code = params.get("code", [None])[0]
@@ -267,14 +267,14 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                     if not code:
                         result["error"] = f"No auth code in redirect: {url}"
                         handler(0)
-                        AppHelper.callAfter(AppHelper.stopEventLoop)
+                        AppHelper.callAfter(_stop_runloop)
                         return
 
                     if returned_state != state:
                         result["error"] = "CSRF state mismatch"
                         dbg(f"State mismatch: got {returned_state!r} expected {state!r}")
                         handler(0)
-                        AppHelper.callAfter(AppHelper.stopEventLoop)
+                        AppHelper.callAfter(_stop_runloop)
                         return
 
                     dbg("Auth code captured — exchanging for token...")
@@ -351,14 +351,14 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             exchange_done.set()
                             # Stop event loop so run_window() returns and token is saved
                             # The success page will already be loaded at this point
-                            AppHelper.callAfter(AppHelper.stopEventLoop)
+                            AppHelper.callAfter(_stop_runloop)
 
                     threading.Thread(target=do_exchange, daemon=True).start()
 
                 except Exception as e:
                     result["error"] = f"Failed to parse redirect: {e}"
                     dbg(f"Parse error: {e}")
-                    AppHelper.callAfter(AppHelper.stopEventLoop)
+                    AppHelper.callAfter(_stop_runloop)
 
                 handler(0)  # Cancel the tesla:// navigation
             else:
@@ -377,9 +377,18 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         delegate.retain()
         webview_obj.setNavigationDelegate_(delegate)
 
+        def _stop_runloop():
+            AppKit.NSApplication.sharedApplication().stop_(None)
+            # Post dummy event to wake the run loop so stop_ takes effect
+            import Foundation
+            event = AppKit.NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+                15, Foundation.NSPoint(0, 0), 0, 0, 0, None, 0, 0, 0
+            )
+            AppKit.NSApplication.sharedApplication().postEvent_atStart_(event, True)
+
         class WindowDelegate(AppKit.NSObject):
             def windowWillClose_(self, notification):
-                AppHelper.stopEventLoop()
+                _stop_runloop()
         win_delegate = WindowDelegate.alloc().init()
         win_delegate.retain()
 
