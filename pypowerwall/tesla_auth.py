@@ -577,6 +577,23 @@ def get_authtoken(region: str = "us", debug: bool = False) -> str:
     return _local_login(region=region, debug=debug)
 
 
+def _extract_email_from_token(token: str) -> str:
+    """Try to extract email from the JWT refresh token payload."""
+    try:
+        import base64, json
+        parts = token.split('.')
+        if len(parts) >= 2:
+            payload = parts[1] + '=='  # pad
+            data = json.loads(base64.urlsafe_b64decode(payload))
+            # Check nested data.sub or email fields
+            return (data.get('data', {}).get('email') or
+                    data.get('email') or
+                    data.get('data', {}).get('sub', '') or '')
+    except Exception:
+        pass
+    return ''
+
+
 def save_token(refresh_token: str, path: str = None, email: str = None):
     """Save a refresh token to the pypowerwall auth file (.pypowerwall.auth).
 
