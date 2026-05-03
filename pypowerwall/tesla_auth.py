@@ -334,6 +334,9 @@ def _login_interactive(
     except TimeoutError:
         return None
 
+    if result is None:
+        return None
+
     if "error" in result:
         print(f"  Error from Tesla: {result['error']}")
         return None
