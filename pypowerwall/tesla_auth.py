@@ -207,6 +207,19 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
     exchange_done = threading.Event()
     webview_ref = [None]  # mutable container so closure can access it
 
+    def _stop_runloop():
+        """Stop the NSApp run loop cleanly without terminating the process."""
+        app = AppKit.NSApplication.sharedApplication()
+        app.stop_(None)
+        # Post a dummy event to wake the run loop immediately
+        try:
+            dummy = AppKit.NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
+                15, Foundation.NSPoint(0, 0), 0, 0, 0, None, 0, 0, 0
+            )
+            app.postEvent_atStart_(dummy, True)
+        except Exception:
+            pass
+
     def dbg(msg):
         if debug:
             print(f"  [debug] {msg}")
@@ -376,15 +389,6 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         delegate = TeslaNavDelegate.alloc().init()
         delegate.retain()
         webview_obj.setNavigationDelegate_(delegate)
-
-        def _stop_runloop():
-            AppKit.NSApplication.sharedApplication().stop_(None)
-            # Post dummy event to wake the run loop so stop_ takes effect
-            import Foundation
-            event = AppKit.NSEvent.otherEventWithType_location_modifierFlags_timestamp_windowNumber_context_subtype_data1_data2_(
-                15, Foundation.NSPoint(0, 0), 0, 0, 0, None, 0, 0, 0
-            )
-            AppKit.NSApplication.sharedApplication().postEvent_atStart_(event, True)
 
         class WindowDelegate(AppKit.NSObject):
             def windowWillClose_(self, notification):
