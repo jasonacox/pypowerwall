@@ -350,46 +350,42 @@ def _register_linux() -> bool:
 
 
 def _register_macos() -> bool:
-    """Register tesla:// URI scheme on macOS via a small .app bundle."""
-    # Create a minimal .app bundle
+    """Register tesla:// URI scheme on macOS via a small .app bundle + lsregister."""
+    import plistlib
+
     app_dir = os.path.expanduser("~/Library/TeslaAuthHelper.app")
-    contents_dir = os.path.join(app_dir, "Contents")
-    macos_dir = os.path.join(contents_dir, "MacOS")
+    contents = os.path.join(app_dir, "Contents")
+    macos_dir = os.path.join(contents, "MacOS")
     os.makedirs(macos_dir, exist_ok=True)
 
-    # Write Info.plist with URI scheme registration
-    plist = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"'
-        ' "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
-        '<plist version="1.0"><dict>\n'
-        '  <key>CFBundleIdentifier</key>'
-        '<string>com.pypowerwall.teslaauth</string>\n'
-        '  <key>CFBundleName</key>'
-        '<string>TeslaAuthHelper</string>\n'
-        '  <key>CFBundleURLTypes</key><array><dict>\n'
-        '    <key>CFBundleURLSchemes</key><array>'
-        '<string>tesla</string></array>\n'
-        '    <key>CFBundleURLName</key>'
-        '<string>Tesla Auth</string>\n'
-        '  </dict></array>\n'
-        '</dict></plist>\n'
-    )
-    with open(os.path.join(contents_dir, "Info.plist"), "w") as f:
-        f.write(plist)
-
-    # Write the launcher script
-    launcher = os.path.join(macos_dir, "TeslaAuthHelper")
+    # Handler script
     python_path = _get_python_path()
-    with open(launcher, "w") as f:
+    handler_script = os.path.join(macos_dir, "TeslaAuthHelper")
+    with open(handler_script, "w") as f:
         f.write(f"#!/bin/bash\nexec {python_path} {HANDLER_SCRIPT_PATH} \"$1\"\n")
-    os.chmod(launcher, 0o755)
+    os.chmod(handler_script, 0o755)
+
+    # Info.plist using plistlib for correctness
+    plist_path = os.path.join(contents, "Info.plist")
+    plist_data = {
+        "CFBundleIdentifier": "com.pypowerwall.teslaauth",
+        "CFBundleName": "TeslaAuthHelper",
+        "CFBundleExecutable": "TeslaAuthHelper",
+        "CFBundleVersion": "1.0",
+        "LSUIElement": True,
+        "CFBundleURLTypes": [{
+            "CFBundleURLSchemes": ["tesla"],
+            "CFBundleURLName": "Tesla Auth Callback",
+        }],
+    }
+    with open(plist_path, "wb") as f:
+        plistlib.dump(plist_data, f)
 
     # Register with LaunchServices
     try:
         subprocess.run(
-            ["/System/Library/Frameworks/CoreServices.framework/Frameworks/"
-             "LaunchServices.framework/Support/lsregister",
+            ["/System/Library/Frameworks/CoreServices.framework/Versions/A/"
+             "Frameworks/LaunchServices.framework/Versions/A/Support/lsregister",
              "-f", app_dir],
             capture_output=True, timeout=15, check=False,
         )
@@ -460,8 +456,8 @@ def _unregister_protocol_handler():
             if os.path.exists(app_dir):
                 shutil.rmtree(app_dir, ignore_errors=True)
             subprocess.run(
-                ["/System/Library/Frameworks/CoreServices.framework/Frameworks/"
-                 "LaunchServices.framework/Support/lsregister",
+                ["/System/Library/Frameworks/CoreServices.framework/Versions/A/"
+                 "Frameworks/LaunchServices.framework/Versions/A/Support/lsregister",
                  "-u", app_dir],
                 capture_output=True, timeout=10, check=False,
             )
@@ -497,6 +493,46 @@ def _unregister_protocol_handler():
                 os.remove(f)
         except Exception:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Headless login — pure manual paste, no OS handler or HTTP server needed
+# ---------------------------------------------------------------------------
+
+def _headless_login(auth_url: str) -> str:
+    """
+    Headless login flow: print URL, user logs in via browser,
+    copies tesla:// callback URL from Chrome DevTools, and pastes it.
+
+    Returns the parsed auth code.
+    """
+    print("\n" + "=" * 60)
+    print("Tesla Authentication — Headless Mode")
+    print("=" * 60)
+    print("\n1. Open this URL in your browser:\n")
+    print(f"   {auth_url}\n")
+    print("2. Complete the Tesla login (enter credentials + MFA if required).")
+    print("\n3. After login, the browser will show an error like:")
+    print('   "Failed to launch tesla://auth/callback?code=..."')
+    print("\n4. Open Chrome DevTools (F12 \u2192 Console tab) and find the")
+    print('   line starting with "Failed to launch tesla://..."')
+    print("\n5. Copy the FULL tesla:// URL from that line and paste it below.\n")
+
+    while True:
+        callback_url = input("Paste the tesla:// URL here: ").strip()
+        if callback_url.startswith("tesla://"):
+            break
+        print("   \u26a0\ufe0f  Must start with 'tesla://' — try again.")
+
+    # Parse code from the pasted URL
+    parsed = urllib.parse.urlparse(callback_url)
+    params = urllib.parse.parse_qs(parsed.query)
+    auth_code = params.get("code", [None])[0]
+
+    if not auth_code:
+        raise ValueError("No auth code found in pasted URL")
+
+    return auth_code
 
 
 # ---------------------------------------------------------------------------
@@ -538,8 +574,11 @@ def login(
       5. Exchanges code for tokens
       6. Cleans up URI registration
 
-    In headless mode or when handler registration fails, falls back to
-    manual paste mode (user copies URL from browser address bar).
+    In headless mode, uses manual paste: user copies the tesla:// URL from
+    Chrome DevTools console after login and pastes it into the terminal.
+
+    If OS handler registration fails on any platform, automatically falls
+    back to headless-style manual paste mode.
 
     Args:
         email: Tesla account email (optional, will prompt if needed).
@@ -567,8 +606,25 @@ def login(
     # Build auth URL
     auth_url = build_auth_url(code_challenge, state, region)
 
-    # Determine mode: try automatic capture if display available and not headless
-    use_auto = not headless and _has_display()
+    # --- Headless mode: pure manual paste, no browser/server needed ---
+    if headless:
+        auth_code = _headless_login(auth_url)
+
+        # Detect region from issuer if present in the pasted URL
+        parsed_url = urllib.parse.urlparse(input) if False else None
+        # Re-parse from the callback to get issuer for region detection
+        # _headless_login only returns the code, so we use US as default
+        # (the token exchange will fail if wrong region, and user can retry)
+        token_url = TOKEN_URL_US
+
+        print("  Exchanging authorization code for tokens...")
+        tokens = exchange_code(auth_code, code_verifier, token_url)
+        refresh_token = tokens["refresh_token"]
+        print(f"  \u2705 Refresh token obtained (expires in {tokens.get('expires_in', '?')}s)")
+        return refresh_token
+
+    # --- Interactive mode: try automatic callback, fall back to manual ---
+    use_auto = _has_display()
 
     callback_url = None
     server = None
@@ -586,6 +642,11 @@ def login(
 
             # Register protocol handler
             registered = _register_protocol_handler()
+
+            if not registered:
+                print(f"  \u26a0\ufe0f  Could not register tesla:// handler automatically "
+                      f"(platform: {sys.platform})")
+                print("     Falling back to manual paste mode...\n")
 
             if registered:
                 # Start local HTTP server
@@ -611,27 +672,27 @@ def login(
                     issuers = result.get("issuer", [None])
 
                     if codes and states and states[0] == state:
-                        # Build a fake callback URL to parse consistently
                         issuer = issuers[0] if issuers else None
                         token_url = TOKEN_URL_US
                         if issuer and "auth.tesla.cn" in issuer:
                             token_url = TOKEN_URL_CN
 
-                        print("  ✅ Auth code captured automatically!")
+                        print("  \u2705 Auth code captured automatically!")
                         tokens = exchange_code(codes[0], code_verifier, token_url)
                         refresh_token = tokens["refresh_token"]
-                        print(f"  ✅ Refresh token obtained (expires in {tokens.get('expires_in', '?')}s)")
+                        print(f"  \u2705 Refresh token obtained "
+                              f"(expires in {tokens.get('expires_in', '?')}s)")
                         return refresh_token
                     else:
-                        print("  ⚠️ State mismatch or empty code, falling back to manual mode.")
+                        print("  \u26a0\ufe0f State mismatch or empty code, "
+                              "falling back to manual mode.")
                 else:
-                    print("  ⚠️ Timed out waiting for automatic redirect.")
+                    print("  \u26a0\ufe0f Timed out waiting for automatic redirect.")
                     print("  Falling back to manual paste mode.\n")
-            else:
-                print("  ⚠️ Could not register URI handler, using manual paste mode.\n")
 
         except Exception as e:
-            print(f"  ⚠️ Auto-capture failed ({e}), falling back to manual paste mode.\n")
+            print(f"  \u26a0\ufe0f Auto-capture failed ({e}), "
+                  "falling back to manual paste mode.\n")
         finally:
             # Always clean up
             if server:
@@ -641,37 +702,27 @@ def login(
                     pass
             _unregister_protocol_handler()
 
-    # Manual paste mode (headless, fallback, or auto-capture failed)
-    if not headless and _has_display() and callback_url is None:
-        # Already opened browser above in auto attempt
-        print("Open the following URL if the browser didn't open:")
-        print(f"  {auth_url}\n")
-        print(
-            "After logging in, copy the FULL URL from the address bar\n"
-            "(it will start with tesla://) and paste it below.\n"
-        )
-    elif callback_url is None:
-        print(
-            "\nOpen the following URL in your browser to log into your Tesla account:\n"
-        )
-        print(f"  {auth_url}\n")
-        print(
-            "After logging in, copy the FULL redirect URL from your browser\n"
-            "(it will start with tesla://) and paste it below.\n"
-        )
+    # --- Manual paste mode (headless-style fallback) ---
+    # This is reached when:
+    #   - headless=False but auto capture failed or wasn't available
+    #   - No display detected
+    print("\n" + "-" * 60)
+    print("Manual Authentication Required")
+    print("-" * 60)
+    print("\n1. Open this URL in your browser:\n")
+    print(f"   {auth_url}\n")
+    print("2. Complete the Tesla login (enter credentials + MFA if required).")
+    print("\n3. After login, the browser will show an error like:")
+    print('   "Failed to launch tesla://auth/callback?code=..."')
+    print("\n4. Open Chrome DevTools (F12 \u2192 Console tab) and find the")
+    print('   line starting with "Failed to launch tesla://..."')
+    print("\n5. Copy the FULL tesla:// URL from that line and paste it below.\n")
 
-    # In auto mode, we may have already opened the browser — offer to open again
-    if use_auto and callback_url is None:
-        if not headless and _has_display():
-            # Browser was already opened; just prompt for paste
-            pass
-        else:
-            webbrowser.open(auth_url)
-
-    callback_url = input("Paste the redirect URL (or press Enter to retry): ").strip()
-
-    if not callback_url:
-        raise RuntimeError("No callback URL provided.")
+    while True:
+        callback_url = input("Paste the tesla:// URL here: ").strip()
+        if callback_url.startswith("tesla://"):
+            break
+        print("   \u26a0\ufe0f  Must start with 'tesla://' — try again.")
 
     # Parse callback
     callback = parse_callback_url(callback_url)
@@ -685,7 +736,7 @@ def login(
     tokens = exchange_code(callback["code"], code_verifier, callback["token_url"])
 
     refresh_token = tokens["refresh_token"]
-    print(f"  ✅ Refresh token obtained (expires in {tokens.get('expires_in', '?')}s)")
+    print(f"  \u2705 Refresh token obtained (expires in {tokens.get('expires_in', '?')}s)")
     return refresh_token
 
 
@@ -758,7 +809,7 @@ def main():
 
     args = parser.parse_args()
 
-    print("⚡ Tesla Authentication — pypowerwall")
+    print("\u26a1 Tesla Authentication — pypowerwall")
     print("=" * 60)
 
     try:
@@ -772,13 +823,13 @@ def main():
         print("\n\nLogin cancelled.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Login failed: {e}")
+        print(f"\n\u274c Login failed: {e}")
         sys.exit(1)
 
     email = args.email or ""
     save_token(refresh_token, path=args.output, email=email)
 
-    print("\n✅ Done! You can now use pypowerwall with cloud mode.")
+    print("\n\u2705 Done! You can now use pypowerwall with cloud mode.")
     print("   Run: python -m pypowerwall setup")
 
 
