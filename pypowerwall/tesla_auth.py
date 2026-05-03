@@ -151,7 +151,12 @@ def _remote_login() -> str:
 # ---------------------------------------------------------------------------
 
 def _local_login(email: str = None, region: str = "us") -> str:
-    """Local login via pywebview native window. Requires pywebview >= 4.0."""
+    """Local login via pywebview native window.
+
+    Uses window.events.request_sent which fires inside WKNavigationDelegate
+    decidePolicyForNavigationAction BEFORE WKWebView rejects the tesla:// scheme.
+    This is the correct interception point — same layer as the Rust tesla_auth tool.
+    """
     try:
         import webview
     except ImportError:
@@ -165,34 +170,6 @@ def _local_login(email: str = None, region: str = "us") -> str:
         auth_url += f"&login_hint={urllib.parse.quote(email)}"
 
     result = {}
-    window_holder = {}
-
-    def poll():
-        """Poll window URL every 200ms — works in pywebview 4.x+ via get_current_url()."""
-        import time
-        print("  Waiting for Tesla login to complete...")
-        for _ in range(600):  # 120 seconds
-            win = window_holder.get("window")
-            if not win:
-                time.sleep(0.2)
-                continue
-            try:
-                # pywebview 4.x+: get_current_url() returns the current URL
-                url = win.get_current_url()
-                if url and url.startswith("tesla://"):
-                    parsed = urllib.parse.urlparse(url)
-                    params = urllib.parse.parse_qs(parsed.query)
-                    code = params.get("code", [None])[0]
-                    if code:
-                        result["code"] = code
-                        try:
-                            win.destroy()
-                        except Exception:
-                            pass
-                        return
-            except Exception:
-                pass
-            time.sleep(0.2)
 
     print("Opening Tesla login window...")
     window = webview.create_window(
@@ -201,11 +178,24 @@ def _local_login(email: str = None, region: str = "us") -> str:
         width=500,
         height=750,
     )
-    window_holder["window"] = window
 
-    import threading
-    t = threading.Thread(target=poll, daemon=True)
-    t.start()
+    def on_request(request):
+        """Fires inside WKNavigationDelegate before any navigation decision.
+        Intercepts the tesla:// callback URL before WKWebView can reject it.
+        """
+        url = getattr(request, "url", None) or str(request)
+        if url and url.startswith("tesla://"):
+            parsed = urllib.parse.urlparse(url)
+            params = urllib.parse.parse_qs(parsed.query)
+            code = params.get("code", [None])[0]
+            if code:
+                result["code"] = code
+                try:
+                    window.destroy()
+                except Exception:
+                    pass
+
+    window.events.request_sent += on_request
 
     webview.start()
 
