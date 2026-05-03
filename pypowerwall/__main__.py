@@ -48,6 +48,10 @@ def main():
     login_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
 
+    authtoken_args = subparsers.add_parser("authtoken",
+                                            help='Get refresh token via local browser login (prints to stdout)')
+    authtoken_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
+                                help="Tesla region: 'us' (default) or 'cn' (China)")
 
     fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
@@ -161,11 +165,30 @@ def main():
                 email=args.email,
                 headless=args.headless,
                 region=args.region,
-                timeout=args.timeout or 120,
             )
             auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
             save_token(refresh_token, path=auth_file, email=args.email or "")
             print(f"\n✅ Done! Run: python -m pypowerwall setup")
+        except (KeyboardInterrupt, EOFError):
+            print("\nLogin cancelled.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"\n❌ Login failed: {e}")
+            sys.exit(1)
+
+    # Get auth token (local only, print to stdout)
+    elif command == 'authtoken':
+        from pypowerwall.tesla_auth import get_authtoken
+        try:
+            print("\n⚡ Tesla Authentication — pypowerwall authtoken")
+            print("=" * 60)
+            token = get_authtoken(region=args.region)
+            print("\n" + "=" * 60)
+            print("Refresh Token:")
+            print("-" * 60)
+            print(token)
+            print("-" * 60)
+            print("\nCopy the token above and use it on your remote machine.")
         except (KeyboardInterrupt, EOFError):
             print("\nLogin cancelled.")
             sys.exit(1)
