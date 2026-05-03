@@ -159,6 +159,7 @@ def main():
                 email=args.email,
                 headless=args.headless,
                 region=args.region,
+                timeout=args.timeout or 120,
             )
             auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
             save_token(refresh_token, path=auth_file, email=args.email or "")
