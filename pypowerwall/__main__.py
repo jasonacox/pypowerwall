@@ -41,6 +41,8 @@ def main():
 
     login_args = subparsers.add_parser("login", help='Authenticate with Tesla and get refresh token')
     login_args.add_argument("-email", type=str, default=None, help="Tesla account email address")
+    login_args.add_argument("-debug", action="store_true", default=False,
+                           help="Enable debug output for auth flow")
     login_args.add_argument("-headless", action="store_true", default=False,
                            help="Manual mode — paste URL instead of opening browser")
     login_args.add_argument("-timeout", type=int, default=120,
@@ -167,6 +169,7 @@ def main():
                 email=args.email,
                 headless=args.headless,
                 region=args.region,
+                debug=getattr(args, 'debug', False),
             )
             auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
             save_token(refresh_token, path=auth_file, email=args.email or "")
