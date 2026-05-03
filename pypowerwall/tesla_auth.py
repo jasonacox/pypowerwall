@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 pypowerwall.tesla_auth - Pure Python Tesla OAuth 2.0 PKCE authentication
 
