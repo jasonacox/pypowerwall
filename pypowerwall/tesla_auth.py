@@ -179,15 +179,11 @@ def _local_login(email: str = None, region: str = "us") -> str:
         height=750,
     )
 
-    def on_before_load(*args):
+    def on_before_load(window, url):
         """Fires before WKWebView navigates to any URL.
-        When Tesla redirects to tesla://auth/callback, we capture the code here
-        and cancel navigation by returning False.
+        pywebview calls with (window, url) when function has 'window' parameter.
+        When Tesla redirects to tesla://auth/callback, capture code and cancel.
         """
-        # pywebview passes (window, url) or just (url,) depending on version
-        url = next((a for a in args if isinstance(a, str) and a.startswith('http')), None)
-        if url is None:
-            url = next((a for a in args if isinstance(a, str)), None)
         if url and url.startswith("tesla://"):
             parsed = urllib.parse.urlparse(url)
             params = urllib.parse.parse_qs(parsed.query)
