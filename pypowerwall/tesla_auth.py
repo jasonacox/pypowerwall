@@ -266,13 +266,24 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             token = data["refresh_token"] if isinstance(data, dict) else data
                             dbg(f"Token exchange succeeded, token length: {len(token)}")
                             result["token"] = token
+                            # Copy to macOS clipboard via NSPasteboard
+                            try:
+                                pb = AppKit.NSPasteboard.generalPasteboard()
+                                pb.clearContents()
+                                pb.setString_forType_(token, AppKit.NSPasteboardTypeString)
+                                clipboard_ok = True
+                            except Exception:
+                                clipboard_ok = False
                             # Print immediately to terminal
                             print("\n" + "=" * 60)
                             print("\u2705 Tesla Refresh Token:")
                             print("-" * 60)
                             print(token)
                             print("-" * 60)
-                            print("Copy the token above. You can now close the window.")
+                            if clipboard_ok:
+                                print("Token copied to clipboard! You can now close the window.")
+                            else:
+                                print("Copy the token above. You can now close the window.")
                             # Load success page in the WebView
                             success_html = f"""<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
@@ -288,35 +299,10 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
   p {{ color: #6e6e73; font-size: 13px; }}
 </style></head><body>
 <h2>\u2705 Authentication Successful</h2>
-<p>Your Tesla refresh token is ready. Copy it and paste it into your remote pypowerwall session.</p>
+<p>Your Tesla refresh token is ready. It has been <strong>copied to your clipboard</strong> automatically.</p>
 <div class='token-box' id='tokenText'>{token}</div>
-<button class='copy-btn' id='copyBtn' onclick="
-  var btn = document.getElementById('copyBtn');
-  var txt = document.getElementById('tokenText').innerText;
-  try {{
-    navigator.clipboard.writeText(txt).then(function() {{
-      btn.textContent = '\u2705 Copied!';
-      btn.style.background = '#34c759';
-      setTimeout(function() {{ btn.textContent = 'Copy Token'; btn.style.background = '#0071e3'; }}, 3000);
-    }}).catch(function() {{
-      // Fallback: select text
-      var r = document.createRange(); r.selectNode(document.getElementById('tokenText'));
-      window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
-      btn.textContent = '\u2705 Text Selected — Cmd+C to copy';
-      btn.style.background = '#34c759';
-      setTimeout(function() {{ btn.textContent = 'Copy Token'; btn.style.background = '#0071e3'; }}, 4000);
-    }});
-  }} catch(e) {{
-    var r = document.createRange(); r.selectNode(document.getElementById('tokenText'));
-    window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
-    btn.textContent = '\u2705 Text Selected — Cmd+C to copy';
-    btn.style.background = '#34c759';
-    setTimeout(function() {{ btn.textContent = 'Copy Token'; btn.style.background = '#0071e3'; }}, 4000);
-  }}
-">
-  Copy Token
-</button>
-<p style='margin-top:20px'>You can close this window when done.</p>
+<p style='color:#34c759; font-weight:bold; font-size:15px'>\u2705 Token copied to clipboard!</p>
+<p style='margin-top:10px'>You can close this window when done.</p>
 </body></html>"""
                             def load_success():
                                 webview_ref[0].loadHTMLString_baseURL_(success_html, None)
