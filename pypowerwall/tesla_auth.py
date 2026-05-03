@@ -260,8 +260,12 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 
                     def do_exchange():
                         try:
-                            result["token"] = _exchange_code(code, code_verifier, region)
-                            dbg(f"Token exchange succeeded, token length: {len(result['token'])}")
+                            data = _exchange_code(code, code_verifier, region)
+                            # _exchange_code returns the full token dict
+                            token = data["refresh_token"] if isinstance(data, dict) else data
+                            dbg(f"Token exchange succeeded, token length: {len(token)}")
+                            dbg(f"Token preview: {token[:20]}...")
+                            result["token"] = token
                         except Exception as e:
                             result["error"] = f"Token exchange failed: {e}"
                             dbg(f"Token exchange error: {e}")
