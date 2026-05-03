@@ -190,25 +190,61 @@ def _local_login(email: str = None, region: str = "us") -> str:
     window_holder = {}
     api = TeslaAuthApi(window_holder)
 
-    # JS injected on every page load — overrides window.open and link clicks
-    # to intercept the tesla:// redirect before the browser tries to launch it
+    # JS injected on EVERY page load — intercepts all tesla:// navigation methods:
+    # window.open, anchor clicks, location.href setter, location.assign, location.replace
     intercept_js = """
     (function() {
+        if (window.__teslaAuthPatched) return;
+        window.__teslaAuthPatched = true;
+
+        function capture(url) {
+            if (window.pywebview && window.pywebview.api) {
+                window.pywebview.api.capture(url);
+            }
+        }
+
+        // Override window.open
         var _open = window.open;
         window.open = function(url, target, features) {
-            if (url && url.indexOf('tesla://') === 0) {
-                window.pywebview.api.capture(url);
-                return;
-            }
-            return _open(url, target, features);
+            if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
+            return _open.apply(this, arguments);
         };
+
+        // Override Location.prototype.href setter
+        try {
+            var _locDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+            if (_locDesc && _locDesc.set) {
+                Object.defineProperty(Location.prototype, 'href', {
+                    get: _locDesc.get,
+                    set: function(val) {
+                        if (val && val.indexOf('tesla://') === 0) { capture(val); return; }
+                        _locDesc.set.call(this, val);
+                    },
+                    configurable: true, enumerable: true
+                });
+            }
+        } catch(e) {}
+
+        // Override location.assign and location.replace
+        try {
+            var _assign = Location.prototype.assign;
+            Location.prototype.assign = function(url) {
+                if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
+                return _assign.call(this, url);
+            };
+            var _replace = Location.prototype.replace;
+            Location.prototype.replace = function(url) {
+                if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
+                return _replace.call(this, url);
+            };
+        } catch(e) {}
+
+        // Intercept anchor clicks
         document.addEventListener('click', function(e) {
             var el = e.target;
             while (el) {
                 if (el.tagName === 'A' && el.href && el.href.indexOf('tesla://') === 0) {
-                    e.preventDefault();
-                    window.pywebview.api.capture(el.href);
-                    return;
+                    e.preventDefault(); capture(el.href); return;
                 }
                 el = el.parentElement;
             }
@@ -216,15 +252,20 @@ def _local_login(email: str = None, region: str = "us") -> str:
     })();
     """
 
+    # Inject on EVERY page load so the completion page is also covered
     def on_loaded():
-        window_holder["window"].evaluate_js(intercept_js)
+        try:
+            window_holder["window"].evaluate_js(intercept_js)
+        except Exception:
+            pass
 
     print("Opening Tesla login window...")
     window = webview.create_window(
         "Tesla Login — pypowerwall", auth_url, width=500, height=750, js_api=api
     )
     window_holder["window"] = window
-    webview.start(on_loaded)
+    window.events.loaded += on_loaded
+    webview.start()
 
     auth_code = result.get("code")
     if not auth_code:
