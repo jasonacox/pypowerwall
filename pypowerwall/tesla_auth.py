@@ -226,6 +226,25 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 
             dbg(f"Navigation: {url[:100]}")
 
+            # Handle our own action URLs
+            if url.startswith("pypowerwall://"):
+                action = url.split("pypowerwall://")[1].split("?")[0]
+                dbg(f"pypowerwall action: {action}")
+                if action == "copy":
+                    try:
+                        token = result.get("token", "")
+                        if token:
+                            pb = AppKit.NSPasteboard.generalPasteboard()
+                            pb.clearContents()
+                            pb.setString_forType_(token, AppKit.NSPasteboardTypeString)
+                            dbg("Token copied to clipboard via button")
+                    except Exception as e:
+                        dbg(f"Clipboard error: {e}")
+                elif action == "close":
+                    AppHelper.callAfter(AppHelper.stopEventLoop)
+                handler(0)
+                return
+
             if url.startswith("tesla://"):
                 dbg(f"INTERCEPTED tesla:// URL: {url[:120]}")
                 try:
@@ -301,8 +320,22 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 <h2>\u2705 Authentication Successful</h2>
 <p>Your Tesla refresh token is ready. It has been <strong>copied to your clipboard</strong> automatically.</p>
 <div class='token-box' id='tokenText'>{token}</div>
-<p style='color:#34c759; font-weight:bold; font-size:15px'>\u2705 Token copied to clipboard!</p>
-<p style='margin-top:10px'>You can close this window when done.</p>
+<div style='display:flex; gap:10px; margin-top:5px'>
+  <a href='pypowerwall://copy' style='flex:1; text-decoration:none'>
+    <button class='copy-btn' id='copyBtn' style='width:100%' onclick="
+      document.getElementById('copyBtn').textContent = '\u2705 Copied!';
+      document.getElementById('copyBtn').style.background = '#34c759';
+      setTimeout(function(){{
+        document.getElementById('copyBtn').textContent = 'Copy Token';
+        document.getElementById('copyBtn').style.background = '#0071e3';
+      }}, 2500);
+    ">Copy Token</button>
+  </a>
+  <a href='pypowerwall://close' style='flex:1; text-decoration:none'>
+    <button style='width:100%; background:#636366; color:white; border:none; border-radius:8px;
+      padding:10px 20px; font-size:15px; cursor:pointer'>Close Window</button>
+  </a>
+</div>
 </body></html>"""
                             def load_success():
                                 webview_ref[0].loadHTMLString_baseURL_(success_html, None)
