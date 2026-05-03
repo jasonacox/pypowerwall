@@ -205,6 +205,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 
     result = {"token": None, "error": None}
     exchange_done = threading.Event()
+    webview_ref = [None]  # mutable container so closure can access it
 
     def dbg(msg):
         if debug:
@@ -264,14 +265,45 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             data = _exchange_code(code, code_verifier, region)
                             token = data["refresh_token"] if isinstance(data, dict) else data
                             dbg(f"Token exchange succeeded, token length: {len(token)}")
-                            dbg(f"Token preview: {token[:20]}...")
                             result["token"] = token
+                            # Print immediately to terminal
+                            print("\n" + "=" * 60)
+                            print("\u2705 Tesla Refresh Token:")
+                            print("-" * 60)
+                            print(token)
+                            print("-" * 60)
+                            print("Copy the token above. You can now close the window.")
+                            # Load success page in the WebView
+                            success_html = f"""<!DOCTYPE html><html><head>
+<meta charset='utf-8'>
+<style>
+  body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #f5f5f7; }}
+  h2 {{ color: #1d1d1f; }}
+  .token-box {{ background: white; border: 1px solid #d2d2d7; border-radius: 10px;
+    padding: 15px; word-break: break-all; font-family: monospace; font-size: 11px;
+    color: #333; margin: 15px 0; }}
+  .copy-btn {{ background: #0071e3; color: white; border: none; border-radius: 8px;
+    padding: 10px 20px; font-size: 15px; cursor: pointer; width: 100%; }}
+  .copy-btn:active {{ background: #0077ed; }}
+  p {{ color: #6e6e73; font-size: 13px; }}
+</style></head><body>
+<h2>\u2705 Authentication Successful</h2>
+<p>Your Tesla refresh token is ready. Copy it and paste it into your remote pypowerwall session.</p>
+<div class='token-box'>{token}</div>
+<button class='copy-btn' onclick="navigator.clipboard.writeText('{token}').then(()=>{{this.textContent='\u2705 Copied!';setTimeout(()=>{{this.textContent='Copy Token'}},2000)}})">
+  Copy Token
+</button>
+<p style='margin-top:20px'>You can close this window when done.</p>
+</body></html>"""
+                            def load_success():
+                                webview_ref[0].loadHTMLString_baseURL_(success_html, None)
+                            AppHelper.callAfter(load_success)
                         except Exception as e:
                             result["error"] = f"Token exchange failed: {e}"
                             dbg(f"Token exchange error: {e}")
                         finally:
                             exchange_done.set()
-                            AppHelper.callAfter(AppHelper.stopEventLoop)
+                            # Don't stop event loop — let user close the window manually
 
                     threading.Thread(target=do_exchange, daemon=True).start()
 
@@ -286,70 +318,51 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                 handler(1)
 
     def run_window():
-        # Initialize NSApplication on the main thread
         app = AppKit.NSApplication.sharedApplication()
         app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
-
-        # Create WebView configuration
         config = WebKit.WKWebViewConfiguration.alloc().init()
-
-        # Create WebView
         webview_obj = WebKit.WKWebView.alloc().initWithFrame_configuration_(
-            Foundation.NSMakeRect(0, 0, 500, 750),
-            config,
+            Foundation.NSMakeRect(0, 0, 500, 750), config,
         )
-
-        # Set navigation delegate (retain it so it's not GC'd)
+        webview_ref[0] = webview_obj
         delegate = TeslaNavDelegate.alloc().init()
         delegate.retain()
         webview_obj.setNavigationDelegate_(delegate)
 
-        # Create window
+        class WindowDelegate(AppKit.NSObject):
+            def windowWillClose_(self, notification):
+                AppHelper.stopEventLoop()
+        win_delegate = WindowDelegate.alloc().init()
+        win_delegate.retain()
+
         ns_window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             Foundation.NSMakeRect(200, 200, 500, 750),
-            (
-                AppKit.NSWindowStyleMaskTitled
-                | AppKit.NSWindowStyleMaskClosable
-                | AppKit.NSWindowStyleMaskResizable
-            ),
-            AppKit.NSBackingStoreBuffered,
-            False,
+            (AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskClosable
+             | AppKit.NSWindowStyleMaskResizable),
+            AppKit.NSBackingStoreBuffered, False,
         )
         ns_window.setContentView_(webview_obj)
-        ns_window.setTitle_("Tesla Login \u2014 pypowerwall")
+        ns_window.setTitle_("Tesla Login - pypowerwall")
+        ns_window.setDelegate_(win_delegate)
         ns_window.makeKeyAndOrderFront_(None)
         ns_window.retain()
-
-        # Load the auth URL
         req = Foundation.NSURLRequest.requestWithURL_(
             Foundation.NSURL.URLWithString_(auth_url)
         )
         webview_obj.loadRequest_(req)
-
-        # Activate the app so the window comes to front
         app.activateIgnoringOtherApps_(True)
-
-        # Run the event loop (blocks until AppHelper.stopEventLoop is called)
         AppHelper.runEventLoop()
 
     print("Opening Tesla login window...")
     run_window()
-
-    # Wait up to 15s for background token exchange thread to finish
     exchange_done.wait(timeout=15)
 
     if result["error"]:
         raise RuntimeError(result["error"])
     if not result["token"]:
-        raise RuntimeError("Login cancelled or timed out — no token received.")
-
-    print("  ✅ Refresh token captured!")
+        raise RuntimeError("Login cancelled - no token received.")
     return result["token"]
 
-
-# ---------------------------------------------------------------------------
-# Windows/Linux — pywebview with monkey-patched navigation handler
-# ---------------------------------------------------------------------------
 
 def _local_login_pywebview(email: str = None, region: str = "us") -> str:
     """pywebview login with navigation handler monkey-patch.
