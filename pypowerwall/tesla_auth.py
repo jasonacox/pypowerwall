@@ -151,11 +151,11 @@ def _remote_login() -> str:
 # ---------------------------------------------------------------------------
 
 def _local_login(email: str = None, region: str = "us") -> str:
-    """Local login via pywebview native window.
+    """Local login via pywebview using before_load event to intercept tesla:// redirect.
 
-    Uses window.events.request_sent which fires inside WKNavigationDelegate
-    decidePolicyForNavigationAction BEFORE WKWebView rejects the tesla:// scheme.
-    This is the correct interception point — same layer as the Rust tesla_auth tool.
+    window.events.before_load fires inside WKNavigationDelegate before WKWebView
+    processes any navigation, including custom URI schemes. This is the correct
+    native interception point — equivalent to what the Rust tesla_auth tool uses.
     """
     try:
         import webview
@@ -179,11 +179,11 @@ def _local_login(email: str = None, region: str = "us") -> str:
         height=750,
     )
 
-    def on_request(request):
-        """Fires inside WKNavigationDelegate before any navigation decision.
-        Intercepts the tesla:// callback URL before WKWebView can reject it.
+    def on_before_load(url):
+        """Fires before WKWebView navigates to any URL.
+        When Tesla redirects to tesla://auth/callback, we capture the code here
+        and cancel navigation by returning False.
         """
-        url = getattr(request, "url", None) or str(request)
         if url and url.startswith("tesla://"):
             parsed = urllib.parse.urlparse(url)
             params = urllib.parse.parse_qs(parsed.query)
@@ -194,16 +194,17 @@ def _local_login(email: str = None, region: str = "us") -> str:
                     window.destroy()
                 except Exception:
                     pass
+            return False  # cancel navigation
+        return True  # allow all other navigation
 
-    window.events.request_sent += on_request
-
+    window.events.before_load += on_before_load
     webview.start()
 
     auth_code = result.get("code")
     if not auth_code:
         raise RuntimeError("Login cancelled or timed out.")
 
-    print("  Authorization code captured!")
+    print("  ✅ Authorization code captured!")
     print("  Exchanging for refresh token...")
     return _exchange_code(auth_code, code_verifier, region)
 
