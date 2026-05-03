@@ -289,8 +289,31 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 </style></head><body>
 <h2>\u2705 Authentication Successful</h2>
 <p>Your Tesla refresh token is ready. Copy it and paste it into your remote pypowerwall session.</p>
-<div class='token-box'>{token}</div>
-<button class='copy-btn' onclick="navigator.clipboard.writeText('{token}').then(()=>{{this.textContent='\u2705 Copied!';setTimeout(()=>{{this.textContent='Copy Token'}},2000)}})">
+<div class='token-box' id='tokenText'>{token}</div>
+<button class='copy-btn' id='copyBtn' onclick="
+  var btn = document.getElementById('copyBtn');
+  var txt = document.getElementById('tokenText').innerText;
+  try {{
+    navigator.clipboard.writeText(txt).then(function() {{
+      btn.textContent = '\u2705 Copied!';
+      btn.style.background = '#34c759';
+      setTimeout(function() {{ btn.textContent = 'Copy Token'; btn.style.background = '#0071e3'; }}, 3000);
+    }}).catch(function() {{
+      // Fallback: select text
+      var r = document.createRange(); r.selectNode(document.getElementById('tokenText'));
+      window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
+      btn.textContent = '\u2705 Text Selected — Cmd+C to copy';
+      btn.style.background = '#34c759';
+      setTimeout(function() {{ btn.textContent = 'Copy Token'; btn.style.background = '#0071e3'; }}, 4000);
+    }});
+  }} catch(e) {{
+    var r = document.createRange(); r.selectNode(document.getElementById('tokenText'));
+    window.getSelection().removeAllRanges(); window.getSelection().addRange(r);
+    btn.textContent = '\u2705 Text Selected — Cmd+C to copy';
+    btn.style.background = '#34c759';
+    setTimeout(function() {{ btn.textContent = 'Copy Token'; btn.style.background = '#0071e3'; }}, 4000);
+  }}
+">
   Copy Token
 </button>
 <p style='margin-top:20px'>You can close this window when done.</p>
