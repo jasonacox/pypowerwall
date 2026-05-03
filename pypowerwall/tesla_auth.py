@@ -151,12 +151,13 @@ def _remote_login() -> str:
 # ---------------------------------------------------------------------------
 
 def _local_login(email: str = None, region: str = "us") -> str:
-    """Local login via pywebview using before_load event to intercept tesla:// redirect.
+    """Local login via pywebview, intercepting Tesla's fetch() token exchange.
 
-    window.events.before_load fires inside WKNavigationDelegate before WKWebView
-    processes any navigation, including custom URI schemes. This is the correct
-    native interception point — equivalent to what the Rust tesla_auth tool uses.
+    Instead of fighting the tesla:// custom URI scheme (which WKWebView blocks),
+    we intercept the fetch()/XHR call Tesla's JS makes to /oauth2/v3/token after
+    login. The response contains the refresh_token directly — no redirect needed.
     """
+    import threading, time
     try:
         import webview
     except ImportError:
@@ -171,70 +172,87 @@ def _local_login(email: str = None, region: str = "us") -> str:
 
     result = {}
 
+    # Inject JS that wraps fetch() and XHR to intercept the token exchange response.
+    # Tesla's completion page calls POST /oauth2/v3/token after the user logs in.
+    # We clone the response body and store refresh_token in window.__teslaRefreshToken.
+    # We poll this global from Python every 500ms.
+    INTERCEPT_JS = """
+(function() {
+    if (window.__teslaFetchPatched) return window.__teslaRefreshToken || '';
+    window.__teslaFetchPatched = true;
+    window.__teslaRefreshToken = null;
+    var _fetch = window.fetch;
+    window.fetch = function(url, opts) {
+        var p = _fetch.apply(this, arguments);
+        var urlStr = (typeof url === 'string') ? url : ((url && url.url) || '');
+        if (urlStr.indexOf('/oauth2/v3/token') !== -1 || urlStr.indexOf('auth.tesla') !== -1) {
+            p.then(function(resp) {
+                resp.clone().text().then(function(txt) {
+                    try {
+                        var d = JSON.parse(txt);
+                        if (d && d.refresh_token) window.__teslaRefreshToken = d.refresh_token;
+                    } catch(e) {}
+                });
+            }).catch(function() {});
+        }
+        return p;
+    };
+    var _xOpen = XMLHttpRequest.prototype.open;
+    var _xSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(m, u) { this.__u = u; return _xOpen.apply(this, arguments); };
+    XMLHttpRequest.prototype.send = function() {
+        if (this.__u && (this.__u.indexOf('/oauth2/v3/token') !== -1 || this.__u.indexOf('auth.tesla') !== -1)) {
+            this.addEventListener('load', function() {
+                try {
+                    var d = JSON.parse(this.responseText);
+                    if (d && d.refresh_token) window.__teslaRefreshToken = d.refresh_token;
+                } catch(e) {}
+            });
+        }
+        return _xSend.apply(this, arguments);
+    };
+    return window.__teslaRefreshToken || '';
+})();
+"""
+
+    POLL_JS = "window.__teslaRefreshToken || '';"
+
+    def on_loaded():
+        def poll():
+            for _ in range(240):  # 2 min
+                try:
+                    # First inject the patch, then poll
+                    window.evaluate_js(INTERCEPT_JS)
+                    token = window.evaluate_js(POLL_JS)
+                    if token and isinstance(token, str) and len(token) > 20:
+                        result['refresh_token'] = token
+                        try:
+                            window.destroy()
+                        except Exception:
+                            pass
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.5)
+        t = threading.Thread(target=poll, daemon=True)
+        t.start()
+
     print("Opening Tesla login window...")
     window = webview.create_window(
-        "Tesla Login — pypowerwall",
+        "Tesla Login \u2014 pypowerwall",
         auth_url,
         width=500,
         height=750,
     )
-
-    # Use a JS polling approach: inject a MutationObserver that watches for
-    # Tesla's redirect attempt by overriding XMLHttpRequest and fetch,
-    # then poll evaluate_js every 300ms to read window.__teslaCode
-    js_inject = """
-    if (!window.__teslaPatch) {
-        window.__teslaPatch = true;
-        window.__teslaCode = null;
-        var _origOpen = XMLHttpRequest.prototype.open;
-        // Patch fetch to intercept token responses
-        var _origFetch = window.fetch;
-        window.fetch = function(url, opts) {
-            var p = _origFetch.apply(this, arguments);
-            if (url && url.indexOf('/oauth2/v3/token') > -1) {
-                p.then(function(r) {
-                    r.clone().json().then(function(d) {
-                        if (d && d.refresh_token) window.__teslaRefresh = d.refresh_token;
-                    });
-                });
-            }
-            return p;
-        };
-    }
-    window.__teslaCode || window.__teslaRefresh || '';
-    """
-
-    import threading, time
-
-    def poll():
-        for _ in range(600):
-            try:
-                val = window.evaluate_js(js_inject)
-                if val and val not in ('', 'null', None):
-                    result['value'] = val
-                    try:
-                        window.destroy()
-                    except Exception:
-                        pass
-                    return
-            except Exception:
-                pass
-            time.sleep(0.3)
-
-    def on_loaded():
-        t = threading.Thread(target=poll, daemon=True)
-        t.start()
-
     window.events.loaded += on_loaded
     webview.start()
 
-    auth_code = result.get("code")
-    if not auth_code:
-        raise RuntimeError("Login cancelled or timed out.")
+    refresh_token = result.get('refresh_token')
+    if not refresh_token:
+        raise RuntimeError("Login cancelled or timed out — no token received.")
 
-    print("  ✅ Authorization code captured!")
-    print("  Exchanging for refresh token...")
-    return _exchange_code(auth_code, code_verifier, region)
+    print("  \u2705 Refresh token captured!")
+    return refresh_token
 
 
 # ---------------------------------------------------------------------------
