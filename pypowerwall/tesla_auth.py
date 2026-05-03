@@ -223,7 +223,7 @@ class _RedirectHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _catch_redirect_on_localhost(port: int, timeout: int = 300) -> dict:
+def _catch_redirect_on_localhost(port: int, timeout: int = 300) -> dict[str, str]:
     """Start a localhost HTTP server and wait for the OAuth redirect."""
     _RedirectHandler.auth_result = None
     _RedirectHandler.auth_event = threading.Event()
@@ -337,6 +337,7 @@ def _login_interactive(
     if result is None:
         return None
 
+    # pylint: disable=unsupported-membership-test,unsubscriptable-object
     if "error" in result:
         print(f"  Error from Tesla: {result['error']}")
         return None
