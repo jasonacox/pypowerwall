@@ -43,6 +43,8 @@ def main():
     login_args.add_argument("-email", type=str, default=None, help="Tesla account email address")
     login_args.add_argument("-headless", action="store_true", default=False,
                            help="Manual mode — paste URL instead of opening browser")
+    login_args.add_argument("-timeout", type=int, default=120,
+                           help="Seconds to wait for browser login [Default=120]")
     login_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
 
