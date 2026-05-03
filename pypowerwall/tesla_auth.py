@@ -204,6 +204,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         auth_url += f"&login_hint={urllib.parse.quote(email)}"
 
     result = {"token": None, "error": None}
+    exchange_done = threading.Event()
 
     def dbg(msg):
         if debug:
@@ -261,7 +262,6 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                     def do_exchange():
                         try:
                             data = _exchange_code(code, code_verifier, region)
-                            # _exchange_code returns the full token dict
                             token = data["refresh_token"] if isinstance(data, dict) else data
                             dbg(f"Token exchange succeeded, token length: {len(token)}")
                             dbg(f"Token preview: {token[:20]}...")
@@ -270,6 +270,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             result["error"] = f"Token exchange failed: {e}"
                             dbg(f"Token exchange error: {e}")
                         finally:
+                            exchange_done.set()
                             AppHelper.callAfter(AppHelper.stopEventLoop)
 
                     threading.Thread(target=do_exchange, daemon=True).start()
@@ -333,6 +334,9 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 
     print("Opening Tesla login window...")
     run_window()
+
+    # Wait up to 15s for background token exchange thread to finish
+    exchange_done.wait(timeout=15)
 
     if result["error"]:
         raise RuntimeError(result["error"])
