@@ -165,15 +165,14 @@ def main():
     elif command == 'login':
         from pypowerwall.tesla_auth import login as tesla_login, save_token
         try:
-            refresh_token = tesla_login(
+            refresh_token, detected_email = tesla_login(
                 email=args.email,
                 headless=args.headless,
                 region=args.region,
                 debug=getattr(args, 'debug', False),
             )
             auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
-            from pypowerwall.tesla_auth import _extract_email_from_token
-            email = args.email or _extract_email_from_token(refresh_token)
+            email = args.email or detected_email
             if not email:
                 email = input("Tesla account email: ").strip()
             save_token(refresh_token, path=auth_file, email=email)

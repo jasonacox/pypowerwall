@@ -171,12 +171,12 @@ def _remote_login() -> str:
 # Path 2 — Local login (native WebView with navigation interception)
 # ---------------------------------------------------------------------------
 
-def _local_login(email: str = None, region: str = "us", debug: bool = False) -> str:
-    """Local login via native WebView, intercepting tesla:// redirect."""
+def _local_login(email: str = None, region: str = "us", debug: bool = False):
+    """Local login via native WebView. Returns (refresh_token, email) tuple."""
     if sys.platform == "darwin":
         return _local_login_macos(email, region, debug=debug)
     else:
-        return _local_login_pywebview(email, region)
+        return _local_login_pywebview(email, region), ""
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +285,10 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             token = data["refresh_token"] if isinstance(data, dict) else data
                             dbg(f"Token exchange succeeded, token length: {len(token)}")
                             result["token"] = token
+                            # Extract email from id_token if available
+                            if isinstance(data, dict) and data.get("id_token"):
+                                result["email"] = _extract_email_from_token(data["id_token"])
+                                dbg(f"Email from id_token: {result['email']}")
                             # Copy to macOS clipboard via NSPasteboard
                             try:
                                 pb = AppKit.NSPasteboard.generalPasteboard()
@@ -403,7 +407,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         raise RuntimeError(result["error"])
     if not result["token"]:
         raise RuntimeError("Login cancelled - no token received.")
-    return result["token"]
+    return result["token"], result.get("email", "")
 
 
 def _local_login_pywebview(email: str = None, region: str = "us") -> str:
@@ -565,33 +569,34 @@ def _patch_pywebview_gtk(result, expected_state):
 # Public API
 # ---------------------------------------------------------------------------
 
-def login(email: str = None, headless: bool = False, region: str = "us", debug: bool = False) -> str:
-    """Authenticate with Tesla and return a refresh token."""
+def login(email: str = None, headless: bool = False, region: str = "us", debug: bool = False):
+    """Authenticate with Tesla. Returns (refresh_token, email) tuple."""
     if headless or _detect_mode() == "remote":
-        return _remote_login()
+        return _remote_login(), ""
     return _local_login(email=email, region=region, debug=debug)
 
 
 def get_authtoken(region: str = "us", debug: bool = False) -> str:
     """Get a refresh token for the authtoken CLI command (no file save)."""
-    return _local_login(region=region, debug=debug)
+    token, _ = _local_login(region=region, debug=debug)
+    return token
 
 
 def _extract_email_from_token(token: str) -> str:
-    """Try to extract email from the JWT refresh token payload."""
+    """Extract email from a JWT id_token payload."""
     try:
         import base64, json
         parts = token.split('.')
         if len(parts) >= 2:
-            payload = parts[1] + '=='  # pad
-            data = json.loads(base64.urlsafe_b64decode(payload))
-            # Check nested data.sub or email fields
-            return (data.get('data', {}).get('email') or
-                    data.get('email') or
-                    data.get('data', {}).get('sub', '') or '')
+            # Add padding
+            padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
+            data = json.loads(base64.urlsafe_b64decode(padded))
+            return (data.get('email') or
+                    data.get('data', {}).get('email') or '')
     except Exception:
         pass
     return ''
+''
 
 
 def save_token(refresh_token: str, path: str = None, email: str = None):
