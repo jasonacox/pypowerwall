@@ -39,6 +39,15 @@ def main():
     setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
     setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
 
+    login_args = subparsers.add_parser("login", help='Authenticate with Tesla and get refresh token')
+    login_args.add_argument("-email", type=str, default=None, help="Tesla account email address")
+    login_args.add_argument("-headless", action="store_true", default=False,
+                           help="Manual mode — paste URL instead of opening browser")
+    login_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
+                           help="Tesla region: 'us' (default) or 'cn' (China)")
+    login_args.add_argument("-timeout", type=int, default=300,
+                           help="Seconds to wait for browser redirect (default: 300)")
+
     fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
     tedapi_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
@@ -141,6 +150,26 @@ def main():
             print(f"Setup Complete. Auth file {c.authfile} ready to use.")
         else:
             print("ERROR: Failed to setup Tesla Cloud Mode")
+            sys.exit(1)
+
+    # Login to get refresh token
+    elif command == 'login':
+        from pypowerwall.tesla_auth import login as tesla_login, save_token
+        try:
+            refresh_token = tesla_login(
+                email=args.email,
+                headless=args.headless,
+                region=args.region,
+                timeout=args.timeout,
+            )
+            auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+            save_token(refresh_token, path=auth_file, email=args.email or "")
+            print(f"\n✅ Done! Run: python -m pypowerwall setup")
+        except (KeyboardInterrupt, EOFError):
+            print("\nLogin cancelled.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"\n❌ Login failed: {e}")
             sys.exit(1)
 
     # FleetAPI Mode Setup
