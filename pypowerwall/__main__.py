@@ -165,18 +165,21 @@ def main():
     elif command == 'login':
         from pypowerwall.tesla_auth import login as tesla_login, save_token
         try:
+            # Ask for email before launching window (used for token storage)
+            email = args.email
+            if not email:
+                email = input("Tesla account email: ").strip()
             refresh_token, detected_email = tesla_login(
-                email=args.email,
+                email=email,
                 headless=args.headless,
                 region=args.region,
                 debug=getattr(args, 'debug', False),
             )
+            email = email or detected_email
             auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
-            email = args.email or detected_email
-            if not email:
-                email = input("Tesla account email: ").strip()
             save_token(refresh_token, path=auth_file, email=email)
-            print(f"\n✅ Saved to {auth_file}")
+            print(f"\n✅ Token saved to {auth_file}")
+            print(f"   Email: {email}")
             print(f"\nRun: python -m pypowerwall setup")
         except (KeyboardInterrupt, EOFError):
             print("\nLogin cancelled.")
