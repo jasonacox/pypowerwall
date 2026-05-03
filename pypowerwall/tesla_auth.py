@@ -151,13 +151,13 @@ def _remote_login() -> str:
 # ---------------------------------------------------------------------------
 
 def _local_login(email: str = None, region: str = "us") -> str:
-    """Local login: open pywebview window, capture callback, exchange for token."""
+    """Local login via pywebview native window. Requires pywebview >= 4.0."""
     try:
         import webview
     except ImportError:
         print("Installing pywebview...")
-        import subprocess, sys
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "pywebview", "-q"])
+        import subprocess
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pywebview>=4.0", "-q"])
         import webview
 
     auth_url, code_verifier, state = _build_auth_url(region)
@@ -167,114 +167,56 @@ def _local_login(email: str = None, region: str = "us") -> str:
     result = {}
     window_holder = {}
 
-    # Use localStorage instead of a global — persists across page reloads/navigations
-    intercept_js = """
-    (function() {
-        if (window.__teslaAuthPatched) return;
-        window.__teslaAuthPatched = true;
-        
-        function capture(url) {
-            try {
-                window.localStorage.setItem('__teslaUrl', url);
-            } catch(e) {}
-        }
-        
-        try {
-            var desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
-            if (desc && desc.set) {
-                Object.defineProperty(Location.prototype, 'href', {
-                    get: desc.get,
-                    set: function(val) {
-                        if (val && val.indexOf('tesla://') === 0) { capture(val); return; }
-                        desc.set.call(this, val);
-                    },
-                    configurable: true
-                });
-            }
-        } catch(e) {}
-        
-        try {
-            var _assign = Location.prototype.assign;
-            Location.prototype.assign = function(url) {
-                if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
-                return _assign.call(this, url);
-            };
-            var _replace = Location.prototype.replace;
-            Location.prototype.replace = function(url) {
-                if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
-                return _replace.call(this, url);
-            };
-        } catch(e) {}
-        
-        try {
-            var _open = window.open;
-            window.open = function(url, t, f) {
-                if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
-                return _open.apply(this, arguments);
-            };
-        } catch(e) {}
-    })();
-    """
-
-    def inject():
-        try:
-            window_holder["window"].evaluate_js(intercept_js)
-            print("  [debug] JS injected successfully")
-        except Exception as e:
-            print(f"  [debug] JS inject error: {e}")
-
     def poll():
-        """Poll localStorage for the tesla:// URL."""
+        """Poll window URL every 200ms — works in pywebview 4.x+ via get_current_url()."""
         import time
-        for i in range(1200):  # 120 seconds max
-            if not window_holder.get("window"):
-                time.sleep(0.1)
+        print("  Waiting for Tesla login to complete...")
+        for _ in range(600):  # 120 seconds
+            win = window_holder.get("window")
+            if not win:
+                time.sleep(0.2)
                 continue
             try:
-                url = window_holder["window"].evaluate_js(
-                    'window.localStorage.getItem("__teslaUrl") || ""'
-                )
+                # pywebview 4.x+: get_current_url() returns the current URL
+                url = win.get_current_url()
                 if url and url.startswith("tesla://"):
-                    print(f"  [debug] Got tesla:// URL at poll {i}: {url[:80]}...")
                     parsed = urllib.parse.urlparse(url)
                     params = urllib.parse.parse_qs(parsed.query)
                     code = params.get("code", [None])[0]
                     if code:
                         result["code"] = code
                         try:
-                            window_holder["window"].destroy()
+                            win.destroy()
                         except Exception:
                             pass
                         return
-            except Exception as e:
-                print(f"  [debug] Poll error: {e}")
-            time.sleep(0.1)
-        print("  [debug] Poll timed out after 120s")
+            except Exception:
+                pass
+            time.sleep(0.2)
 
     print("Opening Tesla login window...")
-    print("  [debug] Creating window...")
     window = webview.create_window(
-        "Tesla Login — pypowerwall", auth_url, width=500, height=750
+        "Tesla Login — pypowerwall",
+        auth_url,
+        width=500,
+        height=750,
     )
     window_holder["window"] = window
-    window.events.loaded += inject
-    
+
     import threading
     t = threading.Thread(target=poll, daemon=True)
     t.start()
-    
-    print("  [debug] Starting webview...")
+
     webview.start()
-    print(f"  [debug] webview.start() returned, result code present: {bool(result.get('code'))}")
 
     auth_code = result.get("code")
     if not auth_code:
-        raise RuntimeError("Login cancelled or timed out — no authorization code received.")
+        raise RuntimeError("Login cancelled or timed out.")
 
     print("  Authorization code captured!")
     print("  Exchanging for refresh token...")
-    refresh_token = _exchange_code(auth_code, code_verifier, region)
-    return refresh_token
+    return _exchange_code(auth_code, code_verifier, region)
+
 
 # ---------------------------------------------------------------------------
 # Public API
