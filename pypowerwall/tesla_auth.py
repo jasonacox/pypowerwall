@@ -151,49 +151,34 @@ def _remote_login() -> str:
 # ---------------------------------------------------------------------------
 
 def _local_login(email: str = None, region: str = "us") -> str:
-    """Local login: open pywebview window, capture callback, exchange for token.
-
-    Returns refresh_token string.
-    """
+    """Local login: open pywebview window, capture callback, exchange for token."""
     try:
-        import webview  # noqa: F401
+        import webview
     except ImportError:
-        print("⚠️  pywebview is not installed.")
-        print("   Installing pywebview for native browser login...")
-        import subprocess
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "pywebview", "--quiet"]
-        )
-        print("   ✅ pywebview installed.\n")
-        # Re-import after install
+        print("Installing pywebview...")
+        import subprocess, sys
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pywebview", "-q"])
         import webview
 
     auth_url, code_verifier, state = _build_auth_url(region)
-
     if email:
-        # Append login_hint for a smoother UX
         auth_url += f"&login_hint={urllib.parse.quote(email)}"
-
-    import threading
-    import time
 
     result = {}
     window_holder = {}
 
-    # Key insight: window.pywebview.api is async and may not complete before
-    # the failed tesla:// navigation. Instead, store URL in a plain JS global
-    # (synchronous), then poll it from a Python background thread.
+    # Use localStorage instead of a global — persists across page reloads/navigations
     intercept_js = """
     (function() {
         if (window.__teslaAuthPatched) return;
         window.__teslaAuthPatched = true;
-        window.__teslaUrl = null;
-
+        
         function capture(url) {
-            window.__teslaUrl = url;  // synchronous — always works
+            try {
+                window.localStorage.setItem('__teslaUrl', url);
+            } catch(e) {}
         }
-
-        // Override Location.prototype.href setter
+        
         try {
             var desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
             if (desc && desc.set) {
@@ -207,8 +192,7 @@ def _local_login(email: str = None, region: str = "us") -> str:
                 });
             }
         } catch(e) {}
-
-        // Override location.assign and location.replace
+        
         try {
             var _assign = Location.prototype.assign;
             Location.prototype.assign = function(url) {
@@ -221,8 +205,7 @@ def _local_login(email: str = None, region: str = "us") -> str:
                 return _replace.call(this, url);
             };
         } catch(e) {}
-
-        // Override window.open
+        
         try {
             var _open = window.open;
             window.open = function(url, t, f) {
@@ -233,23 +216,26 @@ def _local_login(email: str = None, region: str = "us") -> str:
     })();
     """
 
-    def on_loaded():
+    def inject():
         try:
             window_holder["window"].evaluate_js(intercept_js)
-        except Exception:
-            pass
+            print("  [debug] JS injected successfully")
+        except Exception as e:
+            print(f"  [debug] JS inject error: {e}")
 
-    def poll_for_callback():
-        """Poll window.__teslaUrl via evaluate_js every 100ms.
-        Works even when tesla:// navigation fails — the page stays loaded
-        so window.__teslaUrl remains readable."""
-        for _ in range(1200):  # up to 120 seconds
+    def poll():
+        """Poll localStorage for the tesla:// URL."""
+        import time
+        for i in range(1200):  # 120 seconds max
             if not window_holder.get("window"):
                 time.sleep(0.1)
                 continue
             try:
-                url = window_holder["window"].evaluate_js('window.__teslaUrl || ""')
+                url = window_holder["window"].evaluate_js(
+                    'window.localStorage.getItem("__teslaUrl") || ""'
+                )
                 if url and url.startswith("tesla://"):
+                    print(f"  [debug] Got tesla:// URL at poll {i}: {url[:80]}...")
                     parsed = urllib.parse.urlparse(url)
                     params = urllib.parse.parse_qs(parsed.query)
                     code = params.get("code", [None])[0]
@@ -260,31 +246,35 @@ def _local_login(email: str = None, region: str = "us") -> str:
                         except Exception:
                             pass
                         return
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  [debug] Poll error: {e}")
             time.sleep(0.1)
+        print("  [debug] Poll timed out after 120s")
 
     print("Opening Tesla login window...")
+    print("  [debug] Creating window...")
     window = webview.create_window(
         "Tesla Login — pypowerwall", auth_url, width=500, height=750
     )
     window_holder["window"] = window
-    window.events.loaded += on_loaded
-
-    t = threading.Thread(target=poll_for_callback, daemon=True)
+    window.events.loaded += inject
+    
+    import threading
+    t = threading.Thread(target=poll, daemon=True)
     t.start()
-
+    
+    print("  [debug] Starting webview...")
     webview.start()
+    print(f"  [debug] webview.start() returned, result code present: {bool(result.get('code'))}")
 
     auth_code = result.get("code")
     if not auth_code:
         raise RuntimeError("Login cancelled or timed out — no authorization code received.")
 
-    print("  ✅ Authorization code captured!")
+    print("  Authorization code captured!")
     print("  Exchanging for refresh token...")
     refresh_token = _exchange_code(auth_code, code_verifier, region)
     return refresh_token
-
 
 # ---------------------------------------------------------------------------
 # Public API
