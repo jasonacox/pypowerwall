@@ -50,6 +50,8 @@ def main():
 
     authtoken_args = subparsers.add_parser("authtoken",
                                             help='Get refresh token via local browser login (prints to stdout)')
+    authtoken_args.add_argument("-debug", action="store_true", default=False,
+                               help="Enable debug output for auth flow")
     authtoken_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                                 help="Tesla region: 'us' (default) or 'cn' (China)")
 
@@ -182,7 +184,7 @@ def main():
         try:
             print("\n⚡ Tesla Authentication — pypowerwall authtoken")
             print("=" * 60)
-            token = get_authtoken(region=args.region)
+            token = get_authtoken(region=args.region, debug=getattr(args, 'debug', False))
             print("\n" + "=" * 60)
             print("Refresh Token:")
             print("-" * 60)

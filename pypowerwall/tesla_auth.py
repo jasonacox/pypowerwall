@@ -171,20 +171,10 @@ def _remote_login() -> str:
 # Path 2 — Local login (native WebView with navigation interception)
 # ---------------------------------------------------------------------------
 
-def _local_login(email: str = None, region: str = "us") -> str:
-    """Local login via native WebView, intercepting tesla:// redirect.
-
-    Platform dispatch:
-    - macOS: PyObjC WKWebView with custom WKNavigationDelegate
-    - Windows/Linux: pywebview with monkey-patched navigation handler
-
-    Both approaches use the same technique as tesla_auth (Rust):
-    register a navigation policy handler that intercepts the tesla://
-    custom scheme redirect, extracts the auth code, and cancels the
-    navigation before the WebView rejects it.
-    """
+def _local_login(email: str = None, region: str = "us", debug: bool = False) -> str:
+    """Local login via native WebView, intercepting tesla:// redirect."""
     if sys.platform == "darwin":
-        return _local_login_macos(email, region)
+        return _local_login_macos(email, region, debug=debug)
     else:
         return _local_login_pywebview(email, region)
 
@@ -193,7 +183,7 @@ def _local_login(email: str = None, region: str = "us") -> str:
 # macOS — Native WKWebView via PyObjC
 # ---------------------------------------------------------------------------
 
-def _local_login_macos(email: str = None, region: str = "us") -> str:
+def _local_login_macos(email: str = None, region: str = "us", debug: bool = False) -> str:
     """Native WKWebView on macOS with WKNavigationDelegate to intercept tesla://.
 
     This mirrors exactly what tesla_auth's wry does on macOS:
@@ -215,6 +205,10 @@ def _local_login_macos(email: str = None, region: str = "us") -> str:
 
     result = {"token": None, "error": None}
 
+    def dbg(msg):
+        if debug:
+            print(f"  [debug] {msg}")
+
     class TeslaNavDelegate(AppKit.NSObject):
         """WKNavigationDelegate that intercepts tesla:// redirects."""
 
@@ -223,54 +217,54 @@ def _local_login_macos(email: str = None, region: str = "us") -> str:
         ):
             try:
                 url = str(action.request().URL().absoluteString())
-            except Exception:
-                # If we can't get the URL, allow the navigation
-                handler(1)  # WKNavigationActionPolicyAllow
+            except Exception as e:
+                dbg(f"Could not get URL: {e}")
+                handler(1)
                 return
 
+            dbg(f"Navigation: {url[:100]}")
+
             if url.startswith("tesla://"):
-                # Intercept! Extract auth code from the redirect URL
+                dbg(f"INTERCEPTED tesla:// URL: {url[:120]}")
                 try:
                     parsed = urllib.parse.urlparse(url)
                     params = urllib.parse.parse_qs(parsed.query)
+                    dbg(f"Params: {list(params.keys())}")
 
-                    # Check for error
                     error = params.get("error", [None])[0]
                     if error:
                         result["error"] = f"Tesla auth error: {error}"
-                        handler(0)  # Cancel
-                        AppHelper.stopEventLoop()
-                        return
-
-                    # Check for login cancelled
-                    if params.get("error", [None])[0] == "login_cancelled":
-                        result["error"] = "Login cancelled by user"
+                        dbg(f"Auth error from Tesla: {error}")
                         handler(0)
-                        AppHelper.stopEventLoop()
+                        AppHelper.callAfter(AppHelper.stopEventLoop)
                         return
 
                     code = params.get("code", [None])[0]
                     returned_state = params.get("state", [None])[0]
+                    dbg(f"Code present: {bool(code)}, State match: {returned_state == state}")
 
                     if not code:
                         result["error"] = f"No auth code in redirect: {url}"
                         handler(0)
-                        AppHelper.stopEventLoop()
+                        AppHelper.callAfter(AppHelper.stopEventLoop)
                         return
 
                     if returned_state != state:
-                        result["error"] = "CSRF state mismatch — possible attack"
+                        result["error"] = "CSRF state mismatch"
+                        dbg(f"State mismatch: got {returned_state!r} expected {state!r}")
                         handler(0)
-                        AppHelper.stopEventLoop()
+                        AppHelper.callAfter(AppHelper.stopEventLoop)
                         return
 
-                    # Exchange code for token (in background to not block the delegate)
+                    dbg("Auth code captured — exchanging for token...")
+
                     def do_exchange():
                         try:
-                            # _exchange_code returns a refresh_token string directly
                             result["token"] = _exchange_code(code, code_verifier, region)
+                            dbg(f"Token exchange succeeded, token length: {len(result['token'])}")
                         except Exception as e:
                             result["error"] = f"Token exchange failed: {e}"
+                            dbg(f"Token exchange error: {e}")
                         finally:
                             AppHelper.callAfter(AppHelper.stopEventLoop)
 
@@ -278,12 +272,13 @@ def _local_login_macos(email: str = None, region: str = "us") -> str:
 
                 except Exception as e:
                     result["error"] = f"Failed to parse redirect: {e}"
-                    AppHelper.stopEventLoop()
+                    dbg(f"Parse error: {e}")
+                    AppHelper.callAfter(AppHelper.stopEventLoop)
 
                 handler(0)  # Cancel the tesla:// navigation
             else:
-                # Allow all normal navigation (Tesla login pages, etc.)
-                handler(1)  # WKNavigationActionPolicyAllow
+                # Allow all normal navigation
+                handler(1)
 
     def run_window():
         # Initialize NSApplication on the main thread
@@ -507,34 +502,16 @@ def _patch_pywebview_gtk(result, expected_state):
 # Public API
 # ---------------------------------------------------------------------------
 
-def login(email: str = None, headless: bool = False, region: str = "us") -> str:
-    """Authenticate with Tesla and return a refresh token.
-
-    Auto-detects local vs remote environment. On remote sessions (or if
-    ``headless=True``), uses the paste-token flow. Otherwise opens a
-    native WebView window for login.
-
-    Args:
-        email: Tesla account email (optional, used as login hint).
-        headless: Force remote/paste mode regardless of environment.
-        region: 'us' (default) or 'cn'.
-
-    Returns:
-        refresh_token string.
-    """
+def login(email: str = None, headless: bool = False, region: str = "us", debug: bool = False) -> str:
+    """Authenticate with Tesla and return a refresh token."""
     if headless or _detect_mode() == "remote":
         return _remote_login()
+    return _local_login(email=email, region=region, debug=debug)
 
-    return _local_login(email=email, region=region)
 
-
-def get_authtoken(region: str = "us") -> str:
-    """Get a refresh token for the ``authtoken`` CLI command.
-
-    Always uses the local WebView path (no file saving). The caller
-    is responsible for displaying or using the token.
-    """
-    return _local_login(region=region)
+def get_authtoken(region: str = "us", debug: bool = False) -> str:
+    """Get a refresh token for the authtoken CLI command (no file save)."""
+    return _local_login(region=region, debug=debug)
 
 
 def save_token(refresh_token: str, path: str = None, email: str = None):
