@@ -174,53 +174,36 @@ def _local_login(email: str = None, region: str = "us") -> str:
         # Append login_hint for a smoother UX
         auth_url += f"&login_hint={urllib.parse.quote(email)}"
 
+    import threading
+    import time
+
     result = {}
-
-    class TeslaAuthApi:
-        """JS API bridge — called from injected JS when tesla:// redirect fires."""
-        def __init__(self, window_holder):
-            self.window_holder = window_holder
-
-        def capture(self, url):
-            parsed = urllib.parse.urlparse(url)
-            params = urllib.parse.parse_qs(parsed.query)
-            result["code"] = params.get("code", [None])[0]
-            self.window_holder["window"].destroy()
-
     window_holder = {}
-    api = TeslaAuthApi(window_holder)
 
-    # JS injected on EVERY page load — intercepts all tesla:// navigation methods:
-    # window.open, anchor clicks, location.href setter, location.assign, location.replace
+    # Key insight: window.pywebview.api is async and may not complete before
+    # the failed tesla:// navigation. Instead, store URL in a plain JS global
+    # (synchronous), then poll it from a Python background thread.
     intercept_js = """
     (function() {
         if (window.__teslaAuthPatched) return;
         window.__teslaAuthPatched = true;
+        window.__teslaUrl = null;
 
         function capture(url) {
-            if (window.pywebview && window.pywebview.api) {
-                window.pywebview.api.capture(url);
-            }
+            window.__teslaUrl = url;  // synchronous — always works
         }
-
-        // Override window.open
-        var _open = window.open;
-        window.open = function(url, target, features) {
-            if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
-            return _open.apply(this, arguments);
-        };
 
         // Override Location.prototype.href setter
         try {
-            var _locDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
-            if (_locDesc && _locDesc.set) {
+            var desc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+            if (desc && desc.set) {
                 Object.defineProperty(Location.prototype, 'href', {
-                    get: _locDesc.get,
+                    get: desc.get,
                     set: function(val) {
                         if (val && val.indexOf('tesla://') === 0) { capture(val); return; }
-                        _locDesc.set.call(this, val);
+                        desc.set.call(this, val);
                     },
-                    configurable: true, enumerable: true
+                    configurable: true
                 });
             }
         } catch(e) {}
@@ -239,32 +222,58 @@ def _local_login(email: str = None, region: str = "us") -> str:
             };
         } catch(e) {}
 
-        // Intercept anchor clicks
-        document.addEventListener('click', function(e) {
-            var el = e.target;
-            while (el) {
-                if (el.tagName === 'A' && el.href && el.href.indexOf('tesla://') === 0) {
-                    e.preventDefault(); capture(el.href); return;
-                }
-                el = el.parentElement;
-            }
-        }, true);
+        // Override window.open
+        try {
+            var _open = window.open;
+            window.open = function(url, t, f) {
+                if (url && url.indexOf('tesla://') === 0) { capture(url); return; }
+                return _open.apply(this, arguments);
+            };
+        } catch(e) {}
     })();
     """
 
-    # Inject on EVERY page load so the completion page is also covered
     def on_loaded():
         try:
             window_holder["window"].evaluate_js(intercept_js)
         except Exception:
             pass
 
+    def poll_for_callback():
+        """Poll window.__teslaUrl via evaluate_js every 100ms.
+        Works even when tesla:// navigation fails — the page stays loaded
+        so window.__teslaUrl remains readable."""
+        for _ in range(1200):  # up to 120 seconds
+            if not window_holder.get("window"):
+                time.sleep(0.1)
+                continue
+            try:
+                url = window_holder["window"].evaluate_js('window.__teslaUrl || ""')
+                if url and url.startswith("tesla://"):
+                    parsed = urllib.parse.urlparse(url)
+                    params = urllib.parse.parse_qs(parsed.query)
+                    code = params.get("code", [None])[0]
+                    if code:
+                        result["code"] = code
+                        try:
+                            window_holder["window"].destroy()
+                        except Exception:
+                            pass
+                        return
+            except Exception:
+                pass
+            time.sleep(0.1)
+
     print("Opening Tesla login window...")
     window = webview.create_window(
-        "Tesla Login — pypowerwall", auth_url, width=500, height=750, js_api=api
+        "Tesla Login — pypowerwall", auth_url, width=500, height=750
     )
     window_holder["window"] = window
     window.events.loaded += on_loaded
+
+    t = threading.Thread(target=poll_for_callback, daemon=True)
+    t.start()
+
     webview.start()
 
     auth_code = result.get("code")
