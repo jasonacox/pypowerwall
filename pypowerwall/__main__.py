@@ -368,6 +368,7 @@ def main():
             'din': pw.din(),
             'mode': pw.get_mode(),
             'reserve': pw.get_reserve(),
+            'soc': pw.level(),
             'current': pw.level(),
             'grid': pw.grid(),
             'home': pw.home(),
