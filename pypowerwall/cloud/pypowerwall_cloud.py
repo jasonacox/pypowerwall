@@ -912,75 +912,109 @@ class PyPowerwallCloud(PyPowerwallBase):
     def get_api_solar_powerwall(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {}
 
-    def setup(self, email=None):
+    def setup(self, email=None, token_data=None):
         """
-        Set up the Tesla Cloud connection
+        Set up the Tesla Cloud connection.
+
+        Args:
+            email: Tesla account email.
+            token_data: Optional dict with full token response from Tesla OAuth.
+                       If provided, skips the browser login flow and uses this token.
         """
         print("Tesla Account Setup")
         print("-" * 60)
         tuser = ""
-        # Check for .pypowerwall.auth file
-        if os.path.isfile(self.authfile):
-            print("  Found existing Tesla Cloud setup file ({})".format(self.authfile))
-            with open(self.authfile) as json_file:
-                try:
-                    data = json.load(json_file)
-                    tuser = list(data.keys())[0]
-                    print(f"  Using Tesla User: {tuser}")
-                    # Ask user if they want to overwrite the existing file
-                    response = input("\n  Overwrite existing file? [y/N]: ").strip()
-                    if response.lower() == "y":
-                        tuser = ""
-                        os.remove(self.authfile)
-                    else:
-                        self.email = tuser
-                except Exception as err:
-                    log.debug(f"Unable to use existing authfile {self.authfile}: {err}")
-                    tuser = ""
 
-        if tuser == "":
-            # Create new AUTHFILE
-            if email not in (None, "") and "@" in email:
-                tuser = email.strip()
-                print(f"\n  Email address: {tuser}")
-            else:
-                while True:
-                    response = input("\n  Email address: ").strip()
-                    if "@" not in response:
-                        print("  - Error: Invalid email address")
-                    else:
-                        tuser = response
-                        break
-
-            # Update the Tesla User
+        # If token_data provided, write it directly and skip manual auth
+        if token_data and email:
+            tuser = email.strip()
             self.email = tuser
+            # Write token in teslapy-compatible format
+            import time
+            expires_in = token_data.get("expires_in", 28800)
+            expires_at = int(time.time() + expires_in)
+            cache = {
+                tuser: {
+                    "url": "https://auth.tesla.com/",
+                    "sso": {
+                        "token_type": token_data.get("token_type", "Bearer"),
+                        "access_token": token_data.get("access_token", ""),
+                        "refresh_token": token_data.get("refresh_token", ""),
+                        "expires_at": expires_at,
+                        "expires_in": expires_in,
+                    }
+                }
+            }
+            dir_name = os.path.dirname(self.authfile)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+            with open(self.authfile, "w") as f:
+                json.dump(cache, f, indent=2)
+            os.chmod(self.authfile, 0o600)
+            print(f"  Token saved for {tuser}")
+        else:
+            # Check for .pypowerwall.auth file
+            if os.path.isfile(self.authfile):
+                print("  Found existing Tesla Cloud setup file ({})".format(self.authfile))
+                with open(self.authfile) as json_file:
+                    try:
+                        data = json.load(json_file)
+                        tuser = list(data.keys())[0]
+                        print(f"  Using Tesla User: {tuser}")
+                        # Ask user if they want to overwrite the existing file
+                        response = input("\n  Overwrite existing file? [y/N]: ").strip()
+                        if response.lower() == "y":
+                            tuser = ""
+                            os.remove(self.authfile)
+                        else:
+                            self.email = tuser
+                    except Exception as err:
+                        log.debug(f"Unable to use existing authfile {self.authfile}: {err}")
+                        tuser = ""
 
-            # Create Tesla instance
-            tesla = Tesla(self.email, cache_file=self.authfile)
+            if tuser == "":
+                # Create new AUTHFILE
+                if email not in (None, "") and "@" in email:
+                    tuser = email.strip()
+                    print(f"\n  Email address: {tuser}")
+                else:
+                    while True:
+                        response = input("\n  Email address: ").strip()
+                        if "@" not in response:
+                            print("  - Error: Invalid email address")
+                        else:
+                            tuser = response
+                            break
 
-            if not tesla.authorized:
-                # Login to Tesla account and cache token
-                state = tesla.new_state()
-                code_verifier = tesla.new_code_verifier()
+                # Update the Tesla User
+                self.email = tuser
 
-                try:
-                    print("\nOpen the below address in your browser to login.\n")
-                    print(tesla.authorization_url(state=state, code_verifier=code_verifier))
-                except Exception as err:
-                    log.error(f"Connection failure - {repr(err)}")
-
-                print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
-
-                tesla.close()
-                tesla = Tesla(self.email, state=state, code_verifier=code_verifier, cache_file=self.authfile)
+                # Create Tesla instance
+                tesla = Tesla(self.email, cache_file=self.authfile)
 
                 if not tesla.authorized:
+                    # Login to Tesla account and cache token
+                    state = tesla.new_state()
+                    code_verifier = tesla.new_code_verifier()
+
                     try:
-                        tesla.fetch_token(authorization_response=input("Enter URL after login: "))
-                        print("-" * 60)
+                        print("\nOpen the below address in your browser to login.\n")
+                        print(tesla.authorization_url(state=state, code_verifier=code_verifier))
                     except Exception as err:
                         log.error(f"Connection failure - {repr(err)}")
-                        return False
+
+                    print("\nAfter login, paste the URL of the 'Page Not Found' webpage below.\n")
+
+                    tesla.close()
+                    tesla = Tesla(self.email, state=state, code_verifier=code_verifier, cache_file=self.authfile)
+
+                    if not tesla.authorized:
+                        try:
+                            tesla.fetch_token(authorization_response=input("Enter URL after login: "))
+                            print("-" * 60)
+                        except Exception as err:
+                            log.error(f"Connection failure - {repr(err)}")
+                            return False
 
         # Connect to Tesla Cloud
         self.siteid = None

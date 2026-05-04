@@ -111,6 +111,8 @@ def main():
                                 help="IP address of Powerwall Gateway")
     get_mode_args.add_argument("-password", type=str, default="",
                                 help="Password for Powerwall Gateway")
+    get_mode_args.add_argument("-mode", type=str, default=None,
+                                help="Force connection mode: local, cloud, fleetapi, or tedapi")
 
     version_args = subparsers.add_parser("version", help='Print version information')
 
@@ -148,45 +150,52 @@ def main():
         set_debug(True)
 
     # Cloud Mode Setup
-    if command == 'setup':
+    elif command == 'setup':
+        from pypowerwall.tesla_auth import login as tesla_login
         from pypowerwall import PyPowerwallCloud
 
         email = args.email
         print("pyPowerwall [%s] - Cloud Mode Setup\n" % version)
-        # Run Setup
-        c = PyPowerwallCloud(None, authpath=authpath)
-        if c.setup(email):
-            print(f"Setup Complete. Auth file {c.authfile} ready to use.")
-        else:
-            print("ERROR: Failed to setup Tesla Cloud Mode")
-            sys.exit(1)
 
-    # Login to get refresh token
-    elif command == 'login':
-        from pypowerwall.tesla_auth import login as tesla_login, save_token
-        try:
-            # Ask for email before launching window (used for token storage)
-            email = args.email
-            if not email:
-                email = input("Tesla account email: ").strip()
-            refresh_token, detected_email = tesla_login(
-                email=email,
+        # Check for existing auth file
+        auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+        if os.path.isfile(auth_file) and not email:
+            try:
+                with open(auth_file) as f:
+                    data = json.load(f)
+                email = list(data.keys())[0]
+                print("  Found existing auth file: %s" % auth_file)
+                resp = input("  Overwrite existing file? [y/N]: ").strip()
+                if resp.lower() != "y":
+                    email = None  # keep existing, just re-select site
+            except Exception:
+                pass
+
+        token_data = None
+        if email is None or not os.path.isfile(auth_file):
+            # Get token via native browser (macOS) or headless (Linux/Windows/SSH)
+            refresh_token, detected_email, token_data = tesla_login(
                 headless=args.headless,
                 region=args.region,
                 debug=getattr(args, 'debug', False),
             )
-            email = email or detected_email
-            auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
-            save_token(refresh_token, path=auth_file, email=email)
-            print(f"\n✅ Token saved to {auth_file}")
-            print(f"   Email: {email}")
-            print(f"\nRun: python -m pypowerwall setup")
-        except (KeyboardInterrupt, EOFError):
-            print("\nLogin cancelled.")
+            email = detected_email or email
+            if not email:
+                email = input("\nTesla account email: ").strip()
+
+        # Run Setup with token data (or None if using existing file)
+        c = PyPowerwallCloud(None, authpath=authpath, email=email)
+        if c.setup(email=email, token_data=token_data):
+            print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
+        else:
+            print("\nERROR: Failed to setup Tesla Cloud Mode")
             sys.exit(1)
-        except Exception as e:
-            print(f"\n❌ Login failed: {e}")
-            sys.exit(1)
+
+    # Login to get refresh token (DEPRECATED - use 'setup' instead)
+    elif command == 'login':
+        print("⚠️  'login' command is deprecated. Use 'setup' instead.")
+        print("   python -m pypowerwall setup")
+        sys.exit(1)
 
     # Get auth token (local only, print to stdout)
     elif command == 'authtoken':
@@ -310,9 +319,21 @@ def main():
     # Get Powerwall Mode
     elif command == 'get':
         import pypowerwall
-        # Load email from auth file
-        pw = pypowerwall.Powerwall(auto_select=True, authpath=authpath, password=args.password,
-                                    host=args.host)
+        # Determine connection mode
+        if args.mode:
+            mode = args.mode.lower()
+            if mode == 'local':
+                pw = pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
+            elif mode == 'cloud':
+                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=False, authpath=authpath)
+            elif mode == 'fleetapi':
+                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=True, authpath=authpath)
+            else:
+                print(f"ERROR: Invalid mode '{mode}' - must be one of: local, cloud, fleetapi")
+                sys.exit(1)
+        else:
+            pw = pypowerwall.Powerwall(auto_select=True, authpath=authpath, password=args.password,
+                                        host=args.host)
         if args.format == 'text':
             print(f"pyPowerwall [{version}] - Get Powerwall Mode and Power Levels using {pw.mode} mode.\n")
         if not pw.is_connected():

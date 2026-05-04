@@ -172,11 +172,12 @@ def _remote_login() -> str:
 # ---------------------------------------------------------------------------
 
 def _local_login(email: str = None, region: str = "us", debug: bool = False):
-    """Local login via native WebView. Returns (refresh_token, email) tuple."""
+    """Local login via native WebView. Returns (refresh_token, email, token_data) tuple."""
     if sys.platform == "darwin":
         return _local_login_macos(email, region, debug=debug)
     else:
-        return _local_login_pywebview(email, region), ""
+        token = _local_login_pywebview(email, region)
+        return token, "", {}
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +287,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             token = data["refresh_token"] if isinstance(data, dict) else data
                             dbg(f"Token exchange succeeded, token length: {len(token)}")
                             result["token"] = token
+                            result["token_data"] = data if isinstance(data, dict) else {}
                             # Extract email from id_token if available
                             if isinstance(data, dict) and data.get("id_token"):
                                 result["email"] = _extract_email_from_token(data["id_token"])
@@ -409,7 +411,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         raise RuntimeError(result["error"])
     if not result["token"]:
         raise RuntimeError("Login cancelled - no token received.")
-    return result["token"], result.get("email", "")
+    return result["token"], result.get("email", ""), result.get("token_data", {})
 
 
 def _local_login_pywebview(email: str = None, region: str = "us") -> str:
@@ -572,15 +574,15 @@ def _patch_pywebview_gtk(result, expected_state):
 # ---------------------------------------------------------------------------
 
 def login(email: str = None, headless: bool = False, region: str = "us", debug: bool = False):
-    """Authenticate with Tesla. Returns (refresh_token, email) tuple."""
+    """Authenticate with Tesla. Returns (refresh_token, email, token_data) tuple."""
     if headless or _detect_mode() == "remote":
-        return _remote_login(), ""
+        return _remote_login(), "", {}
     return _local_login(email=email, region=region, debug=debug)
 
 
 def get_authtoken(region: str = "us", debug: bool = False) -> str:
     """Get a refresh token for the authtoken CLI command (no file save)."""
-    token, _ = _local_login(region=region, debug=debug)
+    token, _, _ = _local_login(region=region, debug=debug)
     return token
 
 
@@ -601,32 +603,50 @@ def _extract_email_from_token(token: str) -> str:
 ''
 
 
-def save_token(refresh_token: str, path: str = None, email: str = None):
-    """Save a refresh token to the pypowerwall auth file (.pypowerwall.auth).
+def save_token(token_data: dict, path: str = None, email: str = None):
+    """Save token data to the pypowerwall auth file (.pypowerwall.auth).
+
+    Writes in teslapy-compatible format so PyPowerwallCloud can read it.
 
     Args:
-        refresh_token: The token to save.
+        token_data: Full token response dict from Tesla (contains access_token,
+                    refresh_token, expires_in, token_type, id_token).
         path: File path (default: .pypowerwall.auth in current directory).
         email: Email address to associate with the token.
     """
+    import time
+
     if not path:
         path = os.path.join(os.getcwd(), ".pypowerwall.auth")
 
     if not email:
         email = input("Tesla account email: ").strip()
 
-    data = {}
+    # Build teslapy-compatible cache entry
+    expires_in = token_data.get("expires_in", 28800)
+    expires_at = int(time.time() + expires_in)
+
+    sso = {
+        "token_type": token_data.get("token_type", "Bearer"),
+        "access_token": token_data.get("access_token", ""),
+        "refresh_token": token_data.get("refresh_token", ""),
+        "expires_at": expires_at,
+        "expires_in": expires_in,
+    }
+    if token_data.get("id_token"):
+        sso["id_token"] = token_data["id_token"]
+
+    cache = {}
     if os.path.isfile(path):
         try:
             with open(path, "r") as f:
-                data = json.load(f)
+                cache = json.load(f)
         except (json.JSONDecodeError, IOError):
-            data = {}
+            cache = {}
 
-    data[email] = {
-        "refresh_token": refresh_token,
-        "access_token": "",
-        "expires_at": 0,
+    cache[email] = {
+        "url": "https://auth.tesla.com/",
+        "sso": sso,
     }
 
     dir_name = os.path.dirname(path)
@@ -634,7 +654,8 @@ def save_token(refresh_token: str, path: str = None, email: str = None):
         os.makedirs(dir_name, exist_ok=True)
 
     with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(cache, f, indent=2)
+    os.chmod(path, 0o600)
 
     print(f"  Token saved to {path}")
     return path
