@@ -95,6 +95,35 @@ def _build_auth_url(region: str = "us"):
     return auth_url, code_verifier, state
 
 
+def _refresh_access_token(refresh_token: str, region: str = "us") -> dict:
+    """Exchange a refresh token for a fresh access token.
+
+    Tesla OAuth refresh: POST /oauth2/v3/token with grant_type=refresh_token,
+    client_id=ownerapi, refresh_token.
+    """
+    if requests is None:
+        raise ImportError("The 'requests' package is required.")
+
+    auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
+    resp = requests.post(
+        f"{auth_host}{TOKEN_URL_PATH}",
+        json={
+            "grant_type": "refresh_token",
+            "client_id": CLIENT_ID,
+            "refresh_token": refresh_token,
+        },
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
+
+    data = resp.json()
+    if "access_token" not in data:
+        raise RuntimeError(f"No access_token in refresh response: {data}")
+
+    return data
+
+
 def _exchange_code(auth_code: str, code_verifier: str, region: str = "us") -> dict:
     """Exchange authorization code for tokens.
 
@@ -628,7 +657,7 @@ def _extract_email_from_token(token: str) -> str:
 ''
 
 
-def save_token(token_data: dict, path: str = None, email: str = None):
+def save_token(token_data: dict, path: str = None, email: str = None, region: str = "us"):
     """Save token data to the pypowerwall auth file (.pypowerwall.auth).
 
     Writes in teslapy-compatible format so PyPowerwallCloud can read it.
@@ -638,6 +667,7 @@ def save_token(token_data: dict, path: str = None, email: str = None):
                     refresh_token, expires_in, token_type, id_token).
         path: File path (default: .pypowerwall.auth in current directory).
         email: Email address to associate with the token.
+        region: Tesla region for token refresh if access_token is missing.
     """
     import time
 
@@ -646,6 +676,15 @@ def save_token(token_data: dict, path: str = None, email: str = None):
 
     if not email:
         email = input("Tesla account email: ").strip()
+
+    # If access_token is missing, refresh it from the refresh_token
+    if not token_data.get("access_token") and token_data.get("refresh_token"):
+        try:
+            refreshed = _refresh_access_token(token_data["refresh_token"], region=region)
+            token_data.update(refreshed)
+            print("  Access token refreshed successfully.")
+        except Exception as e:
+            print(f"  Warning: Could not refresh access token: {e}")
 
     # Build teslapy-compatible cache entry
     expires_in = token_data.get("expires_in", 28800)

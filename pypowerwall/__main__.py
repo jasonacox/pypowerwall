@@ -208,7 +208,7 @@ def main():
                 from pypowerwall.tesla_auth import save_token
                 save_token(
                     {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800},
-                    path=auth_file, email=email,
+                    path=auth_file, email=email, region=args.region,
                 )
                 token_data = None  # signal setup() to use existing file
 
