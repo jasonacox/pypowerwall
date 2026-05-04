@@ -600,27 +600,130 @@ def _patch_pywebview_cocoa(result, expected_state):
 
 
 def _patch_pywebview_win32(result, expected_state):
-    """Patch pywebview's Windows WebView2 handler to intercept tesla:// URLs."""
+    """Patch pywebview's Windows EdgeChrome/WebView2 handler to intercept tesla:// URLs.
+
+    pywebview on Windows uses EdgeChromium (WebView2). The EdgeChrome class connects
+    NavigationStarting to self.on_navigation_start. We monkey-patch that method to
+    intercept tesla:// URLs before the browser tries to navigate to them.
+    """
     try:
-        from webview.platforms import winforms
-        # WebView2 fires a SourceChanged event or we can use the
-        # CoreWebView2.NavigationStarting event.
-        # For now, we'll use a JS-based approach as fallback on Windows,
-        # since the winforms backend may not expose navigation policy directly.
-        # TODO: Implement WebView2 navigation interception for Windows.
+        from webview.platforms import edgechromium as chromium_mod
     except ImportError:
-        pass
+        try:
+            from webview.platforms import winforms
+            chromium_mod = getattr(winforms, 'Chromium', None)
+            if chromium_mod is None:
+                return
+        except ImportError:
+            return
+
+    EdgeChrome = getattr(chromium_mod, 'EdgeChrome', None)
+    if EdgeChrome is None:
+        return
+
+    original_on_navigation_start = EdgeChrome.on_navigation_start
+
+    def patched_on_navigation_start(self, sender, args):
+        try:
+            uri = str(args.get_Uri())
+            if uri and uri.startswith("tesla://"):
+                # Cancel the navigation — tesla:// is not a real scheme
+                args.set_Cancel(True)
+
+                parsed = urllib.parse.urlparse(uri)
+                params = urllib.parse.parse_qs(parsed.query)
+
+                error = params.get("error", [None])[0]
+                if error:
+                    result["error"] = f"Tesla auth error: {error}"
+                    return
+
+                code = params.get("code", [None])[0]
+                returned_state = params.get("state", [None])[0]
+
+                if not code:
+                    result["error"] = "No auth code in redirect"
+                    return
+
+                if returned_state != expected_state:
+                    result["error"] = "CSRF state mismatch"
+                    return
+
+                result["code"] = code
+                return
+        except Exception:
+            pass
+
+        # Fall through to original handler for non-tesla:// URLs
+        original_on_navigation_start(self, sender, args)
+
+    EdgeChrome.on_navigation_start = patched_on_navigation_start
 
 
 def _patch_pywebview_gtk(result, expected_state):
-    """Patch pywebview's Linux WebKit2GTK handler to intercept tesla:// URLs."""
+    """Patch pywebview's Linux WebKit2GTK BrowserView to intercept tesla:// URLs.
+
+    pywebview on Linux uses WebKit2GTK. BrowserView connects the 'decide-policy' signal
+    to self.on_navigation. We monkey-patch on_navigation to intercept tesla:// URLs
+    before the browser tries to navigate (which would fail since tesla:// is not real).
+
+    The on_navigation signature is: on_navigation(self, webview, decision, decision_type)
+    where decision_type is a WebKit2.PolicyDecisionType enum and decision is a
+    NavigationPolicyDecision (for NAVIGATION_ACTION) or ResponsePolicyDecision.
+    """
     try:
-        from webview.platforms import gtk
-        # WebKit2GTK uses "decide-policy" signal on the WebView.
-        # pywebview's BrowserView connects this signal.
-        # TODO: Implement WebKit2GTK navigation interception for Linux.
+        from webview.platforms import gtk as gtk_mod
     except ImportError:
-        pass
+        return
+
+    BrowserView = getattr(gtk_mod, 'BrowserView', None)
+    if BrowserView is None:
+        return
+
+    original_on_navigation = BrowserView.on_navigation
+
+    def patched_on_navigation(self, webview, decision, decision_type):
+        try:
+            # WebKit2.PolicyDecisionType.NAVIGATION_ACTION = 0
+            if decision_type == 0:
+                import gi
+                from gi.repository import WebKit2 as webkit
+                nav_decision = decision
+                request = nav_decision.get_request()
+                uri = request.get_uri() if request else None
+
+                if uri and uri.startswith("tesla://"):
+                    # Ignore the request — tesla:// is not a real scheme
+                    nav_decision.ignore()
+
+                    parsed = urllib.parse.urlparse(uri)
+                    params = urllib.parse.parse_qs(parsed.query)
+
+                    error = params.get("error", [None])[0]
+                    if error:
+                        result["error"] = f"Tesla auth error: {error}"
+                        return
+
+                    code = params.get("code", [None])[0]
+                    returned_state = params.get("state", [None])[0]
+
+                    if not code:
+                        result["error"] = "No auth code in redirect"
+                        return
+
+                    if returned_state != expected_state:
+                        result["error"] = "CSRF state mismatch"
+                        return
+
+                    result["code"] = code
+                    return
+        except Exception:
+            pass
+
+        # Fall through to original handler for non-tesla:// URLs
+        original_on_navigation(self, webview, decision, decision_type)
+
+    BrowserView.on_navigation = patched_on_navigation
 
 
 # ---------------------------------------------------------------------------
