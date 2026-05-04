@@ -204,9 +204,10 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
     if email:
         auth_url += f"&login_hint={urllib.parse.quote(email)}"
 
-    result = {"token": None, "error": None}
+    result = {"token": None, "error": None, "email": "", "token_data": {}}
     exchange_done = threading.Event()
     webview_ref = [None]  # mutable container so closure can access it
+    window_ref = [None]   # mutable container for the NSWindow
 
 
     def dbg(msg):
@@ -243,7 +244,11 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                     except Exception as e:
                         dbg(f"Clipboard error: {e}")
                 elif action == "close":
-                    AppKit.NSApplication.sharedApplication().stop_(None)
+                    # Close window explicitly — triggers windowWillClose_ → stop_()
+                    if window_ref[0]:
+                        window_ref[0].close()
+                    else:
+                        AppKit.NSApplication.sharedApplication().stop_(None)
                 handler(0)
                 return
 
@@ -396,6 +401,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         ns_window.setDelegate_(win_delegate)
         ns_window.makeKeyAndOrderFront_(None)
         ns_window.retain()
+        window_ref[0] = ns_window
         req = Foundation.NSURLRequest.requestWithURL_(
             Foundation.NSURL.URLWithString_(auth_url)
         )
@@ -483,7 +489,7 @@ def _local_login_pywebview(email: str = None, region: str = "us") -> str:
         raise RuntimeError("Login cancelled or timed out — no token received.")
 
     print("  ✅ Refresh token captured!")
-    return result["token"]
+    return result["token"], "", {}
 
 
 def _patch_pywebview_navigation(result, expected_state):
