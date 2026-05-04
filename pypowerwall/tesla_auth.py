@@ -409,6 +409,19 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         )
         webview_obj.loadRequest_(req)
         app.activateIgnoringOtherApps_(True)
+
+        # Add Edit menu so Cmd+V (paste) and other shortcuts work in WKWebView
+        edit_menu = AppKit.NSMenu.alloc().initWithTitle_("Edit")
+        edit_menu.addItemWithTitle_action_keyEquivalent_("Cut", "cut:", "x")
+        edit_menu.addItemWithTitle_action_keyEquivalent_("Copy", "copy:", "c")
+        edit_menu.addItemWithTitle_action_keyEquivalent_("Paste", "paste:", "v")
+        edit_menu.addItemWithTitle_action_keyEquivalent_("Select All", "selectAll:", "a")
+        edit_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Edit", None, "")
+        edit_item.setSubmenu_(edit_menu)
+        main_menu = AppKit.NSMenu.alloc().init()
+        main_menu.addItem_(edit_item)
+        app.setMainMenu_(main_menu)
+
         AppHelper.runEventLoop()
 
     print("Opening Tesla login window...")
