@@ -350,9 +350,8 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             dbg(f"Token exchange error: {e}")
                         finally:
                             exchange_done.set()
-                            # Stop event loop so run_window() returns and token is saved
-                            # The success page will already be loaded at this point
-                            AppKit.NSApplication.sharedApplication().stop_(None)
+                            # Window stays open for user to click Close button
+                            # DO NOT stop event loop here
 
                     threading.Thread(target=do_exchange, daemon=True).start()
 
