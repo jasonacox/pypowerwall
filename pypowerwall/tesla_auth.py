@@ -376,6 +376,8 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
         app = AppKit.NSApplication.sharedApplication()
         app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
         config = WebKit.WKWebViewConfiguration.alloc().init()
+        # Use non-persistent data store so every run starts with no cookies/cache
+        config.setWebsiteDataStore_(WebKit.WKWebsiteDataStore.nonPersistentDataStore())
         webview_obj = WebKit.WKWebView.alloc().initWithFrame_configuration_(
             Foundation.NSMakeRect(0, 0, 500, 750), config,
         )
