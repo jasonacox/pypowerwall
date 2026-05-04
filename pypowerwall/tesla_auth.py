@@ -388,7 +388,11 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
 
         class WindowDelegate(AppKit.NSObject):
             def windowWillClose_(self, notification):
-                AppKit.NSApplication.sharedApplication().stop_(None)
+                app = AppKit.NSApplication.sharedApplication()
+                window = notification.object()
+                window.orderOut_(None)  # ensure window disappears immediately
+                app.hide_(None)  # return focus to previous app
+                app.stop_(None)
         win_delegate = WindowDelegate.alloc().init()
         win_delegate.retain()
 
