@@ -159,6 +159,7 @@ def main():
 
         # Check for existing auth file
         auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+        overwrite = False
         if os.path.isfile(auth_file) and not email:
             try:
                 with open(auth_file) as f:
@@ -166,8 +167,11 @@ def main():
                 email = list(data.keys())[0]
                 print("  Found existing auth file: %s" % auth_file)
                 resp = input("  Overwrite existing file? [y/N]: ").strip()
-                if resp.lower() != "y":
-                    email = None  # keep existing, just re-select site
+                if resp.lower() == "y":
+                    overwrite = True
+                    email = None
+                    os.remove(auth_file)
+                # else: keep existing, just re-select site
             except Exception:
                 pass
 
