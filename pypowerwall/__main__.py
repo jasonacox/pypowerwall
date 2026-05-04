@@ -38,6 +38,12 @@ def main():
 
     setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
     setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
+    setup_args.add_argument("-headless", action="store_true", default=False,
+                           help="Manual mode — paste URL instead of opening browser")
+    setup_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
+                           help="Tesla region: 'us' (default) or 'cn' (China)")
+    setup_args.add_argument("-debug", action="store_true", default=False,
+                           help="Enable debug output for auth flow")
 
     login_args = subparsers.add_parser("login", help='Authenticate with Tesla and get refresh token')
     login_args.add_argument("-email", type=str, default=None, help="Tesla account email address")
