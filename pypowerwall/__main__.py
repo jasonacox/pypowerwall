@@ -20,6 +20,17 @@ import json
 from pypowerwall import version, set_debug
 
 
+def _email_from_auth(authpath):
+    """Extract email from .pypowerwall.auth file if it exists."""
+    auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+    try:
+        with open(auth_file) as f:
+            data = json.load(f)
+        return list(data.keys())[0]
+    except Exception:
+        return None
+
+
 def main():
     """Main entry point for the pypowerwall CLI."""
     # Global Variables
@@ -335,9 +346,11 @@ def main():
             if mode == 'local':
                 pw = pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
             elif mode == 'cloud':
-                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=False, authpath=authpath)
+                email = _email_from_auth(authpath)
+                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=False, authpath=authpath, email=email)
             elif mode == 'fleetapi':
-                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=True, authpath=authpath)
+                email = _email_from_auth(authpath)
+                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=True, authpath=authpath, email=email)
             else:
                 print(f"ERROR: Invalid mode '{mode}' - must be one of: local, cloud, fleetapi")
                 sys.exit(1)
