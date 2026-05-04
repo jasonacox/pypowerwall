@@ -203,6 +203,14 @@ def main():
             email = detected_email or email
             if not email:
                 email = input("\nTesla account email: ").strip()
+            # If headless/remote, token_data is empty — write token manually
+            if not token_data:
+                from pypowerwall.tesla_auth import save_token
+                save_token(
+                    {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800},
+                    path=auth_file, email=email,
+                )
+                token_data = None  # signal setup() to use existing file
 
         # Run Setup with token data (or None if using existing file)
         c = PyPowerwallCloud(email, authpath=authpath)
