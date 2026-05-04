@@ -20,6 +20,17 @@ import json
 from pypowerwall import version, set_debug
 
 
+def _email_from_auth(authpath):
+    """Extract email from .pypowerwall.auth file if it exists."""
+    auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+    try:
+        with open(auth_file) as f:
+            data = json.load(f)
+        return list(data.keys())[0]
+    except Exception:
+        return None
+
+
 def main():
     """Main entry point for the pypowerwall CLI."""
     # Global Variables
@@ -38,6 +49,30 @@ def main():
 
     setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
     setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
+    setup_args.add_argument("-headless", action="store_true", default=False,
+                           help="Manual mode — paste URL instead of opening browser")
+    setup_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
+                           help="Tesla region: 'us' (default) or 'cn' (China)")
+    setup_args.add_argument("-debug", action="store_true", default=False,
+                           help="Enable debug output for auth flow")
+
+    login_args = subparsers.add_parser("login", help='Authenticate with Tesla and get refresh token')
+    login_args.add_argument("-email", type=str, default=None, help="Tesla account email address")
+    login_args.add_argument("-debug", action="store_true", default=False,
+                           help="Enable debug output for auth flow")
+    login_args.add_argument("-headless", action="store_true", default=False,
+                           help="Manual mode — paste URL instead of opening browser")
+    login_args.add_argument("-timeout", type=int, default=120,
+                           help="Seconds to wait for browser login [Default=120]")
+    login_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
+                           help="Tesla region: 'us' (default) or 'cn' (China)")
+
+    authtoken_args = subparsers.add_parser("authtoken",
+                                            help='Get refresh token via local browser login (prints to stdout)')
+    authtoken_args.add_argument("-debug", action="store_true", default=False,
+                               help="Enable debug output for auth flow")
+    authtoken_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
+                                help="Tesla region: 'us' (default) or 'cn' (China)")
 
     fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
 
@@ -93,6 +128,8 @@ def main():
                                 help="IP address of Powerwall Gateway")
     get_mode_args.add_argument("-password", type=str, default="",
                                 help="Password for Powerwall Gateway")
+    get_mode_args.add_argument("-mode", type=str, default=None,
+                                help="Force connection mode: local, cloud, fleetapi, or tedapi")
 
     version_args = subparsers.add_parser("version", help='Print version information')
 
@@ -130,17 +167,83 @@ def main():
         set_debug(True)
 
     # Cloud Mode Setup
-    if command == 'setup':
+    elif command == 'setup':
+        from pypowerwall.tesla_auth import login as tesla_login
         from pypowerwall import PyPowerwallCloud
 
         email = args.email
         print("pyPowerwall [%s] - Cloud Mode Setup\n" % version)
-        # Run Setup
-        c = PyPowerwallCloud(None, authpath=authpath)
-        if c.setup(email):
-            print(f"Setup Complete. Auth file {c.authfile} ready to use.")
+
+        # Check for existing auth file
+        auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+        overwrite = False
+        if os.path.isfile(auth_file) and not email:
+            try:
+                with open(auth_file) as f:
+                    data = json.load(f)
+                email = list(data.keys())[0]
+                print("  Found existing auth file: %s" % auth_file)
+                resp = input("  Overwrite existing file? [y/N]: ").strip()
+                if resp.lower() == "y":
+                    overwrite = True
+                    email = None
+                    os.remove(auth_file)
+                # else: keep existing, just re-select site
+            except Exception:
+                pass
+
+        token_data = None
+        if email is None or not os.path.isfile(auth_file):
+            # Get token via native browser (macOS) or headless (Linux/Windows/SSH)
+            refresh_token, detected_email, token_data = tesla_login(
+                headless=args.headless,
+                region=args.region,
+                debug=getattr(args, 'debug', False),
+            )
+            email = detected_email or email
+            if not email:
+                email = input("\nTesla account email: ").strip()
+            # If headless/remote, token_data is empty — write token manually
+            if not token_data:
+                from pypowerwall.tesla_auth import save_token
+                save_token(
+                    {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800},
+                    path=auth_file, email=email, region=args.region,
+                )
+                token_data = None  # signal setup() to use existing file
+
+        # Run Setup with token data (or None if using existing file)
+        c = PyPowerwallCloud(email, authpath=authpath)
+        if c.setup(email=email, token_data=token_data):
+            print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
         else:
-            print("ERROR: Failed to setup Tesla Cloud Mode")
+            print("\nERROR: Failed to setup Tesla Cloud Mode")
+            sys.exit(1)
+
+    # Login to get refresh token (DEPRECATED - use 'setup' instead)
+    elif command == 'login':
+        print("⚠️  'login' command is deprecated. Use 'setup' instead.")
+        print("   python -m pypowerwall setup")
+        sys.exit(1)
+
+    # Get auth token (local only, print to stdout)
+    elif command == 'authtoken':
+        from pypowerwall.tesla_auth import get_authtoken
+        try:
+            print("\n⚡ Tesla Authentication — pypowerwall authtoken")
+            print("=" * 60)
+            token = get_authtoken(region=args.region, debug=getattr(args, 'debug', False))
+            print("\n" + "=" * 60)
+            print("Refresh Token:")
+            print("-" * 60)
+            print(token)
+            print("-" * 60)
+            print("\nCopy the token above and use it on your remote machine.")
+        except (KeyboardInterrupt, EOFError):
+            print("\nLogin cancelled.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"\n❌ Login failed: {e}")
             sys.exit(1)
 
     # FleetAPI Mode Setup
@@ -245,9 +348,23 @@ def main():
     # Get Powerwall Mode
     elif command == 'get':
         import pypowerwall
-        # Load email from auth file
-        pw = pypowerwall.Powerwall(auto_select=True, authpath=authpath, password=args.password,
-                                    host=args.host)
+        # Determine connection mode
+        if args.mode:
+            mode = args.mode.lower()
+            if mode == 'local':
+                pw = pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
+            elif mode == 'cloud':
+                email = _email_from_auth(authpath)
+                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=False, authpath=authpath, email=email)
+            elif mode == 'fleetapi':
+                email = _email_from_auth(authpath)
+                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=True, authpath=authpath, email=email)
+            else:
+                print(f"ERROR: Invalid mode '{mode}' - must be one of: local, cloud, fleetapi")
+                sys.exit(1)
+        else:
+            pw = pypowerwall.Powerwall(auto_select=True, authpath=authpath, password=args.password,
+                                        host=args.host)
         if args.format == 'text':
             print(f"pyPowerwall [{version}] - Get Powerwall Mode and Power Levels using {pw.mode} mode.\n")
         if not pw.is_connected():
@@ -259,6 +376,7 @@ def main():
             'din': pw.din(),
             'mode': pw.get_mode(),
             'reserve': pw.get_reserve(),
+            'soc': pw.level(),
             'current': pw.level(),
             'grid': pw.grid(),
             'home': pw.home(),

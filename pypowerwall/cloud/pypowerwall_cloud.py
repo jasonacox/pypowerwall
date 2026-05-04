@@ -912,34 +912,54 @@ class PyPowerwallCloud(PyPowerwallBase):
     def get_api_solar_powerwall(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         return {}
 
-    def setup(self, email=None):
+    def setup(self, email=None, token_data=None):
         """
-        Set up the Tesla Cloud connection
+        Set up the Tesla Cloud connection.
+
+        Args:
+            email: Tesla account email.
+            token_data: Optional dict with full token response from Tesla OAuth.
+                       If provided, writes token directly. If None and file exists,
+                       skips auth and goes straight to site selection.
         """
         print("Tesla Account Setup")
         print("-" * 60)
         tuser = ""
-        # Check for .pypowerwall.auth file
-        if os.path.isfile(self.authfile):
-            print("  Found existing Tesla Cloud setup file ({})".format(self.authfile))
-            with open(self.authfile) as json_file:
-                try:
-                    data = json.load(json_file)
-                    tuser = list(data.keys())[0]
-                    print(f"  Using Tesla User: {tuser}")
-                    # Ask user if they want to overwrite the existing file
-                    response = input("\n  Overwrite existing file? [y/N]: ").strip()
-                    if response.lower() == "y":
-                        tuser = ""
-                        os.remove(self.authfile)
-                    else:
-                        self.email = tuser
-                except Exception as err:
-                    log.debug(f"Unable to use existing authfile {self.authfile}: {err}")
-                    tuser = ""
 
-        if tuser == "":
-            # Create new AUTHFILE
+        # If token_data provided, write it directly and skip manual auth
+        if token_data and email:
+            tuser = email.strip()
+            self.email = tuser
+            # Write token in teslapy-compatible format
+            import time
+            expires_in = token_data.get("expires_in", 28800)
+            expires_at = int(time.time() + expires_in)
+            cache = {
+                tuser: {
+                    "url": "https://auth.tesla.com/",
+                    "sso": {
+                        "token_type": token_data.get("token_type", "Bearer"),
+                        "access_token": token_data.get("access_token", ""),
+                        "refresh_token": token_data.get("refresh_token", ""),
+                        "expires_at": expires_at,
+                        "expires_in": expires_in,
+                    }
+                }
+            }
+            dir_name = os.path.dirname(self.authfile)
+            if dir_name:
+                os.makedirs(dir_name, exist_ok=True)
+            with open(self.authfile, "w") as f:
+                json.dump(cache, f, indent=2)
+            os.chmod(self.authfile, 0o600)
+            print(f"  Token saved for {tuser}")
+        elif email and os.path.isfile(self.authfile):
+            # Using existing file — just set email and connect
+            tuser = email.strip()
+            self.email = tuser
+            print(f"  Using existing auth file for {tuser}")
+        else:
+            # No token_data, no existing file — manual teslapy flow (fallback)
             if email not in (None, "") and "@" in email:
                 tuser = email.strip()
                 print(f"\n  Email address: {tuser}")
