@@ -184,7 +184,7 @@ def main():
                 email = input("\nTesla account email: ").strip()
 
         # Run Setup with token data (or None if using existing file)
-        c = PyPowerwallCloud(None, authpath=authpath, email=email)
+        c = PyPowerwallCloud(email, authpath=authpath)
         if c.setup(email=email, token_data=token_data):
             print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
         else:
