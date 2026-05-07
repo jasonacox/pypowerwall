@@ -153,6 +153,8 @@ Option 5 has two sub-modes:
 
 The Powerwall 3 gateway has a wired Ethernet port on the TEG (Tesla Energy Gateway) unit that operates on an internal vendor subnet — typically `10.42.1.0/24` or `10.45.1.0/24`. This is **not** your home LAN IP.
 
+> **⚠️ DHCP Required:** The Powerwall 3 does **not** have a static IP address on the vendor subnet. It relies on DHCP to obtain an IP. You must run a DHCP server on the vendor subnet (e.g., `dnsmasq` or your Linux NAT router) that hands out addresses in the `10.42.1.x` or `10.45.1.x` range. Without a DHCP server, the Powerwall will not get an IP and the wired LAN endpoints will be unreachable.
+
 To reach this subnet you need a Layer 2 connection to the TEG Ethernet port:
 * **SPAN panel** — Provides this natively; the SPAN connects to the TEG Ethernet and bridges it to your home network
 * **Network bridge** — A Linux bridge (e.g., `br-tap`) joining the TEG Ethernet interface to your LAN
