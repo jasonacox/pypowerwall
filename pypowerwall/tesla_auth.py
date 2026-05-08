@@ -205,8 +205,7 @@ def _local_login(email: str = None, region: str = "us", debug: bool = False):
     if sys.platform == "darwin":
         return _local_login_macos(email, region, debug=debug)
     else:
-        token = _local_login_pywebview(email, region)
-        return token, "", {}
+        return _local_login_pywebview(email, region)
 
 
 # ---------------------------------------------------------------------------
@@ -757,7 +756,6 @@ def _extract_email_from_token(token: str) -> str:
     except Exception:
         pass
     return ''
-''
 
 
 def save_token(token_data: dict, path: str = None, email: str = None, region: str = "us"):
