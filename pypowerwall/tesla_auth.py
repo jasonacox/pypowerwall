@@ -555,6 +555,26 @@ def _local_login_pywebview(email: str = None, region: str = "us",
                     # Uses hidden textarea + execCommand fallback because
                     # navigator.clipboard.writeText() fails in WebView2 on Windows
                     # (requires secure context / HTTPS which local HTML doesn't have)
+                    # Try Python-side clipboard copy first (works on all platforms)
+                    try:
+                        import subprocess
+                        if sys.platform == 'win32':
+                            subprocess.run(['clip'], input=token.encode(), check=True)
+                            print("Token copied to clipboard!")
+                        elif sys.platform == 'linux':
+                            # Try xclip, then xsel, then wl-copy
+                            for cmd in [['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input'], ['wl-copy']]:
+                                try:
+                                    subprocess.run(cmd, input=token.encode(), check=True)
+                                    print("Token copied to clipboard!")
+                                    break
+                                except (FileNotFoundError, subprocess.CalledProcessError):
+                                    continue
+                        elif sys.platform == 'darwin':
+                            subprocess.run(['pbcopy'], input=token.encode(), check=True)
+                            print("Token copied to clipboard!")
+                    except Exception:
+                        pass
                     print("Copy the token above or use the button in the window.")
                     success_html = f"""<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
@@ -563,7 +583,7 @@ def _local_login_pywebview(email: str = None, region: str = "us",
   h2 {{ color: #1d1d1f; }}
   .token-box {{ background: white; border: 1px solid #d2d2d7; border-radius: 10px;
     padding: 15px; word-break: break-all; font-family: monospace; font-size: 11px;
-    color: #333; margin: 15px 0; }}
+    color: #333; margin: 15px 0; user-select: all; cursor: text; }}
   .copy-btn {{ background: #0071e3; color: white; border: none; border-radius: 8px;
     padding: 10px 20px; font-size: 15px; cursor: pointer; width: 100%; }}
   .copy-btn:active {{ background: #0077ed; }}
@@ -571,8 +591,8 @@ def _local_login_pywebview(email: str = None, region: str = "us",
   #fallback {{ position: absolute; left: -9999px; }}
 </style></head><body>
 <h2>\u2705 Authentication Successful</h2>
-<p>Your Tesla refresh token is shown below. Copy it now.</p>
-<div class='token-box' id='tokenText'>{token}</div>
+<p>Your Tesla refresh token is shown below. Click the token box to select it, then press Ctrl+C to copy.</p>
+<div class='token-box' id='tokenText' onclick="document.execCommand('selectAll',false,null)">{token}</div>
 <textarea id='fallback'>{token}</textarea>
 <button class='copy-btn' id='copyBtn' onclick=\"
   var ta = document.getElementById('fallback');
@@ -588,11 +608,12 @@ def _local_login_pywebview(email: str = None, region: str = "us",
       document.getElementById('copyBtn').style.background = '#0071e3';
     }}, 2500);
   }} else {{
-    document.getElementById('copyBtn').textContent = 'Select & copy manually';
-    document.getElementById('copyBtn').style.background = '#ff3b30';
+    document.getElementById('tokenText').click();
+    document.getElementById('copyBtn').textContent = 'Press Ctrl+C to copy';
+    document.getElementById('copyBtn').style.background = '#ff9500';
   }}
 \">Copy Token</button>
-<p style='margin-top:15px'>You can safely close this window.</p>
+<p style='margin-top:15px'>Token is also printed in your terminal. You can safely close this window.</p>
 </body></html>"""
                     try:
                         window.load_html(success_html)
@@ -604,10 +625,14 @@ def _local_login_pywebview(email: str = None, region: str = "us",
                 else:
                     # Auto-close window for setup flow (token is saved to file)
                     print("  \u2705 Token captured — setup will continue.")
-                    try:
-                        window.destroy()
-                    except Exception:
-                        pass
+                    def _close():
+                        for attempt in range(5):
+                            try:
+                                window.destroy()
+                                return
+                            except Exception:
+                                time.sleep(0.2 * (attempt + 1))
+                    _close()
                 return
             time.sleep(0.5)
 
