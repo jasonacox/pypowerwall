@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.15.5 - Native Python Tesla Authentication
+
+* Feat: Replace external `tesla-auth` binary dependency with native Python Tesla authentication — no more platform-specific binary downloads
+* Feat: New `setup` command handles authentication and site selection in a single flow using a native WebView popup window (macOS, Windows, Linux)
+* Feat: New `authtoken` command for obtaining a refresh token on a local machine, then using it on a remote/headless server
+* Fix: Cross-platform WebView interception of `tesla://auth/callback` using WKWebView (macOS), WebView2 (Windows), and WebKit2GTK (Linux)
+* Release prep:
+     * Bump library version to `0.15.5`
+
 ## v0.15.4 - CLI Enhancements and Safety Guards
 
 * Feat: `pypowerwall tedapi` CLI now accepts `-host HOST`, `-gw_pwd GW_PWD`, `-v1r`, `-password PASSWORD`, `-rsa_key_path RSA_KEY_PATH`, and `-wifi_host WIFI_HOST` flags, enabling full PW3 wired LAN (v1r) access directly from the command line
