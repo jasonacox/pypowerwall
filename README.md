@@ -74,6 +74,19 @@ Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will
 
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
 
+If you need to authenticate on a machine without a display (e.g. a Raspberry Pi or remote server over SSH), use the `authtoken` command on your local machine to obtain a refresh token, then paste it into the remote session:
+
+```bash
+# On your local machine (Mac/Windows/Linux with a display):
+python3 -m pypowerwall authtoken
+
+# Follow the Tesla login flow in the popup window.
+# Copy the token printed to the terminal.
+
+# Then on the remote machine, run setup and paste the token when prompted:
+python3 -m pypowerwall setup
+```
+
 ### TEDAPI Mode - Option 4
 
 With version v0.10.0+, pypowerwall can access the TEDAPI endpoint on the Gateway over **Wi-Fi**. This API offers additional metrics related to string data, voltages, and alerts. You will need the Gateway Wi‑Fi password (found on the QR sticker on the Powerwall Gateway) and network access to `192.168.91.1` (either via the Gateway’s Wi‑Fi AP or a static route from your LAN).
