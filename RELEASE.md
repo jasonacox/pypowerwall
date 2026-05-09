@@ -1,11 +1,13 @@
 # RELEASE NOTES
 
-## v0.15.5 - Native Python Tesla Authentication
+## v0.15.5 - Native Python Tesla Authentication + v1r Key Verification Fixes
 
 * Feat: Replace external `tesla-auth` binary dependency with native Python Tesla authentication — no more platform-specific binary downloads
 * Feat: New `setup` command handles authentication and site selection in a single flow using a native WebView popup window (macOS, Windows, Linux)
 * Feat: New `authtoken` command for obtaining a refresh token on a local machine, then using it on a remote/headless server
 * Fix: Cross-platform WebView interception of `tesla://auth/callback` using WKWebView (macOS), WebView2 (Windows), and WebKit2GTK (Linux)
+* Fix: `v1r_register.py` now verifies the specific newly-registered RSA key rather than any key in the authorized clients list — prevents false VERIFIED result when only the Tesla app key is verified (fixes #274)
+* Fix: `tedapi_v1r.py` now detects and clearly logs `client authorization not verified` inner-payload errors, with actionable instructions to complete physical key verification — previously silently returned `None` with no diagnostic output
 * Release prep:
      * Bump library version to `0.15.5`
 
