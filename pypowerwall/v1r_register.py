@@ -307,11 +307,16 @@ def step3_get_site_id(token, fleet_api_base):
     return selected["energy_site_id"], selected["gateway_din"]
 
 
-def _check_key_state(resp):
+def _check_key_state(resp, pubkey_der=None):
     """Extract client state from Fleet API registration/list response.
 
     Returns the state integer if found, None otherwise.
     State values: 1=PENDING, 2=PENDING_VERIFICATION, 3=VERIFIED
+
+    If pubkey_der is provided and the response is a ListAuthorizedClientsResponse,
+    only returns the state for the client whose public key matches pubkey_der.
+    This prevents false VERIFIED results when another key (e.g. Tesla app key)
+    is already verified.
     """
     try:
         msg = resp["response"]["message"]["Payload"]["Authorization"]["Message"]
@@ -335,6 +340,20 @@ def _check_key_state(resp):
         if key in msg:
             clients = msg[key].get("clients") or msg[key].get("Clients") or []
             for client in clients:
+                # If pubkey_der is provided, match the specific key
+                if pubkey_der is not None:
+                    client_pubkey = client.get("public_key") or client.get("PublicKey") or ""
+                    if client_pubkey:
+                        try:
+                            decoded = base64.b64decode(client_pubkey)
+                            if decoded != pubkey_der:
+                                continue
+                        except Exception:
+                            # Fallback: compare raw string representation
+                            if client_pubkey != base64.b64encode(pubkey_der).decode():
+                                continue
+                    else:
+                        continue  # no public_key to match
                 state = client.get("state") or client.get("State")
                 if state is not None:
                     return int(state)
@@ -342,10 +361,11 @@ def _check_key_state(resp):
     return None
 
 
-def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5):
+def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5, pubkey_der=None):
     """Poll list_authorized_clients_request to check key verification state.
 
     Returns the state integer of the most recently registered key, or None.
+    If pubkey_der is provided, checks the specific key instead of any key.
     """
     verify_payload = {
         "command_properties": {
@@ -369,7 +389,7 @@ def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5):
             token=token,
         )
         print(f"  Poll attempt {attempt + 1}/{attempts}: ({code})")
-        state = _check_key_state(resp)
+        state = _check_key_state(resp, pubkey_der=pubkey_der)
         if state is not None:
             print(f"  Key state: {state} ({'VERIFIED' if state == 3 else 'PENDING' if state < 3 else 'UNKNOWN'})")
             if state == 3:
@@ -420,7 +440,7 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
         sys.exit(1)
 
     # Check if cloud registration auto-verified the key
-    state = _check_key_state(resp)
+    state = _check_key_state(resp, pubkey_der=public_key_der)
     if state == 3:
         print("\n  Key verified automatically via cloud — no breaker toggle needed!")
     else:
@@ -430,7 +450,7 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
             print(f"\n  Response ({code}): {json.dumps(resp, indent=2)}")
         # Poll to see if state transitions to VERIFIED
         print("\n  Checking key verification status...")
-        state = _poll_key_state(token, energy_site_id, fleet_api_base)
+        state = _poll_key_state(token, energy_site_id, fleet_api_base, pubkey_der=public_key_der)
         if state == 3:
             print("\n  Key verified via cloud!")
         else:
@@ -446,7 +466,7 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
             print()
             input("  Press Enter after toggling the breaker...")
             print("\n  Verifying key registration...")
-            state = _poll_key_state(token, energy_site_id, fleet_api_base, attempts=6)
+            state = _poll_key_state(token, energy_site_id, fleet_api_base, attempts=6, pubkey_der=public_key_der)
 
     # Done
     verified = state == 3
