@@ -229,12 +229,13 @@ class TEDAPIv1r:
             # instead of a valid protobuf payload.
             try:
                 inner_text = inner.decode('utf-8', errors='replace').strip()
-                if 'authorization not verified' in inner_text:
-                    log.error("v1r: RSA key not yet verified by the gateway.")
-                    log.error("  The key is registered but still PENDING. To verify it:")
+                if 'authorization not verified' in inner_text.lower():
+                    log.error("v1r: RSA key not yet VERIFIED by the gateway.")
+                    log.error("  The key is registered but not yet VERIFIED (may be PENDING or PENDING_VERIFICATION).")
                     log.error("  1. Toggle ONE Powerwall breaker OFF, wait 2 seconds, then back ON.")
                     log.error("  2. Wait 30-60 seconds, then retry.")
-                    log.error("  Or check key state: python -m pypowerwall register")
+                    log.error("  Re-run 'python -m pypowerwall register' to inspect registration and verification state.")
+                    log.error("  See: https://github.com/jasonacox/pypowerwall/issues/274")
                     return None
             except Exception:
                 pass
