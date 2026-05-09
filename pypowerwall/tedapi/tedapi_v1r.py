@@ -221,6 +221,22 @@ class TEDAPIv1r:
             if not inner:
                 log.error("v1r response has no protobuf_message_as_bytes")
                 return None
+
+            # Check for plain-text authorization errors in the inner payload.
+            # When the RSA key is registered but not yet verified, the gateway
+            # returns HTTP 200 with MESSAGEFAULT_ERROR_NONE but the inner bytes
+            # contain a plain-text error like "v1r: client authorization not verified"
+            # instead of a valid protobuf payload.
+            # Check in bytes first to avoid decoding large protobuf blobs on every call.
+            if b'authorization not verified' in inner.lower():
+                log.error("v1r: RSA key not yet VERIFIED by the gateway.")
+                log.error("  The key is registered but not yet VERIFIED (may be PENDING or PENDING_VERIFICATION).")
+                log.error("  1. Toggle ONE Powerwall breaker OFF, wait 2 seconds, then back ON.")
+                log.error("  2. Wait 30-60 seconds, then retry.")
+                log.error("  Re-run 'python -m pypowerwall register' to inspect registration and verification state.")
+                log.error("  See: https://github.com/jasonacox/pypowerwall/issues/274")
+                return None
+
             return inner
 
         except Exception as e:
