@@ -233,10 +233,21 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
     5. Exchange it for a refresh token
     """
     import threading
-    import AppKit
-    import WebKit
-    import Foundation
-    from PyObjCTools import AppHelper
+    try:
+        import AppKit
+        import WebKit
+        import Foundation
+        from PyObjCTools import AppHelper
+    except ImportError:
+        print("Installing pyobjc-framework-WebKit...")
+        import subprocess
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "pyobjc-framework-WebKit", "-q"]
+        )
+        import AppKit
+        import WebKit
+        import Foundation
+        from PyObjCTools import AppHelper
 
     auth_url, code_verifier, state = _build_auth_url(region)
     if email:
@@ -783,6 +794,20 @@ def _patch_pywebview_gtk(result, expected_state):
     where decision_type is a WebKit2.PolicyDecisionType enum and decision is a
     NavigationPolicyDecision (for NAVIGATION_ACTION) or ResponsePolicyDecision.
     """
+    # Check for system-level GTK/WebKit2 dependencies early so we can give
+    # a clear error rather than a cryptic ImportError later.
+    try:
+        import gi  # noqa: F401
+    except ImportError:
+        raise RuntimeError(
+            "Missing system libraries required for the Linux login window.\n"
+            "Please install them with your package manager and try again:\n\n"
+            "  Debian/Ubuntu:  sudo apt install python3-gi gir1.2-webkit2-4.0\n"
+            "  Fedora/RHEL:    sudo dnf install python3-gobject webkit2gtk4.0\n"
+            "  Arch:           sudo pacman -S python-gobject webkit2gtk\n\n"
+            "These are system packages and cannot be installed via pip."
+        )
+
     try:
         from webview.platforms import gtk as gtk_mod
     except ImportError:
@@ -798,8 +823,6 @@ def _patch_pywebview_gtk(result, expected_state):
         try:
             # WebKit2.PolicyDecisionType.NAVIGATION_ACTION = 0
             if decision_type == 0:
-                import gi
-                from gi.repository import WebKit2 as webkit
                 nav_decision = decision
                 request = nav_decision.get_request()
                 uri = request.get_uri() if request else None
