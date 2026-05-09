@@ -516,10 +516,54 @@ def _local_login_pywebview(email: str = None, region: str = "us") -> str:
                     result["token"] = token_data["refresh_token"]
                 except Exception as e:
                     result["error"] = f"Token exchange failed: {e}"
+                    try:
+                        window.destroy()
+                    except Exception:
+                        pass
+                    return
+                # Show success page instead of auto-closing
+                # so user can copy the token from the window
+                token = result["token"]
+                print("\n" + "=" * 60)
+                print("\u2705 Tesla Refresh Token:")
+                print("-" * 60)
+                print(token)
+                print("-" * 60)
+                print("Copy the token above or use the button in the window.")
+                success_html = f"""<!DOCTYPE html><html><head>
+<meta charset='utf-8'>
+<style>
+  body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #f5f5f7; }}
+  h2 {{ color: #1d1d1f; }}
+  .token-box {{ background: white; border: 1px solid #d2d2d7; border-radius: 10px;
+    padding: 15px; word-break: break-all; font-family: monospace; font-size: 11px;
+    color: #333; margin: 15px 0; }}
+  .copy-btn {{ background: #0071e3; color: white; border: none; border-radius: 8px;
+    padding: 10px 20px; font-size: 15px; cursor: pointer; width: 100%; }}
+  .copy-btn:active {{ background: #0077ed; }}
+  p {{ color: #6e6e73; font-size: 13px; }}
+</style></head><body>
+<h2>\u2705 Authentication Successful</h2>
+<p>Your Tesla refresh token is shown below. Copy it now.</p>
+<div class='token-box' id='tokenText'>{token}</div>
+<button class='copy-btn' id='copyBtn' onclick=\"
+  navigator.clipboard.writeText(document.getElementById('tokenText').textContent);
+  document.getElementById('copyBtn').textContent = '\u2705 Copied!';
+  document.getElementById('copyBtn').style.background = '#34c759';
+  setTimeout(function(){{
+    document.getElementById('copyBtn').textContent = 'Copy Token';
+    document.getElementById('copyBtn').style.background = '#0071e3';
+  }}, 2500);
+\">Copy Token</button>
+<p style='margin-top:15px'>You can safely close this window.</p>
+</body></html>"""
                 try:
-                    window.destroy()
+                    window.load_html(success_html)
                 except Exception:
-                    pass
+                    try:
+                        window.destroy()
+                    except Exception:
+                        pass
                 return
             time.sleep(0.5)
 
