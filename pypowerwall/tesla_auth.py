@@ -200,19 +200,29 @@ def _remote_login() -> str:
 # Path 2 — Local login (native WebView with navigation interception)
 # ---------------------------------------------------------------------------
 
-def _local_login(email: str = None, region: str = "us", debug: bool = False):
-    """Local login via native WebView. Returns (refresh_token, email, token_data) tuple."""
+def _local_login(email: str = None, region: str = "us", debug: bool = False,
+                   show_token_page: bool = False):
+    """Local login via native WebView. Returns (refresh_token, email, token_data) tuple.
+
+    Args:
+        show_token_page: If True, show a success page with the token after auth
+                         (for `authtoken` command). If False, auto-close window
+                         after token capture (for `setup` command).
+    """
     if sys.platform == "darwin":
-        return _local_login_macos(email, region, debug=debug)
+        return _local_login_macos(email, region, debug=debug,
+                                  show_token_page=show_token_page)
     else:
-        return _local_login_pywebview(email, region)
+        return _local_login_pywebview(email, region,
+                                      show_token_page=show_token_page)
 
 
 # ---------------------------------------------------------------------------
 # macOS — Native WKWebView via PyObjC
 # ---------------------------------------------------------------------------
 
-def _local_login_macos(email: str = None, region: str = "us", debug: bool = False) -> str:
+def _local_login_macos(email: str = None, region: str = "us", debug: bool = False,
+                          show_token_page: bool = False) -> str:
     """Native WKWebView on macOS with WKNavigationDelegate to intercept tesla://.
 
     This mirrors exactly what tesla_auth's wry does on macOS:
@@ -339,12 +349,16 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             print("-" * 60)
                             print(token)
                             print("-" * 60)
-                            if clipboard_ok:
+                            if not show_token_page:
+                                # Auto-close for setup — no success page needed
+                                print("  \u2705 Token captured — setup will continue.")
+                            elif clipboard_ok:
                                 print("Token copied to clipboard! You can now close the window.")
                             else:
                                 print("Copy the token above. You can now close the window.")
-                            # Load success page in the WebView
-                            success_html = f"""<!DOCTYPE html><html><head>
+                            # Only load success page for authtoken (show_token_page=True)
+                            if show_token_page:
+                              success_html = f"""<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <style>
   body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #f5f5f7; }}
@@ -377,16 +391,23 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
   </a>
 </div>
 </body></html>"""
-                            def load_success():
-                                webview_ref[0].loadHTMLString_baseURL_(success_html, None)
-                            AppHelper.callAfter(load_success)
+                              def load_success():
+                                  webview_ref[0].loadHTMLString_baseURL_(success_html, None)
+                              AppHelper.callAfter(load_success)
                         except Exception as e:
                             result["error"] = f"Token exchange failed: {e}"
                             dbg(f"Token exchange error: {e}")
                         finally:
                             exchange_done.set()
-                            # Window stays open for user to click Close button
-                            # DO NOT stop event loop here
+                            if not show_token_page:
+                                # Auto-close for setup — token is saved to file
+                                def close_after_exchange():
+                                    if window_ref[0]:
+                                        window_ref[0].close()
+                                    else:
+                                        AppKit.NSApplication.sharedApplication().stop_(None)
+                                AppHelper.callAfter(close_after_exchange)
+                            # else: Window stays open for user to click Close button
 
                     threading.Thread(target=do_exchange, daemon=True).start()
 
@@ -467,7 +488,8 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
     return result["token"], result.get("email", ""), result.get("token_data", {})
 
 
-def _local_login_pywebview(email: str = None, region: str = "us") -> str:
+def _local_login_pywebview(email: str = None, region: str = "us",
+                            show_token_page: bool = False) -> str:
     """pywebview login with navigation handler monkey-patch.
 
     On Windows (WebView2) and Linux (WebKit2GTK), we use pywebview but
@@ -521,16 +543,20 @@ def _local_login_pywebview(email: str = None, region: str = "us") -> str:
                     except Exception:
                         pass
                     return
-                # Show success page instead of auto-closing
-                # so user can copy the token from the window
                 token = result["token"]
                 print("\n" + "=" * 60)
                 print("\u2705 Tesla Refresh Token:")
                 print("-" * 60)
                 print(token)
                 print("-" * 60)
-                print("Copy the token above or use the button in the window.")
-                success_html = f"""<!DOCTYPE html><html><head>
+
+                if show_token_page:
+                    # Show success page with Copy Token button
+                    # Uses hidden textarea + execCommand fallback because
+                    # navigator.clipboard.writeText() fails in WebView2 on Windows
+                    # (requires secure context / HTTPS which local HTML doesn't have)
+                    print("Copy the token above or use the button in the window.")
+                    success_html = f"""<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <style>
   body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #f5f5f7; }}
@@ -542,24 +568,42 @@ def _local_login_pywebview(email: str = None, region: str = "us") -> str:
     padding: 10px 20px; font-size: 15px; cursor: pointer; width: 100%; }}
   .copy-btn:active {{ background: #0077ed; }}
   p {{ color: #6e6e73; font-size: 13px; }}
+  #fallback {{ position: absolute; left: -9999px; }}
 </style></head><body>
 <h2>\u2705 Authentication Successful</h2>
 <p>Your Tesla refresh token is shown below. Copy it now.</p>
 <div class='token-box' id='tokenText'>{token}</div>
+<textarea id='fallback'>{token}</textarea>
 <button class='copy-btn' id='copyBtn' onclick=\"
-  navigator.clipboard.writeText(document.getElementById('tokenText').textContent);
-  document.getElementById('copyBtn').textContent = '\u2705 Copied!';
-  document.getElementById('copyBtn').style.background = '#34c759';
-  setTimeout(function(){{
-    document.getElementById('copyBtn').textContent = 'Copy Token';
-    document.getElementById('copyBtn').style.background = '#0071e3';
-  }}, 2500);
+  var ta = document.getElementById('fallback');
+  ta.style.position='fixed'; ta.style.left='0'; ta.style.top='0';
+  ta.style.opacity='0'; ta.select(); ta.setSelectionRange(0, 99999);
+  var ok = document.execCommand('copy');
+  ta.style.position='absolute'; ta.style.left='-9999px';
+  if(ok){{
+    document.getElementById('copyBtn').textContent = '\u2705 Copied!';
+    document.getElementById('copyBtn').style.background = '#34c759';
+    setTimeout(function(){{
+      document.getElementById('copyBtn').textContent = 'Copy Token';
+      document.getElementById('copyBtn').style.background = '#0071e3';
+    }}, 2500);
+  }} else {{
+    document.getElementById('copyBtn').textContent = 'Select & copy manually';
+    document.getElementById('copyBtn').style.background = '#ff3b30';
+  }}
 \">Copy Token</button>
 <p style='margin-top:15px'>You can safely close this window.</p>
 </body></html>"""
-                try:
-                    window.load_html(success_html)
-                except Exception:
+                    try:
+                        window.load_html(success_html)
+                    except Exception:
+                        try:
+                            window.destroy()
+                        except Exception:
+                            pass
+                else:
+                    # Auto-close window for setup flow (token is saved to file)
+                    print("  \u2705 Token captured — setup will continue.")
                     try:
                         window.destroy()
                     except Exception:
@@ -777,12 +821,13 @@ def login(email: str = None, headless: bool = False, region: str = "us", debug: 
     """Authenticate with Tesla. Returns (refresh_token, email, token_data) tuple."""
     if headless or _detect_mode() == "remote":
         return _remote_login(), "", {}
-    return _local_login(email=email, region=region, debug=debug)
+    return _local_login(email=email, region=region, debug=debug,
+                        show_token_page=False)
 
 
 def get_authtoken(region: str = "us", debug: bool = False) -> str:
     """Get a refresh token for the authtoken CLI command (no file save)."""
-    token, _, _ = _local_login(region=region, debug=debug)
+    token, _, _ = _local_login(region=region, debug=debug, show_token_page=True)
     return token
 
 
