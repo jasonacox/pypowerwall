@@ -1,4 +1,4 @@
-# pyPowerWall Module - Scan Function
+# pyPowerWall Module - CLI Entry Point
 # -*- coding: utf-8 -*-
 """
  Python module to interface with Tesla Solar Powerwall Gateway
@@ -6,8 +6,18 @@
  Author: Jason A. Cox
  For more information see https://github.com/jasonacox/pypowerwall
 
- Scan Function:
-    python -m pypowerwall <scan>
+ CLI Usage:
+    python -m pypowerwall <command> [options]
+
+ Commands:
+    setup       Setup Tesla Cloud, Fleet API, or v1r LAN TEDAPI access
+    get         Get Powerwall settings and power levels
+    set         Set Powerwall operating mode and reserve level
+    tedapi      Test TEDAPI connection to Powerwall Gateway
+    scan        Scan local network for Powerwall gateway
+    register    Register RSA key for v1r LAN mode
+    authtoken   Get Tesla Cloud refresh token
+    version     Print version information
 
 """
 
@@ -31,6 +41,96 @@ def _email_from_auth(authpath):
         return None
 
 
+def _add_connection_args(parser):
+    """Add mutually exclusive connection mode flags and credential args to a subparser.
+
+    Modes (choose at most one):
+      -local      Local Powerwall Gateway  (needs -host, -password)
+      -cloud      Tesla Cloud              (needs prior 'setup')
+      -fleetapi   Tesla Fleet API          (needs prior 'setup -fleetapi')
+      -tedapi     TEDAPI direct            (needs -gw_pwd)
+      -v1r        v1r LAN TEDAPI           (needs -gw_pwd and RSA private key)
+      (none)      Auto-select from available configuration
+    """
+    grp = parser.add_mutually_exclusive_group()
+    grp.add_argument("-local", action="store_true", default=False,
+                     help="Connect via local Powerwall Gateway (requires -host)")
+    grp.add_argument("-cloud", action="store_true", default=False,
+                     help="Connect via Tesla Cloud (requires prior 'setup')")
+    grp.add_argument("-fleetapi", action="store_true", default=False,
+                     help="Connect via Tesla Fleet API (requires prior 'setup -fleetapi')")
+    grp.add_argument("-tedapi", action="store_true", default=False,
+                     help="Connect via TEDAPI (requires -gw_pwd)")
+    grp.add_argument("-v1r", action="store_true", default=False,
+                     help="Connect via v1r LAN TEDAPI (requires -gw_pwd and RSA private key)")
+    parser.add_argument("-host", type=str, default="",
+                        help="IP address of Powerwall Gateway [local/tedapi/v1r]")
+    parser.add_argument("-password", type=str, default="",
+                        help="Customer password [local/v1r; v1r defaults to last 5 of gw_pwd]")
+    parser.add_argument("-gw_pwd", type=str, default=None,
+                        help="Gateway password [required for -tedapi and -v1r]")
+    parser.add_argument("-rsa_key_path", type=str, default=None,
+                        help="RSA private key PEM path [v1r; default: ./tedapi_rsa_private.pem]")
+
+
+def _build_powerwall(args, authpath):
+    """Construct a Powerwall instance from the parsed connection mode flags."""
+    import pypowerwall
+    if getattr(args, 'v1r', False):
+        if not args.gw_pwd:
+            print("ERROR: -v1r requires -gw_pwd <gateway_password>")
+            sys.exit(1)
+        rsa_key_path = args.rsa_key_path
+        if not rsa_key_path:
+            default_key = "tedapi_rsa_private.pem"
+            if os.path.isfile(default_key):
+                rsa_key_path = default_key
+            else:
+                print(
+                    f"ERROR: -v1r requires an RSA private key. "
+                    f"Specify -rsa_key_path or place '{default_key}' in the current directory."
+                )
+                sys.exit(1)
+        return pypowerwall.Powerwall(
+            host=args.host or None,
+            password=args.password or None,
+            gw_pwd=args.gw_pwd,
+            rsa_key_path=rsa_key_path,
+            authpath=authpath,
+        )
+    if getattr(args, 'tedapi', False):
+        if not args.gw_pwd:
+            print("ERROR: -tedapi requires -gw_pwd <gateway_password>")
+            sys.exit(1)
+        return pypowerwall.Powerwall(host=args.host or None, gw_pwd=args.gw_pwd, authpath=authpath)
+    if getattr(args, 'local', False):
+        return pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
+    if getattr(args, 'cloud', False):
+        auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+        if not os.path.isfile(auth_file):
+            print(f"ERROR: Tesla Cloud auth file not found: {auth_file}")
+            print("  Run 'python -m pypowerwall setup' to authenticate.")
+            sys.exit(1)
+        email = _email_from_auth(authpath)
+        return pypowerwall.Powerwall(cloudmode=True, fleetapi=False, authpath=authpath, email=email)
+    if getattr(args, 'fleetapi', False):
+        from pypowerwall.fleetapi.fleetapi import CONFIGFILE as FLEET_CONFIGFILE
+        config_file = os.path.join(authpath, FLEET_CONFIGFILE) if authpath else FLEET_CONFIGFILE
+        if not os.path.isfile(config_file):
+            print(f"ERROR: Fleet API config file not found: {config_file}")
+            print("  Run 'python -m pypowerwall setup -fleetapi' to configure Fleet API access.")
+            sys.exit(1)
+        email = _email_from_auth(authpath)
+        return pypowerwall.Powerwall(cloudmode=True, fleetapi=True, authpath=authpath, email=email)
+    # No mode flag — auto-select from available configuration
+    return pypowerwall.Powerwall(
+        auto_select=True,
+        authpath=authpath,
+        password=getattr(args, 'password', ''),
+        host=getattr(args, 'host', ''),
+    )
+
+
 def main():
     """Main entry point for the pypowerwall CLI."""
     # Global Variables
@@ -38,28 +138,38 @@ def main():
 
     timeout = 1.0
     hosts = 30
-    color = True
-    ip = None
-    email = None
+
+    # Shared parent parser: flags that apply to every subcommand
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("-debug", action="store_true", default=False,
+                        help="Enable debug output")
+    common.add_argument("-authpath", type=str, default=None,
+                        help="Override auth path (default uses PW_AUTH_PATH env var)")
 
     # Setup parser and groups
-    p = argparse.ArgumentParser(prog="PyPowerwall", description=f"PyPowerwall Module v{version}")
+    p = argparse.ArgumentParser(prog="PyPowerwall", description=f"PyPowerwall Module v{version}",
+                                parents=[common])
     subparsers = p.add_subparsers(dest="command", title='commands (run <command> -h to see usage information)',
                                   required=True)
 
-    setup_args = subparsers.add_parser("setup", help='Setup Tesla Login for Cloud Mode access')
-    setup_args.add_argument("-email", type=str, default=email, help="Email address for Tesla Login.")
+    setup_args = subparsers.add_parser("setup", parents=[common],
+                                       help='Setup Tesla Cloud, Fleet API, or v1r LAN TEDAPI access')
+    setup_grp = setup_args.add_mutually_exclusive_group()
+    setup_grp.add_argument("-cloud", action="store_true", default=False,
+                           help="Setup Tesla Cloud Mode (default)")
+    setup_grp.add_argument("-fleetapi", action="store_true", default=False,
+                           help="Setup Tesla Fleet API mode")
+    setup_grp.add_argument("-v1r", action="store_true", default=False,
+                           help="Register RSA key with Powerwall for v1r LAN TEDAPI mode")
+    setup_args.add_argument("-email", type=str, default=None, help="Email address for Tesla Login.")
     setup_args.add_argument("-headless", action="store_true", default=False,
                            help="Manual mode — paste URL instead of opening browser")
     setup_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
-    setup_args.add_argument("-debug", action="store_true", default=False,
-                           help="Enable debug output for auth flow")
 
-    login_args = subparsers.add_parser("login", help='Authenticate with Tesla and get refresh token')
+    login_args = subparsers.add_parser("login", parents=[common],
+                                       help='Authenticate with Tesla Cloud and get refresh token (deprecated: use setup)')
     login_args.add_argument("-email", type=str, default=None, help="Tesla account email address")
-    login_args.add_argument("-debug", action="store_true", default=False,
-                           help="Enable debug output for auth flow")
     login_args.add_argument("-headless", action="store_true", default=False,
                            help="Manual mode — paste URL instead of opening browser")
     login_args.add_argument("-timeout", type=int, default=120,
@@ -67,16 +177,16 @@ def main():
     login_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
 
-    authtoken_args = subparsers.add_parser("authtoken",
-                                            help='Get refresh token via local browser login (prints to stdout)')
-    authtoken_args.add_argument("-debug", action="store_true", default=False,
-                               help="Enable debug output for auth flow")
+    authtoken_args = subparsers.add_parser("authtoken", parents=[common],
+                                            help='Get Tesla Cloud refresh token via local browser login (prints to stdout)')
     authtoken_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                                 help="Tesla region: 'us' (default) or 'cn' (China)")
 
-    fleetapi_args = subparsers.add_parser("fleetapi", help='Setup Tesla FleetAPI for Cloud Mode access')
+    fleetapi_args = subparsers.add_parser("fleetapi", parents=[common],
+                                           help='[Deprecated] Setup Tesla FleetAPI — use: setup -fleetapi')
 
-    tedapi_args = subparsers.add_parser("tedapi", help='Test TEDAPI connection to Powerwall Gateway')
+    tedapi_args = subparsers.add_parser("tedapi", parents=[common],
+                                        help='Test TEDAPI connection to Powerwall Gateway')
     tedapi_args.add_argument("gw_pwd", type=str, nargs="?", default=None,
                              help="Powerwall Gateway Password")
     tedapi_args.add_argument("-gw_pwd", dest="gw_pwd_option", metavar="GW_PWD", type=str, default=None,
@@ -92,13 +202,14 @@ def main():
     tedapi_args.add_argument("-wifi_host", type=str, default=None,
                              help="Optional WiFi TEDAPI host for v1r follower fallback")
 
-    register_args = subparsers.add_parser("register",
-                                          help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
+    register_args = subparsers.add_parser("register", parents=[common],
+                                           help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
 
-    scan_args = subparsers.add_parser("scan", help='Scan local network for Powerwall gateway')
+    scan_args = subparsers.add_parser("scan", parents=[common],
+                                      help='Scan local network for Powerwall gateway')
     scan_args.add_argument("-timeout", type=float, default=timeout,
                            help=f"Seconds to wait per host [Default={timeout:.1f}]")
-    scan_args.add_argument("-nocolor", action="store_true", default=not color,
+    scan_args.add_argument("-nocolor", action="store_true", default=False,
                            help="Disable color text output.")
     scan_args.add_argument("network", type=str, nargs="?", default=None, metavar="CIDR",
                            help="IPv4 CIDR network to scan (e.g. 192.168.1.0/24). Auto-detects if omitted.")
@@ -109,34 +220,31 @@ def main():
     scan_args.add_argument("-json", action="store_true", default=False,
                            help="Output discovered gateways as JSON and suppress all other output.")
 
-    set_mode_args = subparsers.add_parser("set", help='Set Powerwall Mode and Reserve Level')
+    set_mode_args = subparsers.add_parser("set", parents=[common],
+                                           help='Set Powerwall operating mode and reserve level')
+    _add_connection_args(set_mode_args)
     set_mode_args.add_argument("-mode", type=str, default=None,
-                                help="Powerwall Mode: self_consumption, backup, or autonomous")
+                                help="Operating mode: self_consumption, backup, or autonomous")
     set_mode_args.add_argument("-reserve", type=int, default=-1,
                                 help="Set Battery Reserve Level [Default=20]")
     set_mode_args.add_argument("-current", action="store_true", default=False,
                                 help="Set Battery Reserve Level to Current Charge")
     set_mode_args.add_argument("-gridcharging", type=str, default=None,
-                                help="Enable Grid Charging Mode: on or off")
+                                help="Grid Charging Mode: on or off")
     set_mode_args.add_argument("-gridexport", type=str, default=None,
                                 help="Grid Export Mode: battery_ok, pv_only, or never")
 
-    get_mode_args = subparsers.add_parser("get", help='Get Powerwall Settings and Power Levels')
+    get_mode_args = subparsers.add_parser("get", parents=[common],
+                                           help='Get Powerwall settings and power levels')
+    _add_connection_args(get_mode_args)
     get_mode_args.add_argument("-format", type=str, default="text",
                                 help="Output format: text, json, csv")
-    get_mode_args.add_argument("-host", type=str, default="",
-                                help="IP address of Powerwall Gateway")
-    get_mode_args.add_argument("-password", type=str, default="",
-                                help="Password for Powerwall Gateway")
-    get_mode_args.add_argument("-mode", type=str, default=None,
-                                help="Force connection mode: local, cloud, fleetapi, or tedapi")
+    # Deprecated: old string -mode flag for connection selection; hidden from help
+    get_mode_args.add_argument("-mode", type=str, default=None, dest="legacy_mode",
+                                help=argparse.SUPPRESS)
 
-    version_args = subparsers.add_parser("version", help='Print version information')
-
-    # Add a global debug flag
-    p.add_argument("-debug", action="store_true", default=False, help="Enable debug output")
-    p.add_argument("-authpath", type=str, default=None,
-                   help="Override auth path (default uses PW_AUTH_PATH env var)")
+    version_args = subparsers.add_parser("version", parents=[common],
+                                         help='Print version information')
 
     if len(sys.argv) == 1:
         p.print_help(sys.stderr)
@@ -156,18 +264,31 @@ def main():
         # If env var produced None (shouldn't) or still None-like, fallback to "" (cwd)
         authpath = authpath or ""
 
-    # Debug: Show final authpath resolution before using it
+    # Debug setup
     if args.debug:
-        # Show absolute path if non-empty, otherwise indicate current directory
         display_authpath = os.path.abspath(authpath) if authpath else os.path.abspath(os.getcwd())
         print(f"[DEBUG] Using auth path: {display_authpath} (raw='{authpath}')")
-
-    # Set Debug Mode
-    if args.debug:
         set_debug(True)
 
-    # Cloud Mode Setup
-    elif command == 'setup':
+    # Cloud, FleetAPI, or v1r Setup
+    if command == 'setup':
+        if args.v1r:
+            from pypowerwall.v1r_register import main as fleet_register_main
+            fleet_register_main()
+            return
+
+        if args.fleetapi:
+            from pypowerwall import PyPowerwallFleetAPI
+            print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
+            c = PyPowerwallFleetAPI(None, authpath=authpath)
+            if c.setup():
+                print(f"Setup Complete. Config file {c.configfile} ready to use.")
+            else:
+                print("Setup Aborted.")
+                sys.exit(1)
+            return
+
+        # Cloud setup (default, also explicit with -cloud)
         from pypowerwall.tesla_auth import login as tesla_login
         from pypowerwall import PyPowerwallCloud
 
@@ -246,11 +367,12 @@ def main():
             print(f"\n❌ Login failed: {e}")
             sys.exit(1)
 
-    # FleetAPI Mode Setup
+    # FleetAPI Mode Setup (deprecated — use: setup -fleetapi)
     elif command == 'fleetapi':
+        print("⚠️  'fleetapi' command is deprecated. Use 'setup -fleetapi' instead.")
+        print("   python -m pypowerwall setup -fleetapi")
         from pypowerwall import PyPowerwallFleetAPI
-
-        print("pyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
+        print("\npyPowerwall [%s] - FleetAPI Mode Setup\n" % version)
         # Run Setup
         c = PyPowerwallFleetAPI(None, authpath=authpath)
         if c.setup():
@@ -304,17 +426,15 @@ def main():
 
     # Set Powerwall Mode
     elif command == 'set':
-        # If no arguments, print usage
+        # If no action arguments, print usage
         if not args.mode and args.reserve == -1 and not args.current and not args.gridcharging and not args.gridexport:
-            print("usage: pypowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current] [-gridcharging MODE] [-gridexport MODE]")
+            set_mode_args.print_usage()
             sys.exit(1)
-        import pypowerwall
-        # Determine which cloud mode to use
-        pw = pypowerwall.Powerwall(auto_select=True, host="", authpath=authpath)
-        print(f"pyPowerwall [{version}] - Set Powerwall Mode and Power Levels using {pw.mode} mode.\n")
+        pw = _build_powerwall(args, authpath)
         if not pw.is_connected():
-            print("ERROR: FleetAPI and Cloud access are not configured. Run 'fleetapi' or 'setup'.")
+            print("ERROR: Unable to connect. Check connection mode and credentials.")
             sys.exit(1)
+        print(f"pyPowerwall [{version}] - Set Powerwall settings using {pw.mode} mode.\n")
         if args.mode:
             mode = args.mode.lower()
             if mode not in ['self_consumption', 'backup', 'autonomous']:
@@ -347,57 +467,55 @@ def main():
 
     # Get Powerwall Mode
     elif command == 'get':
-        import pypowerwall
-        # Determine connection mode
-        if args.mode:
-            mode = args.mode.lower()
-            if mode == 'local':
-                pw = pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
-            elif mode == 'cloud':
-                email = _email_from_auth(authpath)
-                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=False, authpath=authpath, email=email)
-            elif mode == 'fleetapi':
-                email = _email_from_auth(authpath)
-                pw = pypowerwall.Powerwall(cloudmode=True, fleetapi=True, authpath=authpath, email=email)
+        # Backward compat: deprecated 'get -mode <value>' → new boolean flag
+        if getattr(args, 'legacy_mode', None):
+            _legacy_mode_map = {
+                'local': 'local', 'cloud': 'cloud', 'fleetapi': 'fleetapi',
+                'tedapi': 'tedapi', 'v1r': 'v1r',
+            }
+            _mapped = _legacy_mode_map.get(args.legacy_mode.lower())
+            if _mapped:
+                print(f"⚠️  Deprecated: 'get -mode {args.legacy_mode}' — use 'get -{args.legacy_mode}' instead.")
+                setattr(args, _mapped, True)
             else:
-                print(f"ERROR: Invalid mode '{mode}' - must be one of: local, cloud, fleetapi")
+                print(f"ERROR: Unknown connection mode '{args.legacy_mode}'. Use -local, -cloud, -fleetapi, -tedapi, or -v1r.")
                 sys.exit(1)
-        else:
-            pw = pypowerwall.Powerwall(auto_select=True, authpath=authpath, password=args.password,
-                                        host=args.host)
-        if args.format == 'text':
-            print(f"pyPowerwall [{version}] - Get Powerwall Mode and Power Levels using {pw.mode} mode.\n")
+        pw = _build_powerwall(args, authpath)
         if not pw.is_connected():
             print("ERROR: Unable to connect. Set -host and -password or configure FleetAPI or Cloud access.")
             sys.exit(1)
+        if args.format == 'text':
+            print(f"pyPowerwall [{version}] - Get Powerwall settings using {pw.mode} mode.\n")
         output = {
             'site': pw.site_name(),
             'site_id': pw.siteid or "N/A",
             'din': pw.din(),
+            'firmware': pw.version(),
             'mode': pw.get_mode(),
             'reserve': pw.get_reserve(),
             'soc': pw.level(),
-            'current': pw.level(),
+            'grid_status': pw.grid_status(),
             'grid': pw.grid(),
             'home': pw.home(),
             'battery': pw.battery(),
             'solar': pw.solar(),
             'grid_charging': pw.get_grid_charging(),
             'grid_export_mode': pw.get_grid_export(),
+            'time_remaining': pw.get_time_remaining(),
         }
         if args.format == 'json':
             print(json.dumps(output, indent=2))
         elif args.format == 'csv':
-            # create a csv header from keys
             header = ",".join(output.keys())
             print(header)
-            values = ",".join(str(value) for value in output.values())
+            values = ",".join("N/A" if v is None else str(v) for v in output.values())
             print(values)
         else:
             # Table Output
             for item in output:
                 name = item.replace("_", " ").title()
-                print("  {:<18}{}".format(name, output[item]))
+                value = output[item]
+                print("  {:<18}{}".format(name, "N/A" if value is None else value))
             print("")
 
     # Print Version
