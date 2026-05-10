@@ -730,7 +730,7 @@ class Powerwall(object):
             return None
 
         if level is None:
-            level = self.get_reserve(scale=False)
+            level = self.get_reserve()
 
         if not mode:
             mode = self.get_mode()
