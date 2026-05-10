@@ -774,6 +774,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             level = payload['backup_reserve_percent']
             if level is False:
                 level = 0
+            # TEDAPI config stores raw scale (5–100% physical), but callers
+            # supply Tesla App scale (0–100%).  Reverse the get_reserve(scale=True)
+            # formula: raw = app_percent * 0.95 + 5
+            level = level * 0.95 + 5
             updates['site_info.backup_reserve_percent'] = level
         if 'real_mode' in payload:
             updates['default_real_mode'] = payload['real_mode']

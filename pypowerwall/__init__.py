@@ -731,12 +731,6 @@ class Powerwall(object):
 
         if level is None:
             level = self.get_reserve(scale=False)
-        else:
-            # Convert Tesla App scale (0-100) to raw API scale
-            # The API reserves 5% for battery protection, so:
-            #   app_percent = (raw / 0.95) - (5 / 0.95)  [get_reserve]
-            #   raw = app_percent * 0.95 + 5               [reverse]
-            level = level * 0.95 + 5
 
         if not mode:
             mode = self.get_mode()
