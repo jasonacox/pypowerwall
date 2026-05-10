@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.15.6 - Reserve Percent Scaling Fix
+
+* Fix: `set_operation()` reserve percent scaling — reverse Tesla App scaling (0–100%) to raw API scale (5–100%) only in TEDAPI v1r mode, avoiding incorrect round-trip values in cloud and FleetAPI modes
+* Fix: Correctly handle `level=0` in `set_reserve()` via `level is not None` check
+* Fix: Revert universal scaling from `set_operation()`; move raw conversion into `PyPowerwallTEDAPI.post_api_operation()` where it belongs
+* Release prep:
+     * Bump library version to `0.15.6`
+     * Update proxy pinned dependency to `pypowerwall==0.15.6`
+
 ## v0.15.5 - Native Python Tesla Authentication + v1r Key Verification Fixes
 
 * Feat: Replace external `tesla-auth` binary dependency with native Python Tesla authentication — no more platform-specific binary downloads

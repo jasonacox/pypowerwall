@@ -89,7 +89,7 @@ import time
 from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 15, 5)
+version_tuple = (0, 15, 6)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -725,7 +725,7 @@ class Powerwall(object):
         Returns:
             Dictionary with operation results, if jsonformat is False, else a JSON string
         """
-        if level and (level < 0 or level > 100):
+        if level is not None and (level < 0 or level > 100):
             log.error("Level can be in range of 0 to 100 only.")
             return None
 

@@ -227,3 +227,49 @@ class TestHostPortValidation:
     def test_empty_host_skips_validation(self, pw_validator):
         # Empty host bypasses the block entirely (cloud/fleet mode use case)
         _set_and_validate(pw_validator, "")
+
+
+class TestTEDAPIv1rReserveScaling:
+    """Verify that TEDAPI v1r post_api_operation() converts app-scale → raw before writing config."""
+
+    def test_post_api_operation_scales_app_to_raw(self):
+        """set_reserve(25) should write raw=28.75 (=25*0.95+5) to TEDAPI config."""
+        from unittest.mock import MagicMock, patch
+        from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
+
+        mock_tedapi = MagicMock()
+        mock_tedapi.v1r = True
+        mock_tedapi._write_config.return_value = True
+
+        with patch.object(PyPowerwallTEDAPI, '__init__', return_value=None):
+            pw_tedapi = PyPowerwallTEDAPI.__new__(PyPowerwallTEDAPI)
+            pw_tedapi.tedapi = mock_tedapi
+
+        payload = {'backup_reserve_percent': 25, 'real_mode': 'self_consumption'}
+        pw_tedapi.post_api_operation(payload=payload)
+
+        written = mock_tedapi._write_config.call_args[0][0]
+        raw = written['site_info.backup_reserve_percent']
+        # 25 * 0.95 + 5 = 28.75
+        assert abs(raw - 28.75) < 0.001, f"Expected raw 28.75, got {raw}"
+
+    def test_post_api_operation_zero_level_becomes_five_raw(self):
+        """set_reserve(0) should write raw=5 (=0*0.95+5) — the physical minimum."""
+        from unittest.mock import MagicMock, patch
+        from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
+
+        mock_tedapi = MagicMock()
+        mock_tedapi.v1r = True
+        mock_tedapi._write_config.return_value = True
+
+        with patch.object(PyPowerwallTEDAPI, '__init__', return_value=None):
+            pw_tedapi = PyPowerwallTEDAPI.__new__(PyPowerwallTEDAPI)
+            pw_tedapi.tedapi = mock_tedapi
+
+        payload = {'backup_reserve_percent': 0, 'real_mode': 'self_consumption'}
+        pw_tedapi.post_api_operation(payload=payload)
+
+        written = mock_tedapi._write_config.call_args[0][0]
+        raw = written['site_info.backup_reserve_percent']
+        # 0 * 0.95 + 5 = 5.0
+        assert abs(raw - 5.0) < 0.001, f"Expected raw 5.0, got {raw}"
