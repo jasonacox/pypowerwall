@@ -725,12 +725,18 @@ class Powerwall(object):
         Returns:
             Dictionary with operation results, if jsonformat is False, else a JSON string
         """
-        if level and (level < 0 or level > 100):
+        if level is not None and (level < 0 or level > 100):
             log.error("Level can be in range of 0 to 100 only.")
             return None
 
         if level is None:
-            level = self.get_reserve()
+            level = self.get_reserve(scale=False)
+        else:
+            # Convert Tesla App scale (0-100) to raw API scale
+            # The API reserves 5% for battery protection, so:
+            #   app_percent = (raw / 0.95) - (5 / 0.95)  [get_reserve]
+            #   raw = app_percent * 0.95 + 5               [reverse]
+            level = level * 0.95 + 5
 
         if not mode:
             mode = self.get_mode()
