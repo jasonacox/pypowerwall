@@ -20,6 +20,14 @@ def get_static(web_root, fpath):
     if fpath.startswith("/"):
         fpath = fpath[1:]
     freq = os.path.join(web_root, fpath)
+
+    # Prevent path traversal attacks by validating resolved path stays within web_root
+    real_path = os.path.realpath(freq)
+    real_web_root = os.path.realpath(web_root)
+    if not real_path.startswith(real_web_root + os.sep) and real_path != real_web_root:
+        logger.warning(f"Path traversal attempt detected: {fpath}")
+        return None, None
+
     if os.path.exists(freq):
         if freq.lower().endswith(".js"):
             ftype = "application/javascript"
