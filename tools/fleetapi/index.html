@@ -37,10 +37,22 @@
 
         // If the "code" parameter is not present, display an error message
         if (!code) {
-            document.write('<p>Error: "code" parameter is missing from the URL.</p>');
+            var errorDiv = document.createElement('p');
+            errorDiv.textContent = 'Error: "code" parameter is missing from the URL.';
+            document.body.appendChild(errorDiv);
         }
         else {
-            document.write('<div class="code">' + code + ' <button onclick="copyToClipboard()">Copy</button></div>');
+            var codeDiv = document.createElement('div');
+            codeDiv.className = 'code';
+            var codeSpan = document.createElement('span');
+            codeSpan.textContent = code;
+            var copyButton = document.createElement('button');
+            copyButton.textContent = 'Copy';
+            copyButton.onclick = copyToClipboard;
+            codeDiv.appendChild(codeSpan);
+            codeDiv.appendChild(document.createTextNode(' '));
+            codeDiv.appendChild(copyButton);
+            document.body.appendChild(codeDiv);
         }
 
         // Function to copy the code to clipboard
