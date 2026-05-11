@@ -1074,12 +1074,16 @@ class Powerwall(object):
                 dirname = '.'
             self._check_if_dir_is_writable(dirname, "authpath")
         elif self.fleetapi:
-            # Ensure we can write to the configfile
+            # Ensure we can write to the configfile (or its directory if it doesn't exist yet)
             self.configfile = os.path.join(self.authpath, CONFIGFILE)
-            if os.access(self.configfile, os.W_OK):
-                log.debug(f"Config file '{self.configfile}' is writable.")
+            if os.path.exists(self.configfile):
+                if os.access(self.configfile, os.W_OK):
+                    log.debug(f"Config file '{self.configfile}' is writable.")
+                else:
+                    raise PyPowerwallInvalidConfigurationParameter(f"Config file '{self.configfile}' is not writable.")
             else:
-                raise PyPowerwallInvalidConfigurationParameter(f"Config file '{self.configfile}' is not writable.")
+                dirname = self.authpath or '.'
+                self._check_if_dir_is_writable(dirname, "authpath")
         else:
             # If local mode, check appropriate parameters, and ensure we can write to the provided cachefile
             dirname = os.path.dirname(self.cachefile)

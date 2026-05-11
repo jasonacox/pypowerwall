@@ -36,7 +36,7 @@ python3 -m pip install pypowerwall
 python3 -m pypowerwall scan
 
 # Option 2 - FLEETAPI CLOUD MODE - Setup to use the official Tesla FleetAPI - See notes below.
-python3 -m pypowerwall fleetapi
+python3 -m pypowerwall setup -fleetapi
 
 # Option 3 - CLOUD MODE - Setup to use Tesla Owners cloud API
 python3 -m pypowerwall setup
@@ -44,7 +44,8 @@ python3 -m pypowerwall setup
 # Option 4 - TEDAPI MODE - Test this mode (requires extended setup - see below)
 python3 -m pypowerwall tedapi
 
-# Option 5 - v1r LAN TEDAPI MODE - Powerwall 3 wired LAN access (see below)
+# Option 5 - v1r LAN TEDAPI MODE - Register RSA key for Powerwall 3 wired LAN access
+python3 -m pypowerwall setup -v1r
 ```
 
 ### Local Setup - Option 1
@@ -618,43 +619,148 @@ The following are some useful tools based on pypowerwall:
 
 ## pyPowerwall Command Line Interface (CLI)
 
-pyPowerwall has a built-in feature to scan your network for available Powerwall gateways and set/get operational and reserve modes.
+pyPowerwall includes a CLI for scanning your network, setting up cloud/gateway access, and querying or controlling your Powerwall.
 
 ```
-Usage: PyPowerwall [-h] {setup,scan,set,get,version} ...
+Usage: PyPowerwall [-h] [-debug] [-authpath AUTHPATH]
+                   {setup,login,authtoken,fleetapi,tedapi,register,scan,set,get,version}
+                   ...
 
-PyPowerwall Module v0.8.1
+PyPowerwall Module v0.15.6
 
-Options:
-  -h, --help            Show this help message and exit
+Global options (apply to all commands):
+  -debug              Enable debug output
+  -authpath PATH      Override auth file directory (default: PW_AUTH_PATH env var)
 
-Commands (run <command> -h to see usage information):
-  {setup,fleetapi,tedapi,scan,set,get,version}
-    setup                 Setup Tesla Login for Cloud Mode access
-    fleetapi              Setup Tesla FleetAPI for Cloud Mode access
-    tedapi                Test TEDAPI connection to Powerwall Gateway
-    scan                  Scan local network for Powerwall gateway
-    set                   Set Powerwall Mode and Reserve Level
-    get                   Get Powerwall Settings and Power Levels
-    version               Print version information
-
-   set options:
-      -mode MODE          Powerwall Mode: self_consumption, backup, or autonomous
-      -reserve RESERVE    Set Battery Reserve Level [Default=20]
-      -current            Set Battery Reserve Level to Current Charge
-      -gridcharging MODE  Set Grid Charging (allow) Mode ("on" or "off")
-      -gridexport MODE    Set Export to Grid Mode ("battery_ok", "pv_only", or "never")
-
-   get options:
-      -format FORMAT      Output format: text, json, csv
-      -host HOST          IP address of Powerwall Gateway
-      -password PASSWORD  Password for Powerwall Gateway
+Commands (run <command> -h for full usage):
+  setup               Setup Tesla Cloud, Fleet API, or v1r LAN TEDAPI access
+  login               [Deprecated] Use: setup
+  authtoken           Get a Tesla Cloud refresh token (prints to stdout)
+  fleetapi            [Deprecated] Use: setup -fleetapi
+  tedapi              Test TEDAPI connection to Powerwall Gateway
+  register            Register RSA key with Powerwall (for v1r LAN mode)
+  scan                Scan local network for Powerwall gateway
+  set                 Set Powerwall operating mode and reserve level
+  get                 Get Powerwall settings and power levels
+  version             Print version information
 ```
-   
+
+### Setup
+
 ```bash
 # Install pyPowerwall if you haven't already
 python -m pip install pypowerwall
 
+# Option 1 — Scan network for Powerwall gateways (local mode)
+python -m pypowerwall scan
+
+# Option 2 — Setup Tesla Fleet API (official)
+python -m pypowerwall setup -fleetapi
+
+# Option 3 — Setup Tesla Cloud (Owners API)
+python -m pypowerwall setup
+
+# Option 4 — Test TEDAPI Wi-Fi connection
+python -m pypowerwall tedapi -gw_pwd ABCDEXXXXX
+
+# Option 5 — Register RSA key for v1r LAN TEDAPI (Powerwall 3 wired LAN)
+python -m pypowerwall setup -v1r
+```
+
+### `get` — Read Powerwall Status
+
+Returns settings and live power levels. Choose a connection mode or omit for auto-select.
+
+**Connection mode flags** (mutually exclusive, all optional):
+
+| Flag | Mode | Required credentials |
+|------|------|----------------------|
+| _(none)_ | Auto-select from available config | — |
+| `-local` | Local Gateway API (PW2/+) | `-host`, `-password` |
+| `-cloud` | Tesla Cloud (Owners API) | prior `setup` |
+| `-fleetapi` | Tesla Fleet API | prior `setup -fleetapi` |
+| `-tedapi` | TEDAPI Wi-Fi | `-gw_pwd` (host defaults to `192.168.91.1`) |
+| `-v1r` | v1r LAN TEDAPI (PW3) | `-host`, `-gw_pwd`, RSA key |
+
+```bash
+# Auto-select (uses available config/credentials)
+python -m pypowerwall get
+python -m pypowerwall get -format json
+python -m pypowerwall get -format csv
+
+# Local gateway
+python -m pypowerwall get -local -host 10.0.1.123 -password XXXXX
+
+# Tesla Cloud
+python -m pypowerwall get -cloud
+
+# Tesla Fleet API
+python -m pypowerwall get -fleetapi
+
+# TEDAPI (Wi-Fi — needs access to 192.168.91.1)
+python -m pypowerwall get -tedapi -gw_pwd ABCDEXXXXX
+
+# v1r LAN TEDAPI (Powerwall 3 wired LAN)
+python -m pypowerwall get -v1r -host 10.42.1.40 -gw_pwd ABCDEXXXXX \
+    -rsa_key_path ./tedapi_rsa_private.pem
+```
+
+Example output (`-format text`, the default):
+
+```
+pyPowerwall [0.15.6] - Get Powerwall settings using Local (v1r+wifi+control) mode.
+
+  Site               Cox Power Plant
+  Site ID            N/A
+  DIN                1707000-11-M--TG1234567890TB
+  Firmware           25.10.0
+  Mode               self_consumption
+  Reserve            20.0
+  Battery Level      64.2
+  Grid Status        UP
+  Grid               12
+  Home               5588.5
+  Battery            1613
+  Solar              3965
+  Grid Charging      True
+  Grid Export Mode   pv_only
+  Time Remaining     N/A
+```
+
+### `set` — Control Powerwall
+
+Accepts the same connection mode flags as `get`, plus control options:
+
+```bash
+# Set operating mode
+python -m pypowerwall set -mode self_consumption
+python -m pypowerwall set -mode backup
+python -m pypowerwall set -mode autonomous
+
+# Set battery reserve
+python -m pypowerwall set -reserve 20
+
+# Set reserve to current charge level
+python -m pypowerwall set -current
+
+# Grid charging and export
+python -m pypowerwall set -gridcharging on
+python -m pypowerwall set -gridcharging off
+python -m pypowerwall set -gridexport battery_ok
+python -m pypowerwall set -gridexport pv_only
+python -m pypowerwall set -gridexport never
+
+# Combine multiple settings in one call
+python -m pypowerwall set -mode self_consumption -reserve 20 -gridcharging off
+
+# Use a specific connection mode with set
+python -m pypowerwall set -v1r -host 10.42.1.40 -gw_pwd ABCDEXXXXX \
+    -rsa_key_path ./tedapi_rsa_private.pem -mode backup -reserve 100
+```
+
+### `scan` — Find Powerwall Gateways
+
+```bash
 # Scan Network for Powerwalls
 python -m pypowerwall scan
 ```
@@ -666,45 +772,16 @@ Scan local network for Tesla Powerwall Gateways
 
     Your network appears to be: 10.0.1.0/24
 
-    Enter Network or press enter to use 10.0.1.0/24: 
+    Enter Network or press enter to use 10.0.1.0/24:
 
     Running Scan...
       Host: 10.0.1.16 ... OPEN - Not a Powerwall
       Host: 10.0.1.26 ... OPEN - Not a Powerwall
       Host: 10.0.1.36 ... OPEN - Found Powerwall 1232100-00-E--TG123456789ABG
-      Done                           
+      Done
 
 Discovered 1 Powerwall Gateway
      10.0.1.36 [1232100-00-E--TG123456789ABG]
-```
-
-Get Power Levels, Operation Mode, and Battery Reserve Level
-
-```bash
-# Setup Connection with Tesla Cloud
-python -m pypowerwall setup
-
-# Get Power Levels, Operation Mode, and Battery Reserve Setting
-#
-# Usage: PyPowerwall get [-h] [-format FORMAT]
-#  -h, --help      show this help message and exit
-#  -format FORMAT  Output format: text, json, csv
-#
-python -m pypowerwall get
-python -m pypowerwall get -format json
-python -m pypowerwall get -format csv
-
-# Set Operation Mode and Battery Reserve Setting
-#
-# Usage: PyPowerwall set [-h] [-mode MODE] [-reserve RESERVE] [-current]
-#  -h, --help        show this help message and exit
-#  -mode MODE        Powerwall Mode: self_consumption, backup, or autonomous
-#  -reserve RESERVE  Set Battery Reserve Level [Default=20]
-#  -current          Set Battery Reserve Level to Current Charge
-#
-python -m pypowerwall set -mode self_consumption
-python -m pypowerwall set -reserve 30
-python -m pypowerwall set -current
 ```
 
 ## Example API Calls

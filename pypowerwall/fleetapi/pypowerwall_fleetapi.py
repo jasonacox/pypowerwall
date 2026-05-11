@@ -396,8 +396,12 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
         percentage_charged = self.fleet.battery_level(force=force) or 0
+        # battery_level() returns Tesla App scale (0–100% of usable capacity);
+        # convert to raw physical percentage so level(scale=False) returns the
+        # actual level and level(scale=True) correctly derives the app value.
+        soe = (percentage_charged + (5 / 0.95)) * 0.95
         data = {
-            "percentage": percentage_charged
+            "percentage": soe
         }
         return data
 

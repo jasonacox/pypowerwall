@@ -1,10 +1,24 @@
 # RELEASE NOTES
 
-## v0.15.6 - Reserve Percent Scaling Fix
+## v0.15.6 - Reserve Percent Scaling Fix + CLI Redesign
 
 * Fix: `set_operation()` reserve percent scaling — reverse Tesla App scaling (0–100%) to raw API scale (5–100%) only in TEDAPI v1r mode, avoiding incorrect round-trip values in cloud and FleetAPI modes
 * Fix: Correctly handle `level=0` in `set_reserve()` via `level is not None` check
 * Fix: Revert universal scaling from `set_operation()`; move raw conversion into `PyPowerwallTEDAPI.post_api_operation()` where it belongs
+* Fix: FleetAPI `get_api_system_status_soe()` was returning `battery_level()` (Tesla App-scaled, 0–100% usable) directly as the raw SOE percentage — missing the reverse-scaling applied by the cloud backend. This caused `level()` (default `scale=False`) to return the already-scaled app value instead of the physical percentage, making FleetAPI SOC appear ~2% lower than v1r/TEDAPI for the same battery. Fix: apply `soe = (percentage_charged + 5/0.95) * 0.95` to convert app scale → raw, matching the cloud backend.
+* Fix: `get` command now reports SOC using `level(scale=True)` — matching the Tesla app display (usable capacity, 0–100% of non-reserved energy) rather than the raw physical percentage including Tesla's 5% buffer reserve.
+* Fix: FleetAPI config validation in `Powerwall.__init__()` — changed `os.access(file, W_OK)` check (fails when file doesn't exist) to check directory writability when config file is absent, preventing spurious `PyPowerwallInvalidConfigurationParameter` on first-time setup
+* Feat: CLI (`python -m pypowerwall`) redesigned for consistency across all connection modes
+    * Replace string `-mode` flag on `get` (which clashed with `set -mode`) with explicit boolean connection flags: `-local`, `-cloud`, `-fleetapi`, `-tedapi`, `-v1r` — available on both `get` and `set`
+    * **Backward compat:** `get -mode <value>` still accepted with a deprecation warning; e.g. `get -mode v1r` behaves identically to `get -v1r`
+    * Add `-host`, `-password`, `-gw_pwd`, `-rsa_key_path` credential flags to `get` and `set` subcommands
+    * Add global `-debug` and `-authpath` flags (via shared parent parser) available to every subcommand
+    * `setup` subcommand now handles all auth flows: default/`-cloud` (Tesla Owners API), `-fleetapi` (Fleet API wizard), `-v1r` (RSA key registration) — replacing the now-deprecated `fleetapi` top-level command
+    * `get` output expanded: adds `firmware`, `grid_status`, and `time_remaining` fields; `None` values display as `N/A` in text/CSV output
+    * Pre-flight checks in `get` and `set`: if `-cloud` or `-fleetapi` is specified but the required config file is missing, a clear error message with setup instructions is printed before any connection attempt
+    * Connection check (`is_connected()`) now runs before the output banner — no partial output on failure
+    * `fleetapi` top-level command shows deprecation warning and points to `setup -fleetapi`; `login` command shows deprecation warning and exits
+* Docs: Update `README.md` CLI section — new command list with global flags, connection mode flag reference table, examples for all 5 connection modes, updated setup commands (`fleetapi` → `setup -fleetapi`, `setup -v1r`)
 * Release prep:
      * Bump library version to `0.15.6`
      * Update proxy pinned dependency to `pypowerwall==0.15.6`

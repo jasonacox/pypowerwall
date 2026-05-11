@@ -580,7 +580,7 @@ def owner_api_login(email=None, authpath="", force_reauth=False):
     return token
 
 
-def main():
+def main(authpath=""):
     print("=" * 70)
     print("  Tesla RSA Key Registration for Powerwall v1r LAN Mode")
     print("=" * 70)
@@ -624,7 +624,7 @@ def main():
         # ── Owner API path (default) ──────────────────────────────────────────
         email = None
         for attempt in range(2):
-            token = owner_api_login(email=email, force_reauth=(attempt > 0))
+            token = owner_api_login(email=email, authpath=authpath, force_reauth=(attempt > 0))
             try:
                 site_id, din = step3_get_site_id(token, OWNER_API_BASE)
                 break
