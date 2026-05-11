@@ -80,6 +80,9 @@ def _build_powerwall(args, authpath):
         if not args.gw_pwd:
             print("ERROR: -v1r requires -gw_pwd <gateway_password>")
             sys.exit(1)
+        if not args.host:
+            print("ERROR: -v1r requires -host <gateway_ip>")
+            sys.exit(1)
         rsa_key_path = args.rsa_key_path
         if not rsa_key_path:
             default_key = "tedapi_rsa_private.pem"
@@ -102,7 +105,8 @@ def _build_powerwall(args, authpath):
         if not args.gw_pwd:
             print("ERROR: -tedapi requires -gw_pwd <gateway_password>")
             sys.exit(1)
-        return pypowerwall.Powerwall(host=args.host or None, gw_pwd=args.gw_pwd, authpath=authpath)
+        host = args.host or "192.168.91.1"
+        return pypowerwall.Powerwall(host=host, gw_pwd=args.gw_pwd, authpath=authpath)
     if getattr(args, 'local', False):
         return pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
     if getattr(args, 'cloud', False):
@@ -274,7 +278,7 @@ def main():
     if command == 'setup':
         if args.v1r:
             from pypowerwall.v1r_register import main as fleet_register_main
-            fleet_register_main()
+            fleet_register_main(authpath=authpath)
             return
 
         if args.fleetapi:
@@ -469,6 +473,13 @@ def main():
     elif command == 'get':
         # Backward compat: deprecated 'get -mode <value>' → new boolean flag
         if getattr(args, 'legacy_mode', None):
+            # Check for conflict: boolean flag already set by user
+            boolean_flags = ['local', 'cloud', 'fleetapi', 'tedapi', 'v1r']
+            active_booleans = [f for f in boolean_flags if getattr(args, f, False)]
+            if active_booleans:
+                print(f"ERROR: Cannot use both -{active_booleans[0]} flag and deprecated -mode {args.legacy_mode}. "
+                      f"Use only the boolean flag (e.g. -{args.legacy_mode}).")
+                sys.exit(1)
             _legacy_mode_map = {
                 'local': 'local', 'cloud': 'cloud', 'fleetapi': 'fleetapi',
                 'tedapi': 'tedapi', 'v1r': 'v1r',

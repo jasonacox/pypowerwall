@@ -679,8 +679,8 @@ Returns settings and live power levels. Choose a connection mode or omit for aut
 | `-local` | Local Gateway API (PW2/+) | `-host`, `-password` |
 | `-cloud` | Tesla Cloud (Owners API) | prior `setup` |
 | `-fleetapi` | Tesla Fleet API | prior `setup -fleetapi` |
-| `-tedapi` | TEDAPI Wi-Fi | `-gw_pwd` |
-| `-v1r` | v1r LAN TEDAPI (PW3) | `-gw_pwd`, RSA key |
+| `-tedapi` | TEDAPI Wi-Fi | `-gw_pwd` (host defaults to `192.168.91.1`) |
+| `-v1r` | v1r LAN TEDAPI (PW3) | `-host`, `-gw_pwd`, RSA key |
 
 ```bash
 # Auto-select (uses available config/credentials)
