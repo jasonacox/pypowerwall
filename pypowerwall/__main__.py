@@ -504,7 +504,7 @@ def main():
             'firmware': pw.version(),
             'mode': pw.get_mode(),
             'reserve': pw.get_reserve(),
-            'soc': pw.level(),
+            'soc': pw.level(scale=True),
             'grid_status': pw.grid_status(),
             'grid': pw.grid(),
             'home': pw.home(),
@@ -522,9 +522,14 @@ def main():
             values = ",".join("N/A" if v is None else str(v) for v in output.values())
             print(values)
         else:
-            # Table Output
+            # Table Output — override display labels for terse keys
+            _labels = {
+                'site_id': 'Site ID',
+                'din': 'DIN',
+                'soc': 'Battery Level',
+            }
             for item in output:
-                name = item.replace("_", " ").title()
+                name = _labels.get(item, item.replace("_", " ").title())
                 value = output[item]
                 print("  {:<18}{}".format(name, "N/A" if value is None else value))
             print("")

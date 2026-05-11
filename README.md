@@ -711,12 +711,12 @@ Example output (`-format text`, the default):
 pyPowerwall [0.15.6] - Get Powerwall settings using Local (v1r+wifi+control) mode.
 
   Site               Cox Power Plant
-  Site Id            N/A
-  Din                1707000-11-M--TG1234567890TB
+  Site ID            N/A
+  DIN                1707000-11-M--TG1234567890TB
   Firmware           25.10.0
   Mode               self_consumption
   Reserve            20.0
-  Soc                87.5
+  Battery Level      64.2
   Grid Status        UP
   Grid               12
   Home               5588.5
