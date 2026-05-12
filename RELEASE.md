@@ -4,7 +4,7 @@
 
 * Feat: Add `PW_SITE_ZERO_THRESHOLD` environment variable to suppress phantom grid noise readings
   * When set to a positive integer value (in watts), site power readings with absolute value at or below the threshold are reported as 0
-  * Applies to `/api/meters/aggregates` site power, `/vitals` grid power, and CSV/grid power endpoints
+  * Applies to `/api/meters/aggregates` site power, `/csv`/`/csv/v2` grid power, and `/json` grid power endpoints
   * Useful for off-grid and night-time scenarios where sensor noise causes small non-zero grid readings (e.g. 5–15W phantom draw)
   * Default is `0` (disabled — no suppression)
 * Proxy build t89

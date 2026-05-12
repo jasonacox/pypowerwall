@@ -189,7 +189,11 @@ gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
-site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
+try:
+    site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
+except (ValueError, TypeError):
+    log("WARNING: PW_SITE_ZERO_THRESHOLD must be an integer, defaulting to 0")
+    site_zero_threshold = 0
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
 )  # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
@@ -1186,11 +1190,13 @@ class Handler(BaseHTTPRequestHandler):
                         aggregates = None
 
                 # Apply site zero threshold - suppress phantom grid noise
+                # Pass through None values — they indicate a data gap, not zero
                 if (
                     site_zero_threshold > 0
                     and aggregates
                     and "site" in aggregates
                     and "instant_power" in aggregates["site"]
+                    and aggregates["site"]["instant_power"] is not None
                     and abs(aggregates["site"]["instant_power"]) <= site_zero_threshold
                 ):
                     aggregates["site"]["instant_power"] = 0
@@ -1261,7 +1267,8 @@ class Handler(BaseHTTPRequestHandler):
                     solar = 0
 
                 # Apply site zero threshold - suppress phantom grid noise
-                if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
+                # Pass through None values — they indicate a data gap, not zero
+                if site_zero_threshold > 0 and grid is not None and abs(grid) <= site_zero_threshold:
                     grid = 0
 
                 # Get battery level - poll() handles caching internally
@@ -1758,7 +1765,8 @@ class Handler(BaseHTTPRequestHandler):
                     solar = 0
 
                 # Apply site zero threshold - suppress phantom grid noise
-                if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
+                # Pass through None values — they indicate a data gap, not zero
+                if site_zero_threshold > 0 and grid is not None and abs(grid) <= site_zero_threshold:
                     grid = 0
 
                 # Get remaining data
