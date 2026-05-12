@@ -189,6 +189,7 @@ gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
+site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
 )  # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
@@ -259,6 +260,7 @@ proxystats = {
         "PW_RSA_KEY_PATH": rsa_key_path,
         "PW_WIFI_HOST": wifi_host,
         "PW_NEG_SOLAR": neg_solar,
+        "PW_SITE_ZERO_THRESHOLD": site_zero_threshold,
         "PW_SUPPRESS_NETWORK_ERRORS": suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": network_error_rate_limit,
         "PW_FAIL_FAST": fail_fast_mode,
@@ -1183,6 +1185,16 @@ class Handler(BaseHTTPRequestHandler):
                     except (json.JSONDecodeError, TypeError):
                         aggregates = None
 
+                # Apply site zero threshold - suppress phantom grid noise
+                if (
+                    site_zero_threshold > 0
+                    and aggregates
+                    and "site" in aggregates
+                    and "instant_power" in aggregates["site"]
+                    and abs(aggregates["site"]["instant_power"]) <= site_zero_threshold
+                ):
+                    aggregates["site"]["instant_power"] = 0
+
                 if aggregates and not neg_solar and "solar" in aggregates:
                     solar = aggregates["solar"]
                     if solar and "instant_power" in solar and solar["instant_power"] < 0:
@@ -1247,7 +1259,11 @@ class Handler(BaseHTTPRequestHandler):
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
-                
+
+                # Apply site zero threshold - suppress phantom grid noise
+                if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
+                    grid = 0
+
                 # Get battery level - poll() handles caching internally
                 batterylevel = safe_pw_call(pw.level) or 0
                 
@@ -1740,7 +1756,11 @@ class Handler(BaseHTTPRequestHandler):
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
-                
+
+                # Apply site zero threshold - suppress phantom grid noise
+                if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
+                    grid = 0
+
                 # Get remaining data
                 d = safe_pw_call(pw.system_status) or {}
                 values = {
