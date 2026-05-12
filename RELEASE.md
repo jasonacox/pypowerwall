@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.15.7 - Site Zero Threshold (Phantom Grid Noise Suppression)
+
+* Feat: Add `PW_SITE_ZERO_THRESHOLD` environment variable to suppress phantom grid noise readings
+  * When set to a positive integer value (in watts), site power readings with absolute value at or below the threshold are reported as 0
+  * Applies to `/api/meters/aggregates` site power, `/vitals` grid power, and CSV/grid power endpoints
+  * Useful for off-grid and night-time scenarios where sensor noise causes small non-zero grid readings (e.g. 5–15W phantom draw)
+  * Default is `0` (disabled — no suppression)
+* Proxy build t89
+
 ## v0.15.6 - Reserve Percent Scaling Fix + CLI Redesign
 
 * Fix: `set_operation()` reserve percent scaling — reverse Tesla App scaling (0–100%) to raw API scale (5–100%) only in TEDAPI v1r mode, avoiding incorrect round-trip values in cloud and FleetAPI modes
