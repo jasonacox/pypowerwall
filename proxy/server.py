@@ -192,7 +192,7 @@ neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 try:
     site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
 except (ValueError, TypeError):
-    log("WARNING: PW_SITE_ZERO_THRESHOLD must be an integer, defaulting to 0")
+    print(f"WARNING: PW_SITE_ZERO_THRESHOLD must be an integer, defaulting to 0")
     site_zero_threshold = 0
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
