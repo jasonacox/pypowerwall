@@ -498,11 +498,11 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
 
 def owner_api_login(email=None, authpath="", force_reauth=False):
     """
-    Authenticate with the Tesla Owner API using teslapy.
+    Authenticate with the Tesla Owner API using tesla_auth.
 
-    This is the same login flow as 'python -m pypowerwall setup' (Cloud Mode).
-    No developer app or hosted key is required — just your Tesla account
-    email and password.
+    Uses the same native WebView PKCE flow as cloud mode setup
+    ('python -m pypowerwall setup'). The tesla:// callback is intercepted
+    by the WebView — no browser redirect issues.
 
     Args:
         email:        Tesla account email (prompted if not provided).
@@ -511,7 +511,7 @@ def owner_api_login(email=None, authpath="", force_reauth=False):
 
     Returns the Bearer access token string on success.
     """
-    from pypowerwall.cloud.teslapy import Tesla
+    from pypowerwall.tesla_auth import login as tesla_login, save_token, _refresh_access_token
 
     authfile = os.path.join(authpath, OWNER_AUTHFILE) if authpath else OWNER_AUTHFILE
 
@@ -531,53 +531,77 @@ def owner_api_login(email=None, authpath="", force_reauth=False):
         print("  No developer app setup required.")
         print()
 
-    if not email:
-        while True:
-            email = input("  Tesla account email: ").strip()
-            if "@" in email:
-                break
-            print("  Invalid email address, please try again.")
-
-    tesla = Tesla(email, cache_file=authfile)
-
-    if tesla.authorized and not force_reauth:
-        print(f"  Using cached credentials from {authfile}")
-    else:
-        # PKCE OAuth flow — mirrors PyPowerwallCloud.setup()
-        state = tesla.new_state()
-        code_verifier = tesla.new_code_verifier()
-
+    # Check for existing cached credentials
+    if os.path.exists(authfile) and not force_reauth:
         try:
-            auth_url = tesla.authorization_url(state=state, code_verifier=code_verifier)
+            with open(authfile) as f:
+                cache = json.load(f)
+            cached_email = list(cache.keys())[0] if cache else None
+            if cached_email:
+                sso = cache[cached_email].get("sso", {})
+                access_token = sso.get("access_token")
+                refresh_token = sso.get("refresh_token")
+                expires_at = sso.get("expires_at", 0)
+
+                # Try to use cached access token if not expired
+                import time as _time
+                if access_token and expires_at > _time.time() + 300:
+                    print(f"  Using cached credentials from {authfile}")
+                    return access_token
+
+                # Try refresh token
+                if refresh_token:
+                    print(f"  Cached token expired, refreshing...")
+                    try:
+                        new_data = _refresh_access_token(refresh_token)
+                        access_token = new_data.get("access_token", access_token)
+                        # Update cache
+                        sso.update(new_data)
+                        sso["expires_at"] = int(_time.time() + new_data.get("expires_in", 28800))
+                        cache[cached_email]["sso"] = sso
+                        with open(authfile, "w") as f:
+                            json.dump(cache, f, indent=2)
+                        os.chmod(authfile, 0o600)
+                        print(f"  Token refreshed successfully.")
+                        return access_token
+                    except Exception as e:
+                        print(f"  Token refresh failed ({e}), requesting new login...")
         except Exception as e:
-            print(f"\n  ERROR: Could not generate login URL — {e}")
-            sys.exit(1)
+            print(f"  Could not read cached credentials: {e}")
 
-        print("  Open this URL in your browser to log in to your Tesla account:")
-        print()
-        print(f"  {auth_url}")
-        print()
-        print("  After logging in, you will be redirected to a 'Page Not Found' page.")
-        print("  Copy the FULL URL from your browser's address bar and paste it below.")
-        print()
+    # Native WebView login — same as cloud mode setup
+    refresh_token, detected_email, token_data = tesla_login(
+        email=email,
+        headless=False,
+        debug=False,
+    )
 
-        tesla.close()
-        tesla = Tesla(email, state=state, code_verifier=code_verifier, cache_file=authfile)
+    actual_email = detected_email or email
+    if not actual_email:
+        actual_email = input("  Tesla account email: ").strip()
 
-        if not tesla.authorized:
-            try:
-                tesla.fetch_token(authorization_response=input("  Paste the redirect URL: ").strip())
-            except Exception as e:
-                print(f"\n  ERROR: Login failed — {e}")
-                sys.exit(1)
+    # Save to auth file in teslapy-compatible format
+    if not token_data:
+        token_data = {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800}
 
-        print(f"\n  Login successful, credentials cached to {authfile}")
+    save_token(token_data, path=authfile, email=actual_email)
 
-    token = (tesla.token or {}).get("access_token")
-    if not token:
+    # Read back the access token from the saved file
+    try:
+        with open(authfile) as f:
+            cache = json.load(f)
+        access_token = cache[actual_email]["sso"]["access_token"]
+    except Exception:
+        # Fallback: refresh the token we just got to get an access token
+        new_data = _refresh_access_token(refresh_token)
+        access_token = new_data.get("access_token")
+
+    if not access_token:
         print("  ERROR: Could not retrieve access token.")
         sys.exit(1)
-    return token
+
+    print(f"\n  Login successful, credentials cached to {authfile}")
+    return access_token
 
 
 def main(authpath=""):
