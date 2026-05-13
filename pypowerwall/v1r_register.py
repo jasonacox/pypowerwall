@@ -536,7 +536,14 @@ def owner_api_login(email=None, authpath="", force_reauth=False):
         try:
             with open(authfile) as f:
                 cache = json.load(f)
-            cached_email = list(cache.keys())[0] if cache else None
+            # Select cached account matching the requested email, or
+            # fall back to the first cached account when no email specified
+            if email and email in cache:
+                cached_email = email
+            elif cache:
+                cached_email = list(cache.keys())[0]
+            else:
+                cached_email = None
             if cached_email:
                 sso = cache[cached_email].get("sso", {})
                 access_token = sso.get("access_token")

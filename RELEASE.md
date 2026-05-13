@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## v0.15.7 - v1r Owner API Login Fix
+
+* Fix: v1r Owner API registration (`python -m pypowerwall setup -v1r` → option 1) now uses the native `tesla_auth` WebView PKCE flow instead of the broken `teslapy` browser redirect. The `tesla://` custom URL scheme callback is intercepted by the WebView, eliminating the "missing_code" login failure (#300, reported in discussion #299)
+* Fix: Cached token lookup in `owner_api_login()` now selects the account matching the requested `email` argument instead of always using the first entry in `.pypowerwall.auth`
+* Bump library version to `0.15.7`
+
 ## v0.15.6 - Reserve Percent Scaling Fix + CLI Redesign
 
 * Fix: `set_operation()` reserve percent scaling — reverse Tesla App scaling (0–100%) to raw API scale (5–100%) only in TEDAPI v1r mode, avoiding incorrect round-trip values in cloud and FleetAPI modes
