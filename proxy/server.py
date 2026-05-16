@@ -1242,6 +1242,7 @@ class Handler(BaseHTTPRequestHandler):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
+            # None values are treated as 0 in CSV output (use JSON endpoints to see data gaps as nulls)
             contenttype = "text/plain; charset=utf-8"
 
             # Determine endpoint and whether to include headers
@@ -1258,17 +1259,17 @@ class Handler(BaseHTTPRequestHandler):
                     battery = aggregates.get('battery', {}).get('instant_power', 0)
                     home = aggregates.get('load', {}).get('instant_power', 0)
                 else:
-                    grid = solar = battery = home = None
+                    grid = solar = battery = home = 0
                 
                 # Apply negative solar correction if configured
-                if not neg_solar and solar is not None and solar < 0:
+                if not neg_solar and solar < 0:
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
 
                 # Apply site zero threshold - suppress phantom grid noise
                 # Pass through None values — they indicate a data gap, not zero
-                if site_zero_threshold > 0 and grid is not None and abs(grid) <= site_zero_threshold:
+                if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
                     grid = 0
 
                 # Convert None to 0 for output (None = data gap, output as 0)
