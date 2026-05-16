@@ -1271,12 +1271,14 @@ class Handler(BaseHTTPRequestHandler):
                 if site_zero_threshold > 0 and grid is not None and abs(grid) <= site_zero_threshold:
                     grid = 0
 
+                # Convert None to 0 for output (None = data gap, output as 0)
+                grid = grid or 0
+                solar = solar or 0
+                battery = battery or 0
+                home = home or 0
+
                 # Get battery level - poll() handles caching internally
                 batterylevel = safe_pw_call(pw.level) or 0
-
-                # If data fetch failed, return None to indicate a gap
-                if grid is None:
-                    return None
 
                 if is_v2:
                     # Get grid status and reserve - these use cached data internally
@@ -1772,6 +1774,12 @@ class Handler(BaseHTTPRequestHandler):
                 # Pass through None values — they indicate a data gap, not zero
                 if site_zero_threshold > 0 and grid is not None and abs(grid) <= site_zero_threshold:
                     grid = 0
+
+                # Convert None to 0 for output (None = data gap, output as 0)
+                grid = grid or 0
+                solar = solar or 0
+                battery = battery or 0
+                home = home or 0
 
                 # Get remaining data
                 d = safe_pw_call(pw.system_status) or {}
