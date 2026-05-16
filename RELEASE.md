@@ -8,6 +8,7 @@
   * Useful for off-grid and night-time scenarios where sensor noise causes small non-zero grid readings (e.g. 5–15W phantom draw)
   * Default is `0` (disabled — no suppression)
 * Proxy build t89
+* For /json endpoint, None values are now preserved. Previously, the proxy converted None to 0 for numeric fields, which could cause confusion when distinguishing between true zero values and missing data. Now, if a field is None in the underlying API response, it will be returned as None in the /json output, allowing clients to handle missing data appropriately. The /csv and /csv/v2 endpoints continue to convert None to 0 for numeric fields to maintain consistent numeric output.
 * Fix: v1r Owner API registration (`python -m pypowerwall setup -v1r` → option 1) now uses the native `tesla_auth` WebView PKCE flow instead of the broken `teslapy` browser redirect. The `tesla://` custom URL scheme callback is intercepted by the WebView, eliminating the "missing_code" login failure (#300, reported in discussion #299)
 * Fix: Cached token lookup in `owner_api_login()` now selects the account matching the requested `email` argument instead of always using the first entry in `.pypowerwall.auth`
 * Bump library version to `0.15.7`
