@@ -2,6 +2,10 @@
 
 ## v0.15.7 - Grid Noise Suppression and v1r Owner API Login Fix
 
+* Docs: Document Tesla cloud/FleetAPI 80% backup reserve limit
+     * Added warning in README and CLI examples for `set -reserve` when using cloud or FleetAPI mode
+     * CLI now prints a WARNING when attempting to set reserve above 80% in cloud/FleetAPI mode, and a NOTE if Tesla caps the actual value
+     * Added v1r LAN mode example showing how to set reserve above 80%
 * Feat: Add `PW_SITE_ZERO_THRESHOLD` environment variable to suppress phantom grid noise readings
   * When set to a positive integer value (in watts), site power readings with absolute value at or below the threshold are reported as 0
   * Applies to `/api/meters/aggregates` site power, `/csv`/`/csv/v2` grid power, and `/json` grid power endpoints

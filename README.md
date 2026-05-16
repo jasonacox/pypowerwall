@@ -346,9 +346,9 @@ Supported control operations:
 | Control | Method | Values |
 |---------|--------|--------|
 | Backup reserve | `set_reserve(level)` | 0-100 (percentage) |
+| Operation mode | `set_mode(mode)` | `self_consumption`, `backup` |
 
 > **Cloud/FleetAPI Reserve Limit:** Tesla's cloud APIs enforce a maximum backup reserve of 80%. If you need to set the reserve above 80% (e.g., for a full charge before an outage), use the v1r LAN mode shown below. The `set` CLI will print a warning when you attempt to exceed 80% in cloud or FleetAPI mode.
-| Operation mode | `set_mode(mode)` | `self_consumption`, `backup` |
 | Grid charging | `set_grid_charging(enable)` | `True` / `False` |
 | Grid export | `set_grid_export(mode)` | `battery_ok`, `pv_only`, `never` |
 
