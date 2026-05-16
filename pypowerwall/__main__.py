@@ -448,12 +448,28 @@ def main():
             pw.set_mode(mode)
         if args.reserve != -1:
             reserve = args.reserve
+            if reserve > 80 and pw.mode in ('cloud', 'fleetapi'):
+                print(f"WARNING: Tesla cloud/FleetAPI limits backup reserve to 80%% max. "
+                      f"Requesting {reserve}%% but Tesla may cap it at 80%%. "
+                      f"Use TEDAPI v1r mode (-v1r) to set reserve above 80%%.")
             print("Setting Powerwall Reserve to %s" % reserve)
-            pw.set_reserve(reserve)
+            result = pw.set_reserve(reserve)
+            if reserve > 80 and pw.mode in ('cloud', 'fleetapi'):
+                actual = pw.get_reserve()
+                if actual is not None and actual <= 80:
+                    print(f"NOTE: Tesla capped reserve at {actual}% instead of {reserve}%.")
         if args.current:
             current = float(pw.level())
+            if current > 80 and pw.mode in ('cloud', 'fleetapi'):
+                print(f"WARNING: Tesla cloud/FleetAPI limits backup reserve to 80% max. "
+                      f"Current charge is {current:.0f}% but Tesla may cap reserve at 80%. "
+                      f"Use TEDAPI v1r mode (-v1r) to set reserve above 80%.")
             print("Setting Powerwall Reserve to Current Charge Level %s" % current)
-            pw.set_reserve(current)
+            result = pw.set_reserve(current)
+            if current > 80 and pw.mode in ('cloud', 'fleetapi'):
+                actual = pw.get_reserve()
+                if actual is not None and actual <= 80:
+                    print(f"NOTE: Tesla capped reserve at {actual}% instead of {current:.0f}%.")
         if args.gridcharging:
             gridcharging = args.gridcharging.lower()
             if gridcharging not in ['on', 'off']:
