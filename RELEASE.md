@@ -1,6 +1,6 @@
 # RELEASE NOTES
 
-## v0.15.7 - Site Zero Threshold (Phantom Grid Noise Suppression)
+## v0.15.7 - Grid Noise Suppression and v1r Owner API Login Fix
 
 * Feat: Add `PW_SITE_ZERO_THRESHOLD` environment variable to suppress phantom grid noise readings
   * When set to a positive integer value (in watts), site power readings with absolute value at or below the threshold are reported as 0
@@ -8,6 +8,9 @@
   * Useful for off-grid and night-time scenarios where sensor noise causes small non-zero grid readings (e.g. 5–15W phantom draw)
   * Default is `0` (disabled — no suppression)
 * Proxy build t89
+* Fix: v1r Owner API registration (`python -m pypowerwall setup -v1r` → option 1) now uses the native `tesla_auth` WebView PKCE flow instead of the broken `teslapy` browser redirect. The `tesla://` custom URL scheme callback is intercepted by the WebView, eliminating the "missing_code" login failure (#300, reported in discussion #299)
+* Fix: Cached token lookup in `owner_api_login()` now selects the account matching the requested `email` argument instead of always using the first entry in `.pypowerwall.auth`
+* Bump library version to `0.15.7`
 
 ## v0.15.6 - Reserve Percent Scaling Fix + CLI Redesign
 
