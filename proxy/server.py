@@ -128,7 +128,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t88"
+BUILD = "t89"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -189,6 +189,11 @@ gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
+try:
+    site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
+except (ValueError, TypeError):
+    print(f"WARNING: PW_SITE_ZERO_THRESHOLD must be an integer, defaulting to 0")
+    site_zero_threshold = 0
 api_base_url = os.getenv(
     "PROXY_BASE_URL", "/"
 )  # Prefix for public API calls, e.g. if you have everything behind a reverse proxy
@@ -259,6 +264,7 @@ proxystats = {
         "PW_RSA_KEY_PATH": rsa_key_path,
         "PW_WIFI_HOST": wifi_host,
         "PW_NEG_SOLAR": neg_solar,
+        "PW_SITE_ZERO_THRESHOLD": site_zero_threshold,
         "PW_SUPPRESS_NETWORK_ERRORS": suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": network_error_rate_limit,
         "PW_FAIL_FAST": fail_fast_mode,
@@ -488,20 +494,20 @@ def get_performance_cached(cache_key):
     """
     Get cached endpoint response for performance optimization.
     Uses standard cache_expire TTL (typically 5 seconds).
-    
+
     Args:
         cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
-    
+
     Returns:
         Cached response string if available and fresh, None otherwise
     """
     with _performance_cache_lock:
         if cache_key not in _performance_cache:
             return None
-        
+
         data, timestamp = _performance_cache[cache_key]
         age = time.time() - timestamp
-        
+
         # Use standard cache_expire (same as pypowerwall's internal cache)
         if age < cache_expire:
             log.debug(f"Performance cache hit for {cache_key} (age: {age:.2f}s)")
@@ -514,7 +520,7 @@ def get_performance_cached(cache_key):
 def cache_performance_response(cache_key, data):
     """
     Cache endpoint response for performance optimization.
-    
+
     Args:
         cache_key: The cache key (e.g., '/csv/v2', '/json', '/freq', '/pod')
         data: The response string to cache
@@ -527,10 +533,10 @@ def cache_performance_response(cache_key, data):
 def performance_cached(cache_key):
     """
     Decorator for performance caching of route handlers.
-    
+
     Args:
         cache_key: The cache key to use (e.g., '/vitals', '/strings', '/freq')
-    
+
     Returns:
         Decorator function that wraps route handlers with caching logic
     """
@@ -540,16 +546,16 @@ def performance_cached(cache_key):
             cached_response = get_performance_cached(cache_key)
             if cached_response is not None:
                 return cached_response
-            
+
             # Cache miss - generate fresh data
             result = func(*args, **kwargs)
-            
+
             # Only cache non-None results
             if result is not None:
                 cache_performance_response(cache_key, result)
-            
+
             return result
-        
+
         return wrapper
     return decorator
 
@@ -557,11 +563,11 @@ def performance_cached(cache_key):
 def cached_route_handler(cache_key, data_generator):
     """
     Helper function for performance-cached route handling.
-    
+
     Args:
         cache_key: The cache key to use for this route
         data_generator: Function that generates the response data
-    
+
     Returns:
         Cached response if available, otherwise fresh data (and caches it)
     """
@@ -569,14 +575,14 @@ def cached_route_handler(cache_key, data_generator):
     cached_response = get_performance_cached(cache_key)
     if cached_response is not None:
         return cached_response
-    
+
     # Cache miss - generate fresh data
     result = data_generator()
-    
+
     # Only cache non-None results
     if result is not None:
         cache_performance_response(cache_key, result)
-    
+
     return result
 
 
@@ -1183,6 +1189,18 @@ class Handler(BaseHTTPRequestHandler):
                     except (json.JSONDecodeError, TypeError):
                         aggregates = None
 
+                # Apply site zero threshold - suppress phantom grid noise
+                # Pass through None values - they indicate a data gap, not zero
+                if (
+                    site_zero_threshold > 0
+                    and aggregates
+                    and "site" in aggregates
+                    and "instant_power" in aggregates["site"]
+                    and aggregates["site"]["instant_power"] is not None
+                    and abs(aggregates["site"]["instant_power"]) <= site_zero_threshold
+                ):
+                    aggregates["site"]["instant_power"] = 0
+
                 if aggregates and not neg_solar and "solar" in aggregates:
                     solar = aggregates["solar"]
                     if solar and "instant_power" in solar and solar["instant_power"] < 0:
@@ -1224,13 +1242,14 @@ class Handler(BaseHTTPRequestHandler):
             # CSV Output - Grid,Home,Solar,Battery,Level
             # CSV2 Output - Grid,Home,Solar,Battery,Level,GridStatus,Reserve
             # Add ?headers to include CSV headers, e.g. http://localhost:8675/csv?headers
+            # None values are treated as 0 in CSV output (use JSON endpoints to see data gaps as nulls)
             contenttype = "text/plain; charset=utf-8"
-            
+
             # Determine endpoint and whether to include headers
             is_v2 = request_path.startswith("/csv/v2")
             include_headers = "headers" in request_path
             cache_key = f"/csv/v2{'_headers' if include_headers else ''}" if is_v2 else f"/csv{'_headers' if include_headers else ''}"
-            
+
             def generate_csv():
                 # Optimization: Use single aggregates call for all power values
                 aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
@@ -1247,15 +1266,26 @@ class Handler(BaseHTTPRequestHandler):
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
-                
+
+                # Apply site zero threshold - suppress phantom grid noise
+                # Pass through None values — they indicate a data gap, not zero
+                if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
+                    grid = 0
+
+                # Convert None to 0 for output (None = data gap, output as 0)
+                grid = grid or 0
+                solar = solar or 0
+                battery = battery or 0
+                home = home or 0
+
                 # Get battery level - poll() handles caching internally
                 batterylevel = safe_pw_call(pw.level) or 0
-                
+
                 if is_v2:
                     # Get grid status and reserve - these use cached data internally
                     gridstatus = 1 if safe_pw_call(pw.grid_status) == "UP" else 0
                     reserve = safe_pw_call(pw.get_reserve) or 0
-                
+
                 # Build CSV response
                 if is_v2:
                     result = ""
@@ -1284,7 +1314,7 @@ class Handler(BaseHTTPRequestHandler):
                         batterylevel,
                     )
                 return result
-            
+
             message = cached_route_handler(cache_key, generate_csv)
         elif request_path == "/vitals":
             # Vitals Data - JSON
@@ -1337,7 +1367,7 @@ class Handler(BaseHTTPRequestHandler):
                     proxystats["mem_cache"]["error_counts"] = {
                         "entries": len(_error_counts),
                         "size_bytes": sys.getsizeof(_error_counts) + sum(
-                            sys.getsizeof(k) + sys.getsizeof(v) 
+                            sys.getsizeof(k) + sys.getsizeof(v)
                             for k, v in _error_counts.items()
                         ),
                     }
@@ -1345,7 +1375,7 @@ class Handler(BaseHTTPRequestHandler):
                         "entries": len(_network_error_summary),
                         "size_bytes": sys.getsizeof(_network_error_summary) + sum(
                             sys.getsizeof(k) + sys.getsizeof(v) + sum(
-                                sys.getsizeof(ek) + sys.getsizeof(ev) 
+                                sys.getsizeof(ek) + sys.getsizeof(ev)
                                 for ek, ev in v.items()
                             ) for k, v in _network_error_summary.items()
                         ),
@@ -1374,7 +1404,7 @@ class Handler(BaseHTTPRequestHandler):
                         "entries": len(_endpoint_stats),
                         "size_bytes": sys.getsizeof(_endpoint_stats) + sum(
                             sys.getsizeof(k) + sys.getsizeof(v) + sum(
-                                sys.getsizeof(ek) + sys.getsizeof(ev) 
+                                sys.getsizeof(ek) + sys.getsizeof(ev)
                                 for ek, ev in v.items()
                             ) for k, v in _endpoint_stats.items()
                         ),
@@ -1539,7 +1569,7 @@ class Handler(BaseHTTPRequestHandler):
                         pwtemp[key] = temps[i]
                         idx = idx + 1
                 return json.dumps(pwtemp)
-            
+
             message = cached_route_handler("/temps/pw", generate_temps_pw)
         elif request_path == "/alerts":
             # Alerts
@@ -1555,7 +1585,7 @@ class Handler(BaseHTTPRequestHandler):
                     for alert in alerts:
                         pwalerts[alert] = 1
                     return json.dumps(pwalerts) or json.dumps({})
-            
+
             message = cached_route_handler("/alerts/pw", generate_alerts_pw)
         elif request_path == "/freq":
             # Frequency, Current, Voltage and Grid Status
@@ -1601,7 +1631,7 @@ class Handler(BaseHTTPRequestHandler):
                                 fcv[i] = d[i]
                 fcv["grid_status"] = safe_pw_call(pw.grid_status, "numeric")
                 return json.dumps(fcv)
-            
+
             message = cached_route_handler("/freq", generate_freq)
         elif request_path == "/pod":
             # Powerwall Battery Data
@@ -1720,7 +1750,7 @@ class Handler(BaseHTTPRequestHandler):
                 pod["time_remaining_hours"] = safe_pw_call(pw.get_time_remaining)
                 pod["backup_reserve_percent"] = safe_pw_call(pw.get_reserve)
                 return json.dumps(pod)
-            
+
             message = cached_route_handler("/pod", generate_pod)
         elif request_path == "/json":
             # JSON - Grid,Home,Solar,Battery,Level,GridStatus,Reserve,TimeRemaining,FullEnergy,RemainingEnergy,Strings
@@ -1733,14 +1763,25 @@ class Handler(BaseHTTPRequestHandler):
                     battery = aggregates.get('battery', {}).get('instant_power', 0)
                     home = aggregates.get('load', {}).get('instant_power', 0)
                 else:
-                    grid = solar = battery = home = 0
-                
+                    grid = solar = battery = home = None
+
                 # Apply negative solar correction if configured
-                if not neg_solar and solar < 0:
+                if not neg_solar and solar is not None and solar < 0:
                     # Shift energy from solar to load
                     home -= solar
                     solar = 0
-                
+
+                # Apply site zero threshold - suppress phantom grid noise
+                # Pass through None values — they indicate a data gap, not zero
+                if site_zero_threshold > 0 and grid is not None and abs(grid) <= site_zero_threshold:
+                    grid = 0
+
+                # Convert None to 0 for output (None = data gap, output as 0)
+                grid = grid or 0
+                solar = solar or 0
+                battery = battery or 0
+                home = home or 0
+
                 # Get remaining data
                 d = safe_pw_call(pw.system_status) or {}
                 values = {
@@ -1757,7 +1798,7 @@ class Handler(BaseHTTPRequestHandler):
                     "strings": safe_pw_call(pw.strings, jsonformat=False) or {},
                 }
                 return json.dumps(values)
-            
+
             message = cached_route_handler("/json", generate_json)
         elif request_path == "/version":
             # Firmware Version
