@@ -347,6 +347,8 @@ Supported control operations:
 |---------|--------|--------|
 | Backup reserve | `set_reserve(level)` | 0-100 (percentage) |
 | Operation mode | `set_mode(mode)` | `self_consumption`, `backup` |
+
+> **Cloud/FleetAPI Reserve Limit:** Tesla's cloud APIs enforce a maximum backup reserve of 80%. If you need to set the reserve above 80% (e.g., for a full charge before an outage), use the v1r LAN mode shown below. The `set` CLI will print a warning when you attempt to exceed 80% in cloud or FleetAPI mode.
 | Grid charging | `set_grid_charging(enable)` | `True` / `False` |
 | Grid export | `set_grid_export(mode)` | `battery_ok`, `pv_only`, `never` |
 
@@ -597,7 +599,7 @@ print("System Status: %r\n" % pw.system_status())
     is_connected()            # Returns True if able to connect and login to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
     get_mode()                # Get Current Battery Operation Mode
-    set_reserve(level)        # Set Battery Reserve Percentage
+    set_reserve(level)        # Set Battery Reserve Percentage (cloud/FleetAPI max 80% - use v1r for higher)
     set_mode(mode)            # Set Current Battery Operation Mode
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
@@ -742,6 +744,11 @@ python -m pypowerwall set -reserve 20
 
 # Set reserve to current charge level
 python -m pypowerwall set -current
+
+# ⚠️ Cloud and FleetAPI modes limit backup reserve to 80% max.
+# To set reserve above 80%, use v1r LAN mode:
+python -m pypowerwall set -v1r -host 10.42.1.40 -gw_pwd ABCDEXXXXX \
+    -rsa_key_path ./tedapi_rsa_private.pem -reserve 100
 
 # Grid charging and export
 python -m pypowerwall set -gridcharging on
