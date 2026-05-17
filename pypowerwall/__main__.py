@@ -455,7 +455,7 @@ def main():
             print("Setting Powerwall Reserve to %s" % reserve)
             pw.set_reserve(reserve)
             if reserve > 80 and pw.mode in ('cloud', 'fleetapi'):
-                actual = pw.get_reserve(scale=False, force=True)
+                actual = pw.get_reserve(scale=True, force=True)
                 if actual is not None and actual <= 80:
                     print(f"NOTE: Tesla capped reserve at {actual}% instead of {reserve}%.")
         if args.current:
@@ -467,7 +467,7 @@ def main():
             print("Setting Powerwall Reserve to Current Charge Level %s" % current)
             pw.set_reserve(current)
             if current > 80 and pw.mode in ('cloud', 'fleetapi'):
-                actual = pw.get_reserve(scale=False, force=True)
+                actual = pw.get_reserve(scale=True, force=True)
                 if actual is not None and actual <= 80:
                     print(f"NOTE: Tesla capped reserve at {actual}% instead of {current:.0f}%.")
         if args.gridcharging:
