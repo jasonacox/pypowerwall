@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## v0.15.8 - authpath Support for v1r Setup Files
+
+* Fix: `python -m pypowerwall setup -v1r -authpath <dir>` now correctly writes all generated files into the specified directory instead of the current working directory
+  * `tedapi_rsa_private.pem` and `tedapi_rsa_public.der` are written to `<authpath>/`
+  * `fleet_tokens.json` (Fleet API path) is written to `<authpath>/`
+  * `<authpath>/` directory is created automatically if it does not exist
+* Fix: `python -m pypowerwall get -v1r -authpath <dir>` now auto-discovers `tedapi_rsa_private.pem` in `<authpath>/` when `-rsa_key_path` is not explicitly specified
+  * Lookup order: `<authpath>/tedapi_rsa_private.pem` → `./tedapi_rsa_private.pem` → error with path hint
+* Refactor: Removed stale `RSA_PRIVATE_KEY_FILE` and `RSA_PUBLIC_KEY_FILE` module-level globals from `v1r_register.py` — file paths are now resolved dynamically from `authpath` at call time
+* Refactor: Removed stale `TOKENS_FILE` module-level global from `v1r_register.py` — tokens file path is now resolved from `authpath` and threaded through `step2_exchange_token(tokens_file=...)`
+* Bump library version to `0.15.8`
+
 ## v0.15.7 - Grid Noise Suppression and v1r Owner API Login Fix
 
 * Docs: Document Tesla cloud/FleetAPI 80% backup reserve limit
