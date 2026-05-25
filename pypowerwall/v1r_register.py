@@ -42,9 +42,6 @@ OWNER_API_BASE = "https://owner-api.teslamotors.com"
 OWNER_AUTHFILE = ".pypowerwall.auth"  # Shared with Cloud Mode
 
 CERT_DIR = os.getcwd()
-RSA_PRIVATE_KEY_FILE = os.path.join(CERT_DIR, "tedapi_rsa_private.pem")
-RSA_PUBLIC_KEY_FILE = os.path.join(CERT_DIR, "tedapi_rsa_public.der")
-TOKENS_FILE = os.path.join(CERT_DIR, "fleet_tokens.json")
 
 SSL_CTX = ssl.create_default_context()
 
@@ -136,14 +133,18 @@ def api_call(url, method="GET", data=None, headers=None, token=None):
             return e.code, body
 
 
-def generate_rsa_key():
+def generate_rsa_key(authpath=""):
     """Generate RSA-4096 key pair for TEDapi v1r signing."""
     from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives import serialization
 
-    if os.path.exists(RSA_PRIVATE_KEY_FILE):
-        print(f"  RSA key already exists at {RSA_PRIVATE_KEY_FILE}, reusing")
-        with open(RSA_PRIVATE_KEY_FILE, "rb") as f:
+    key_dir = authpath if authpath else CERT_DIR
+    private_key_file = os.path.join(key_dir, "tedapi_rsa_private.pem")
+    public_key_file = os.path.join(key_dir, "tedapi_rsa_public.der")
+
+    if os.path.exists(private_key_file):
+        print(f"  RSA key already exists at {private_key_file}, reusing")
+        with open(private_key_file, "rb") as f:
             private_key = serialization.load_pem_private_key(f.read(), password=None)
         public_key_der = private_key.public_key().public_bytes(
             serialization.Encoding.DER,
@@ -160,20 +161,22 @@ def generate_rsa_key():
         serialization.PrivateFormat.TraditionalOpenSSL,
         serialization.NoEncryption()
     )
-    with open(RSA_PRIVATE_KEY_FILE, "wb") as f:
+    if authpath:
+        os.makedirs(authpath, exist_ok=True)
+    with open(private_key_file, "wb") as f:
         f.write(pem)
-    os.chmod(RSA_PRIVATE_KEY_FILE, 0o600)
+    os.chmod(private_key_file, 0o600)
 
     # Get public key (DER PKCS1)
     public_key_der = private_key.public_key().public_bytes(
         serialization.Encoding.DER,
         serialization.PublicFormat.PKCS1
     )
-    with open(RSA_PUBLIC_KEY_FILE, "wb") as f:
+    with open(public_key_file, "wb") as f:
         f.write(public_key_der)
 
-    print(f"  Private key saved: {RSA_PRIVATE_KEY_FILE}")
-    print(f"  Public key saved:  {RSA_PUBLIC_KEY_FILE}")
+    print(f"  Private key saved: {private_key_file}")
+    print(f"  Public key saved:  {public_key_file}")
     return private_key, public_key_der
 
 
@@ -216,8 +219,10 @@ def step1_get_auth_code(client_id, redirect_uri):
     return code
 
 
-def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api_base):
+def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api_base, tokens_file=None):
     """Exchange authorization code for access + refresh tokens."""
+    if tokens_file is None:
+        tokens_file = os.path.join(CERT_DIR, "fleet_tokens.json")
     print()
     print("=" * 70)
     print("  STEP 2: Exchanging code for tokens...")
@@ -250,14 +255,14 @@ def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api
 
     # Save tokens
     tokens["obtained_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    with open(TOKENS_FILE, "w") as f:
+    with open(tokens_file, "w") as f:
         json.dump(tokens, f, indent=2)
-    os.chmod(TOKENS_FILE, 0o600)
+    os.chmod(tokens_file, 0o600)
 
     print(f"  Access token:  {tokens['access_token'][:30]}...")
     print(f"  Refresh token: {tokens.get('refresh_token', 'N/A')[:30]}...")
     print(f"  Expires in:    {tokens.get('expires_in', '?')}s")
-    print(f"  Saved to:      {TOKENS_FILE}")
+    print(f"  Saved to:      {tokens_file}")
     return tokens["access_token"]
 
 
@@ -402,7 +407,7 @@ def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5, 
     return state
 
 
-def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
+def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, private_key_file=None):
     """Register RSA public key with the Powerwall via Fleet API."""
     print()
     print("=" * 70)
@@ -480,7 +485,8 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base):
     else:
         print("  Key state could not be confirmed as verified.")
         print("  It may still be pending — check again later with list_authorized_clients.")
-    print(f"\n  RSA private key: {RSA_PRIVATE_KEY_FILE}")
+    if private_key_file:
+        print(f"\n  RSA private key: {private_key_file}")
     print()
     print("  Next steps (library usage):")
     print("    import pypowerwall")
@@ -629,28 +635,31 @@ def main(authpath=""):
     print("  Generating RSA key pair...")
     print("=" * 70)
     print()
-    private_key, public_key_der = generate_rsa_key()
+    private_key, public_key_der = generate_rsa_key(authpath=authpath)
+    key_dir = authpath if authpath else CERT_DIR
+    private_key_file = os.path.join(key_dir, "tedapi_rsa_private.pem")
+    tokens_file = os.path.join(key_dir, "fleet_tokens.json")
 
     if choice == "2":
         # ── Fleet API path ────────────────────────────────────────────────────
         client_id, client_secret, redirect_uri, fleet_api_base = get_config()
 
         # Check for existing Fleet API tokens
-        if os.path.exists(TOKENS_FILE):
-            with open(TOKENS_FILE) as f:
+        if os.path.exists(tokens_file):
+            with open(tokens_file) as f:
                 tokens = json.load(f)
             token = tokens.get("access_token")
             print(f"\n  Found existing Fleet API tokens from {tokens.get('obtained_at', '?')}")
             use = input("  Use existing token? [Y/n]: ").strip().lower()
             if use != "n":
                 site_id, din = step3_get_site_id(token, fleet_api_base)
-                step4_register_key(token, site_id, public_key_der, fleet_api_base)
+                step4_register_key(token, site_id, public_key_der, fleet_api_base, private_key_file=private_key_file)
                 return
 
         code = step1_get_auth_code(client_id, redirect_uri)
-        token = step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api_base)
+        token = step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api_base, tokens_file=tokens_file)
         site_id, din = step3_get_site_id(token, fleet_api_base)
-        step4_register_key(token, site_id, public_key_der, fleet_api_base)
+        step4_register_key(token, site_id, public_key_der, fleet_api_base, private_key_file=private_key_file)
     else:
         # ── Owner API path (default) ──────────────────────────────────────────
         email = None
@@ -668,7 +677,7 @@ def main(authpath=""):
                 else:
                     print("\n  ERROR: Authentication failed after token refresh. Please try again.")
                     sys.exit(1)
-        step4_register_key(token, site_id, public_key_der, OWNER_API_BASE)
+        step4_register_key(token, site_id, public_key_der, OWNER_API_BASE, private_key_file=private_key_file)
 
 
 if __name__ == "__main__":

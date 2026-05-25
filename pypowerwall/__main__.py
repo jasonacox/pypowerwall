@@ -86,12 +86,16 @@ def _build_powerwall(args, authpath):
         rsa_key_path = args.rsa_key_path
         if not rsa_key_path:
             default_key = "tedapi_rsa_private.pem"
-            if os.path.isfile(default_key):
+            authpath_key = os.path.join(authpath, default_key) if authpath else None
+            if authpath_key and os.path.isfile(authpath_key):
+                rsa_key_path = authpath_key
+            elif os.path.isfile(default_key):
                 rsa_key_path = default_key
             else:
+                search_dirs = ([authpath] if authpath else []) + ["."]
                 print(
                     f"ERROR: -v1r requires an RSA private key. "
-                    f"Specify -rsa_key_path or place '{default_key}' in the current directory."
+                    f"Specify -rsa_key_path or place '{default_key}' in one of: {', '.join(search_dirs)}"
                 )
                 sys.exit(1)
         return pypowerwall.Powerwall(
