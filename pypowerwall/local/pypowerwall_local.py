@@ -97,7 +97,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             log.debug('login - %s' % r.text)
         except Exception as exc:
             err = f"Unable to connect to Powerwall at https://{self.host}: {exc}"
-            log.debug(err)
+            log.error(f'{err} - check that the gateway is reachable on the network')
             raise ConnectionError(err)
 
         # Save Auth cookies
@@ -114,8 +114,14 @@ class PyPowerwallLocal(PyPowerwallBase):
             except Exception as exc:
                 log.debug(f'unable to cache auth session - continuing: {exc}')
         except Exception as e:
-            log.debug(f'login failed: {e}')
-            raise LoginError("Invalid Powerwall Login")
+            log.warning(f'Login failed: {e}')
+            if r.status_code in (401, 403):
+                raise LoginError(f"Invalid Powerwall Login - check password for {self.host}")
+            else:
+                raise LoginError(
+                    f"Login failed for {self.host} (HTTP {r.status_code}) - "
+                    f"check that the gateway is reachable and responding correctly"
+                )
 
     def close_session(self):
         url = "https://%s/api/logout" % self.host
@@ -162,13 +168,13 @@ class PyPowerwallLocal(PyPowerwallBase):
                     r: Response = self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout,
                                                    stream=raw)
             except requests.exceptions.Timeout:
-                log.debug('ERROR Timeout waiting for Powerwall API %s' % url)
+                log.error('Timeout waiting for Powerwall API %s - check network connectivity to %s' % (api, self.host))
                 return None
-            except requests.exceptions.ConnectionError:
-                log.debug('ERROR Unable to connect to Powerwall at %s' % url)
+            except requests.exceptions.ConnectionError as exc:
+                log.error('Unable to connect to Powerwall at %s - %s - check that the gateway is reachable and powered on' % (self.host, exc))
                 return None
             except Exception as exc:
-                log.debug(f'ERROR Unknown error connecting to Powerwall at {url}: {exc}')
+                log.error(f'Unexpected error connecting to Powerwall at {url}: {exc}')
                 return None
             if r.status_code == 404:
                 # API not found or no longer supported

@@ -89,7 +89,7 @@ import time
 from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 15, 8)
+version_tuple = (0, 15, 9)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -230,7 +230,8 @@ class Powerwall(object):
 
         # Connect to Powerwall
         if not self.connect(self.retry_modes):
-            log.error("Unable to connect to Powerwall.")
+            log.error("Unable to connect to Powerwall. Verify host, credentials, and network connectivity."
+                     " Enable debug logging for detailed diagnostics.")
 
     def connect(self, retry=False) -> bool:
         """
@@ -295,7 +296,7 @@ class Powerwall(object):
                         self.tedapi_mode = "off"
                     return True
                 except Exception as exc:
-                    log.debug(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
+                    log.warning(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
                     self.tedapi = False
                     self.tedapi_mode = "off"
                     self.mode = "fleetapi"
@@ -309,7 +310,7 @@ class Powerwall(object):
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
-                    log.debug(f"Failed to connect using FleetAPI mode: {exc} - trying cloud mode.")
+                    log.warning(f"Failed to connect using FleetAPI mode: {exc} - trying cloud mode.")
                     self.mode = "cloud"
                     continue
             if self.mode == "cloud":
@@ -321,7 +322,7 @@ class Powerwall(object):
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
-                    log.debug(f"Failed to connect using Cloud mode: {exc} - trying local mode.")
+                    log.warning(f"Failed to connect using Cloud mode: {exc} - trying local mode.")
                     self.mode = "local"
                     continue
         return False
