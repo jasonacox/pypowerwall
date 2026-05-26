@@ -1,5 +1,16 @@
 # RELEASE NOTES
 
+## v0.15.9 - Improved Connection Error Diagnostics
+
+* Fix: Promote connection failure messages from `debug` to `error`/`warning` log level so users see actionable diagnostics without enabling debug mode (#160)
+  * Login failures in local mode now show `error`-level messages with specific guidance (check password, check network reachability)
+  * Login errors now distinguish between auth failures (401/403 → "check password") and connectivity failures (other HTTP status → "check gateway reachability")
+  * Connection attempt fallback messages (Local → FleetAPI → Cloud) promoted from `debug` to `warning` level, including the exception details
+  * API timeout and connection errors during polling now log at `error` level with the affected endpoint and host
+  * Connection refused errors include the specific exception message
+* Fix: Final "Unable to connect to Powerwall" error message now includes guidance to verify host, credentials, and network connectivity, and suggests enabling debug logging for more detail
+* Bump library version to `0.15.9`
+
 ## v0.15.8 - authpath Support for v1r Setup Files
 
 * Fix: `python -m pypowerwall setup -v1r -authpath <dir>` now correctly writes all generated files into the specified directory instead of the current working directory
