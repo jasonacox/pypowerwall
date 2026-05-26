@@ -115,7 +115,13 @@ class PyPowerwallLocal(PyPowerwallBase):
                 log.debug(f'unable to cache auth session - continuing: {exc}')
         except Exception as e:
             log.warning(f'Login failed: {e}')
-            raise LoginError(f"Invalid Powerwall Login - check password for {self.host}")
+            if r.status_code in (401, 403):
+                raise LoginError(f"Invalid Powerwall Login - check password for {self.host}")
+            else:
+                raise LoginError(
+                    f"Login failed for {self.host} (HTTP {r.status_code}) - "
+                    f"check that the gateway is reachable and responding correctly"
+                )
 
     def close_session(self):
         url = "https://%s/api/logout" % self.host
@@ -164,8 +170,8 @@ class PyPowerwallLocal(PyPowerwallBase):
             except requests.exceptions.Timeout:
                 log.error('Timeout waiting for Powerwall API %s - check network connectivity to %s' % (api, self.host))
                 return None
-            except requests.exceptions.ConnectionError:
-                log.error('Unable to connect to Powerwall at %s - check that the gateway is reachable and powered on' % self.host)
+            except requests.exceptions.ConnectionError as exc:
+                log.error('Unable to connect to Powerwall at %s - %s - check that the gateway is reachable and powered on' % (self.host, exc))
                 return None
             except Exception as exc:
                 log.error(f'Unexpected error connecting to Powerwall at {url}: {exc}')
