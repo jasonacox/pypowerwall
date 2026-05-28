@@ -1030,15 +1030,48 @@ class Handler(BaseHTTPRequestHandler):
                                         safe_pw_call(pw_control.get_reserve) or 0
                                     )
                                 elif value.isdigit():
-                                    result = safe_pw_call(
-                                        pw_control.set_reserve, int(value)
-                                    )
-                                    message = json.dumps(
-                                        result
-                                        if result is not None
-                                        else {"error": "Failed to set reserve"}
-                                    )
-                                    log.info(f"Control Command: Set Reserve to {value}")
+                                    # Optional companion `mode` parameter lets a single
+                                    # /control/reserve POST update both reserve and mode
+                                    # in one set_operation() invocation. Without it, a
+                                    # caller that wants to change both has to POST to
+                                    # /control/reserve AND /control/mode, which causes
+                                    # set_operation() to run twice -- writing the Tesla
+                                    # /backup and /operation endpoints twice each and
+                                    # producing duplicate audit-log entries. Omitting
+                                    # the parameter preserves the original behaviour.
+                                    mode = query_params.get("mode", [""])[0]
+                                    if mode in [
+                                        "self_consumption",
+                                        "backup",
+                                        "autonomous",
+                                    ]:
+                                        result = safe_pw_call(
+                                            pw_control.set_operation,
+                                            int(value),
+                                            mode,
+                                        )
+                                        message = json.dumps(
+                                            result
+                                            if result is not None
+                                            else {"error": "Failed to set reserve+mode"}
+                                        )
+                                        log.info(
+                                            f"Control Command: Set Reserve to {value} (mode={mode})"
+                                        )
+                                    elif mode:
+                                        message = (
+                                            '{"error": "Control Command Mode Invalid"}'
+                                        )
+                                    else:
+                                        result = safe_pw_call(
+                                            pw_control.set_reserve, int(value)
+                                        )
+                                        message = json.dumps(
+                                            result
+                                            if result is not None
+                                            else {"error": "Failed to set reserve"}
+                                        )
+                                        log.info(f"Control Command: Set Reserve to {value}")
                                 else:
                                     message = (
                                         '{"error": "Control Command Value Invalid"}'
@@ -1054,13 +1087,35 @@ class Handler(BaseHTTPRequestHandler):
                                     "backup",
                                     "autonomous",
                                 ]:
-                                    result = safe_pw_call(pw_control.set_mode, value)
-                                    message = json.dumps(
-                                        result
-                                        if result is not None
-                                        else {"error": "Failed to set mode"}
-                                    )
-                                    log.info(f"Control Command: Set Mode to {value}")
+                                    # Optional companion `level` parameter -- see the
+                                    # comment in the /control/reserve branch above.
+                                    level = query_params.get("level", [""])[0]
+                                    if level.isdigit():
+                                        result = safe_pw_call(
+                                            pw_control.set_operation,
+                                            int(level),
+                                            value,
+                                        )
+                                        message = json.dumps(
+                                            result
+                                            if result is not None
+                                            else {"error": "Failed to set reserve+mode"}
+                                        )
+                                        log.info(
+                                            f"Control Command: Set Mode to {value} (level={level})"
+                                        )
+                                    elif level:
+                                        message = (
+                                            '{"error": "Control Command Level Invalid"}'
+                                        )
+                                    else:
+                                        result = safe_pw_call(pw_control.set_mode, value)
+                                        message = json.dumps(
+                                            result
+                                            if result is not None
+                                            else {"error": "Failed to set mode"}
+                                        )
+                                        log.info(f"Control Command: Set Mode to {value}")
                                 else:
                                     message = (
                                         '{"error": "Control Command Value Invalid"}'

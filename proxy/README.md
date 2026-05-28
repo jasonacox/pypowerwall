@@ -326,7 +326,9 @@ APIs
 
 * Use `GET` method to read and `POST` to set.
 * Mode: `/control/mode` value=$MODE token=$PW_CONTROL_SECRET
+  * Optional `level=$RESERVE` to update reserve in the same request (single `set_operation()` call).
 * Reserve: `/control/reserve` value=$RESERVE token=$PW_CONTROL_SECRET
+  * Optional `mode=$MODE` to update mode in the same request (single `set_operation()` call).
 
 Examples
 
@@ -340,6 +342,10 @@ curl -X POST -d "value=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/con
 
 # Set Reserve
 curl -X POST -d "value=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
+
+# Set Mode AND Reserve atomically in a single request (either form works)
+curl -X POST -d "value=$MODE&level=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
+curl -X POST -d "value=$RESERVE&mode=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 
 # Enable Grid Charging (true/false)
 curl -X POST -d "value=true&token=$PW_CONTROL_SECRET" http://localhost:8675/control/grid_charging
