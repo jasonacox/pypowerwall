@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## v0.15.10 - Combined Reserve + Mode Control Endpoint
+
+* feat(proxy): Optional companion parameters on `/control/reserve` and `/control/mode` POST endpoints to update both reserve and mode in a single `set_operation()` call (#308)
+  * `/control/reserve` now accepts optional `mode=$MODE` parameter — calls `set_operation(level, mode)` instead of `set_reserve(level)`
+  * `/control/mode` now accepts optional `level=$RESERVE` parameter — calls `set_operation(level, mode)` instead of `set_mode(mode)`
+  * Prevents duplicate Tesla audit-log entries caused by calling set_reserve + set_mode separately
+  * Invalid companion values return a 400 error without making any Powerwall call (no silent fallback)
+  * Full backward compatibility: omitting the companion parameter preserves original behavior
+  * Added unit tests for all code paths (legacy single-value, combined, and invalid companion)
+  * Updated proxy README with combined-request examples
+* Bump library version to `0.15.10`
+
 ## v0.15.9 - Improved Connection Error Diagnostics
 
 * Fix: Promote connection failure messages from `debug` to `error`/`warning` log level so users see actionable diagnostics without enabling debug mode (#160)
