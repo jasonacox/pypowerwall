@@ -343,7 +343,7 @@ curl -X POST -d "value=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/con
 # Set Reserve
 curl -X POST -d "value=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 
-# Set Mode AND Reserve atomically in a single request (either form works)
+# Set Mode AND Reserve in a single request (either form works)
 curl -X POST -d "value=$MODE&level=$RESERVE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/mode
 curl -X POST -d "value=$RESERVE&mode=$MODE&token=$PW_CONTROL_SECRET" http://localhost:8675/control/reserve
 
