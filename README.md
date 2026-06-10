@@ -107,6 +107,8 @@ Your machine must be able to reach `192.168.91.1`. Options:
 
 > **Note:** Some firmware versions (25.10.0+) may block routed access to 192.168.91.1. In that case, connect directly to the Gateway Wi‑Fi.
 
+> **💡 PW3 Direct LAN Access:** Some users have reported success accessing TEDAPI by connecting directly to the Powerwall 3's Wi‑Fi adapter LAN address in the `192.168.1.x` subnet (the Wi‑Fi IP assigned to the PW3 unit itself) instead of the Gateway address `192.168.91.1`. This can work when the standard Gateway address is unreachable or rate-limited. Point `host` to the PW3's Wi‑Fi IP and use the Gateway Wi‑Fi password as `gw_pwd`. ([Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312))
+
 > ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally — these return `None` in TEDAPI mode with a log warning. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
 
 In the examples below, change **192.168.0.100** to the IP address of the Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
@@ -152,6 +154,7 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
 - Auth failures: Use the Gateway Wi‑Fi password from the QR label as `gw_pwd` (case‑sensitive). Customer portal passwords do not work for TEDAPI.
 - TLS/certificate warnings: TEDAPI uses a self‑signed cert; most tools need `--insecure` (curl) or `verify=False` (requests). Use only on trusted networks.
 - Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
+- PW3 192.168.91.1 unreachable or rate-limited (429): Try pointing directly to the PW3's Wi‑Fi adapter IP on the `192.168.1.x` subnet instead of the Gateway address. Some firmware versions respond to TEDAPI on this secondary address even when the primary is blocked. See [Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312).
 - QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
 ### v1r LAN TEDapi Setup - Option 5 (Powerwall 3 Wired LAN)
