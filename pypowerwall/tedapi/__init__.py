@@ -1384,11 +1384,13 @@ class TEDAPI:
             self._test_wifi_path()
             if not self.wifi_available:
                 with self._wifi_lock:
-                    self.wifi_fail_count += 1
-                    backoff = min(60 * (2 ** self.wifi_fail_count), 7680)  # caps at ~128 min
-                    self.wifi_cooldown = time.time() + backoff
-                    log.debug("WiFi unavailable, next retry in %.0fs (failure #%d)",
-                               backoff, self.wifi_fail_count)
+                    # Re-check cooldown: another thread may have set one while we tested
+                    if self.wifi_cooldown <= time.time():
+                        self.wifi_fail_count += 1
+                        backoff = min(60 * (2 ** self.wifi_fail_count), 7680)  # caps at ~128 min
+                        self.wifi_cooldown = time.time() + backoff
+                        log.debug("WiFi unavailable, next retry in %.0fs (failure #%d)",
+                                   backoff, self.wifi_fail_count)
                 return None
         url = f'https://{self.wifi_host}{url_suffix}'
         try:
@@ -1396,15 +1398,17 @@ class TEDAPI:
             if r.status_code in BUSY_CODES:
                 log.warning("WiFi TEDAPI rate limited, activating 60s cooldown")
                 with self._wifi_lock:
-                    self.wifi_fail_count += 1
-                    self.wifi_cooldown = time.time() + 60
+                    if self.wifi_cooldown <= time.time():
+                        self.wifi_fail_count += 1
+                        self.wifi_cooldown = time.time() + 60
                 return None
             if r.status_code != HTTPStatus.OK:
                 log.error("WiFi TEDAPI error for %s: %s", url_suffix, r.status_code)
                 with self._wifi_lock:
-                    self.wifi_fail_count += 1
-                    backoff = min(60 * (2 ** self.wifi_fail_count), 7680)
-                    self.wifi_cooldown = time.time() + backoff
+                    if self.wifi_cooldown <= time.time():
+                        self.wifi_fail_count += 1
+                        backoff = min(60 * (2 ** self.wifi_fail_count), 7680)
+                        self.wifi_cooldown = time.time() + backoff
                 self.wifi_available = False
                 return None
             # Success — reset failure tracking
@@ -1416,9 +1420,10 @@ class TEDAPI:
         except Exception as e:
             log.error("WiFi TEDAPI request failed: %s", e)
             with self._wifi_lock:
-                self.wifi_fail_count += 1
-                backoff = min(60 * (2 ** self.wifi_fail_count), 7680)
-                self.wifi_cooldown = time.time() + backoff
+                if self.wifi_cooldown <= time.time():
+                    self.wifi_fail_count += 1
+                    backoff = min(60 * (2 ** self.wifi_fail_count), 7680)
+                    self.wifi_cooldown = time.time() + backoff
             self.wifi_available = False
             return None
 
