@@ -828,7 +828,19 @@ class FleetAPI:
         if self.site_id:
             print(f"  Previous site_id: {self.site_id}")
         # Get list of sites and filter out those without energy_site_id
-        sites = [s for s in self.getsites() if s.get('energy_site_id') is not None]
+        raw_sites = self.getsites()
+        if not raw_sites:
+            print("  ERROR: Unable to retrieve sites from Tesla Fleet API.")
+            print("         This usually means:")
+            print("           1. Your partner account is not registered in the current region")
+            print("           2. Your access token does not have the required permissions")
+            print("           3. Your Tesla account has no energy sites")
+            print()
+            print("         Try deleting your Fleet API config file and re-running setup:")
+            print(f"           rm {self.configfile}")
+            print("           python3 -m pypowerwall setup")
+            return False
+        sites = [s for s in raw_sites if s.get('energy_site_id') is not None]
         sel = 0
         # If not set, pick first site
         if not self.site_id and sites:
