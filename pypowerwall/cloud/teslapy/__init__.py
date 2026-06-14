@@ -31,6 +31,13 @@ from requests.packages.urllib3.util.retry import Retry
 from oauthlib.oauth2.rfc6749.errors import *
 import websocket  # websocket-client v0.49.0 up to v0.58.0 is not supported
 
+# Optional HTTP/2 support for Tesla auth (required as of June 2026)
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
+
 requests.packages.urllib3.disable_warnings()
 
 BASE_URL = 'https://owner-api.teslamotors.com/'
@@ -209,6 +216,9 @@ class Tesla(OAuth2Session):
         """ Overriddes base method to sign into Tesla's SSO service using
         Authorization Code grant with PKCE extension. Raises CustomOAuth2Error.
 
+        Tesla now requires HTTP/2 for auth.tesla.com token endpoints.
+        Uses httpx with HTTP/2 if available, falling back to requests.
+
         token_url (optional): Token endpoint URL.
 
         Extra keyword arguments to pass to base method using `kwargs`:
@@ -225,6 +235,16 @@ class Tesla(OAuth2Session):
             kwargs['authorization_response'] = self.authenticator(url)
         # Use authorization code in redirected location to get token
         token_url = urljoin(self.sso_base_url, token_url)
+
+        # Try HTTP/2 first (Tesla requires it as of June 2026)
+        if HAS_HTTPX:
+            try:
+                self._fetch_token_http2(token_url, **kwargs)
+                self._token_updater()  # Save new token
+                return self.token
+            except Exception as exc:
+                logger.warning('HTTP/2 token fetch failed, falling back to HTTP/1.1: %s', exc)
+
         kwargs['include_client_id'] = True
         kwargs.setdefault('verify', self.verify)
         kwargs.setdefault('code_verifier', self.code_verifier)
@@ -232,9 +252,42 @@ class Tesla(OAuth2Session):
         self._token_updater()  # Save new token
         return self.token
 
+    def _fetch_token_http2(self, token_url, **kwargs):
+        """Exchange authorization code for tokens using HTTP/2 via httpx."""
+        from oauthlib.common import urldecode
+
+        auth_response = kwargs.get('authorization_response')
+        self._client.parse_request_uri_response(auth_response, state=self._state)
+        code = self._client.code
+
+        body = self._client.prepare_request_body(
+            code=code,
+            redirect_uri=self.redirect_uri,
+            include_client_id=True,
+            code_verifier=kwargs.get('code_verifier', self.code_verifier),
+        )
+
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+
+        verify = kwargs.get('verify', self.verify)
+        timeout = kwargs.get('timeout', self.timeout)
+
+        with httpx.Client(http2=True, verify=verify) as client:
+            r = client.post(token_url, data=dict(urldecode(body)), headers=headers, timeout=timeout)
+            r.raise_for_status()
+            self._client.parse_request_body_response(r.text, scope=self.scope)
+            self.token = self._client.token
+            return self.token
+
     def refresh_token(self, token_url='oauth2/v3/token', **kwargs):
         """ Overriddes base method to refresh Tesla's SSO token. Raises
         ValueError and ServerError.
+
+        Tesla now requires HTTP/2 for auth.tesla.com token endpoints.
+        Uses httpx with HTTP/2 if available, falling back to requests.
 
         token_url (optional): The token endpoint.
 
@@ -246,10 +299,50 @@ class Tesla(OAuth2Session):
         if not self.authorized and not kwargs.get('refresh_token'):
             raise ValueError('`refresh_token` is not set')
         token_url = urljoin(self.sso_base_url, token_url)
+
+        # Try HTTP/2 first (Tesla requires it as of June 2026)
+        if HAS_HTTPX:
+            try:
+                self._refresh_token_http2(token_url, **kwargs)
+                self._token_updater()  # Save new token
+                return self.token
+            except Exception as exc:
+                logger.warning('HTTP/2 token refresh failed, falling back to HTTP/1.1: %s', exc)
+
         kwargs.setdefault('verify', self.verify)
         super(Tesla, self).refresh_token(token_url, **kwargs)
         self._token_updater()  # Save new token
         return self.token
+
+    def _refresh_token_http2(self, token_url, **kwargs):
+        """Refresh token using HTTP/2 via httpx."""
+        from oauthlib.common import urldecode
+
+        refresh_token = kwargs.get('refresh_token') or self.token.get('refresh_token')
+        if not refresh_token:
+            raise ValueError('`refresh_token` is not set')
+
+        body = self._client.prepare_refresh_body(
+            refresh_token=refresh_token,
+            scope=self.scope,
+            **self.auto_refresh_kwargs
+        )
+
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+        }
+
+        verify = kwargs.get('verify', self.verify)
+        timeout = kwargs.get('timeout', self.timeout)
+
+        with httpx.Client(http2=True, verify=verify) as client:
+            r = client.post(token_url, data=dict(urldecode(body)), headers=headers, timeout=timeout)
+            r.raise_for_status()
+            self.token = self._client.parse_request_body_response(r.text, scope=self.scope)
+            if 'refresh_token' not in self.token:
+                self.token['refresh_token'] = refresh_token
+            return self.token
 
     def close(self):
         """ Overriddes base method to remove all adapters on close """

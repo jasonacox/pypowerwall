@@ -39,6 +39,13 @@ try:
 except ImportError:
     requests = None  # type: ignore
 
+# Optional HTTP/2 support for Tesla auth (required as of June 2026)
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
+
 
 # ---------------------------------------------------------------------------
 # Constants — match tesla_auth Rust exactly
@@ -101,19 +108,33 @@ def _refresh_access_token(refresh_token: str, region: str = "us") -> dict:
     Tesla OAuth refresh: POST /oauth2/v3/token with grant_type=refresh_token,
     client_id=ownerapi, refresh_token.
     """
-    if requests is None:
-        raise ImportError("The 'requests' package is required.")
+    if requests is None and not HAS_HTTPX:
+        raise ImportError("The 'requests' or 'httpx' package is required.")
 
     auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
-    resp = requests.post(
-        f"{auth_host}{TOKEN_URL_PATH}",
-        json={
-            "grant_type": "refresh_token",
-            "client_id": CLIENT_ID,
-            "refresh_token": refresh_token,
-        },
-        timeout=30,
-    )
+    url = f"{auth_host}{TOKEN_URL_PATH}"
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": CLIENT_ID,
+        "refresh_token": refresh_token,
+    }
+
+    # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
+    if HAS_HTTPX:
+        try:
+            with httpx.Client(http2=True) as client:
+                resp = client.post(url, json=payload, timeout=30)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
+                data = resp.json()
+                if "access_token" not in data:
+                    raise RuntimeError(f"No access_token in refresh response: {data}")
+                return data
+        except Exception as exc:
+            # Fall back to requests if HTTP/2 fails
+            pass
+
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
 
@@ -132,21 +153,35 @@ def _exchange_code(auth_code: str, code_verifier: str, region: str = "us") -> di
     Matches tesla_auth: POST to /oauth2/v3/token with grant_type=authorization_code,
     client_id=ownerapi, code, code_verifier, redirect_uri.
     """
-    if requests is None:
-        raise ImportError("The 'requests' package is required. Install with: pip install requests")
+    if requests is None and not HAS_HTTPX:
+        raise ImportError("The 'requests' or 'httpx' package is required. Install with: pip install requests")
 
     auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
-    resp = requests.post(
-        f"{auth_host}{TOKEN_URL_PATH}",
-        json={
-            "grant_type": "authorization_code",
-            "client_id": CLIENT_ID,
-            "code": auth_code,
-            "code_verifier": code_verifier,
-            "redirect_uri": REDIRECT_URI,
-        },
-        timeout=30,
-    )
+    url = f"{auth_host}{TOKEN_URL_PATH}"
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "code": auth_code,
+        "code_verifier": code_verifier,
+        "redirect_uri": REDIRECT_URI,
+    }
+
+    # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
+    if HAS_HTTPX:
+        try:
+            with httpx.Client(http2=True) as client:
+                resp = client.post(url, json=payload, timeout=30)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")
+                data = resp.json()
+                if "refresh_token" not in data:
+                    raise RuntimeError(f"No refresh_token in response: {data}")
+                return data
+        except Exception as exc:
+            # Fall back to requests if HTTP/2 fails
+            pass
+
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")
 
