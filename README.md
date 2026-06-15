@@ -11,6 +11,8 @@ pyPowerwall is a Python module to interface with Tesla Energy Gateways for Power
 
 > ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
+> 🚨 **DEPRECATION NOTICE — Tesla Owner API (Cloud Mode):** As of June 12, 2026, Tesla has deprecated the unofficial Owner API (`owner-api.teslamotors.com`). Users running pypowerwall in **Cloud Mode (Option 3)** will receive `403 Forbidden` errors and lose data access. **Please migrate to [FleetAPI Cloud Mode (Option 2)](#fleetapi-cloud-setup---option-2)**, which uses the official Tesla Fleet API and is unaffected by this change. See [issue #323](https://github.com/jasonacox/pypowerwall/issues/323) for details.
+
 ## Description
 
 This Python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  
@@ -72,6 +74,8 @@ Step 2 - Run the [create_pem_key.py](./tools/fleetapi/create_pem_key.py) script 
 Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will be stored in the `.pypowerwall.fleetapi` file.
 
 ### Cloud Mode - Option 3
+
+> 🚨 **DEPRECATED:** Tesla shut down the unofficial Owner API (`owner-api.teslamotors.com`) on June 12, 2026. Cloud Mode (Option 3) no longer works. Please migrate to **[FleetAPI Cloud Mode (Option 2)](#fleetapi-cloud-setup---option-2)**. See [issue #323](https://github.com/jasonacox/pypowerwall/issues/323).
 
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
 
