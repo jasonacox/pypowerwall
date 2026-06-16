@@ -135,6 +135,10 @@ class Tesla(OAuth2Session):
         """ Overriddes base method to support relative URLs, serialization and
         error message handling. Raises HTTPError when an error occurs.
 
+        Tesla now requires HTTP/2 for both auth endpoints AND owner-api calls
+        (api/1/*). This method uses httpx with HTTP/2 for owner-api requests,
+        falling back to requests (HTTP/1.1) if httpx is unavailable.
+
         method: HTTP method to use.
         url: URL to send.
         serialize (optional): (de)serialize request/response body.
@@ -154,7 +158,11 @@ class Tesla(OAuth2Session):
         kwargs.setdefault('timeout', self.timeout)
         if serialize and 'data' in kwargs:
             kwargs['json'] = kwargs.pop('data')
-        response = super(Tesla, self).request(method, url, **kwargs)
+        # Use HTTP/2 for owner-api calls (Tesla requires it as of June 2026)
+        if HAS_HTTPX:
+            response = self._request_http2(method, url, **kwargs)
+        else:
+            response = super(Tesla, self).request(method, url, **kwargs)
         # Error message handling
         if serialize and 400 <= response.status_code < 600:
             try:
@@ -167,6 +175,36 @@ class Tesla(OAuth2Session):
         if serialize:
             return response.json(object_hook=JsonDict)
         return response.text
+
+    def _request_http2(self, method, url, **kwargs):
+        """Make an HTTP/2 request to owner-api via httpx.
+
+        Handles bearer token injection and returns a requests-compatible
+        response object so the calling code path is unchanged.
+        """
+        timeout = kwargs.get('timeout', self.timeout)
+        withhold_token = kwargs.get('withhold_token', False)
+        verify = getattr(self, 'verify', True)
+        # Build headers
+        headers = {'User-Agent': APP_USER_AGENT}
+        if not withhold_token and self.authorized:
+            token = self.token.get('access_token')
+            if token:
+                headers['Authorization'] = 'Bearer ' + token
+        # Build request kwargs
+        request_kwargs = {'headers': headers, 'timeout': timeout,
+                          'follow_redirects': True}
+        if 'params' in kwargs:
+            request_kwargs['params'] = kwargs['params']
+        if 'json' in kwargs:
+            request_kwargs['json'] = kwargs['json']
+        try:
+            with httpx.Client(http2=True, verify=verify) as client:
+                resp = client.request(method, url, **request_kwargs)
+            return _HTTP2Response(resp)
+        except Exception as exc:
+            logger.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
+            return super(Tesla, self).request(method, url, **kwargs)
 
     @staticmethod
     def new_code_verifier():
@@ -484,6 +522,32 @@ class Tesla(OAuth2Session):
         """ Returns a list of `WallConnector` objects """
         return [WallConnector(p, self) for p in self.api('PRODUCT_LIST')['response']
                 if p.get('resource_type') == 'wall_connector']
+
+
+class _HTTP2Response:
+    """ Wrapper to make httpx.Response compatible with requests.Response API.
+
+    Used by Tesla.request() when making HTTP/2 calls to owner-api endpoints.
+    """
+
+    def __init__(self, resp):
+        self._resp = resp
+        self.status_code = resp.status_code
+        self.reason = resp.reason_phrase
+        self._content = resp.content
+
+    @property
+    def text(self):
+        return self._resp.text
+
+    def json(self, **kwargs):
+        return json.loads(self._content, **kwargs)
+
+    def raise_for_status(self):
+        if 400 <= self.status_code < 600:
+            raise requests.exceptions.HTTPError(
+                f"{self.status_code} Client Error: {self.reason}",
+                response=self)
 
 
 class VehicleError(Exception):

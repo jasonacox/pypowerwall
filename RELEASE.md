@@ -1,5 +1,15 @@
 # RELEASE NOTES
 
+## v0.15.11 - HTTP/2 for Tesla Owner API Calls
+
+* fix(cloud): Extend HTTP/2 support to all owner-api.teslamotors.com API calls, not just auth endpoints (#324) - t91
+  * Tesla now requires HTTP/2 for `owner-api.teslamotors.com/api/1/*` endpoints, matching the auth.tesla.com requirement
+  * `Tesla.request()` now routes owner-api calls through `httpx` with HTTP/2 when available, with automatic fallback to `requests` (HTTP/1.1)
+  * Adds `_HTTP2Response` wrapper class for requests/httpx response compatibility
+  * Fixes 403 errors during `setup` flow (sitelist retrieval) reported in Powerwall-Dashboard #779
+  * Fixes 403 errors during normal cloud-mode polling (PRODUCT_LIST, SITE_DATA, etc.)
+  * Requires `httpx>=0.27.0` (already added to requirements.txt in v0.15.10 dev)
+
 ## v0.15.10 - Combined Reserve + Mode Control Endpoint
 
 * feat(proxy): Optional companion parameters on `/control/reserve` and `/control/mode` POST endpoints to update both reserve and mode in a single `set_operation()` call (#308) - t90
