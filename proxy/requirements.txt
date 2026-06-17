@@ -1,2 +1,2 @@
-pypowerwall==0.15.10
+pypowerwall==0.15.11
 bs4==0.0.2
