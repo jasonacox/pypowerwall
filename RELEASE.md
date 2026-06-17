@@ -2,8 +2,9 @@
 
 ## v0.15.11 - HTTP/2 for Tesla Owner API Calls
 
-* fix(cloud): Extend HTTP/2 support to all owner-api.teslamotors.com API calls, not just auth endpoints (#324) - t92
+* fix(cloud): Extend HTTP/2 support to all owner-api.teslamotors.com API calls, not just auth endpoints (#324) - t93
   * Tesla now requires HTTP/2 for `owner-api.teslamotors.com/api/1/*` endpoints, matching the auth.tesla.com requirement
+  * Pin `httpx` Tesla auth/API transports to TLS 1.3 when possible, mirroring the TeslaMate fix path for Tesla endpoints while preserving explicit custom `verify` settings
   * `Tesla.request()` now routes owner-api calls through `httpx` with HTTP/2 when available, with automatic fallback to `requests` (HTTP/1.1)
   * `_request_http2` now forwards all session headers (`Content-Type`, `X-Tesla-User-Agent`, `User-Agent`) to httpx instead of a minimal subset — ensures Tesla receives the same fingerprint as the original requests session
   * Adds `_HTTP2Response` wrapper class for requests/httpx response compatibility

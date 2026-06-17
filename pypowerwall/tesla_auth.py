@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import secrets
+import ssl
 import sys
 import urllib.parse
 
@@ -62,6 +63,25 @@ REGION_HOSTS = {
     "us": "https://auth.tesla.com",
     "cn": "https://auth.tesla.cn",
 }
+
+
+def _httpx_auth_verify(verify=True):
+    """Return an httpx-compatible verify setting pinned to TLS 1.3 when possible."""
+    if verify is False:
+        return False
+    if isinstance(verify, (str, bytes)):
+        return verify
+    if isinstance(verify, ssl.SSLContext):
+        return verify
+    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_3"):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            return ctx
+        except Exception:
+            pass
+    return verify
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +142,7 @@ def _refresh_access_token(refresh_token: str, region: str = "us") -> dict:
     # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
     if HAS_HTTPX:
         try:
-            with httpx.Client(http2=True) as client:
+            with httpx.Client(http2=True, verify=_httpx_auth_verify()) as client:
                 resp = client.post(url, json=payload, timeout=30)
                 if resp.status_code != 200:
                     raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
@@ -169,7 +189,7 @@ def _exchange_code(auth_code: str, code_verifier: str, region: str = "us") -> di
     # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
     if HAS_HTTPX:
         try:
-            with httpx.Client(http2=True) as client:
+            with httpx.Client(http2=True, verify=_httpx_auth_verify()) as client:
                 resp = client.post(url, json=payload, timeout=30)
                 if resp.status_code != 200:
                     raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")

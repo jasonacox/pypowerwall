@@ -19,6 +19,7 @@ import pkgutil
 import datetime
 import webbrowser
 import stat
+import ssl
 try:
     from urlparse import urljoin
 except ImportError:
@@ -176,6 +177,25 @@ class Tesla(OAuth2Session):
             return response.json(object_hook=JsonDict)
         return response.text
 
+    @staticmethod
+    def _httpx_auth_verify(verify=True):
+        """Return an httpx-compatible verify setting pinned to TLS 1.3 when possible."""
+        if verify is False:
+            return False
+        if isinstance(verify, (str, bytes)):
+            return verify
+        if isinstance(verify, ssl.SSLContext):
+            return verify
+        if hasattr(ssl, 'TLSVersion') and hasattr(ssl.TLSVersion, 'TLSv1_3'):
+            try:
+                ctx = ssl.create_default_context()
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+                ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+                return ctx
+            except Exception:
+                pass
+        return verify
+
     def _request_http2(self, method, url, **kwargs):
         """Make an HTTP/2 request to owner-api via httpx.
 
@@ -184,7 +204,7 @@ class Tesla(OAuth2Session):
         """
         timeout = kwargs.get('timeout', self.timeout)
         withhold_token = kwargs.get('withhold_token', False)
-        verify = getattr(self, 'verify', True)
+        verify = self._httpx_auth_verify(getattr(self, 'verify', True))
         # Start with all session headers (Content-Type, X-Tesla-User-Agent, User-Agent)
         # so httpx sends the same headers as the requests session would.
         headers = dict(self.headers)
@@ -311,7 +331,7 @@ class Tesla(OAuth2Session):
             'Content-Type': 'application/x-www-form-urlencoded',
         }
 
-        verify = kwargs.get('verify', self.verify)
+        verify = self._httpx_auth_verify(kwargs.get('verify', self.verify))
         timeout = kwargs.get('timeout', self.timeout)
 
         with httpx.Client(http2=True, verify=verify) as client:
@@ -372,7 +392,7 @@ class Tesla(OAuth2Session):
             'Content-Type': 'application/x-www-form-urlencoded',
         }
 
-        verify = kwargs.get('verify', self.verify)
+        verify = self._httpx_auth_verify(kwargs.get('verify', self.verify))
         timeout = kwargs.get('timeout', self.timeout)
 
         with httpx.Client(http2=True, verify=verify) as client:
