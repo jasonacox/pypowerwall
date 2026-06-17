@@ -150,10 +150,15 @@ def _refresh_access_token(refresh_token: str, region: str = "us") -> dict:
                 if "access_token" not in data:
                     raise RuntimeError(f"No access_token in refresh response: {data}")
                 return data
+        except RuntimeError:
+            raise  # Application errors (non-200, missing token) should not fall back
         except Exception as exc:
-            # Fall back to requests if HTTP/2 fails
-            pass
+            # Transport/connection errors only — fall back to requests if available
+            if requests is None:
+                raise RuntimeError(f"HTTP/2 transport failed and 'requests' not installed: {exc}") from exc
 
+    if requests is None:
+        raise ImportError("The 'requests' or 'httpx' package is required.")
     resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
@@ -197,10 +202,15 @@ def _exchange_code(auth_code: str, code_verifier: str, region: str = "us") -> di
                 if "refresh_token" not in data:
                     raise RuntimeError(f"No refresh_token in response: {data}")
                 return data
+        except RuntimeError:
+            raise  # Application errors (non-200, missing token) should not fall back
         except Exception as exc:
-            # Fall back to requests if HTTP/2 fails
-            pass
+            # Transport/connection errors only — fall back to requests if available
+            if requests is None:
+                raise RuntimeError(f"HTTP/2 transport failed and 'requests' not installed: {exc}") from exc
 
+    if requests is None:
+        raise ImportError("The 'requests' package is required. Install with: pip install requests")
     resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")

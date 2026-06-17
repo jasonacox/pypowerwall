@@ -11,6 +11,8 @@ pyPowerwall is a Python module to interface with Tesla Energy Gateways for Power
 
 > ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
+> ⚠️ **CLOUD MODE NOTICE:** As of June 2026, Tesla now requires HTTP/2 for both `auth.tesla.com` token endpoints and `owner-api.teslamotors.com` API calls. If you use **Cloud Mode** (Option 3), you must upgrade to **pypowerwall v0.15.11 or later** — earlier versions will fail with `403 Forbidden` errors during setup and API calls. Install the latest version with `pip install --upgrade pypowerwall`.
+
 ## Description
 
 This Python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  

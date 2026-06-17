@@ -219,8 +219,14 @@ class Tesla(OAuth2Session):
             request_kwargs['params'] = kwargs['params']
         if 'json' in kwargs:
             request_kwargs['json'] = kwargs['json']
+        # Forward proxy settings from the requests session to httpx
+        client_kwargs = {'http2': True, 'verify': verify}
+        if getattr(self, 'proxies', None):
+            client_kwargs['proxies'] = self.proxies
+        if getattr(self, 'trust_env', False):
+            client_kwargs['trust_env'] = True
         try:
-            with httpx.Client(http2=True, verify=verify) as client:
+            with httpx.Client(**client_kwargs) as client:
                 resp = client.request(method, url, **request_kwargs)
             return _HTTP2Response(resp)
         except Exception as exc:
@@ -334,7 +340,13 @@ class Tesla(OAuth2Session):
         verify = self._httpx_auth_verify(kwargs.get('verify', self.verify))
         timeout = kwargs.get('timeout', self.timeout)
 
-        with httpx.Client(http2=True, verify=verify) as client:
+        client_kwargs = {'http2': True, 'verify': verify}
+        if getattr(self, 'proxies', None):
+            client_kwargs['proxies'] = self.proxies
+        if getattr(self, 'trust_env', False):
+            client_kwargs['trust_env'] = True
+
+        with httpx.Client(**client_kwargs) as client:
             r = client.post(token_url, data=dict(urldecode(body)), headers=headers, timeout=timeout)
             r.raise_for_status()
             self._client.parse_request_body_response(r.text, scope=self.scope)
@@ -395,10 +407,17 @@ class Tesla(OAuth2Session):
         verify = self._httpx_auth_verify(kwargs.get('verify', self.verify))
         timeout = kwargs.get('timeout', self.timeout)
 
-        with httpx.Client(http2=True, verify=verify) as client:
+        client_kwargs = {'http2': True, 'verify': verify}
+        if getattr(self, 'proxies', None):
+            client_kwargs['proxies'] = self.proxies
+        if getattr(self, 'trust_env', False):
+            client_kwargs['trust_env'] = True
+
+        with httpx.Client(**client_kwargs) as client:
             r = client.post(token_url, data=dict(urldecode(body)), headers=headers, timeout=timeout)
             r.raise_for_status()
-            self.token = self._client.parse_request_body_response(r.text, scope=self.scope)
+            self._client.parse_request_body_response(r.text, scope=self.scope)
+            self.token = self._client.token
             if 'refresh_token' not in self.token:
                 self.token['refresh_token'] = refresh_token
             return self.token
