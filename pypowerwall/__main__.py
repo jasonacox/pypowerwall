@@ -171,7 +171,8 @@ def main():
                            help="Register RSA key with Powerwall for v1r LAN TEDAPI mode")
     setup_args.add_argument("-email", type=str, default=None, help="Email address for Tesla Login.")
     setup_args.add_argument("-headless", action="store_true", default=False,
-                           help="Manual mode — paste URL instead of opening browser")
+                           help="URL-paste mode — generates Tesla login URL; paste callback URL from any browser. "
+                                "SSH/headless-friendly; no local GUI or pypowerwall install required.")
     setup_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
 
@@ -323,25 +324,33 @@ def main():
 
         token_data = None
         if email is None or not os.path.isfile(auth_file):
-            # Get token via native browser (macOS) or headless (Linux/Windows/SSH)
-            refresh_token, detected_email, token_data = tesla_login(
-                headless=args.headless,
-                region=args.region,
-                debug=getattr(args, 'debug', False),
-            )
-            email = detected_email or email
-            if not email:
-                email = input("\nTesla account email: ").strip()
-            # If headless/remote, token_data is empty — write token manually
-            if not token_data:
-                from pypowerwall.tesla_auth import save_token
-                save_token(
-                    {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800},
-                    path=auth_file, email=email, region=args.region,
+            if args.headless:
+                # URL-paste mode: bypass tesla_auth and use the classic teslapy OAuth flow.
+                # PyPowerwallCloud.setup() will generate a Tesla login URL and prompt the
+                # user to paste back the resulting 'Page Not Found' callback URL.
+                # This works entirely over SSH — no GUI or local pypowerwall install needed.
+                pass
+            else:
+                # Get token via native browser (macOS) or instruct remote/headless users
+                # to run 'python -m pypowerwall authtoken' on a local machine.
+                refresh_token, detected_email, token_data = tesla_login(
+                    headless=False,
+                    region=args.region,
+                    debug=getattr(args, 'debug', False),
                 )
-                token_data = None  # signal setup() to use existing file
+                email = detected_email or email
+                if not email:
+                    email = input("\nTesla account email: ").strip()
+                # If headless/remote, token_data is empty — write token manually
+                if not token_data:
+                    from pypowerwall.tesla_auth import save_token
+                    save_token(
+                        {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800},
+                        path=auth_file, email=email, region=args.region,
+                    )
+                    token_data = None  # signal setup() to use existing file
 
-        # Run Setup with token data (or None if using existing file)
+        # Run Setup with token data (or None if using existing/URL-paste file)
         c = PyPowerwallCloud(email, authpath=authpath)
         if c.setup(email=email, token_data=token_data):
             print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
