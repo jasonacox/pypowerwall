@@ -10,7 +10,7 @@
   * Adds `_HTTP2Response` wrapper class for requests/httpx response compatibility
   * Fixes 403 errors during `setup` flow (sitelist retrieval) reported in Powerwall-Dashboard #779
   * Fixes 403 errors during normal cloud-mode polling (PRODUCT_LIST, SITE_DATA, etc.)
-  * Requires `httpx>=0.27.0` (already added to requirements.txt in v0.15.10 dev)
+  * Requires `httpx[http2]>=0.27.0` — the `[http2]` extra installs `h2`, which is required for HTTP/2 support; without it, httpx silently falls back to HTTP/1.1
 
 ## v0.15.10 - Combined Reserve + Mode Control Endpoint
 
