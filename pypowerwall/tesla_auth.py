@@ -188,6 +188,11 @@ def _remote_login() -> str:
     print("That will open a login window. After authentication,")
     print("copy the refresh token and paste it here.")
     print()
+    print("💡 SSH/headless alternative: re-run setup with -headless to use a")
+    print("   browser URL-paste flow that requires no local pypowerwall install:")
+    print()
+    print("    python -m pypowerwall setup -headless")
+    print()
 
     while True:
         token = input("Refresh token: ").strip()
