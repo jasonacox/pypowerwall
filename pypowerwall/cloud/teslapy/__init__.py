@@ -185,8 +185,9 @@ class Tesla(OAuth2Session):
         timeout = kwargs.get('timeout', self.timeout)
         withhold_token = kwargs.get('withhold_token', False)
         verify = getattr(self, 'verify', True)
-        # Build headers
-        headers = {'User-Agent': APP_USER_AGENT}
+        # Start with all session headers (Content-Type, X-Tesla-User-Agent, User-Agent)
+        # so httpx sends the same headers as the requests session would.
+        headers = dict(self.headers)
         if not withhold_token and self.authorized:
             token = self.token.get('access_token')
             if token:
