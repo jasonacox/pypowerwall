@@ -75,6 +75,8 @@ Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will
 
 ### Cloud Mode - Option 3
 
+> 🚨 **DEPRECATED:** Tesla shut down the unofficial Owner API (`owner-api.teslamotors.com`) on June 12, 2026. Cloud Mode (Option 3) no longer works. Please migrate to **[FleetAPI Cloud Mode (Option 2)](#fleetapi-cloud-setup---option-2)**. See [issue #323](https://github.com/jasonacox/pypowerwall/issues/323).
+
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
 
 If you need to authenticate on a machine without a display (e.g. a Raspberry Pi or remote server over SSH), use the `authtoken` command on your local machine to obtain a refresh token, then paste it into the remote session:
