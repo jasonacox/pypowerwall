@@ -28,6 +28,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'requests',
+        'httpx[http2]>=0.27.0',
         'protobuf>=4.25.1',
         'python-dotenv',
         'pyroute2',

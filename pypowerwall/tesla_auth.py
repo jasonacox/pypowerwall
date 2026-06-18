@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import secrets
+import ssl
 import sys
 import urllib.parse
 
@@ -38,6 +39,13 @@ try:
     import requests
 except ImportError:
     requests = None  # type: ignore
+
+# Optional HTTP/2 support for Tesla auth (required as of June 2026)
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
 
 
 # ---------------------------------------------------------------------------
@@ -55,6 +63,25 @@ REGION_HOSTS = {
     "us": "https://auth.tesla.com",
     "cn": "https://auth.tesla.cn",
 }
+
+
+def _httpx_auth_verify(verify=True):
+    """Return an httpx-compatible verify setting pinned to TLS 1.3 when possible."""
+    if verify is False:
+        return False
+    if isinstance(verify, (str, bytes)):
+        return verify
+    if isinstance(verify, ssl.SSLContext):
+        return verify
+    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_3"):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            return ctx
+        except Exception:
+            pass
+    return verify
 
 
 # ---------------------------------------------------------------------------
@@ -101,19 +128,38 @@ def _refresh_access_token(refresh_token: str, region: str = "us") -> dict:
     Tesla OAuth refresh: POST /oauth2/v3/token with grant_type=refresh_token,
     client_id=ownerapi, refresh_token.
     """
-    if requests is None:
-        raise ImportError("The 'requests' package is required.")
+    if requests is None and not HAS_HTTPX:
+        raise ImportError("The 'requests' or 'httpx' package is required.")
 
     auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
-    resp = requests.post(
-        f"{auth_host}{TOKEN_URL_PATH}",
-        json={
-            "grant_type": "refresh_token",
-            "client_id": CLIENT_ID,
-            "refresh_token": refresh_token,
-        },
-        timeout=30,
-    )
+    url = f"{auth_host}{TOKEN_URL_PATH}"
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": CLIENT_ID,
+        "refresh_token": refresh_token,
+    }
+
+    # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
+    if HAS_HTTPX:
+        try:
+            with httpx.Client(http2=True, verify=_httpx_auth_verify()) as client:
+                resp = client.post(url, json=payload, timeout=30)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
+                data = resp.json()
+                if "access_token" not in data:
+                    raise RuntimeError(f"No access_token in refresh response: {data}")
+                return data
+        except RuntimeError:
+            raise  # Application errors (non-200, missing token) should not fall back
+        except Exception as exc:
+            # Transport/connection errors only — fall back to requests if available
+            if requests is None:
+                raise RuntimeError(f"HTTP/2 transport failed and 'requests' not installed: {exc}") from exc
+
+    if requests is None:
+        raise ImportError("The 'requests' or 'httpx' package is required.")
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
 
@@ -132,21 +178,40 @@ def _exchange_code(auth_code: str, code_verifier: str, region: str = "us") -> di
     Matches tesla_auth: POST to /oauth2/v3/token with grant_type=authorization_code,
     client_id=ownerapi, code, code_verifier, redirect_uri.
     """
-    if requests is None:
-        raise ImportError("The 'requests' package is required. Install with: pip install requests")
+    if requests is None and not HAS_HTTPX:
+        raise ImportError("The 'requests' or 'httpx' package is required. Install with: pip install requests")
 
     auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
-    resp = requests.post(
-        f"{auth_host}{TOKEN_URL_PATH}",
-        json={
-            "grant_type": "authorization_code",
-            "client_id": CLIENT_ID,
-            "code": auth_code,
-            "code_verifier": code_verifier,
-            "redirect_uri": REDIRECT_URI,
-        },
-        timeout=30,
-    )
+    url = f"{auth_host}{TOKEN_URL_PATH}"
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "code": auth_code,
+        "code_verifier": code_verifier,
+        "redirect_uri": REDIRECT_URI,
+    }
+
+    # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
+    if HAS_HTTPX:
+        try:
+            with httpx.Client(http2=True, verify=_httpx_auth_verify()) as client:
+                resp = client.post(url, json=payload, timeout=30)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")
+                data = resp.json()
+                if "refresh_token" not in data:
+                    raise RuntimeError(f"No refresh_token in response: {data}")
+                return data
+        except RuntimeError:
+            raise  # Application errors (non-200, missing token) should not fall back
+        except Exception as exc:
+            # Transport/connection errors only — fall back to requests if available
+            if requests is None:
+                raise RuntimeError(f"HTTP/2 transport failed and 'requests' not installed: {exc}") from exc
+
+    if requests is None:
+        raise ImportError("The 'requests' package is required. Install with: pip install requests")
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")
 
@@ -180,13 +245,20 @@ def _remote_login() -> str:
     print("Tesla Authentication — Remote Session Detected")
     print("=" * 60)
     print()
-    print("You're on a remote session. On your local Mac/PC with")
-    print("pypowerwall installed, run:")
+    print("  No display detected (SSH/headless session). To authenticate:")
     print()
-    print("    python -m pypowerwall authtoken")
+    print("  1. On a Mac/PC/desktop with pypowerwall installed, run:")
     print()
-    print("That will open a login window. After authentication,")
-    print("copy the refresh token and paste it here.")
+    print("         pip install pypowerwall")
+    print("         python -m pypowerwall authtoken")
+    print()
+    print("     A browser window will open. Log in to Tesla, then copy the")
+    print("     refresh token shown at the end.")
+    print()
+    print("  2. Paste the refresh token below.")
+    print()
+    print("  The token will be saved to this machine — you only need to do")
+    print("  this once (tokens auto-refresh).")
     print()
     print("💡 SSH/headless alternative: re-run setup with -headless to use a")
     print("   browser URL-paste flow that requires no local pypowerwall install:")
