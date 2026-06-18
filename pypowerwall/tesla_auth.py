@@ -260,11 +260,6 @@ def _remote_login() -> str:
     print("  The token will be saved to this machine — you only need to do")
     print("  this once (tokens auto-refresh).")
     print()
-    print("💡 SSH/headless alternative: re-run setup with -headless to use a")
-    print("   browser URL-paste flow that requires no local pypowerwall install:")
-    print()
-    print("    python -m pypowerwall setup -headless")
-    print()
 
     while True:
         token = input("Refresh token: ").strip()

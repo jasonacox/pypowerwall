@@ -344,7 +344,7 @@ def main():
                 )
                 token_data = None  # signal setup() to use existing file
 
-        # Run Setup with token data (or None if using existing/URL-paste file)
+        # Run Setup with token data (or None if using existing auth file)
         c = PyPowerwallCloud(email, authpath=authpath)
         if c.setup(email=email, token_data=token_data):
             print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
