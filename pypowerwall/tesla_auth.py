@@ -239,6 +239,97 @@ def _detect_mode() -> str:
 # Path 1 — Remote/Headless login (paste token)
 # ---------------------------------------------------------------------------
 
+def _read_masked(prompt: str) -> str:
+    """Read a line from the terminal echoing '*' for every character typed.
+
+    Reads directly from /dev/tty (Unix) or via msvcrt (Windows) so it works
+    even when sys.stdin has been redirected or left in a broken state.
+    Uses raw mode to bypass the terminal's 1024-byte canonical line buffer,
+    which would otherwise truncate long tokens on paste.
+    Handles backspace, Ctrl+C, and Ctrl+D correctly.
+    Falls back to a plain readline if the terminal cannot be put into raw mode.
+    """
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    # ---- Windows --------------------------------------------------------
+    if sys.platform == 'win32':
+        import msvcrt
+        chars = []
+        while True:
+            ch = msvcrt.getwch()
+            if ch in ('\r', '\n'):
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                break
+            if ch in ('\x08', '\x7f'):          # backspace
+                if chars:
+                    chars.pop()
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+            elif ch == '\x03':                   # Ctrl+C
+                raise KeyboardInterrupt
+            elif ch.isprintable():
+                chars.append(ch)
+                sys.stdout.write('*')
+                sys.stdout.flush()
+        return ''.join(chars).strip()
+
+    # ---- Unix (macOS / Linux) -------------------------------------------
+    try:
+        import termios
+        import tty
+    except ImportError:
+        # termios not available — plain readline fallback
+        line = sys.stdin.readline()
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+        return line.rstrip('\n').strip()
+
+    # Always read from the controlling terminal so we work even when
+    # sys.stdin has been redirected or reset after an NSApplication run.
+    try:
+        tty_fd = open('/dev/tty', 'r+b', buffering=0)
+    except OSError:
+        line = sys.stdin.readline()
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+        return line.rstrip('\n').strip()
+
+    chars = []
+    old_settings = termios.tcgetattr(tty_fd)
+    try:
+        tty.setraw(tty_fd)
+        while True:
+            ch = tty_fd.read(1).decode('utf-8', errors='replace')
+            if ch in ('\n', '\r'):
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                break
+            if ch in ('\x7f', '\x08'):           # backspace / delete
+                if chars:
+                    chars.pop()
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+            elif ch == '\x03':                    # Ctrl+C
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                raise KeyboardInterrupt
+            elif ch == '\x04':                    # Ctrl+D / EOF
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                raise EOFError
+            elif ch.isprintable():
+                chars.append(ch)
+                sys.stdout.write('*')
+                sys.stdout.flush()
+    finally:
+        termios.tcsetattr(tty_fd, termios.TCSADRAIN, old_settings)
+        tty_fd.close()
+
+    return ''.join(chars).strip()
+
+
 def _remote_login() -> str:
     """Remote login: instruct user to run authtoken locally, then paste token."""
     print("\n" + "=" * 60)
@@ -255,13 +346,7 @@ def _remote_login() -> str:
     print()
 
     while True:
-        if sys.stdin.isatty():
-            sys.stdout.write("Refresh token: ")
-            sys.stdout.flush()
-        line = sys.stdin.readline()
-        if line == "":
-            raise EOFError("No token provided (EOF)")
-        token = line.strip()
+        token = _read_masked("Refresh token: ")
         if token:
             return token
         print("   ⚠️  Token cannot be empty — try again.")
