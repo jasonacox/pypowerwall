@@ -270,6 +270,22 @@ class Tesla(OAuth2Session):
         kwargs['login_hint'] = self.email
         kwargs['state'] = state
         with_hint = super(Tesla, self).authorization_url(url, **kwargs)[0]
+        # Probe for regional SSO redirect using HTTP/2 (Tesla enforces TLS 1.3)
+        if HAS_HTTPX:
+            try:
+                verify = self._httpx_auth_verify(getattr(self, 'verify', True))
+                client_kwargs = {'http2': True, 'verify': verify, 'follow_redirects': False}
+                if getattr(self, 'proxies', None):
+                    client_kwargs['proxies'] = self.proxies
+                with httpx.Client(**client_kwargs) as client:
+                    response = client.get(with_hint, timeout=self.timeout)
+                if response.is_redirect:
+                    with_hint = response.headers['Location']
+                    self.sso_base_url = urljoin(with_hint, '/')
+                    logger.debug('New SSO service URL %s', self.sso_base_url)
+                return with_hint if response.is_success else without_hint
+            except Exception as exc:
+                logger.warning('HTTP/2 region probe failed, falling back to HTTP/1.1: %s', exc)
         response = self.get(with_hint, allow_redirects=False)
         if response.is_redirect:
             with_hint = response.headers['Location']
@@ -818,8 +834,20 @@ class Vehicle(JsonDict):
         model = self.order.get('modelCode', 'm' + self['vin'][3].lower())
         params = {'model': model, 'bkba_opt': 1, 'view': view, 'size': size,
                   'options': options}
-        # Retrieve image from compositor
+        # Retrieve image from compositor using HTTP/2 (Tesla CDN prefers it)
         url = 'https://static-assets.tesla.com/v1/compositor/'
+        if HAS_HTTPX:
+            try:
+                verify = Tesla._httpx_auth_verify(self.tesla.verify)
+                client_kwargs = {'http2': True, 'verify': verify}
+                if getattr(self.tesla, 'proxies', None):
+                    client_kwargs['proxies'] = self.tesla.proxies
+                with httpx.Client(**client_kwargs) as client:
+                    response = client.get(url, params=params, timeout=30)
+                    response.raise_for_status()
+                    return response.content
+            except Exception as exc:
+                logger.warning('HTTP/2 compositor fetch failed, falling back to HTTP/1.1: %s', exc)
         response = requests.get(url, params=params, verify=self.tesla.verify,
                                 proxies=self.tesla.proxies, timeout=30)
         response.raise_for_status()  # Raise HTTPError, if one occurred
