@@ -258,7 +258,10 @@ def _remote_login() -> str:
         if sys.stdin.isatty():
             sys.stdout.write("Refresh token: ")
             sys.stdout.flush()
-        token = sys.stdin.readline().strip()
+        line = sys.stdin.readline()
+        if line == "":
+            raise EOFError("No token provided (EOF)")
+        token = line.strip()
         if token:
             return token
         print("   ⚠️  Token cannot be empty — try again.")
