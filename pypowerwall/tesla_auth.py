@@ -255,7 +255,10 @@ def _remote_login() -> str:
     print()
 
     while True:
-        token = input("Refresh token: ").strip()
+        if sys.stdin.isatty():
+            sys.stdout.write("Refresh token: ")
+            sys.stdout.flush()
+        token = sys.stdin.readline().strip()
         if token:
             return token
         print("   ⚠️  Token cannot be empty — try again.")
