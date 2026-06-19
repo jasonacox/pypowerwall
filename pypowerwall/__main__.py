@@ -306,17 +306,20 @@ def main():
         # Check for existing auth file
         auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
         overwrite = False
-        if os.path.isfile(auth_file) and not email:
+        if os.path.isfile(auth_file):
             try:
                 with open(auth_file) as f:
                     data = json.load(f)
-                email = list(data.keys())[0]
+                existing_email = list(data.keys())[0]
+                if not email:
+                    email = existing_email
                 print("  Found existing auth file: %s" % auth_file)
                 resp = input("  Overwrite existing file? [y/N]: ").strip()
                 if resp.lower() == "y":
                     overwrite = True
-                    email = None
                     os.remove(auth_file)
+                    if not args.email:
+                        email = None  # reset so login will re-detect or prompt for email
                 # else: keep existing, just re-select site
             except Exception:
                 pass
