@@ -1,5 +1,28 @@
 # RELEASE NOTES
 
+## v0.15.12 - Remote Setup and Cloud Auth Improvements
+
+* fix(cloud): Docker/container headless setup no longer fails with 403 on first connect (#333)
+  * Root cause confirmed: `owner-api.teslamotors.com` only accepts **code-exchange ATs** (from PKCE WebView login via `grant_type=authorization_code`). Refreshed ATs (`grant_type=refresh_token`) are always rejected with 403, regardless of scopes or HTTP version.
+  * `authtoken` command now outputs **both** the Refresh Token (RT, valid 90 days) and Access Token (AT, valid ~8h) — RT shown first in both terminal output and window UI
+  * macOS WebView success page redesigned: RT with green badge first, AT with yellow badge second, separate Copy RT / Copy AT buttons
+  * `setup -headless` now prompts for RT first, then AT (optional but required for owner-api to succeed)
+  * Both tokens are saved to the auth file; `connect()` uses the code-exchange AT directly without triggering a refresh
+  * `expires_at` in auth file now set to `now + expires_in` (real expiry, ~8h) when AT is saved, rather than always `0` — allows accurate expiry reporting in `cloudcheck` and auth file inspection
+* feat(cloud): New `cloudcheck` diagnostics command for cloud mode troubleshooting
+  * Checks Python, platform, OpenSSL version, TLS 1.3 support
+  * Checks httpx and h2 installation and versions
+  * Checks proxy environment variables
+  * Decodes and validates auth file: detects empty AT, expired AT, and whether AT has code-exchange markers (`owner-api` aud, `x-enc` present)
+  * Live connectivity test to `auth.tesla.com` and `owner-api.teslamotors.com` (HTTP/2 protocol check)
+  * Optional token refresh test with informative failure messages explaining the code-exchange AT requirement
+  * `cloudcheck -noconnect` skips live tests for offline validation
+  * Adding `-debug` to `setup`, `cloudcheck`, or `authtoken` automatically prints a full environment diagnostics header (Python, platform, OpenSSL, httpx, h2, proxy vars) before running the command
+* fix(cloud): Remove stale energy-scope comments and contradictory `SCOPES` documentation across `tesla_auth.py`, `teslapy/__init__.py`, `pypowerwall_cloud.py`, and `__main__.py`
+  * Energy scopes (`energy_device_data`, `energy_cmds`) are NOT required and were a red herring
+  * Updated `AUTH.md` Section 7 to mark RCA-6 (energy scopes) as **DISPROVEN** and document the confirmed root cause as RCA-8 (code-exchange vs refreshed AT)
+* Bump library version to `0.15.12`
+
 ## v0.15.11 - HTTP/2 for Tesla Owner API Calls
 
 * fix(cloud): Extend HTTP/2 support to all owner-api.teslamotors.com API calls, not just auth endpoints (#324) - t93

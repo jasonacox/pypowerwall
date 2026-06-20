@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import os
@@ -19,6 +20,18 @@ AUTHFILE = ".pypowerwall.auth"  # Stores auth session information
 SITEFILE = ".pypowerwall.site"  # Stores site id
 COUNTER_MAX = 64  # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59  # Site config cache TTL in seconds
+
+
+def _jwt_scopes(token: str) -> list:
+    """Return the scp list from a JWT payload without signature verification."""
+    try:
+        payload = token.split('.')[1]
+        padded = payload + '=' * (4 - len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded))
+        scp = claims.get('scp', [])
+        return scp if isinstance(scp, list) else scp.split()
+    except Exception:
+        return []
 
 
 def set_debug(debug=False, quiet=False, color=True):
@@ -145,6 +158,55 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         # Create Tesla instance
         self.tesla = Tesla(self.email, cache_file=self.authfile, timeout=self.timeout)
+
+        # If the auth file has no access_token (user skipped AT in setup -headless,
+        # or auth file predates the AT requirement), attempt a refresh here.
+        # NOTE: owner-api.teslamotors.com rejects refreshed ATs with 403 — only
+        # code-exchange ATs (from authtoken WebView login) are accepted. This path
+        # will log a warning and likely fail at battery_list(). The fix is to
+        # re-run 'authtoken' and 'setup -headless' to save a code-exchange AT.
+        if (self.tesla.token.get('refresh_token') and
+                not self.tesla.token.get('access_token')):
+            log.debug("connect: access_token empty, refreshing via teslapy…")
+            log.debug("connect: refresh_token prefix = %s…",
+                      self.tesla.token['refresh_token'][:12])
+            try:
+                rt = self.tesla.token['refresh_token']
+                self.tesla.refresh_token(
+                    self.tesla.auto_refresh_url,
+                    refresh_token=rt,
+                    **self.tesla.auto_refresh_kwargs
+                )
+                new_at = self.tesla.token.get('access_token', '')
+                log.debug("connect: token refresh succeeded, access_token length=%d", len(new_at))
+                # Warn: owner-api.teslamotors.com rejects refreshed ATs with 403.
+                # Only code-exchange ATs (from setup/authtoken with WebView) work.
+                # Check if this looks like a refreshed AT (lacks x-enc or owner-api aud).
+                if new_at:
+                    try:
+                        at_claims = json.loads(base64.urlsafe_b64decode(
+                            new_at.split('.')[1] + '=='))
+                        has_xenc = 'x-enc' in at_claims
+                        at_aud = at_claims.get('aud', [])
+                        has_owner_api_aud = any('owner-api' in str(a) for a in at_aud)
+                        if not (has_owner_api_aud and has_xenc):
+                            log.warning("Refreshed AT missing owner-api aud or x-enc — likely to get 403.")
+                    except Exception:
+                        pass
+            except Exception as err:
+                log.error("Token refresh failed: %s", repr(err))
+                # Log response body for 4xx errors — critical for diagnosing 403
+                resp_obj = getattr(err, 'response', None)
+                if resp_obj is not None:
+                    try:
+                        body = resp_obj.text if hasattr(resp_obj, 'text') else str(getattr(resp_obj, 'content', ''))
+                        log.error("Token refresh response body: %s", body[:600])
+                    except Exception:
+                        pass
+                log.error("Tip: run 'python -m pypowerwall cloudcheck' for environment diagnostics")
+                log.error("     See pypowerwall/cloud/AUTH.md Section 7 for root cause analysis")
+                return False
+
         # Check to see if we have a cached token
         if not self.tesla.authorized:
             # Login to Tesla account and cache token
