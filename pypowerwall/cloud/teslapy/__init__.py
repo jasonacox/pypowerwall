@@ -160,8 +160,9 @@ class Tesla(OAuth2Session):
         if serialize and 'data' in kwargs:
             kwargs['json'] = kwargs.pop('data')
         # Ensure access token is refreshed if expired — the HTTP/2 path
-        # bypasses OAuth2Session.request(), which normally handles auto-refresh
-        if self.expires_at and 0 < self.expires_at < time.time():
+        # bypasses OAuth2Session.request(), which normally handles auto-refresh.
+        # Skip refresh for unauthenticated requests (withhold_token=True).
+        if not kwargs.get('withhold_token', False) and self.expires_at and 0 < self.expires_at < time.time():
             try:
                 self.refresh_token()
             except Exception as exc:
