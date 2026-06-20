@@ -159,6 +159,13 @@ class Tesla(OAuth2Session):
         kwargs.setdefault('timeout', self.timeout)
         if serialize and 'data' in kwargs:
             kwargs['json'] = kwargs.pop('data')
+        # Ensure access token is refreshed if expired — the HTTP/2 path
+        # bypasses OAuth2Session.request(), which normally handles auto-refresh
+        if self.expires_at and 0 < self.expires_at < time.time():
+            try:
+                self.refresh_token()
+            except Exception as exc:
+                logger.warning('Auto token refresh failed: %s', exc)
         # Use HTTP/2 for owner-api calls (Tesla requires it as of June 2026)
         if HAS_HTTPX:
             response = self._request_http2(method, url, **kwargs)
