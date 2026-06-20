@@ -375,7 +375,14 @@ class Tesla(OAuth2Session):
             logger.debug('Token exchange response: HTTP %d (protocol=%s)',
                          r.status_code, r.http_version)
             if r.status_code >= 400:
-                logger.error('Token exchange HTTP %d body: %s', r.status_code, r.text[:600])
+                try:
+                    err_body = r.json()
+                    logger.error('Token exchange HTTP %d error: %s', r.status_code,
+                                 err_body.get('error', 'unknown'))
+                    if 'error_description' in err_body:
+                        logger.error('  detail: %s', err_body['error_description'])
+                except Exception:
+                    logger.error('Token exchange HTTP %d (no parseable body)', r.status_code)
             r.raise_for_status()
             self._client.parse_request_body_response(r.text, scope=self.scope)
             self.token = self._client.token
@@ -448,7 +455,14 @@ class Tesla(OAuth2Session):
             logger.debug('Token refresh response: HTTP %d %s (protocol=%s)',
                          r.status_code, r.reason_phrase, r.http_version)
             if r.status_code >= 400:
-                logger.error('Token refresh HTTP %d body: %s', r.status_code, r.text[:600])
+                try:
+                    err_body = r.json()
+                    logger.error('Token refresh HTTP %d error: %s', r.status_code,
+                                 err_body.get('error', 'unknown'))
+                    if 'error_description' in err_body:
+                        logger.error('  detail: %s', err_body['error_description'])
+                except Exception:
+                    logger.error('Token refresh HTTP %d (no parseable body)', r.status_code)
             r.raise_for_status()
             # Do not pass scope= to parse_request_body_response: if Tesla returns
             # scopes broader than self.scope, oauthlib raises a Warning that would

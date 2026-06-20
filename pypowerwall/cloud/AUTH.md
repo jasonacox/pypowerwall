@@ -61,8 +61,9 @@ tesla_auth.login(headless=False)
          │   • Writes teslapy-compatible JSON cache file:
          │     { email: { url: "https://auth.tesla.com/",
          │                sso: { token_type, access_token, refresh_token,
-         │                       expires_at: 0, expires_in, id_token } } }
-         │   • expires_at=0 forces teslapy to treat access_token as expired
+         │                       expires_at, expires_in, id_token } } }
+         │   • expires_at set to real expiry (now + expires_in) when access_token
+         │     is present; 0 when AT is absent (forces teslapy refresh attempt)
          │
          ▼
     PyPowerwallCloud.setup(email, token_data)
@@ -240,14 +241,14 @@ cache format:
 |---|---|---|---|
 | `access_token` | present (code-exchange AT) | present if user pasted it; `""` if skipped | Must be code-exchange AT — refreshed ATs get 403 on owner-api |
 | `refresh_token` | present | present (pasted by user) | Long-lived (~90 days), used to re-authenticate |
-| `expires_at` | `0` (forced expired) | `0` (forced expired) | Prevents teslapy from auto-refreshing the AT in connect() |
+| `expires_at` | real expiry (`now + expires_in`) | real expiry when AT pasted; `0` if skipped | When non-zero, teslapy uses the saved AT directly; `0` triggers refresh attempt |
 | `id_token` | present (JWT with email) | absent | JWT payload contains email address |
 
-**Why `expires_at=0`?** This prevents `requests_oauthlib` from treating the saved AT as
-valid and auto-refreshing it during `super().request()` calls. Since refreshed ATs are
-rejected by `owner-api.teslamotors.com` with 403, we do NOT want auto-refresh.
-`connect()` checks `access_token` directly (non-empty string = use as-is; empty = must
-provide new AT via `setup -headless`).
+**Why save `expires_at`?** When a code-exchange access token is available, writing its
+real expiry (`now + expires_in`) tells teslapy the token is still valid, preventing an
+auto-refresh that would produce a 403-rejected AT. If no AT was saved (user skipped it
+in `setup -headless`), `expires_at` stays `0` and `connect()` will attempt a refresh —
+which will likely 403, but the error message guides the user to re-run `authtoken`.
 
 ---
 

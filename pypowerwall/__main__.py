@@ -220,7 +220,13 @@ def _run_cloud_diagnostics(authpath="", email=None, skip_connect=False):
         val = os.environ.get(var)
         if val:
             proxy_vars[var] = val
-            warn(f"{var}={val}")
+            # Redact credentials in proxy URLs (user:pass@host)
+            safe = val
+            if '://' in safe and '@' in safe.split('://', 1)[1]:
+                scheme, rest = safe.split('://', 1)
+                host = rest.split('@', 1)[1]
+                safe = f"{scheme}://***@{host}"
+            warn(f"{var}={safe}")
 
     if not proxy_vars:
         ok("No proxy environment variables set")
@@ -245,12 +251,12 @@ def _run_cloud_diagnostics(authpath="", email=None, skip_connect=False):
             has_at = bool(sso.get('access_token', ''))
             exp = sso.get('expires_at', 0)
             expired = (exp == 0) or (exp < time.time())
-            rt_prefix = sso.get('refresh_token', '')[:12] + '…' if has_rt else 'MISSING'
+            rt_len = len(sso.get('refresh_token', ''))
             at_len = len(sso.get('access_token', ''))
 
             ok(f"Found: {abs_auth}")
             info(f"Email:         {found_email}")
-            info(f"refresh_token: {'present' if has_rt else 'MISSING'} (starts: {rt_prefix})")
+            info(f"refresh_token: {'present' if has_rt else 'MISSING'} ({rt_len} chars)")
             if has_at:
                 info(f"access_token:  present ({at_len} chars), {'EXPIRED' if expired else 'valid'}")
             else:
@@ -264,7 +270,7 @@ def _run_cloud_diagnostics(authpath="", email=None, skip_connect=False):
                 try:
                     import base64 as _b64
                     atp = at_str.split('.')[1]
-                    at_claims = json.loads(_b64.urlsafe_b64decode(atp + '=' * (4 - len(atp) % 4)))
+                    at_claims = json.loads(_b64.urlsafe_b64decode(atp + '=' * (-len(atp) % 4)))
                     at_exp = at_claims.get('exp', 0)
                     at_aud = at_claims.get('aud', [])
                     has_owner_api_aud = any('owner-api' in str(a) for a in at_aud)

@@ -26,7 +26,7 @@ def _jwt_scopes(token: str) -> list:
     """Return the scp list from a JWT payload without signature verification."""
     try:
         payload = token.split('.')[1]
-        padded = payload + '=' * (4 - len(payload) % 4)
+        padded = payload + '=' * (-len(payload) % 4)
         claims = json.loads(base64.urlsafe_b64decode(padded))
         scp = claims.get('scp', [])
         return scp if isinstance(scp, list) else scp.split()
@@ -168,8 +168,6 @@ class PyPowerwallCloud(PyPowerwallBase):
         if (self.tesla.token.get('refresh_token') and
                 not self.tesla.token.get('access_token')):
             log.debug("connect: access_token empty, refreshing via teslapy…")
-            log.debug("connect: refresh_token prefix = %s…",
-                      self.tesla.token['refresh_token'][:12])
             try:
                 rt = self.tesla.token['refresh_token']
                 self.tesla.refresh_token(

@@ -287,6 +287,8 @@ def _read_masked(prompt: str) -> str:
         line = sys.stdin.readline()
         sys.stdout.write('\n')
         sys.stdout.flush()
+        if line == '':
+            raise EOFError('No input (EOF)')
         return line.rstrip('\n').strip()
 
     # Always read from the controlling terminal so we work even when
@@ -297,12 +299,15 @@ def _read_masked(prompt: str) -> str:
         line = sys.stdin.readline()
         sys.stdout.write('\n')
         sys.stdout.flush()
+        if line == '':
+            raise EOFError('No input (EOF)')
         return line.rstrip('\n').strip()
 
     chars = []
-    old_settings = termios.tcgetattr(tty_fd)
+    fd = tty_fd.fileno()
+    old_settings = termios.tcgetattr(fd)
     try:
-        tty.setraw(tty_fd)
+        tty.setraw(fd)
         while True:
             ch = tty_fd.read(1).decode('utf-8', errors='replace')
             if ch in ('\n', '\r'):
@@ -327,7 +332,7 @@ def _read_masked(prompt: str) -> str:
                 sys.stdout.write('*')
                 sys.stdout.flush()
     finally:
-        termios.tcsetattr(tty_fd, termios.TCSADRAIN, old_settings)
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         tty_fd.close()
 
     return ''.join(chars).strip()
