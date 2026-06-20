@@ -1,5 +1,12 @@
 # RELEASE NOTES
 
+## v0.15.12 - Auto-Refresh Expired Access Token in HTTP/2 Path
+
+* fix(teslapy): Restore access token auto-refresh for HTTP/2 request path (#335)
+  * Since v0.15.11, owner-api calls through `_request_http2()` bypassed `OAuth2Session`'s built-in token refresh, causing 401 errors after the ~8-hour access token expiry
+  * Adds explicit `expires_at` check + `refresh_token()` call before HTTP/2 requests, mirroring the OAuth2Session auto-refresh behavior
+  * Gate refresh on `withhold_token` and `self.authorized` to avoid spurious refresh attempts on unauthenticated endpoints
+
 ## v0.15.11 - HTTP/2 for Tesla Owner API Calls
 
 * fix(cloud): Extend HTTP/2 support to all owner-api.teslamotors.com API calls, not just auth endpoints (#324) - t93
