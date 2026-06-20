@@ -984,7 +984,7 @@ class PyPowerwallCloud(PyPowerwallBase):
                        If provided, writes token directly. If None and file exists,
                        skips auth and goes straight to site selection.
         """
-        print("Tesla Account Setup")
+        print("\nTesla Account Setup")
         print("-" * 60)
         tuser = ""
 
