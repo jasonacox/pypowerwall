@@ -427,7 +427,9 @@ def main():
                            help="Register RSA key with Powerwall for v1r LAN TEDAPI mode")
     setup_args.add_argument("-email", type=str, default=None, help="Email address for Tesla Login.")
     setup_args.add_argument("-headless", action="store_true", default=False,
-                           help="Manual mode — paste URL instead of opening browser")
+                           help="Force headless/token-paste mode — skip the browser window and use "
+                                "the SSH-friendly token-paste flow. Run 'python -m pypowerwall authtoken' "
+                                "on a local machine to get a token, then paste it here.")
     setup_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
 
@@ -609,7 +611,8 @@ def main():
 
         token_data = None
         if email is None or not os.path.isfile(auth_file):
-            # Get token via native browser (macOS) or headless (Linux/Windows/SSH)
+            # Get token via native browser (macOS/desktop) or token-paste flow (SSH/headless).
+            # -headless explicitly forces the token-paste flow; SSH sessions are auto-detected.
             refresh_token, detected_email, token_data = tesla_login(
                 headless=args.headless,
                 region=args.region,
@@ -636,7 +639,7 @@ def main():
                 )
                 token_data = None  # signal setup() to use existing file
 
-        # Run Setup with token data (or None if using existing file)
+        # Run Setup with token data (or None if using existing auth file)
         c = PyPowerwallCloud(email, authpath=authpath)
         if c.setup(email=email, token_data=token_data):
             print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
