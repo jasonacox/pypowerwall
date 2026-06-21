@@ -838,7 +838,7 @@ class FleetAPI:
             print()
             print("         Try deleting your Fleet API config file and re-running setup:")
             print(f"           rm {self.configfile}")
-            print("           python3 -m pypowerwall setup")
+            print("           python3 -m pypowerwall setup -fleetapi")
             return False
         sites = [s for s in raw_sites if s.get('energy_site_id') is not None]
         sel = 0
