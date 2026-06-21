@@ -79,17 +79,17 @@ Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will
 
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
 
-If you need to authenticate on a machine without a display (e.g. a Raspberry Pi or remote server over SSH), use the `authtoken` command on your local machine to obtain a refresh token, then paste it into the remote session:
+If you need to authenticate on a machine without a display (e.g. a Raspberry Pi or remote server over SSH), use the `authtoken` command on your local machine to obtain both a refresh token (RT) and access token (AT), then paste them into the remote session:
 
 ```bash
 # On your local machine (Mac/Windows/Linux with a display):
 python3 -m pypowerwall authtoken
 
 # Follow the Tesla login flow in the popup window.
-# Copy the token printed to the terminal.
+# Copy both tokens (RT and AT) printed to the terminal.
 
-# Then on the remote machine, run setup and paste the token when prompted:
-python3 -m pypowerwall setup
+# Then on the remote machine, run setup in headless mode and paste tokens when prompted:
+python3 -m pypowerwall setup -headless
 ```
 
 > 💡 **Alternative:** The [tesla_auth](https://github.com/adriankumpf/tesla_auth/releases) desktop app (Mac/Windows/Linux) can also generate tokens. For iOS users, the [Auth app for Tesla](https://apps.apple.com/us/app/auth-app-for-tesla/id1552058613) provides tokens directly on-device.
