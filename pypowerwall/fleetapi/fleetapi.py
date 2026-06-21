@@ -837,10 +837,18 @@ class FleetAPI:
             print("           3. Your Tesla account has no energy sites")
             print()
             print("         Try deleting your Fleet API config file and re-running setup:")
-            print(f"           rm {self.configfile}")
+            print(f'           rm "{self.configfile}"')
             print("           python3 -m pypowerwall setup -fleetapi")
             return False
         sites = [s for s in raw_sites if s.get('energy_site_id') is not None]
+        if not sites:
+            print("  ERROR: No energy sites with a Powerwall found in your Tesla account.")
+            print("         Your Tesla account may have vehicles but no Powerwall energy sites.")
+            print()
+            print("         Try deleting your Fleet API config file and re-running setup:")
+            print(f'           rm "{self.configfile}"')
+            print("           python3 -m pypowerwall setup -fleetapi")
+            return False
         sel = 0
         # If not set, pick first site
         if not self.site_id and sites:
