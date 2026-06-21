@@ -22,18 +22,6 @@ COUNTER_MAX = 64  # Max counter value for SITE_DATA API
 SITE_CONFIG_TTL = 59  # Site config cache TTL in seconds
 
 
-def _jwt_scopes(token: str) -> list:
-    """Return the scp list from a JWT payload without signature verification."""
-    try:
-        payload = token.split('.')[1]
-        padded = payload + '=' * (-len(payload) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(padded))
-        scp = claims.get('scp', [])
-        return scp if isinstance(scp, list) else scp.split()
-    except Exception:
-        return []
-
-
 def set_debug(debug=False, quiet=False, color=True):
     logging.basicConfig(format='%(levelname)s: %(message)s')
     if not quiet:
@@ -194,12 +182,18 @@ class PyPowerwallCloud(PyPowerwallBase):
                         pass
             except Exception as err:
                 log.error("Token refresh failed: %s", repr(err))
-                # Log response body for 4xx errors — critical for diagnosing 403
+                # Log safe error fields from response — never raw body (may contain tokens)
                 resp_obj = getattr(err, 'response', None)
                 if resp_obj is not None:
                     try:
                         body = resp_obj.text if hasattr(resp_obj, 'text') else str(getattr(resp_obj, 'content', ''))
-                        log.error("Token refresh response body: %s", body[:600])
+                        try:
+                            err_data = json.loads(body)
+                            log.error("Token refresh error: %s", err_data.get('error', 'unknown'))
+                            if err_data.get('error_description'):
+                                log.error("  description: %s", err_data['error_description'])
+                        except (json.JSONDecodeError, ValueError):
+                            log.error("Token refresh response: [non-JSON response, %d bytes]", len(body))
                     except Exception:
                         pass
                 log.error("Tip: run 'python -m pypowerwall cloudcheck' for environment diagnostics")

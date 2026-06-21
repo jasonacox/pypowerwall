@@ -344,7 +344,7 @@ def _run_cloud_diagnostics(authpath="", email=None, skip_connect=False):
                         new_rt = tesla.token.get('refresh_token', '')
                         if new_at:
                             ok(f"Token refresh: SUCCESS  (access_token length: {len(new_at)})")
-                            info(f"New refresh_token starts: {new_rt[:12]}…")
+                            info(f"New refresh_token: present ({len(new_rt)} chars)")
                             # Now also test battery_list with the fresh token
                             try:
                                 sites = tesla.battery_list() + tesla.solar_list()
@@ -567,6 +567,12 @@ def main():
             for var in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "NO_PROXY"):
                 val = os.environ.get(var)
                 if val:
+                    # Redact credentials in proxy URLs (user:pass@host)
+                    from urllib.parse import urlparse, urlunparse
+                    parsed = urlparse(val)
+                    if parsed.username or parsed.password:
+                        redacted = parsed._replace(netloc=f"***@{parsed.hostname}:{parsed.port}" if parsed.port else f"***@{parsed.hostname}")
+                        val = urlunparse(redacted)
                     print(f"[DEBUG] {var}={val}")
 
     # Cloud, FleetAPI, or v1r Setup

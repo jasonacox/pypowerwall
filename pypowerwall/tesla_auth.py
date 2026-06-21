@@ -1132,7 +1132,7 @@ def _extract_email_from_token(token: str) -> str:
         parts = token.split('.')
         if len(parts) >= 2:
             # Add padding
-            padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
+            padded = parts[1] + '=' * (-len(parts[1]) % 4)
             data = json.loads(base64.urlsafe_b64decode(padded))
             return (data.get('email') or
                     data.get('data', {}).get('email') or '')
@@ -1151,7 +1151,8 @@ def save_token(token_data: dict, path: str = None, email: str = None, region: st
                     refresh_token, expires_in, token_type, id_token).
         path: File path (default: .pypowerwall.auth in current directory).
         email: Email address to associate with the token.
-        region: Tesla region for token refresh if access_token is missing.
+        region: (Deprecated) Tesla region — no longer used for token refresh.
+               owner-api only accepts code-exchange ATs; refresh is not attempted here.
     """
     if not path:
         path = os.path.join(os.getcwd(), ".pypowerwall.auth")
