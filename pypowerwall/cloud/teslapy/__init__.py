@@ -100,6 +100,10 @@ class Tesla(OAuth2Session):
         self._auto_refresh_url = None
         self.code_verifier = code_verifier
         # Set OAuth2Session properties
+        # Scopes requested during PKCE authorization. Energy scopes are NOT
+        # required — owner-api.teslamotors.com only accepts code-exchange ATs
+        # (from grant_type=authorization_code), not refreshed ATs, regardless
+        # of scopes.
         self.scope = ('openid', 'email', 'offline_access')
         self.redirect_uri = SSO_BASE_URL + 'void/callback'
         self.auto_refresh_url = 'oauth2/v3/token'
@@ -164,6 +168,27 @@ class Tesla(OAuth2Session):
             response = self._request_http2(method, url, **kwargs)
         else:
             response = super(Tesla, self).request(method, url, **kwargs)
+        # On 401 (expired AT), refresh via RT and retry once.
+        # owner-api accepts "warm" refreshes (where a code-exchange AT was used
+        # previously to bootstrap the session). This handles the case where the
+        # AT expires during long-running polling without requiring a restart.
+        if (response.status_code == 401
+                and not kwargs.get('withhold_token', False)
+                and self.token.get('refresh_token')):
+            logger.warning('owner-api 401 (token expired) — refreshing token and retrying')
+            try:
+                self.refresh_token(
+                    self.auto_refresh_url,
+                    refresh_token=self.token['refresh_token'],
+                    **self.auto_refresh_kwargs
+                )
+                if HAS_HTTPX:
+                    response = self._request_http2(method, url, **kwargs)
+                else:
+                    response = super(Tesla, self).request(method, url, **kwargs)
+                logger.debug('Retry after refresh: HTTP %d', response.status_code)
+            except Exception as ref_exc:
+                logger.warning('Token refresh failed during retry: %s', ref_exc)
         # Error message handling
         if serialize and 400 <= response.status_code < 600:
             try:
@@ -228,6 +253,10 @@ class Tesla(OAuth2Session):
         try:
             with httpx.Client(**client_kwargs) as client:
                 resp = client.request(method, url, **request_kwargs)
+            logger.debug('owner-api %s %s → HTTP %d (protocol=%s)',
+                         method, url, resp.status_code, resp.http_version)
+            if resp.status_code >= 400:
+                logger.error('owner-api HTTP %d body: %s', resp.status_code, resp.text[:600])
             return _HTTP2Response(resp)
         except Exception as exc:
             logger.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
@@ -364,6 +393,17 @@ class Tesla(OAuth2Session):
 
         with httpx.Client(**client_kwargs) as client:
             r = client.post(token_url, data=dict(urldecode(body)), headers=headers, timeout=timeout)
+            logger.debug('Token exchange response: HTTP %d (protocol=%s)',
+                         r.status_code, r.http_version)
+            if r.status_code >= 400:
+                try:
+                    err_body = r.json()
+                    logger.error('Token exchange HTTP %d error: %s', r.status_code,
+                                 err_body.get('error', 'unknown'))
+                    if 'error_description' in err_body:
+                        logger.error('  detail: %s', err_body['error_description'])
+                except Exception:
+                    logger.error('Token exchange HTTP %d (no parseable body)', r.status_code)
             r.raise_for_status()
             self._client.parse_request_body_response(r.text, scope=self.scope)
             self.token = self._client.token
@@ -409,9 +449,11 @@ class Tesla(OAuth2Session):
         if not refresh_token:
             raise ValueError('`refresh_token` is not set')
 
+        # Intentionally omit scope= from prepare_refresh_body().
+        # Omitting it tells Tesla to return all scopes originally granted at
+        # authorisation time rather than restricting to self.scope.
         body = self._client.prepare_refresh_body(
             refresh_token=refresh_token,
-            scope=self.scope,
             **self.auto_refresh_kwargs
         )
 
@@ -431,11 +473,27 @@ class Tesla(OAuth2Session):
 
         with httpx.Client(**client_kwargs) as client:
             r = client.post(token_url, data=dict(urldecode(body)), headers=headers, timeout=timeout)
+            logger.debug('Token refresh response: HTTP %d %s (protocol=%s)',
+                         r.status_code, r.reason_phrase, r.http_version)
+            if r.status_code >= 400:
+                try:
+                    err_body = r.json()
+                    logger.error('Token refresh HTTP %d error: %s', r.status_code,
+                                 err_body.get('error', 'unknown'))
+                    if 'error_description' in err_body:
+                        logger.error('  detail: %s', err_body['error_description'])
+                except Exception:
+                    logger.error('Token refresh HTTP %d (no parseable body)', r.status_code)
             r.raise_for_status()
-            self._client.parse_request_body_response(r.text, scope=self.scope)
+            # Do not pass scope= to parse_request_body_response: if Tesla returns
+            # scopes broader than self.scope, oauthlib raises a Warning that would
+            # be caught as an exception and trigger a silent HTTP/1.1 fallback.
+            self._client.parse_request_body_response(r.text)
             self.token = self._client.token
             if 'refresh_token' not in self.token:
                 self.token['refresh_token'] = refresh_token
+            logger.debug('Token refresh succeeded (protocol=%s, access_token length=%d)',
+                         r.http_version, len(self.token.get('access_token', '')))
             return self.token
 
     def close(self):
