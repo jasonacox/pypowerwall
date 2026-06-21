@@ -75,7 +75,7 @@ Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will
 
 ### Cloud Mode - Option 3
 
-> 🚨 **DEPRECATED:** Tesla shut down the unofficial Owner API (`owner-api.teslamotors.com`) on June 12, 2026. Cloud Mode (Option 3) no longer works. Please migrate to **[FleetAPI Cloud Mode (Option 2)](#fleetapi-cloud-setup---option-2)**. See [issue #323](https://github.com/jasonacox/pypowerwall/issues/323).
+> ✅ **WORKING AGAIN (v0.15.11+):** Tesla now requires HTTP/2 for `auth.tesla.com` token endpoints and `owner-api.teslamotors.com` API calls. Cloud Mode (Option 3) is functional again as of **pypowerwall v0.15.11** — earlier versions fail with `403 Forbidden` errors. Upgrade with `pip install --upgrade pypowerwall`. Setup now requires both an **Access Token (AT)** and **Refresh Token (RT)** — see the [auth documentation](pypowerwall/cloud/AUTH.md) for details. See [issue #323](https://github.com/jasonacox/pypowerwall/issues/323) and [Powerwall-Dashboard #779](https://github.com/jasonacox/Powerwall-Dashboard/issues/779) for full background.
 
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
 
@@ -91,6 +91,8 @@ python3 -m pypowerwall authtoken
 # Then on the remote machine, run setup and paste the token when prompted:
 python3 -m pypowerwall setup
 ```
+
+> 💡 **Alternative:** The [tesla_auth](https://github.com/adriankumpf/tesla_auth/releases) desktop app (Mac/Windows/Linux) can also generate tokens. For iOS users, the [Auth app for Tesla](https://apps.apple.com/us/app/auth-app-for-tesla/id1552058613) provides tokens directly on-device.
 
 ### TEDAPI Mode - Option 4
 
