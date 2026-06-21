@@ -681,8 +681,8 @@ def main():
                 print("  When running 'python -m pypowerwall setup -headless',")
                 print("  paste the RT when prompted for 'Refresh Token (RT)'")
                 print("  and paste the AT when prompted for 'Access Token (AT)'.")
-                print("  The AT is required for cloud mode to work.")
-                print("  Re-run 'authtoken' every ~8 hours when the AT expires.")
+                print("  The AT bootstraps the session — after the first connect,")
+                print("  the library auto-refreshes via the RT when the AT expires.")
             else:
                 print("\nCopy the refresh token above and use it on your remote machine.")
         except (KeyboardInterrupt, EOFError):

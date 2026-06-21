@@ -10,6 +10,45 @@ Cloud mode authenticates with Tesla's OAuth 2.0 PKCE service (`auth.tesla.com`) 
 then calls the Tesla Owner API (`owner-api.teslamotors.com`). There are **three distinct
 setup paths** and two ongoing-use paths, all feeding into the same `connect()` entry point.
 
+```mermaid
+flowchart TD
+    subgraph SETUP ["🔑 Setup — one-time per host"]
+        S_LOCAL["Local Mac/Linux\npython -m pypowerwall setup\nWebView PKCE login → tokens saved automatically"]
+        S_AUTH["Local Mac\npython -m pypowerwall authtoken\nWebView PKCE login → prints RT + AT"]
+        S_HEAD["Remote / Container\npython -m pypowerwall setup -headless\nPaste RT first, then AT when prompted"]
+        S_AUTH -->|"copy both tokens"| S_HEAD
+    end
+
+    subgraph CONNECT ["🔌 connect() — called on every process start"]
+        C_AT{"AT in\nauth file?"}
+        C_USE["Use code-exchange AT\ncall owner-api"]
+        C_COLD["'Cold' RT refresh\nowner-api → 403\nFix: re-run authtoken\n+ setup -headless"]
+        C_OK(["✅ Connected"])
+        C_WARM["'Warm' RT refresh\n(AT expired naturally)"]
+        C_AT -->|"yes"| C_USE
+        C_AT -->|"no (empty)"| C_COLD
+        C_USE -->|"200"| C_OK
+        C_USE -->|"401 expired"| C_WARM
+        C_USE -->|"403"| C_COLD
+        C_WARM -->|"retry → 200"| C_OK
+        C_WARM -->|"retry → 403"| C_COLD
+    end
+
+    subgraph POLL ["📊 Ongoing polling — every N minutes"]
+        P_CALL["API call\nbattery_list / site_data / etc."]
+        P_REFRESH["Auto RT refresh\n+ retry"]
+        P_ERR["Log error\nreturn None"]
+        P_CALL -->|"200"| P_CALL
+        P_CALL -->|"401 expired"| P_REFRESH
+        P_REFRESH -->|"200"| P_CALL
+        P_REFRESH -->|"error"| P_ERR
+    end
+
+    S_LOCAL -->|"tokens saved"| C_AT
+    S_HEAD -->|"tokens saved"| C_AT
+    C_OK --> P_CALL
+```
+
 ---
 
 ## 2. Setup Paths (one-time)
@@ -115,9 +154,10 @@ tesla_auth.login(headless=True)
 ```
 
 > **Important:** `owner-api.teslamotors.com` only accepts **code-exchange ATs** (from
-> the PKCE WebView login). Refreshed ATs are always rejected with 403. The AT from
-> `authtoken` is valid for ~8 hours. After it expires, you must re-run
-> `authtoken` on the local Mac and `setup -headless` on the remote/container host.
+> the PKCE WebView login) for the **first connect**. Once a code-exchange AT has been
+> used, normal token refresh via the RT works for subsequent connects. Providing the AT
+> from `authtoken` is required only for the initial headless setup — after that the
+> library automatically refreshes on 401.
 
 ---
 
@@ -151,9 +191,9 @@ python -m pypowerwall setup -headless -email=user@example.com
 ```
 
 > **Why both tokens are needed:** The RT provides long-lived re-authentication (~90 days).
-> The AT (code-exchange, from the WebView PKCE login) is the only token that
-> `owner-api.teslamotors.com` accepts — refreshed ATs are always rejected with 403.
-> The AT must be re-provided every ~8 hours when it expires.
+> The AT (code-exchange, from the WebView PKCE login) bootstraps the session — it must be
+> provided once at setup so `owner-api.teslamotors.com` recognises the token chain as
+> originating from a legitimate PKCE login. After that, normal RT-based refresh works.
 
 ---
 
@@ -420,40 +460,38 @@ content is not the differentiator — the grant type that produced it is.
 
 ---
 
-#### RCA-8: Code-Exchange AT vs Refreshed AT — **CONFIRMED ROOT CAUSE**
+#### RCA-8: Code-Exchange AT Required for Cold Start — **CONFIRMED ROOT CAUSE**
 
-`owner-api.teslamotors.com` is being sunset by Tesla and now **only accepts ATs produced
-by a PKCE authorization-code exchange** (`grant_type=authorization_code`). ATs produced
-by a token refresh (`grant_type=refresh_token`) are rejected with **403** regardless of
-scopes, claims, or HTTP version.
+`owner-api.teslamotors.com` distinguishes between two refresh scenarios:
+
+| Scenario | Result |
+|---|---|
+| **Cold refresh** — RT refreshed immediately with no prior code-exchange AT in the session | ❌ 403 |
+| **Warm refresh** — code-exchange AT used normally, expired (~8h), then RT refreshed | ✅ 200 |
+
+Tesla's server preserves the token lineage from the original PKCE session. Once a
+code-exchange AT has been used, subsequent RT refreshes are accepted. The 403 only
+occurs on a "cold" refresh where the session was never activated by a code-exchange AT.
 
 **Evidence:**
-- Identical JWT structure (`aud`, `scp`, `x-enc` present) — server distinguishes them by internal token state, not JWT content
+- Identical JWT structure (`aud`, `scp`, `x-enc` present) — server distinguishes by internal session state, not JWT content
 - Code-exchange AT (from `authtoken` WebView login) → 200
-- Refreshed AT (same RT, seconds later) → 403
-- Fleet API (`fleet-api.prd.na.vn.cloud.tesla.com`) → 401 for ownerapi-issued refreshed AT (different issue — wrong client)
-
-**Why Path A (local browser setup) worked before:**
-`connect()` checks `access_token` in the cache. Path A saves a real code-exchange AT.
-As long as `connect()` finds a non-empty AT, it skips the explicit refresh and calls
-`getsites()` directly with the code-exchange AT → 200. The AT is valid for ~8 hours.
+- Refreshed AT immediately after RT-only setup (no prior code-exchange AT) → 403
+- Refreshed AT after code-exchange AT expired naturally (~8h) → ✅ 200
 
 **Why Path B (headless) always failed:**
 The old headless flow saved only the RT with an empty AT. On first `connect()`, the empty
-AT triggered an explicit refresh → refreshed AT → 403.
+AT triggered an immediate "cold" refresh → refreshed AT with no session lineage → 403.
 
 **Fix (applied):**
 - `authtoken` now outputs both the **RT** (green badge, valid 90 days) and the
   **AT** (yellow badge, valid ~8h), shown RT-first in window and terminal
-- `setup -headless` now prompts for RT first, then AT (optional but required for cloud mode)
+- `setup -headless` now prompts for RT first, then AT (required for the cold-start)
 - Both tokens are saved to the auth file; `connect()` uses the code-exchange AT directly
+- `connect()` now handles 401 (expired AT) by refreshing and retrying — the warm-refresh
+  path works, so the service self-heals automatically after the initial ~8h
 - `cloudcheck` checks `access_token` for code-exchange markers (`owner-api` in `aud`,
   `x-enc` present) and shows `✓`, `✗ EXPIRED`, or `✗ EMPTY` accordingly
-
-**Operational constraint:** The code-exchange AT expires in ~8 hours. After expiry,
-`owner-api` calls return 401/403 and the service stops working. Users must re-run
-`authtoken` on the local Mac and `setup -headless` on the remote/container host to
-refresh the AT. This is a fundamental limitation of Tesla sunsetting `owner-api`.
 
 #### RCA-7: Missing `h2` Package (Build Failure)
 
@@ -478,13 +516,13 @@ cloudcheck output shows:
         body has "token is invalid" ───────────────► RCA-5: use fresh token (RT consumed)
         body has "unauthorized_client" ────────────► RCA-1: TLS fingerprint blocked
         body is empty HTML ────────────────────────► RCA-1: Cloudflare blocking request
-    access_token: EMPTY ────────────────────────────► RCA-8 (CONFIRMED): no code-exchange AT saved
+    access_token: EMPTY ────────────────────────────► RCA-8: no code-exchange AT saved (cold start will 403)
         Fix: re-run authtoken on local Mac, then setup -headless with both RT and AT
-    access_token: EXPIRED ──────────────────────────► RCA-8: AT valid ~8h, must renew
-        Fix: re-run authtoken on local Mac, then setup -headless with fresh AT
+    access_token: EXPIRED ──────────────────────────► AT valid ~8h; connect() will refresh on next 401
+        (service self-heals automatically — no manual renewal needed)
     access_token: valid code-exchange AT ───────────► Auth file is healthy
-    battery_list() → 403 despite valid AT ─────────► AT has expired since last check
-        Fix: re-run authtoken + setup -headless
+    battery_list() → 403 despite refresh ──────────► Cold-start 403: no prior code-exchange AT
+        Fix: re-run authtoken + setup -headless to bootstrap the session
 ```
 
 ---

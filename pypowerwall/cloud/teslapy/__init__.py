@@ -168,6 +168,27 @@ class Tesla(OAuth2Session):
             response = self._request_http2(method, url, **kwargs)
         else:
             response = super(Tesla, self).request(method, url, **kwargs)
+        # On 401 (expired AT), refresh via RT and retry once.
+        # owner-api accepts "warm" refreshes (where a code-exchange AT was used
+        # previously to bootstrap the session). This handles the case where the
+        # AT expires during long-running polling without requiring a restart.
+        if (response.status_code == 401
+                and not kwargs.get('withhold_token', False)
+                and self.token.get('refresh_token')):
+            logger.warning('owner-api 401 (token expired) — refreshing token and retrying')
+            try:
+                self.refresh_token(
+                    self.auto_refresh_url,
+                    refresh_token=self.token['refresh_token'],
+                    **self.auto_refresh_kwargs
+                )
+                if HAS_HTTPX:
+                    response = self._request_http2(method, url, **kwargs)
+                else:
+                    response = super(Tesla, self).request(method, url, **kwargs)
+                logger.debug('Retry after refresh: HTTP %d', response.status_code)
+            except Exception as ref_exc:
+                logger.warning('Token refresh failed during retry: %s', ref_exc)
         # Error message handling
         if serialize and 400 <= response.status_code < 600:
             try:

@@ -365,9 +365,8 @@ def _remote_login() -> tuple:
     print()
     print("  2. Paste each token below when prompted.")
     print()
-    print("  ⚠️  The Access Token expires in ~8 hours. After it expires,")
-    print("  re-run 'authtoken' on your local machine and 'setup -headless'")
-    print("  here to provide a fresh AT.")
+    print("  ⚠️  The Access Token is only needed once to bootstrap the session.")
+    print("  After the first successful connect, the library auto-refreshes via the RT.")
     print()
 
     while True:

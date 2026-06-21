@@ -3,11 +3,12 @@
 ## v0.15.12 - Remote Setup and Cloud Auth Improvements
 
 * fix(cloud): Docker/container headless setup no longer fails with 403 on first connect (#333)
-  * Root cause confirmed: `owner-api.teslamotors.com` only accepts **code-exchange ATs** (from PKCE WebView login via `grant_type=authorization_code`). Refreshed ATs (`grant_type=refresh_token`) are always rejected with 403, regardless of scopes or HTTP version.
+  * Root cause confirmed: `owner-api.teslamotors.com` requires a **code-exchange AT** (from PKCE WebView login) to bootstrap the session. A "cold" refresh (RT used immediately with no prior code-exchange AT) is rejected with 403. Once the session is bootstrapped, normal RT-based refresh works — the service self-heals automatically after the initial ~8h AT expiry.
   * `authtoken` command now outputs **both** the Refresh Token (RT, valid 90 days) and Access Token (AT, valid ~8h) — RT shown first in both terminal output and window UI
   * macOS WebView success page redesigned: RT with green badge first, AT with yellow badge second, separate Copy RT / Copy AT buttons
-  * `setup -headless` now prompts for RT first, then AT (optional but required for owner-api to succeed)
-  * Both tokens are saved to the auth file; `connect()` uses the code-exchange AT directly without triggering a refresh
+  * `setup -headless` now prompts for RT first, then AT (required to bootstrap the session on first connect)
+  * Both tokens are saved to the auth file; `connect()` uses the code-exchange AT directly on first connect
+  * `connect()` now handles 401 (expired AT) by refreshing via RT and retrying — warm refresh works, so no manual token renewal needed after initial setup
   * `expires_at` in auth file now set to `now + expires_in` (real expiry, ~8h) when AT is saved, rather than always `0` — allows accurate expiry reporting in `cloudcheck` and auth file inspection
 * feat(cloud): New `cloudcheck` diagnostics command for cloud mode troubleshooting
   * Checks Python, platform, OpenSSL version, TLS 1.3 support
