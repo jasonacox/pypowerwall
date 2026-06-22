@@ -151,7 +151,7 @@ def test_backup(pw):
     events = pw.get_backup_events()
     print(f"    Current events: {json.dumps(events, indent=2, default=str)}")
 
-    if events and events.get("manual_backup", {}).get("active"):
+    if events and (events.get("manual_backup") or {}).get("active"):
         print("  [SKIP] Active manual backup event found — skipping schedule test")
         print("         (would interfere with existing event)")
         return True
@@ -188,7 +188,7 @@ def test_backup(pw):
     # Verify cancellation
     time.sleep(2)
     events = pw.get_backup_events()
-    if events and events.get("manual_backup", {}).get("active"):
+    if events and (events.get("manual_backup") or {}).get("active"):
         print("  [WARN] Manual backup still active after cancel")
     else:
         print("  [PASS] Manual backup cancelled successfully")
@@ -220,7 +220,7 @@ def test_dispatch(pw, monitor_seconds=60):
 
     # Step 2: Check for active backup event
     events = pw.get_backup_events()
-    if events and events.get("manual_backup", {}).get("active"):
+    if events and (events.get("manual_backup") or {}).get("active"):
         print("\n  [SKIP] Active manual backup found — skipping trigger")
         print("         Config written but no dispatch trigger applied")
         pw.set_reserve(orig_reserve)

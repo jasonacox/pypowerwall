@@ -97,7 +97,7 @@ def main():
     if not args.no_trigger:
         # Check for active backup event
         events = pw.get_backup_events()
-        if events and events.get("manual_backup", {}).get("active"):
+        if events and (events.get("manual_backup") or {}).get("active"):
             print("\n  [SKIP] Active manual backup event — not sending trigger")
             print("         (config written, but trigger skipped due to active event)")
         else:
