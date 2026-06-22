@@ -116,9 +116,13 @@ class _HTTP2Response:
         return json.loads(self._content, **kwargs)
 
     def raise_for_status(self):
-        if 400 <= self.status_code < 600:
+        if 400 <= self.status_code < 500:
             raise requests.exceptions.HTTPError(
                 f"{self.status_code} Client Error: {self.reason}",
+                response=self)
+        elif 500 <= self.status_code < 600:
+            raise requests.exceptions.HTTPError(
+                f"{self.status_code} Server Error: {self.reason}",
                 response=self)
 
 
@@ -137,6 +141,7 @@ def _http2_request(method, url, *, headers=None, data=None, json_data=None,
                                 timeout=timeout, verify=verify)
         else:
             return requests.post(url, headers=headers, data=data,
+                                 json=json_data, params=params,
                                  timeout=timeout, verify=verify)
 
     ssl_verify = _httpx_auth_verify(verify)
@@ -148,7 +153,12 @@ def _http2_request(method, url, *, headers=None, data=None, json_data=None,
     if json_data is not None:
         request_kwargs['json'] = json_data
     if data is not None:
-        request_kwargs['content'] = data if isinstance(data, (bytes, bytearray)) else data.encode() if isinstance(data, str) else data
+        if isinstance(data, dict):
+            request_kwargs['data'] = data  # httpx form-encoded
+        elif isinstance(data, (bytes, bytearray)):
+            request_kwargs['content'] = data
+        else:
+            request_kwargs['content'] = data.encode() if isinstance(data, str) else data
 
     try:
         with httpx.Client(**client_kwargs) as client:
@@ -165,6 +175,7 @@ def _http2_request(method, url, *, headers=None, data=None, json_data=None,
                                 timeout=timeout, verify=verify)
         else:
             return requests.post(url, headers=headers, data=data,
+                                 json=json_data, params=params,
                                  timeout=timeout, verify=verify)
 
 fleet_api_urls = {
