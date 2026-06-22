@@ -1,5 +1,21 @@
 # RELEASE NOTES
 
+## v0.15.13 - Fleet API HTTP/2 Upgrade
+
+* feat(fleetapi): upgrade Fleet API transport to HTTP/2 with TLS 1.3 (#338)
+  * Tesla now requires HTTP/2 for all Fleet API endpoints (enforced June 2026)
+  * All 9 `requests` call sites in `fleetapi/fleetapi.py` replaced with `_http2_request()` helper
+  * New HTTP/2 transport helpers: `_httpx_auth_verify()`, `_HTTP2Response`, `_http2_request()`
+    * `_httpx_auth_verify()` — pins TLS 1.3 via `ssl.SSLContext` when available
+    * `_HTTP2Response` — `requests.Response`-compatible wrapper for `httpx` responses (`.status_code`, `.text`, `.json()`, `.raise_for_status()`)
+    * `_http2_request()` — unified request helper: tries HTTP/2 first, falls back to HTTP/1.1 on any error (logged as warning)
+  * Form-encoded `data=dict` correctly routes to `httpx data=` kwarg; raw bytes/str use `content=`
+  * `raise_for_status()` correctly distinguishes 4xx (Client Error) from 5xx (Server Error)
+  * Follows same pattern as PR #324 (Cloud mode HTTP/2 upgrade in `teslapy/__init__.py`)
+  * Requires `httpx[http2]>=0.27.0` (already listed in `requirements.txt` and `setup.py`)
+  * Hardware-validated against live PW3 (fw 26.18.1): Fleet API read, write (set/reset reserve), and protocol negotiation all confirmed ✅
+* Bump library version to `0.15.13`
+
 ## v0.15.12 - Remote Setup and Cloud Auth Improvements
 
 * fix(cloud): Docker/container headless setup no longer fails with 403 on first connect (#333)

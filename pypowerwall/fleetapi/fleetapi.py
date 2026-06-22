@@ -43,13 +43,24 @@
  Date: 18 Feb 2024
  For more information see https://github.com/jasonacox/pypowerwall
 
+ Transport
+
+    All HTTP calls use HTTP/2 (TLS 1.3 preferred) via httpx when available,
+    falling back to HTTP/1.1 via requests. Tesla requires HTTP/2 for Fleet API
+    endpoints as of June 2026.
+
+    HTTP/2 helpers (internal):
+       _httpx_auth_verify() - build SSL context pinned to TLS 1.3 when possible
+       _HTTP2Response       - requests.Response-compatible wrapper for httpx responses
+       _http2_request()     - unified HTTP/2 request helper with HTTP/1.1 fallback
+
  Requirements
 
  * Register your application https://developer.tesla.com/
  * Before running this script, you must first run create_pem_key.py
    to create a PEM key and register it with Tesla. Put the public
    key in {site}/.well-known/appspecific/com.tesla.3p.public-key.pem
- * Python: pip install requests
+ * Python: pip install requests httpx[http2]
 
  Tesla FleetAPI Reference: https://developer.tesla.com/docs/fleet-api
 """
