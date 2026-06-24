@@ -107,7 +107,7 @@ Your machine must be able to reach `192.168.91.1`. Options:
 
 > **Note:** Some firmware versions (25.10.0+) may block routed access to 192.168.91.1. In that case, connect directly to the Gateway Wi‑Fi.
 
-> **💡 PW3 Direct LAN Access:** Some users have reported success accessing TEDAPI by pointing `host` to the Powerwall 3’s home-network IP (the IP your router/DHCP assigns to the PW3; e.g. `192.168.1.x`) instead of the Gateway address `192.168.91.1`. This can work when the standard Gateway address is unreachable or rate-limited. Use the Gateway Wi‑Fi password as `gw_pwd`. ([Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312))
+> **💡 PW3 Direct LAN Access:** Some users have reported success accessing TEDAPI by pointing `host` to the Powerwall 3’s home-network IP (the IP your router/DHCP assigns to the PW3 — whichever subnet your LAN uses, e.g. `192.168.1.x` or `10.0.x.x`) instead of the Gateway address `192.168.91.1`. This can work when the standard Gateway address is unreachable or rate-limited. Use the Gateway Wi‑Fi password as `gw_pwd`. ([Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312))
 
 > ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally — these return `None` in TEDAPI mode with a log warning. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
 
@@ -154,7 +154,7 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
 - Auth failures: Use the Gateway Wi‑Fi password from the QR label as `gw_pwd` (case‑sensitive). Customer portal passwords do not work for TEDAPI.
 - TLS/certificate warnings: TEDAPI uses a self‑signed cert; most tools need `--insecure` (curl) or `verify=False` (requests). Use only on trusted networks.
 - Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
-- PW3 192.168.91.1 unreachable or rate-limited (429): Try pointing directly to the PW3's Wi‑Fi adapter IP on the `192.168.1.x` subnet instead of the Gateway address. Some firmware versions respond to TEDAPI on this secondary address even when the primary is blocked. See [Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312).
+- PW3 unreachable or rate-limited (429): Try the alternate PW3 address — if `192.168.91.1` is blocked or returns 429, try the PW3's home-network IP assigned by your router; if the home-network IP is rate-limited, try `192.168.91.1` instead. Either interface may respond to TEDAPI depending on firmware. See [Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312).
 - QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
 ### v1r LAN TEDapi Setup - Option 5 (Powerwall 3 Wired LAN)
