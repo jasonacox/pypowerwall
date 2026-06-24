@@ -3,7 +3,7 @@
 ## v0.15.13 - Fleet API HTTP/2 Upgrade
 
 * feat(fleetapi): upgrade Fleet API transport to HTTP/2 with TLS 1.3 (#338)
-  * Tesla now requires HTTP/2 for all Fleet API endpoints (enforced June 2026)
+  * Proactively upgrades Fleet API transport to HTTP/2 — Fleet API currently works over HTTP/1.1, but HTTP/2 improves reliability and future-proofs against enforcement (Tesla has already enforced HTTP/2 on Owner API endpoints)
   * All 9 `requests` call sites in `fleetapi/fleetapi.py` replaced with `_http2_request()` helper
   * New HTTP/2 transport helpers: `_httpx_auth_verify()`, `_HTTP2Response`, `_http2_request()`
     * `_httpx_auth_verify()` — pins TLS 1.3 via `ssl.SSLContext` when available
@@ -12,7 +12,7 @@
   * Form-encoded `data=dict` correctly routes to `httpx data=` kwarg; raw bytes/str use `content=`
   * `raise_for_status()` correctly distinguishes 4xx (Client Error) from 5xx (Server Error)
   * Follows same pattern as PR #324 (Cloud mode HTTP/2 upgrade in `teslapy/__init__.py`)
-  * Requires `httpx[http2]>=0.27.0` (already listed in `requirements.txt` and `setup.py`)
+  * HTTP/2 enabled when `httpx[http2]>=0.27.0` is installed (already in `requirements.txt`); falls back to `requests` (HTTP/1.1) if unavailable
   * Hardware-validated against live PW3 (fw 26.18.1): Fleet API read, write (set/reset reserve), and protocol negotiation all confirmed ✅
 * Bump library version to `0.15.13`
 
