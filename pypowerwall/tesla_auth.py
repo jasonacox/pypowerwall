@@ -733,6 +733,10 @@ def _local_login_pywebview(email: str = None, region: str = "us",
     (macOS) or the equivalent handler on other platforms, checking for tesla://
     before delegating to the original logic.
     """
+    # Force CPU rendering on Linux: GPU compositing in WebKit2GTK garbles the window on many drivers.
+    if sys.platform == "linux":
+        os.environ.setdefault("WEBKIT_DISABLE_COMPOSITING_MODE", "1")
+
     import time
     try:
         import webview
