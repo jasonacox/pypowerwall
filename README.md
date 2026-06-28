@@ -11,6 +11,8 @@ pyPowerwall is a Python module to interface with Tesla Energy Gateways for Power
 
 > ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
+> ⚠️ **CLOUD MODE NOTICE:** As of June 2026, Tesla now requires HTTP/2 for both `auth.tesla.com` token endpoints and `owner-api.teslamotors.com` API calls. If you use **Cloud Mode** (Option 3), you must upgrade to **pypowerwall v0.15.11 or later** — earlier versions will fail with `403 Forbidden` errors during setup and API calls. Install the latest version with `pip install --upgrade pypowerwall`.
+
 ## Description
 
 This Python module can be used to monitor and control Tesla Energy Powerwalls. It uses a single class (`Powerwall`) and simple functions to fetch energy data and poll API endpoints on the Gateway.  
@@ -73,20 +75,24 @@ Step 3 - Run `python3 -m pypowerwall fleetapi` - The credentials and tokens will
 
 ### Cloud Mode - Option 3
 
+> ✅ **WORKING AGAIN (v0.15.11+):** Tesla now requires HTTP/2 for `auth.tesla.com` token endpoints and `owner-api.teslamotors.com` API calls. Cloud Mode (Option 3) is functional again as of **pypowerwall v0.15.11** — earlier versions fail with `403 Forbidden` errors. Upgrade with `pip install --upgrade pypowerwall`. Setup now requires both an **Access Token (AT)** and **Refresh Token (RT)** — see the [auth documentation](pypowerwall/cloud/AUTH.md) for details. See [issue #323](https://github.com/jasonacox/pypowerwall/issues/323) and [Powerwall-Dashboard #779](https://github.com/jasonacox/Powerwall-Dashboard/issues/779) for full background.
+
 The unofficial Tesla Owners API allows FleetAPI access (option 2) without having to set up a website and PEM key. Follow the directions given to you by running `python3 -m pypowerwall setup`. The credentials and site_id will be stored in `.pypowerwall.auth` and `.pypowerwall.site`.
 
-If you need to authenticate on a machine without a display (e.g. a Raspberry Pi or remote server over SSH), use the `authtoken` command on your local machine to obtain a refresh token, then paste it into the remote session:
+If you need to authenticate on a machine without a display (e.g. a Raspberry Pi or remote server over SSH), use the `authtoken` command on your local machine to obtain both a refresh token (RT) and access token (AT), then paste them into the remote session:
 
 ```bash
 # On your local machine (Mac/Windows/Linux with a display):
 python3 -m pypowerwall authtoken
 
 # Follow the Tesla login flow in the popup window.
-# Copy the token printed to the terminal.
+# Copy both tokens (RT and AT) printed to the terminal.
 
-# Then on the remote machine, run setup and paste the token when prompted:
-python3 -m pypowerwall setup
+# Then on the remote machine, run setup in headless mode and paste tokens when prompted:
+python3 -m pypowerwall setup -headless
 ```
+
+> 💡 **Alternative:** The [tesla_auth](https://github.com/adriankumpf/tesla_auth/releases) desktop app (Mac/Windows/Linux) can also generate tokens. For iOS users, the [Auth app for Tesla](https://apps.apple.com/us/app/auth-app-for-tesla/id1552058613) provides tokens directly on-device.
 
 ### TEDAPI Mode - Option 4
 
@@ -106,6 +112,8 @@ Your machine must be able to reach `192.168.91.1`. Options:
 * Add a static route from your LAN through the Gateway’s home-network IP (see examples below)
 
 > **Note:** Some firmware versions (25.10.0+) may block routed access to 192.168.91.1. In that case, connect directly to the Gateway Wi‑Fi.
+
+> **💡 PW3 Direct LAN Access:** Some users have reported success accessing TEDAPI by pointing `host` to the Powerwall 3’s home-network IP (the IP your router/DHCP assigns to the PW3 — whichever subnet your LAN uses, e.g. `192.168.1.x` or `10.0.x.x`) instead of the Gateway address `192.168.91.1`. This can work when the standard Gateway address is unreachable or rate-limited. Use the Gateway Wi‑Fi password as `gw_pwd`. ([Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312))
 
 > ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally — these return `None` in TEDAPI mode with a log warning. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
 
@@ -152,6 +160,7 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
 - Auth failures: Use the Gateway Wi‑Fi password from the QR label as `gw_pwd` (case‑sensitive). Customer portal passwords do not work for TEDAPI.
 - TLS/certificate warnings: TEDAPI uses a self‑signed cert; most tools need `--insecure` (curl) or `verify=False` (requests). Use only on trusted networks.
 - Hybrid mode quirks (PW2/+): If both customer `password`/`email` and `gw_pwd` are provided, TEDAPI data augments local APIs; try removing customer creds if you only need TEDAPI.
+- PW3 unreachable or rate-limited (429): Try the alternate PW3 address — if `192.168.91.1` is blocked or returns 429, try the PW3's home-network IP assigned by your router; if the home-network IP is rate-limited, try `192.168.91.1` instead. Either interface may respond to TEDAPI depending on firmware. See [Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312).
 - QNAP/Appliance routing: Static routes from shell may be ignored; use the appliance’s network control panel to add a persistent host route.
 
 ### v1r LAN TEDapi Setup - Option 5 (Powerwall 3 Wired LAN)

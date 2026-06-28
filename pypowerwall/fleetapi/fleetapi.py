@@ -43,13 +43,24 @@
  Date: 18 Feb 2024
  For more information see https://github.com/jasonacox/pypowerwall
 
+ Transport
+
+    All HTTP calls use HTTP/2 (TLS 1.3 preferred) via httpx when available,
+    falling back to HTTP/1.1 via requests. Tesla requires HTTP/2 for Fleet API
+    endpoints as of June 2026.
+
+    HTTP/2 helpers (internal):
+       _httpx_auth_verify() - build SSL context pinned to TLS 1.3 when possible
+       _HTTP2Response       - requests.Response-compatible wrapper for httpx responses
+       _http2_request()     - unified HTTP/2 request helper with HTTP/1.1 fallback
+
  Requirements
 
  * Register your application https://developer.tesla.com/
  * Before running this script, you must first run create_pem_key.py
    to create a PEM key and register it with Tesla. Put the public
    key in {site}/.well-known/appspecific/com.tesla.3p.public-key.pem
- * Python: pip install requests
+ * Python: pip install requests httpx[http2]
 
  Tesla FleetAPI Reference: https://developer.tesla.com/docs/fleet-api
 """
@@ -61,8 +72,16 @@ import json
 import logging
 import sys
 import time
+import ssl
 import urllib.parse
 import requests
+
+# Optional HTTP/2 support for Tesla Fleet API (required as of June 2026)
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
 
 # Defaults
 CONFIGFILE = "/home/christopher/.pypowerwall.fleetapi"
@@ -70,6 +89,105 @@ SCOPE = "openid offline_access user_data energy_device_data energy_cmds"
 SETUP_TIMEOUT = 15   # Time in seconds to wait for setup related API response
 REFRESH_TIMEOUT = 60 # Time in seconds to wait for refresh token response
 API_TIMEOUT = 10     # Time in seconds to wait for FleetAPI response
+
+
+def _httpx_auth_verify(verify=True):
+    """Return an httpx-compatible verify setting pinned to TLS 1.3 when possible."""
+    if verify is False:
+        return False
+    if isinstance(verify, (str, bytes)):
+        return verify
+    if isinstance(verify, ssl.SSLContext):
+        return verify
+    if hasattr(ssl, 'TLSVersion') and hasattr(ssl.TLSVersion, 'TLSv1_3'):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            return ctx
+        except Exception:
+            pass
+    return verify
+
+
+class _HTTP2Response:
+    """Wrapper to make httpx.Response compatible with requests.Response API."""
+
+    def __init__(self, resp):
+        self._resp = resp
+        self.status_code = resp.status_code
+        self.reason = resp.reason_phrase
+        self._content = resp.content
+
+    @property
+    def text(self):
+        return self._resp.text
+
+    def json(self, **kwargs):
+        return json.loads(self._content, **kwargs)
+
+    def raise_for_status(self):
+        if 400 <= self.status_code < 500:
+            raise requests.exceptions.HTTPError(
+                f"{self.status_code} Client Error: {self.reason}",
+                response=self)
+        elif 500 <= self.status_code < 600:
+            raise requests.exceptions.HTTPError(
+                f"{self.status_code} Server Error: {self.reason}",
+                response=self)
+
+
+def _http2_request(method, url, *, headers=None, data=None, json_data=None,
+                   params=None, timeout=API_TIMEOUT, verify=True):
+    """Make an HTTP/2 request via httpx, falling back to requests on failure.
+
+    Returns a response object that is either a requests.Response or an
+    _HTTP2Response wrapper — both implement .status_code, .text, .json(),
+    and .raise_for_status().
+    """
+    if not HAS_HTTPX:
+        # No httpx available — use requests (HTTP/1.1)
+        if method == 'GET':
+            return requests.get(url, headers=headers, params=params,
+                                timeout=timeout, verify=verify)
+        else:
+            return requests.post(url, headers=headers, data=data,
+                                 json=json_data, params=params,
+                                 timeout=timeout, verify=verify)
+
+    ssl_verify = _httpx_auth_verify(verify)
+    client_kwargs = {'http2': True, 'verify': ssl_verify}
+    request_kwargs = {'headers': headers or {}, 'timeout': timeout,
+                      'follow_redirects': True}
+    if params:
+        request_kwargs['params'] = params
+    if json_data is not None:
+        request_kwargs['json'] = json_data
+    if data is not None:
+        if isinstance(data, dict):
+            request_kwargs['data'] = data  # httpx form-encoded
+        elif isinstance(data, (bytes, bytearray)):
+            request_kwargs['content'] = data
+        else:
+            request_kwargs['content'] = data.encode() if isinstance(data, str) else data
+
+    try:
+        with httpx.Client(**client_kwargs) as client:
+            resp = client.request(method, url, **request_kwargs)
+        log.debug('FleetAPI HTTP/2 %s %s → HTTP %d (protocol=%s)',
+                  method, url, resp.status_code, resp.http_version)
+        if resp.status_code >= 400:
+            log.error('FleetAPI HTTP %d body: %s', resp.status_code, resp.text[:600])
+        return _HTTP2Response(resp)
+    except Exception as exc:
+        log.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
+        if method == 'GET':
+            return requests.get(url, headers=headers, params=params,
+                                timeout=timeout, verify=verify)
+        else:
+            return requests.post(url, headers=headers, data=data,
+                                 json=json_data, params=params,
+                                 timeout=timeout, verify=verify)
 
 fleet_api_urls = {
     "North America, Asia-Pacific": "https://fleet-api.prd.na.vn.cloud.tesla.com",
@@ -182,7 +300,7 @@ class FleetAPI:
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
-        response = requests.post('https://auth.tesla.com/oauth2/v3/token',
+        response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers, timeout=REFRESH_TIMEOUT)
         # Extract access_token and refresh_token from this response
         access = response.json().get('access_token')
@@ -214,7 +332,7 @@ class FleetAPI:
             log.debug(f"POST: {url} {json.dumps(data)}")
             # Check for timeout exception
             try:
-                response = requests.post(url, headers=headers,
+                response = _http2_request('POST', url, headers=headers,
                                          data=json.dumps(data), timeout=self.timeout)
             except requests.exceptions.Timeout:
                 log.error(f"Timeout error posting to {url}")
@@ -227,7 +345,7 @@ class FleetAPI:
                     return self.pwcache[api]
             log.debug(f"GET: {url}")
             try:
-                response = requests.get(url, headers=headers, timeout=self.timeout)
+                response = _http2_request('GET', url, headers=headers, timeout=self.timeout)
             except requests.exceptions.Timeout:
                 log.error(f"Timeout error polling {url}")
                 return None
@@ -706,7 +824,7 @@ class FleetAPI:
         # Verify that the PEM key file exists
         print("  Verifying PEM Key file...")
         verify_url = f"https://{self.DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem"
-        response = requests.get(verify_url, timeout=SETUP_TIMEOUT)
+        response = _http2_request('GET', verify_url, timeout=SETUP_TIMEOUT)
         if response.status_code != 200:
             print(f"ERROR: Could not verify PEM key file at {verify_url}")
             print("       Make sure you have created the PEM key file and uploaded it to your website.")
@@ -732,7 +850,7 @@ class FleetAPI:
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
             log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
-            response = requests.post('https://auth.tesla.com/oauth2/v3/token',
+            response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                             data=data, headers=headers, timeout=SETUP_TIMEOUT)
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
@@ -759,7 +877,8 @@ class FleetAPI:
                 'domain': self.DOMAIN,
             }
             log.debug(f"POST: {url} {json.dumps(data)}")
-            response = requests.post(url, headers=headers, data=json.dumps(data), timeout=SETUP_TIMEOUT)
+            response = _http2_request('POST', url, headers=headers,
+                                     data=json.dumps(data), timeout=SETUP_TIMEOUT)
             log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
             log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
@@ -807,7 +926,7 @@ class FleetAPI:
             'Content-Type': 'application/x-www-form-urlencoded'
         }
         log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
-        response = requests.post('https://auth.tesla.com/oauth2/v3/token',
+        response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers, timeout=SETUP_TIMEOUT)
         log.debug(f"Response Code: {response.status_code}")
         # Extract access_token and refresh_token from this response
@@ -828,7 +947,27 @@ class FleetAPI:
         if self.site_id:
             print(f"  Previous site_id: {self.site_id}")
         # Get list of sites and filter out those without energy_site_id
-        sites = [s for s in self.getsites() if s.get('energy_site_id') is not None]
+        raw_sites = self.getsites()
+        if not raw_sites:
+            print("  ERROR: Unable to retrieve sites from Tesla Fleet API.")
+            print("         This usually means:")
+            print("           1. Your partner account is not registered in the current region")
+            print("           2. Your access token does not have the required permissions")
+            print("           3. Your Tesla account has no energy sites")
+            print()
+            print("         Try deleting your Fleet API config file and re-running setup:")
+            print(f'           rm "{self.configfile}"')
+            print("           python3 -m pypowerwall setup -fleetapi")
+            return False
+        sites = [s for s in raw_sites if s.get('energy_site_id') is not None]
+        if not sites:
+            print("  ERROR: No energy sites with a Powerwall found in your Tesla account.")
+            print("         Your Tesla account may have vehicles but no Powerwall energy sites.")
+            print()
+            print("         Try deleting your Fleet API config file and re-running setup:")
+            print(f'           rm "{self.configfile}"')
+            print("           python3 -m pypowerwall setup -fleetapi")
+            return False
         sel = 0
         # If not set, pick first site
         if not self.site_id and sites:

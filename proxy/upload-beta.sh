@@ -38,10 +38,20 @@ print(pypowerwall.version)" | (cd ..; python3)`
   echo "Build and push jasonacox/pypowerwall:${VER} to Docker Hub?"
   echo "Beta version: ${BETA_NUM} (stored in ${BETA_FILE})"
   read -p "Press [Enter] to continue or Ctrl-C to cancel..."
-  
+
+  # Ask whether to include ARM targets
+  read -p "Include arm/v7 and arm/v8 targets? [Y/n]: " ARM_REPLY
+  ARM_REPLY=${ARM_REPLY:-Y}
+  if [[ "$ARM_REPLY" =~ ^[Yy] ]]; then
+    PLATFORMS="linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8"
+  else
+    PLATFORMS="linux/amd64,linux/arm64"
+    echo "Skipping arm/v7 and arm/v8 — building amd64 + arm64 only."
+  fi
+
   # Build jasonacox/pypowerwall:x.y.z
   echo "* BUILD jasonacox/pypowerwall:${VER}"
-  docker buildx build -f Dockerfile.beta --no-cache --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v8 --push -t jasonacox/pypowerwall:${VER} .
+  docker buildx build -f Dockerfile.beta --no-cache --platform ${PLATFORMS} --push -t jasonacox/pypowerwall:${VER} .
   echo ""
 
   # Verify

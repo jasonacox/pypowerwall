@@ -31,6 +31,7 @@ import hashlib
 import json
 import os
 import secrets
+import ssl
 import sys
 import urllib.parse
 
@@ -38,6 +39,13 @@ try:
     import requests
 except ImportError:
     requests = None  # type: ignore
+
+# Optional HTTP/2 support for Tesla auth (required as of June 2026)
+try:
+    import httpx
+    HAS_HTTPX = True
+except ImportError:
+    HAS_HTTPX = False
 
 
 # ---------------------------------------------------------------------------
@@ -49,12 +57,34 @@ CLIENT_ID = "ownerapi"
 AUTH_URL_PATH = "/oauth2/v3/authorize"
 TOKEN_URL_PATH = "/oauth2/v3/token"
 REDIRECT_URI = "tesla://auth/callback"
+# owner-api.teslamotors.com only accepts access tokens produced by a fresh
+# PKCE code exchange (grant_type=authorization_code). Refreshed ATs are always
+# rejected with 403 regardless of scopes. Energy scopes are NOT needed.
 SCOPES = "openid email offline_access"
 
 REGION_HOSTS = {
     "us": "https://auth.tesla.com",
     "cn": "https://auth.tesla.cn",
 }
+
+
+def _httpx_auth_verify(verify=True):
+    """Return an httpx-compatible verify setting pinned to TLS 1.3 when possible."""
+    if verify is False:
+        return False
+    if isinstance(verify, (str, bytes)):
+        return verify
+    if isinstance(verify, ssl.SSLContext):
+        return verify
+    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_3"):
+        try:
+            ctx = ssl.create_default_context()
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            return ctx
+        except Exception:
+            pass
+    return verify
 
 
 # ---------------------------------------------------------------------------
@@ -101,19 +131,38 @@ def _refresh_access_token(refresh_token: str, region: str = "us") -> dict:
     Tesla OAuth refresh: POST /oauth2/v3/token with grant_type=refresh_token,
     client_id=ownerapi, refresh_token.
     """
-    if requests is None:
-        raise ImportError("The 'requests' package is required.")
+    if requests is None and not HAS_HTTPX:
+        raise ImportError("The 'requests' or 'httpx' package is required.")
 
     auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
-    resp = requests.post(
-        f"{auth_host}{TOKEN_URL_PATH}",
-        json={
-            "grant_type": "refresh_token",
-            "client_id": CLIENT_ID,
-            "refresh_token": refresh_token,
-        },
-        timeout=30,
-    )
+    url = f"{auth_host}{TOKEN_URL_PATH}"
+    payload = {
+        "grant_type": "refresh_token",
+        "client_id": CLIENT_ID,
+        "refresh_token": refresh_token,
+    }
+
+    # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
+    if HAS_HTTPX:
+        try:
+            with httpx.Client(http2=True, verify=_httpx_auth_verify()) as client:
+                resp = client.post(url, json=payload, timeout=30)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
+                data = resp.json()
+                if "access_token" not in data:
+                    raise RuntimeError(f"No access_token in refresh response: {data}")
+                return data
+        except RuntimeError:
+            raise  # Application errors (non-200, missing token) should not fall back
+        except Exception as exc:
+            # Transport/connection errors only — fall back to requests if available
+            if requests is None:
+                raise RuntimeError(f"HTTP/2 transport failed and 'requests' not installed: {exc}") from exc
+
+    if requests is None:
+        raise ImportError("The 'requests' or 'httpx' package is required.")
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token refresh failed (HTTP {resp.status_code}): {resp.text}")
 
@@ -132,21 +181,40 @@ def _exchange_code(auth_code: str, code_verifier: str, region: str = "us") -> di
     Matches tesla_auth: POST to /oauth2/v3/token with grant_type=authorization_code,
     client_id=ownerapi, code, code_verifier, redirect_uri.
     """
-    if requests is None:
-        raise ImportError("The 'requests' package is required. Install with: pip install requests")
+    if requests is None and not HAS_HTTPX:
+        raise ImportError("The 'requests' or 'httpx' package is required. Install with: pip install requests")
 
     auth_host = REGION_HOSTS.get(region, REGION_HOSTS["us"])
-    resp = requests.post(
-        f"{auth_host}{TOKEN_URL_PATH}",
-        json={
-            "grant_type": "authorization_code",
-            "client_id": CLIENT_ID,
-            "code": auth_code,
-            "code_verifier": code_verifier,
-            "redirect_uri": REDIRECT_URI,
-        },
-        timeout=30,
-    )
+    url = f"{auth_host}{TOKEN_URL_PATH}"
+    payload = {
+        "grant_type": "authorization_code",
+        "client_id": CLIENT_ID,
+        "code": auth_code,
+        "code_verifier": code_verifier,
+        "redirect_uri": REDIRECT_URI,
+    }
+
+    # Tesla now requires HTTP/2 for auth.tesla.com token endpoints
+    if HAS_HTTPX:
+        try:
+            with httpx.Client(http2=True, verify=_httpx_auth_verify()) as client:
+                resp = client.post(url, json=payload, timeout=30)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")
+                data = resp.json()
+                if "refresh_token" not in data:
+                    raise RuntimeError(f"No refresh_token in response: {data}")
+                return data
+        except RuntimeError:
+            raise  # Application errors (non-200, missing token) should not fall back
+        except Exception as exc:
+            # Transport/connection errors only — fall back to requests if available
+            if requests is None:
+                raise RuntimeError(f"HTTP/2 transport failed and 'requests' not installed: {exc}") from exc
+
+    if requests is None:
+        raise ImportError("The 'requests' package is required. Install with: pip install requests")
+    resp = requests.post(url, json=payload, timeout=30)
     if resp.status_code != 200:
         raise RuntimeError(f"Token exchange failed (HTTP {resp.status_code}): {resp.text}")
 
@@ -174,26 +242,143 @@ def _detect_mode() -> str:
 # Path 1 — Remote/Headless login (paste token)
 # ---------------------------------------------------------------------------
 
-def _remote_login() -> str:
-    """Remote login: instruct user to run authtoken locally, then paste token."""
+def _read_masked(prompt: str) -> str:
+    """Read a line from the terminal echoing '*' for every character typed.
+
+    Reads directly from /dev/tty (Unix) or via msvcrt (Windows) so it works
+    even when sys.stdin has been redirected or left in a broken state.
+    Uses raw mode to bypass the terminal's 1024-byte canonical line buffer,
+    which would otherwise truncate long tokens on paste.
+    Handles backspace, Ctrl+C, and Ctrl+D correctly.
+    Falls back to a plain readline if the terminal cannot be put into raw mode.
+    """
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+
+    # ---- Windows --------------------------------------------------------
+    if sys.platform == 'win32':
+        import msvcrt
+        chars = []
+        while True:
+            ch = msvcrt.getwch()
+            if ch in ('\r', '\n'):
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                break
+            if ch in ('\x08', '\x7f'):          # backspace
+                if chars:
+                    chars.pop()
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+            elif ch == '\x03':                   # Ctrl+C
+                raise KeyboardInterrupt
+            elif ch.isprintable():
+                chars.append(ch)
+                sys.stdout.write('*')
+                sys.stdout.flush()
+        return ''.join(chars).strip()
+
+    # ---- Unix (macOS / Linux) -------------------------------------------
+    try:
+        import termios
+        import tty
+    except ImportError:
+        # termios not available — plain readline fallback
+        line = sys.stdin.readline()
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+        if line == '':
+            raise EOFError('No input (EOF)')
+        return line.rstrip('\n').strip()
+
+    # Always read from the controlling terminal so we work even when
+    # sys.stdin has been redirected or reset after an NSApplication run.
+    try:
+        tty_fd = open('/dev/tty', 'r+b', buffering=0)
+    except OSError:
+        line = sys.stdin.readline()
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+        if line == '':
+            raise EOFError('No input (EOF)')
+        return line.rstrip('\n').strip()
+
+    chars = []
+    fd = tty_fd.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        while True:
+            ch = tty_fd.read(1).decode('utf-8', errors='replace')
+            if ch in ('\n', '\r'):
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                break
+            if ch in ('\x7f', '\x08'):           # backspace / delete
+                if chars:
+                    chars.pop()
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+            elif ch == '\x03':                    # Ctrl+C
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                raise KeyboardInterrupt
+            elif ch == '\x04':                    # Ctrl+D / EOF
+                sys.stdout.write('\n')
+                sys.stdout.flush()
+                raise EOFError
+            elif ch.isprintable():
+                chars.append(ch)
+                sys.stdout.write('*')
+                sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        tty_fd.close()
+
+    return ''.join(chars).strip()
+
+
+def _remote_login() -> tuple:
+    """Remote login: instruct user to run authtoken locally, then paste tokens.
+
+    Returns (refresh_token, access_token) tuple.  access_token may be empty
+    if the user skips it, but providing it is strongly recommended because
+    owner-api.teslamotors.com only accepts access tokens obtained via a fresh
+    PKCE code exchange — refreshed tokens are rejected with 403.
+    """
     print("\n" + "=" * 60)
-    print("Tesla Authentication — Remote Session Detected")
+    print("Tesla Authentication — Remote / Headless Session")
     print("=" * 60)
     print()
-    print("You're on a remote session. On your local Mac/PC with")
-    print("pypowerwall installed, run:")
+    print("  No display detected (SSH/container/headless). To authenticate:")
     print()
-    print("    python -m pypowerwall authtoken")
+    print("  1. On a Mac or desktop with a display, run:")
     print()
-    print("That will open a login window. After authentication,")
-    print("copy the refresh token and paste it here.")
+    print("         pip install pypowerwall")
+    print("         python -m pypowerwall authtoken")
+    print()
+    print("     A browser window opens. Log in to Tesla. When done, you")
+    print("     will see TWO tokens — copy both:")
+    print()
+    print("       • Refresh Token (RT) — valid 90 days")
+    print("       • Access Token  (AT) — valid ~8 hours  ← required!")
+    print()
+    print("  2. Paste each token below when prompted.")
+    print()
+    print("  ⚠️  The Access Token is only needed once to bootstrap the session.")
+    print("  After the first successful connect, the library auto-refreshes via the RT.")
     print()
 
     while True:
-        token = input("Refresh token: ").strip()
-        if token:
-            return token
-        print("   ⚠️  Token cannot be empty — try again.")
+        rt = _read_masked("Refresh Token (RT): ")
+        if not rt:
+            print("   ⚠️  Refresh token cannot be empty — try again.")
+            continue
+        break
+
+    print()
+    at = _read_masked("Access Token (AT, valid ~8h — press Enter to skip): ")
+    return rt, at
 
 
 # ---------------------------------------------------------------------------
@@ -289,7 +474,18 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                             pb = AppKit.NSPasteboard.generalPasteboard()
                             pb.clearContents()
                             pb.setString_forType_(token, AppKit.NSPasteboardTypeString)
-                            dbg("Token copied to clipboard via button")
+                            dbg("RT copied to clipboard via button")
+                    except Exception as e:
+                        dbg(f"Clipboard error: {e}")
+                elif action == "copy-at":
+                    try:
+                        td = result.get("token_data", {})
+                        at = td.get("access_token", "") if isinstance(td, dict) else ""
+                        if at:
+                            pb = AppKit.NSPasteboard.generalPasteboard()
+                            pb.clearContents()
+                            pb.setString_forType_(at, AppKit.NSPasteboardTypeString)
+                            dbg("AT copied to clipboard via button")
                     except Exception as e:
                         dbg(f"Clipboard error: {e}")
                 elif action == "close":
@@ -347,6 +543,7 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                                 result["email"] = _extract_email_from_token(data["id_token"])
                                 dbg(f"Email from id_token: {result['email']}")
                             # Copy to macOS clipboard via NSPasteboard
+                            at = result["token_data"].get("access_token", "") if isinstance(result["token_data"], dict) else ""
                             try:
                                 pb = AppKit.NSPasteboard.generalPasteboard()
                                 pb.clearContents()
@@ -354,51 +551,76 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                                 clipboard_ok = True
                             except Exception:
                                 clipboard_ok = False
-                            # Print immediately to terminal
+                            # Print both tokens to terminal (RT first — matches setup -headless prompt order)
                             print("\n" + "=" * 60)
-                            print("\u2705 Tesla Refresh Token:")
+                            print("\u2705 Tesla Refresh Token (RT \u2014 valid 90 days):")
                             print("-" * 60)
                             print(token)
+                            print("-" * 60)
+                            print()
+                            print("\u2705 Tesla Access Token (AT \u2014 valid ~8 hours):")
+                            print("-" * 60)
+                            print(at if at else "(not available)")
                             print("-" * 60)
                             if not show_token_page:
                                 # Auto-close for setup — no success page needed
                                 print("  \u2705 Token captured — setup will continue.")
-                            elif clipboard_ok:
-                                print("Token copied to clipboard! You can now close the window.")
                             else:
-                                print("Copy the token above. You can now close the window.")
+                                print("Copy BOTH tokens when prompted by setup -headless.")
                             # Only load success page for authtoken (show_token_page=True)
                             if show_token_page:
                               success_html = f"""<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <style>
   body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #f5f5f7; }}
-  h2 {{ color: #1d1d1f; }}
+  h2 {{ color: #1d1d1f; margin-bottom: 4px; }}
+  h3 {{ color: #1d1d1f; margin: 14px 0 4px; font-size: 14px; }}
   .token-box {{ background: white; border: 1px solid #d2d2d7; border-radius: 10px;
-    padding: 15px; word-break: break-all; font-family: monospace; font-size: 11px;
-    color: #333; margin: 15px 0; }}
+    padding: 12px; word-break: break-all; font-family: monospace; font-size: 10px;
+    color: #333; margin: 5px 0 6px; }}
   .copy-btn {{ background: #0071e3; color: white; border: none; border-radius: 8px;
-    padding: 10px 20px; font-size: 15px; cursor: pointer; width: 100%; }}
+    padding: 8px 16px; font-size: 13px; cursor: pointer; margin-bottom: 4px; }}
   .copy-btn:active {{ background: #0077ed; }}
-  p {{ color: #6e6e73; font-size: 13px; }}
+  .close-btn {{ background: #ff3b30; color: white; border: none; border-radius: 8px;
+    padding: 8px 16px; font-size: 13px; cursor: pointer; }}
+  .close-btn:active {{ background: #d70015; }}
+  p {{ color: #6e6e73; font-size: 12px; margin: 2px 0; }}
+  .badge {{ display:inline-block; font-size:10px; border-radius:4px; padding:1px 6px;
+    font-weight:600; margin-left:6px; vertical-align:middle; }}
+  .badge-at {{ background:#ffd60a; color:#1d1d1f; }}
+  .badge-rt {{ background:#30d158; color:#fff; }}
 </style></head><body>
 <h2>\u2705 Authentication Successful</h2>
-<p>Your Tesla refresh token is ready. It has been <strong>copied to your clipboard</strong> automatically.</p>
-<div class='token-box' id='tokenText'>{token}</div>
-<div style='display:flex; gap:10px; margin-top:5px'>
-  <a href='pypowerwall://copy' style='flex:1; text-decoration:none'>
-    <button class='copy-btn' id='copyBtn' style='width:100%' onclick="
-      document.getElementById('copyBtn').textContent = '\u2705 Copied!';
-      document.getElementById('copyBtn').style.background = '#34c759';
-      setTimeout(function(){{
-        document.getElementById('copyBtn').textContent = 'Copy Token';
-        document.getElementById('copyBtn').style.background = '#0071e3';
-      }}, 2500);
-    ">Copy Token</button>
+<p>Copy <strong>both tokens</strong> below. Paste them into <code>setup&nbsp;-headless</code> when prompted.</p>
+
+<h3>Refresh Token (RT) <span class='badge badge-rt'>valid 90 days</span></h3>
+<p>Long-lived credential. Keep it secret.</p>
+<div class='token-box'>{token}</div>
+<div style='display:flex; gap:8px; margin-bottom:10px'>
+  <a href='pypowerwall://copy' style='text-decoration:none'>
+    <button class='copy-btn' id='copyRtBtn' onclick="
+      document.getElementById('copyRtBtn').textContent = '\u2705 Copied!';
+      document.getElementById('copyRtBtn').style.background = '#34c759';
+      setTimeout(function(){{document.getElementById('copyRtBtn').textContent = 'Copy RT';
+        document.getElementById('copyRtBtn').style.background = '#0071e3';}}, 2500);
+    ">Copy RT</button>
   </a>
-  <a href='pypowerwall://close' style='flex:1; text-decoration:none'>
-    <button style='width:100%; background:#636366; color:white; border:none; border-radius:8px;
-      padding:10px 20px; font-size:15px; cursor:pointer'>Close Window</button>
+</div>
+
+<h3>Access Token (AT) <span class='badge badge-at'>valid ~8h</span></h3>
+<p>Needed for cloud API calls. Re-run <code>authtoken</code> when it expires.</p>
+<div class='token-box'>{at if at else '(not available)'}</div>
+<div style='display:flex; gap:8px'>
+  <a href='pypowerwall://copy-at' style='text-decoration:none'>
+    <button class='copy-btn' id='copyAtBtn' onclick="
+      document.getElementById('copyAtBtn').textContent = '\u2705 Copied!';
+      document.getElementById('copyAtBtn').style.background = '#34c759';
+      setTimeout(function(){{document.getElementById('copyAtBtn').textContent = 'Copy AT';
+        document.getElementById('copyAtBtn').style.background = '#0071e3';}}, 2500);
+    ">Copy AT</button>
+  </a>
+  <a href='pypowerwall://close' style='text-decoration:none'>
+    <button class='close-btn'>Close Window</button>
   </a>
 </div>
 </body></html>"""
@@ -555,14 +777,20 @@ def _local_login_pywebview(email: str = None, region: str = "us",
                         pass
                     return
                 token = result["token"]
+                at = token_data.get("access_token", "") if isinstance(token_data, dict) else ""
                 print("\n" + "=" * 60)
-                print("\u2705 Tesla Refresh Token:")
+                print("\u2705 Tesla Refresh Token (RT \u2014 valid 90 days):")
                 print("-" * 60)
                 print(token)
                 print("-" * 60)
+                print()
+                print("\u2705 Tesla Access Token (AT \u2014 valid ~8 hours):")
+                print("-" * 60)
+                print(at if at else "(not available)")
+                print("-" * 60)
 
                 if show_token_page:
-                    # Show success page with Copy Token button
+                    # Show success page with AT + RT and separate copy buttons.
                     # Uses hidden textarea + execCommand fallback because
                     # navigator.clipboard.writeText() fails in WebView2 on Windows
                     # (requires secure context / HTTPS which local HTML doesn't have)
@@ -571,60 +799,72 @@ def _local_login_pywebview(email: str = None, region: str = "us",
                         import subprocess
                         if sys.platform == 'win32':
                             subprocess.run(['clip'], input=token.encode(), check=True)
-                            print("Token copied to clipboard!")
                         elif sys.platform == 'linux':
-                            # Try xclip, then xsel, then wl-copy
                             for cmd in [['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input'], ['wl-copy']]:
                                 try:
                                     subprocess.run(cmd, input=token.encode(), check=True)
-                                    print("Token copied to clipboard!")
                                     break
                                 except (FileNotFoundError, subprocess.CalledProcessError):
                                     continue
                         elif sys.platform == 'darwin':
                             subprocess.run(['pbcopy'], input=token.encode(), check=True)
-                            print("Token copied to clipboard!")
                     except Exception:
                         pass
-                    print("Copy the token above or use the button in the window.")
+                    print("Copy BOTH tokens above and paste them into setup -headless when prompted.")
                     success_html = f"""<!DOCTYPE html><html><head>
 <meta charset='utf-8'>
 <style>
   body {{ font-family: -apple-system, sans-serif; padding: 20px; background: #f5f5f7; }}
-  h2 {{ color: #1d1d1f; }}
+  h2 {{ color: #1d1d1f; margin-bottom: 4px; }}
+  h3 {{ color: #1d1d1f; margin: 14px 0 4px; font-size: 14px; }}
   .token-box {{ background: white; border: 1px solid #d2d2d7; border-radius: 10px;
-    padding: 15px; word-break: break-all; font-family: monospace; font-size: 11px;
-    color: #333; margin: 15px 0; user-select: all; cursor: text; }}
+    padding: 12px; word-break: break-all; font-family: monospace; font-size: 10px;
+    color: #333; margin: 5px 0 6px; user-select: all; cursor: text; }}
   .copy-btn {{ background: #0071e3; color: white; border: none; border-radius: 8px;
-    padding: 10px 20px; font-size: 15px; cursor: pointer; width: 100%; }}
+    padding: 8px 16px; font-size: 13px; cursor: pointer; margin-bottom: 4px; }}
   .copy-btn:active {{ background: #0077ed; }}
-  p {{ color: #6e6e73; font-size: 13px; }}
-  #fallback {{ position: absolute; left: -9999px; }}
+  p {{ color: #6e6e73; font-size: 12px; margin: 2px 0; }}
+  .badge {{ display:inline-block; font-size:10px; border-radius:4px; padding:1px 6px;
+    font-weight:600; margin-left:6px; vertical-align:middle; }}
+  .badge-at {{ background:#ffd60a; color:#1d1d1f; }}
+  .badge-rt {{ background:#30d158; color:#fff; }}
+  #fb-at, #fb-rt {{ position: absolute; left: -9999px; }}
 </style></head><body>
 <h2>\u2705 Authentication Successful</h2>
-<p>Your Tesla refresh token is shown below. Click the token box to select it, then press Ctrl+C to copy.</p>
-<div class='token-box' id='tokenText' onclick="document.execCommand('selectAll',false,null)">{token}</div>
-<textarea id='fallback'>{token}</textarea>
-<button class='copy-btn' id='copyBtn' onclick=\"
-  var ta = document.getElementById('fallback');
-  ta.style.position='fixed'; ta.style.left='0'; ta.style.top='0';
-  ta.style.opacity='0'; ta.select(); ta.setSelectionRange(0, 99999);
-  var ok = document.execCommand('copy');
-  ta.style.position='absolute'; ta.style.left='-9999px';
-  if(ok){{
-    document.getElementById('copyBtn').textContent = '\u2705 Copied!';
-    document.getElementById('copyBtn').style.background = '#34c759';
-    setTimeout(function(){{
-      document.getElementById('copyBtn').textContent = 'Copy Token';
-      document.getElementById('copyBtn').style.background = '#0071e3';
-    }}, 2500);
-  }} else {{
-    document.getElementById('tokenText').click();
-    document.getElementById('copyBtn').textContent = 'Press Ctrl+C to copy';
-    document.getElementById('copyBtn').style.background = '#ff9500';
-  }}
-\">Copy Token</button>
-<p style='margin-top:15px'>Token is also printed in your terminal. You can safely close this window.</p>
+<p>Copy <strong>both tokens</strong> below. Paste them into <code>setup&nbsp;-headless</code> when prompted.</p>
+
+<h3>Refresh Token (RT) <span class='badge badge-rt'>valid 90 days</span></h3>
+<p>Long-lived credential. Keep it secret.</p>
+<div class='token-box' onclick="document.execCommand('selectAll',false,null)">{token}</div>
+<textarea id='fb-rt'>{token}</textarea>
+<button class='copy-btn' id='copyRtBtn' onclick="
+  var ta=document.getElementById('fb-rt');
+  ta.style.position='fixed';ta.style.left='0';ta.style.top='0';
+  ta.style.opacity='0';ta.select();ta.setSelectionRange(0,99999);
+  var ok=document.execCommand('copy');
+  ta.style.position='absolute';ta.style.left='-9999px';
+  document.getElementById('copyRtBtn').textContent=ok?'\u2705 Copied!':'Press Ctrl+C';
+  document.getElementById('copyRtBtn').style.background=ok?'#34c759':'#ff9500';
+  setTimeout(function(){{document.getElementById('copyRtBtn').textContent='Copy RT';
+    document.getElementById('copyRtBtn').style.background='#0071e3';}},2500);
+" style='margin-bottom:12px'>Copy RT</button>
+
+<h3>Access Token (AT) <span class='badge badge-at'>valid ~8h</span></h3>
+<p>Needed for cloud API calls. Re-run <code>authtoken</code> when it expires.</p>
+<div class='token-box' onclick="document.execCommand('selectAll',false,null)">{at if at else '(not available)'}</div>
+<textarea id='fb-at'>{at if at else ''}</textarea>
+<button class='copy-btn' id='copyAtBtn' onclick="
+  var ta=document.getElementById('fb-at');
+  ta.style.position='fixed';ta.style.left='0';ta.style.top='0';
+  ta.style.opacity='0';ta.select();ta.setSelectionRange(0,99999);
+  var ok=document.execCommand('copy');
+  ta.style.position='absolute';ta.style.left='-9999px';
+  document.getElementById('copyAtBtn').textContent=ok?'\u2705 Copied!':'Press Ctrl+C';
+  document.getElementById('copyAtBtn').style.background=ok?'#34c759':'#ff9500';
+  setTimeout(function(){{document.getElementById('copyAtBtn').textContent='Copy AT';
+    document.getElementById('copyAtBtn').style.background='#0071e3';}},2500);
+" style='margin-right:8px'>Copy AT</button>
+<button style='background:#ff3b30;color:white;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;' onclick="window.close()">Close Window</button>
 </body></html>"""
                     try:
                         window.load_html(success_html)
@@ -868,15 +1108,21 @@ def _patch_pywebview_gtk(result, expected_state):
 def login(email: str = None, headless: bool = False, region: str = "us", debug: bool = False):
     """Authenticate with Tesla. Returns (refresh_token, email, token_data) tuple."""
     if headless or _detect_mode() == "remote":
-        return _remote_login(), "", {}
+        rt, at = _remote_login()
+        token_data = {"refresh_token": rt, "access_token": at, "token_type": "Bearer", "expires_in": 28800}
+        return rt, "", token_data
     return _local_login(email=email, region=region, debug=debug,
                         show_token_page=False)
 
 
-def get_authtoken(region: str = "us", debug: bool = False) -> str:
-    """Get a refresh token for the authtoken CLI command (no file save)."""
-    token, _, _ = _local_login(region=region, debug=debug, show_token_page=True)
-    return token
+def get_authtoken(region: str = "us", debug: bool = False) -> tuple:
+    """Get tokens for the authtoken CLI command (no file save).
+
+    Returns (refresh_token, access_token, email) tuple.
+    """
+    rt, email, token_data = _local_login(region=region, debug=debug, show_token_page=True)
+    at = token_data.get('access_token', '') if token_data else ''
+    return rt, at, email
 
 
 def _extract_email_from_token(token: str) -> str:
@@ -886,7 +1132,7 @@ def _extract_email_from_token(token: str) -> str:
         parts = token.split('.')
         if len(parts) >= 2:
             # Add padding
-            padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
+            padded = parts[1] + '=' * (-len(parts[1]) % 4)
             data = json.loads(base64.urlsafe_b64decode(padded))
             return (data.get('email') or
                     data.get('data', {}).get('email') or '')
@@ -905,32 +1151,33 @@ def save_token(token_data: dict, path: str = None, email: str = None, region: st
                     refresh_token, expires_in, token_type, id_token).
         path: File path (default: .pypowerwall.auth in current directory).
         email: Email address to associate with the token.
-        region: Tesla region for token refresh if access_token is missing.
+        region: (Deprecated) Tesla region — no longer used for token refresh.
+               owner-api only accepts code-exchange ATs; refresh is not attempted here.
     """
-    import time
-
     if not path:
         path = os.path.join(os.getcwd(), ".pypowerwall.auth")
 
     if not email:
         email = input("Tesla account email: ").strip()
 
-    # If access_token is missing, refresh it from the refresh_token
-    if not token_data.get("access_token") and token_data.get("refresh_token"):
-        try:
-            refreshed = _refresh_access_token(token_data["refresh_token"], region=region)
-            token_data.update(refreshed)
-            print("  Access token refreshed successfully.")
-        except Exception as e:
-            print(f"  Warning: Could not refresh access token: {e}")
+    # owner-api.teslamotors.com only accepts code-exchange ATs (from a PKCE
+    # WebView login). Refreshed ATs are always rejected with 403. So we store
+    # the code-exchange AT as-is and do NOT trigger any refresh here.
+    #
+    # expires_at: set to now + expires_in when an AT is present so the auth file
+    # reflects the real expiry (~8h). When AT is empty, keep 0 to prevent
+    # requests_oauthlib from attempting an auto-refresh (which would produce a
+    # refreshed AT that owner-api rejects).
 
     # Build teslapy-compatible cache entry
+    import time as _time
     expires_in = token_data.get("expires_in", 28800)
-    expires_at = int(time.time() + expires_in)
+    access_token = token_data.get("access_token", "")
+    expires_at = int(_time.time()) + expires_in if access_token else 0
 
     sso = {
         "token_type": token_data.get("token_type", "Bearer"),
-        "access_token": token_data.get("access_token", ""),
+        "access_token": access_token,
         "refresh_token": token_data.get("refresh_token", ""),
         "expires_at": expires_at,
         "expires_in": expires_in,

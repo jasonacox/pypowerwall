@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import os
@@ -145,6 +146,60 @@ class PyPowerwallCloud(PyPowerwallBase):
 
         # Create Tesla instance
         self.tesla = Tesla(self.email, cache_file=self.authfile, timeout=self.timeout)
+
+        # If the auth file has no access_token (user skipped AT in setup -headless,
+        # or auth file predates the AT requirement), attempt a refresh here.
+        # NOTE: owner-api.teslamotors.com requires a code-exchange AT to bootstrap
+        # the session on first connect ("cold start"). A refresh with no prior
+        # code-exchange AT in the session returns 403. Once bootstrapped, normal
+        # RT-based refresh works fine — see the 401-retry logic below.
+        if (self.tesla.token.get('refresh_token') and
+                not self.tesla.token.get('access_token')):
+            log.debug("connect: access_token empty, refreshing via teslapy…")
+            try:
+                rt = self.tesla.token['refresh_token']
+                self.tesla.refresh_token(
+                    self.tesla.auto_refresh_url,
+                    refresh_token=rt,
+                    **self.tesla.auto_refresh_kwargs
+                )
+                new_at = self.tesla.token.get('access_token', '')
+                log.debug("connect: token refresh succeeded, access_token length=%d", len(new_at))
+                # Warn: owner-api.teslamotors.com rejects refreshed ATs with 403.
+                # Only code-exchange ATs (from setup/authtoken with WebView) work.
+                # Check if this looks like a refreshed AT (lacks x-enc or owner-api aud).
+                if new_at:
+                    try:
+                        payload = new_at.split('.')[1]
+                        at_claims = json.loads(base64.urlsafe_b64decode(
+                            payload + '=' * (-len(payload) % 4)))
+                        has_xenc = 'x-enc' in at_claims
+                        at_aud = at_claims.get('aud', [])
+                        has_owner_api_aud = any('owner-api' in str(a) for a in at_aud)
+                        if not (has_owner_api_aud and has_xenc):
+                            log.warning("Refreshed AT missing owner-api aud or x-enc — likely to get 403.")
+                    except Exception:
+                        pass
+            except Exception as err:
+                log.error("Token refresh failed: %s", repr(err))
+                # Log safe error fields from response — never raw body (may contain tokens)
+                resp_obj = getattr(err, 'response', None)
+                if resp_obj is not None:
+                    try:
+                        body = resp_obj.text if hasattr(resp_obj, 'text') else str(getattr(resp_obj, 'content', ''))
+                        try:
+                            err_data = json.loads(body)
+                            log.error("Token refresh error: %s", err_data.get('error', 'unknown'))
+                            if err_data.get('error_description'):
+                                log.error("  description: %s", err_data['error_description'])
+                        except (json.JSONDecodeError, ValueError):
+                            log.error("Token refresh response: [non-JSON response, %d bytes]", len(body))
+                    except Exception:
+                        pass
+                log.error("Tip: run 'python -m pypowerwall cloudcheck' for environment diagnostics")
+                log.error("     See pypowerwall/cloud/AUTH.md Section 7 for root cause analysis")
+                return False
+
         # Check to see if we have a cached token
         if not self.tesla.authorized:
             # Login to Tesla account and cache token
@@ -157,8 +212,66 @@ class PyPowerwallCloud(PyPowerwallBase):
             except Exception as err:
                 log.error("Login failure - %s" % repr(err))
                 return False
-        # Get site info
-        sites = self.getsites()
+        # Get site info — call battery_list/solar_list directly so we can
+        # detect and handle 401 (expired AT) and 403 (rejected AT) explicitly.
+        def _http_status_from_err(e):
+            """Extract HTTP status code from an HTTPError exception."""
+            resp = getattr(e, 'response', None)
+            if resp is not None:
+                return getattr(resp, 'status_code', None)
+            # Fallback: parse from string like "401 Client Error: ..."
+            msg = str(e)
+            for code in (401, 403):
+                if str(code) in msg:
+                    return code
+            return None
+
+        def _fetch_sites():
+            return self.tesla.battery_list() + self.tesla.solar_list()
+
+        def _log_403_reauth():
+            log.error("Access token rejected (403 Forbidden).")
+            log.error("owner-api.teslamotors.com only accepts code-exchange ATs "
+                      "from a WebView PKCE login.")
+            log.error("Run 'python -m pypowerwall authtoken' on your local Mac,")
+            log.error("then 'python -m pypowerwall setup -headless' to save the new AT.")
+
+        try:
+            sites = _fetch_sites()
+        except Exception as err:
+            _status = _http_status_from_err(err)
+            if _status == 401:
+                # AT expired — attempt refresh then retry once
+                log.warning("connect: got 401 (token expired) — attempting token refresh…")
+                _rt = self.tesla.token.get('refresh_token', '')
+                if not _rt:
+                    log.error("No refresh token available — run 'python -m pypowerwall setup'.")
+                    return False
+                try:
+                    self.tesla.refresh_token(
+                        self.tesla.auto_refresh_url,
+                        refresh_token=_rt,
+                        **self.tesla.auto_refresh_kwargs
+                    )
+                    log.debug("connect: token refresh succeeded — retrying site list…")
+                except Exception as ref_err:
+                    log.error("Token refresh failed: %s", repr(ref_err))
+                    return False
+                try:
+                    sites = _fetch_sites()
+                except Exception as retry_err:
+                    if _http_status_from_err(retry_err) == 403:
+                        _log_403_reauth()
+                    else:
+                        log.error("Failed to retrieve sitelist after refresh: %s", repr(retry_err))
+                    return False
+            elif _status == 403:
+                _log_403_reauth()
+                return False
+            else:
+                log.error("Failed to retrieve sitelist: %s", repr(err))
+                return False
+
         if sites is None or len(sites) == 0:
             log.error("No sites found for %s" % self.email)
             return False
@@ -922,7 +1035,7 @@ class PyPowerwallCloud(PyPowerwallBase):
                        If provided, writes token directly. If None and file exists,
                        skips auth and goes straight to site selection.
         """
-        print("Tesla Account Setup")
+        print("\nTesla Account Setup")
         print("-" * 60)
         tuser = ""
 

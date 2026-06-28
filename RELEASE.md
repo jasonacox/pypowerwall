@@ -1,5 +1,57 @@
 # RELEASE NOTES
 
+## v0.15.13 - Fleet API HTTP/2 Upgrade
+
+* feat(fleetapi): upgrade Fleet API transport to HTTP/2 with TLS 1.3 (#338)
+  * Proactively upgrades Fleet API transport to HTTP/2 — Fleet API currently works over HTTP/1.1, but HTTP/2 improves reliability and future-proofs against enforcement (Tesla has already enforced HTTP/2 on Owner API endpoints)
+  * All 9 `requests` call sites in `fleetapi/fleetapi.py` replaced with `_http2_request()` helper
+  * New HTTP/2 transport helpers: `_httpx_auth_verify()`, `_HTTP2Response`, `_http2_request()`
+    * `_httpx_auth_verify()` — pins TLS 1.3 via `ssl.SSLContext` when available
+    * `_HTTP2Response` — `requests.Response`-compatible wrapper for `httpx` responses (`.status_code`, `.text`, `.json()`, `.raise_for_status()`)
+    * `_http2_request()` — unified request helper: tries HTTP/2 first, falls back to HTTP/1.1 on any error (logged as warning)
+  * Form-encoded `data=dict` correctly routes to `httpx data=` kwarg; raw bytes/str use `content=`
+  * `raise_for_status()` correctly distinguishes 4xx (Client Error) from 5xx (Server Error)
+  * Follows same pattern as PR #324 (Cloud mode HTTP/2 upgrade in `teslapy/__init__.py`)
+  * HTTP/2 enabled when `httpx[http2]>=0.27.0` is installed (already in `requirements.txt`); falls back to `requests` (HTTP/1.1) if unavailable
+  * Hardware-validated against live PW3 (fw 26.18.1): Fleet API read, write (set/reset reserve), and protocol negotiation all confirmed ✅
+* Bump library version to `0.15.13`
+
+## v0.15.12 - Remote Setup and Cloud Auth Improvements
+
+* fix(cloud): Docker/container headless setup no longer fails with 403 on first connect (#333)
+  * Root cause confirmed: `owner-api.teslamotors.com` requires a **code-exchange AT** (from PKCE WebView login) to bootstrap the session. A "cold" refresh (RT used immediately with no prior code-exchange AT) is rejected with 403. Once the session is bootstrapped, normal RT-based refresh works — the service self-heals automatically after the initial ~8h AT expiry.
+  * `authtoken` command now outputs **both** the Refresh Token (RT, valid 90 days) and Access Token (AT, valid ~8h) — RT shown first in both terminal output and window UI
+  * macOS WebView success page redesigned: RT with green badge first, AT with yellow badge second, separate Copy RT / Copy AT buttons
+  * `setup -headless` now prompts for RT first, then AT (required to bootstrap the session on first connect)
+  * Both tokens are saved to the auth file; `connect()` uses the code-exchange AT directly on first connect
+  * `connect()` now handles 401 (expired AT) by refreshing via RT and retrying — warm refresh works, so no manual token renewal needed after initial setup
+  * `expires_at` in auth file now set to `now + expires_in` (real expiry, ~8h) when AT is saved, rather than always `0` — allows accurate expiry reporting in `cloudcheck` and auth file inspection
+* feat(cloud): New `cloudcheck` diagnostics command for cloud mode troubleshooting
+  * Checks Python, platform, OpenSSL version, TLS 1.3 support
+  * Checks httpx and h2 installation and versions
+  * Checks proxy environment variables
+  * Decodes and validates auth file: detects empty AT, expired AT, and whether AT has code-exchange markers (`owner-api` aud, `x-enc` present)
+  * Live connectivity test to `auth.tesla.com` and `owner-api.teslamotors.com` (HTTP/2 protocol check)
+  * Optional token refresh test with informative failure messages explaining the code-exchange AT requirement
+  * `cloudcheck -noconnect` skips live tests for offline validation
+  * Adding `-debug` to `setup`, `cloudcheck`, or `authtoken` automatically prints a full environment diagnostics header (Python, platform, OpenSSL, httpx, h2, proxy vars) before running the command
+* fix(cloud): Remove stale energy-scope comments and contradictory `SCOPES` documentation across `tesla_auth.py`, `teslapy/__init__.py`, `pypowerwall_cloud.py`, and `__main__.py`
+  * Energy scopes (`energy_device_data`, `energy_cmds`) are NOT required and were a red herring
+  * Updated `AUTH.md` Section 7 to mark RCA-6 (energy scopes) as **DISPROVEN** and document the confirmed root cause as RCA-8 (code-exchange vs refreshed AT)
+* Bump library version to `0.15.12`
+
+## v0.15.11 - HTTP/2 for Tesla Owner API Calls
+
+* fix(cloud): Extend HTTP/2 support to all owner-api.teslamotors.com API calls, not just auth endpoints (#324) - t93
+  * Tesla now requires HTTP/2 for `owner-api.teslamotors.com/api/1/*` endpoints, matching the auth.tesla.com requirement
+  * Pin `httpx` Tesla auth/API transports to TLS 1.3 when possible, mirroring the TeslaMate fix path for Tesla endpoints while preserving explicit custom `verify` settings
+  * `Tesla.request()` now routes owner-api calls through `httpx` with HTTP/2 when available, with automatic fallback to `requests` (HTTP/1.1)
+  * `_request_http2` now forwards all session headers (`Content-Type`, `X-Tesla-User-Agent`, `User-Agent`) to httpx instead of a minimal subset — ensures Tesla receives the same fingerprint as the original requests session
+  * Adds `_HTTP2Response` wrapper class for requests/httpx response compatibility
+  * Fixes 403 errors during `setup` flow (sitelist retrieval) reported in Powerwall-Dashboard #779
+  * Fixes 403 errors during normal cloud-mode polling (PRODUCT_LIST, SITE_DATA, etc.)
+  * Requires `httpx[http2]>=0.27.0` — the `[http2]` extra installs `h2`, which is required for HTTP/2 support; without it, httpx silently falls back to HTTP/1.1
+
 ## v0.15.10 - Combined Reserve + Mode Control Endpoint
 
 * feat(proxy): Optional companion parameters on `/control/reserve` and `/control/mode` POST endpoints to update both reserve and mode in a single `set_operation()` call (#308) - t90

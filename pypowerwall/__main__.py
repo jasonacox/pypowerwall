@@ -139,6 +139,268 @@ def _build_powerwall(args, authpath):
     )
 
 
+def _run_cloud_diagnostics(authpath="", email=None, skip_connect=False):
+    """
+    Print a comprehensive cloud auth environment report.
+
+    Checks:
+      - Python + platform + OpenSSL version
+      - httpx and h2 availability / version
+      - HTTP/2 protocol actually negotiated (live test)
+      - TLS 1.3 SSLContext support
+      - Proxy environment variables
+      - .pypowerwall.auth file presence and token state
+      - Live token refresh test (if auth file present)
+    """
+    import platform
+    import ssl
+    import time
+
+    W = "\033[33m"   # yellow
+    R = "\033[31m"   # red
+    G = "\033[32m"   # green
+    B = "\033[36m"   # cyan
+    N = "\033[0m"    # reset
+
+    def ok(msg):  print(f"  {G}✓{N}  {msg}")
+    def warn(msg): print(f"  {W}!{N}  {msg}")
+    def fail(msg): print(f"  {R}✗{N}  {msg}")
+    def info(msg): print(f"     {msg}")
+
+    print(f"\n{B}=== pyPowerwall Cloud Diagnostics ==={N}\n")
+
+    # ── Python + platform ──────────────────────────────────────────────────
+    print(f"{B}[Runtime]{N}")
+    info(f"Python:   {sys.version.split()[0]}  ({sys.executable})")
+    info(f"Platform: {platform.platform()}")
+    info(f"OpenSSL:  {ssl.OPENSSL_VERSION}")
+
+    # ── TLS 1.3 ───────────────────────────────────────────────────────────
+    tls13_ok = False
+    try:
+        ctx = ssl.create_default_context()
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+        tls13_ok = True
+        ok("TLS 1.3 SSLContext: supported")
+    except AttributeError:
+        warn("TLS 1.3 SSLContext: ssl.TLSVersion not available (old OpenSSL)")
+    except ssl.SSLError as e:
+        warn(f"TLS 1.3 SSLContext: failed — {e}")
+
+    # ── httpx ─────────────────────────────────────────────────────────────
+    print(f"\n{B}[HTTP/2 Stack]{N}")
+    httpx_ok = False
+    try:
+        import httpx
+        ok(f"httpx {httpx.__version__}: installed")
+        httpx_ok = True
+    except ImportError:
+        fail("httpx: NOT INSTALLED")
+        info("  Install with: pip install httpx[http2]")
+
+    h2_ok = False
+    try:
+        import h2
+        ok(f"h2 {h2.__version__}: installed (HTTP/2 framing OK)")
+        h2_ok = True
+    except ImportError:
+        fail("h2: NOT INSTALLED — httpx cannot negotiate HTTP/2")
+        info("  Install with: pip install h2")
+        info("  Or: pip install httpx[http2]")
+
+    if httpx_ok and not h2_ok:
+        fail("httpx[http2] appears incomplete — 'h2' package is missing")
+
+    # ── Proxy env vars ────────────────────────────────────────────────────
+    print(f"\n{B}[Proxy Environment]{N}")
+    proxy_vars = {}
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy",
+                "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy"):
+        val = os.environ.get(var)
+        if val:
+            proxy_vars[var] = val
+            # Redact credentials in proxy URLs (user:pass@host)
+            safe = val
+            if '://' in safe and '@' in safe.split('://', 1)[1]:
+                scheme, rest = safe.split('://', 1)
+                host = rest.split('@', 1)[1]
+                safe = f"{scheme}://***@{host}"
+            warn(f"{var}={safe}")
+
+    if not proxy_vars:
+        ok("No proxy environment variables set")
+
+    # ── Auth file ─────────────────────────────────────────────────────────
+    print(f"\n{B}[Auth File]{N}")
+    auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
+    abs_auth = os.path.abspath(auth_file)
+    found_email = email
+    has_rt = False
+    has_at = False
+
+    if os.path.isfile(auth_file):
+        try:
+            with open(auth_file) as f:
+                data = json.load(f)
+            detected_email = list(data.keys())[0] if data else None
+            if not found_email:
+                found_email = detected_email
+            sso = data.get(found_email or detected_email, {}).get('sso', {})
+            has_rt = bool(sso.get('refresh_token', ''))
+            has_at = bool(sso.get('access_token', ''))
+            exp = sso.get('expires_at', 0)
+            expired = (exp == 0) or (exp < time.time())
+            rt_len = len(sso.get('refresh_token', ''))
+            at_len = len(sso.get('access_token', ''))
+
+            ok(f"Found: {abs_auth}")
+            info(f"Email:         {found_email}")
+            info(f"refresh_token: {'present' if has_rt else 'MISSING'} ({rt_len} chars)")
+            if has_at:
+                info(f"access_token:  present ({at_len} chars), {'EXPIRED' if expired else 'valid'}")
+            else:
+                info(f"access_token:  empty — connect() will 403 (owner-api only accepts code-exchange ATs)")
+            info(f"expires_at:    {exp} ({'expired/force-refresh' if expired else 'valid'})")
+
+            # Key diagnostic: is the access_token present (code-exchange AT)?
+            # owner-api.teslamotors.com only accepts code-exchange ATs, not refreshed ones.
+            if has_at:
+                at_str = sso.get('access_token', '')
+                try:
+                    import base64 as _b64
+                    atp = at_str.split('.')[1]
+                    at_claims = json.loads(_b64.urlsafe_b64decode(atp + '=' * (-len(atp) % 4)))
+                    at_exp = at_claims.get('exp', 0)
+                    at_aud = at_claims.get('aud', [])
+                    has_owner_api_aud = any('owner-api' in str(a) for a in at_aud)
+                    has_xenc = 'x-enc' in at_claims
+                    at_expired = at_exp < time.time()
+                    if at_expired:
+                        fail(f"access_token: EXPIRED (exp={at_exp}) — re-run 'authtoken' on local Mac, then 'setup -headless' with both RT and AT")
+                    elif has_owner_api_aud and has_xenc:
+                        ok(f"access_token: valid code-exchange AT (owner-api aud, x-enc present)")
+                    else:
+                        warn(f"access_token: present but missing owner-api aud or x-enc (may be refreshed AT)")
+                except Exception:
+                    pass
+            else:
+                fail("access_token: EMPTY — owner-api will get 403 on first connect()")
+                info("Re-run 'python -m pypowerwall authtoken' and then 'setup -headless',")
+                info("pasting BOTH the Access Token AND Refresh Token when prompted.")
+        except Exception as e:
+            fail(f"Auth file read error: {e}")
+    else:
+        fail(f"Auth file not found: {abs_auth}")
+        info("Run 'python -m pypowerwall setup' to authenticate.")
+
+    # ── Live connectivity ─────────────────────────────────────────────────
+    if skip_connect:
+        print(f"\n{B}[Connectivity]{N}")
+        info("Skipped (-noconnect)")
+    elif not httpx_ok:
+        print(f"\n{B}[Connectivity]{N}")
+        warn("Skipped — httpx not installed")
+    else:
+        import httpx as hx
+        print(f"\n{B}[Connectivity]{N}")
+        targets = [
+            ("auth.tesla.com",      "https://auth.tesla.com/"),
+            ("owner-api.tesla.com", "https://owner-api.teslamotors.com/"),
+        ]
+        for label, url in targets:
+            try:
+                with hx.Client(http2=True, timeout=8, follow_redirects=True) as client:
+                    resp = client.get(url)
+                proto = resp.http_version
+                if proto == "HTTP/2":
+                    ok(f"{label}: HTTP {resp.status_code}  protocol={proto}")
+                else:
+                    warn(f"{label}: HTTP {resp.status_code}  protocol={proto}  ← expected HTTP/2!")
+            except Exception as e:
+                fail(f"{label}: {e}")
+
+        # ── Token refresh test ─────────────────────────────────────────────
+        if has_rt and found_email:
+            print(f"\n{B}[Token Refresh Test]{N}")
+            try:
+                from pypowerwall.cloud.teslapy import Tesla
+                tesla = Tesla(found_email, cache_file=auth_file)
+                rt = tesla.token.get('refresh_token', '')
+                at = tesla.token.get('access_token', '')
+                tok_exp = tesla.token.get('expires_at', 0)
+                tok_expired = (tok_exp == 0) or (tok_exp < time.time())
+                if rt and (not at or tok_expired):
+                    msg = "access_token is empty" if not at else "access_token is expired"
+                    info(f"{msg} — attempting token refresh via teslapy…")
+                    warn("owner-api only accepts code-exchange ATs; refreshed AT will likely get 403")
+                    try:
+                        tesla.refresh_token(
+                            tesla.auto_refresh_url,
+                            refresh_token=rt,
+                            **tesla.auto_refresh_kwargs
+                        )
+                        new_at = tesla.token.get('access_token', '')
+                        new_rt = tesla.token.get('refresh_token', '')
+                        if new_at:
+                            ok(f"Token refresh: SUCCESS  (access_token length: {len(new_at)})")
+                            info(f"New refresh_token: present ({len(new_rt)} chars)")
+                            # Now also test battery_list with the fresh token
+                            try:
+                                sites = tesla.battery_list() + tesla.solar_list()
+                                ok(f"battery_list()/solar_list(): {len(sites)} site(s) found")
+                                for s in sites:
+                                    info(f"  site_id={s.get('energy_site_id')}  name={s.get('site_name','?')}")
+                            except Exception as e2:
+                                fail(f"battery_list() after refresh: FAILED — {e2}")
+                                resp_obj2 = getattr(e2, 'response', None)
+                                if resp_obj2 is not None:
+                                    try:
+                                        body2 = resp_obj2.text if hasattr(resp_obj2, 'text') else str(getattr(resp_obj2, 'content', ''))
+                                        info(f"Response body: {body2[:400]}")
+                                    except Exception:
+                                        pass
+                                info("⚠ This is expected: owner-api.teslamotors.com only accepts")
+                                info("  code-exchange ATs (from WebView PKCE login), not refreshed ATs.")
+                                info("  Fix: re-run 'authtoken' on local Mac, then 'setup -headless'")
+                                info("  pasting BOTH the Refresh Token AND Access Token when prompted.")
+                        else:
+                            fail("Token refresh: returned no access_token")
+                    except Exception as e:
+                        fail(f"Token refresh: FAILED — {e}")
+                        # Extract response body if available
+                        resp_obj = getattr(e, 'response', None)
+                        if resp_obj is not None:
+                            try:
+                                body = resp_obj.text if hasattr(resp_obj, 'text') else str(resp_obj.content)
+                                info(f"Response body: {body[:400]}")
+                            except Exception:
+                                pass
+                        info("Hint: See pypowerwall/cloud/AUTH.md Section 7 for root cause analysis")
+                elif at:
+                    ok("access_token already present — testing battery_list()…")
+                    try:
+                        sites = tesla.battery_list() + tesla.solar_list()
+                        ok(f"battery_list()/solar_list(): {len(sites)} site(s) found")
+                        for s in sites:
+                            info(f"  site_id={s.get('energy_site_id')}  name={s.get('site_name','?')}")
+                    except Exception as e:
+                        fail(f"battery_list(): FAILED — {e}")
+                        resp_obj = getattr(e, 'response', None)
+                        if resp_obj is not None:
+                            try:
+                                body = resp_obj.text if hasattr(resp_obj, 'text') else str(resp_obj.content)
+                                info(f"Response body: {body[:400]}")
+                            except Exception:
+                                pass
+                else:
+                    warn("No refresh_token in auth file — cannot test")
+            except Exception as e:
+                fail(f"Could not load teslapy: {e}")
+
+    print(f"\n{B}=== End Diagnostics ==={N}\n")
+
+
 def main():
     """Main entry point for the pypowerwall CLI."""
     # Global Variables
@@ -171,7 +433,9 @@ def main():
                            help="Register RSA key with Powerwall for v1r LAN TEDAPI mode")
     setup_args.add_argument("-email", type=str, default=None, help="Email address for Tesla Login.")
     setup_args.add_argument("-headless", action="store_true", default=False,
-                           help="Manual mode — paste URL instead of opening browser")
+                           help="Force headless/token-paste mode — skip the browser window and use "
+                                "the SSH-friendly token-paste flow. Run 'python -m pypowerwall authtoken' "
+                                "on a local machine to get a token, then paste it here.")
     setup_args.add_argument("-region", type=str, default="us", choices=["us", "cn"],
                            help="Tesla region: 'us' (default) or 'cn' (China)")
 
@@ -254,6 +518,13 @@ def main():
     version_args = subparsers.add_parser("version", parents=[common],
                                          help='Print version information')
 
+    cloudcheck_args = subparsers.add_parser("cloudcheck", parents=[common],
+                                             help='Diagnose cloud auth environment (HTTP/2, TLS, token file, connectivity)')
+    cloudcheck_args.add_argument("-email", type=str, default=None,
+                                 help="Email to test token refresh for (uses auth file if omitted)")
+    cloudcheck_args.add_argument("-noconnect", action="store_true", default=False,
+                                 help="Skip live connectivity tests (offline diagnostics only)")
+
     if len(sys.argv) == 1:
         p.print_help(sys.stderr)
         sys.exit(1)
@@ -277,6 +548,32 @@ def main():
         display_authpath = os.path.abspath(authpath) if authpath else os.path.abspath(os.getcwd())
         print(f"[DEBUG] Using auth path: {display_authpath} (raw='{authpath}')")
         set_debug(True)
+        # Print environment diagnostics automatically when -debug is set for setup/cloudcheck/authtoken
+        if command in ('setup', 'cloudcheck', 'authtoken'):
+            import ssl, platform
+            print(f"[DEBUG] Python:   {sys.version.split()[0]}")
+            print(f"[DEBUG] Platform: {platform.platform()}")
+            print(f"[DEBUG] OpenSSL:  {ssl.OPENSSL_VERSION}")
+            try:
+                import httpx
+                print(f"[DEBUG] httpx:    {httpx.__version__}")
+            except ImportError:
+                print("[DEBUG] httpx:    NOT INSTALLED")
+            try:
+                import h2
+                print(f"[DEBUG] h2:       {h2.__version__}")
+            except ImportError:
+                print("[DEBUG] h2:       NOT INSTALLED — HTTP/2 will NOT work")
+            for var in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "NO_PROXY"):
+                val = os.environ.get(var)
+                if val:
+                    # Redact credentials in proxy URLs (user:pass@host)
+                    from urllib.parse import urlparse, urlunparse
+                    parsed = urlparse(val)
+                    if parsed.username or parsed.password:
+                        redacted = parsed._replace(netloc=f"***@{parsed.hostname}:{parsed.port}" if parsed.port else f"***@{parsed.hostname}")
+                        val = urlunparse(redacted)
+                    print(f"[DEBUG] {var}={val}")
 
     # Cloud, FleetAPI, or v1r Setup
     if command == 'setup':
@@ -306,24 +603,28 @@ def main():
         # Check for existing auth file
         auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
         overwrite = False
-        if os.path.isfile(auth_file) and not email:
+        if os.path.isfile(auth_file):
             try:
                 with open(auth_file) as f:
                     data = json.load(f)
-                email = list(data.keys())[0]
+                existing_email = list(data.keys())[0]
+                if not email:
+                    email = existing_email
                 print("  Found existing auth file: %s" % auth_file)
                 resp = input("  Overwrite existing file? [y/N]: ").strip()
                 if resp.lower() == "y":
                     overwrite = True
-                    email = None
                     os.remove(auth_file)
+                    if not args.email:
+                        email = None  # reset so login will re-detect or prompt for email
                 # else: keep existing, just re-select site
             except Exception:
                 pass
 
         token_data = None
         if email is None or not os.path.isfile(auth_file):
-            # Get token via native browser (macOS) or headless (Linux/Windows/SSH)
+            # Get token via native browser (macOS/desktop) or token-paste flow (SSH/headless).
+            # -headless explicitly forces the token-paste flow; SSH sessions are auto-detected.
             refresh_token, detected_email, token_data = tesla_login(
                 headless=args.headless,
                 region=args.region,
@@ -332,16 +633,25 @@ def main():
             email = detected_email or email
             if not email:
                 email = input("\nTesla account email: ").strip()
-            # If headless/remote, token_data is empty — write token manually
-            if not token_data:
+            # For headless flow without AT (or with empty AT): save token
+            # directly via save_token() since PyPowerwallCloud.setup() expects
+            # a full token_data dict. When AT is provided, token_data is truthy
+            # and setup() handles the save itself.
+            if not token_data or not token_data.get('access_token'):
+                # RT-only or RT+empty-AT: save explicitly so setup() sees None
+                # ("use existing file") and skips the token-write path.
+                td = token_data or {}
                 from pypowerwall.tesla_auth import save_token
                 save_token(
-                    {"refresh_token": refresh_token, "token_type": "Bearer", "expires_in": 28800},
+                    {"refresh_token": refresh_token,
+                     "access_token": td.get('access_token', ''),
+                     "token_type": "Bearer",
+                     "expires_in": 28800},
                     path=auth_file, email=email, region=args.region,
                 )
                 token_data = None  # signal setup() to use existing file
 
-        # Run Setup with token data (or None if using existing file)
+        # Run Setup with token data (or None if using existing auth file)
         c = PyPowerwallCloud(email, authpath=authpath)
         if c.setup(email=email, token_data=token_data):
             print(f"\nSetup Complete. Auth file {c.authfile} ready to use.")
@@ -361,13 +671,26 @@ def main():
         try:
             print("\n⚡ Tesla Authentication — pypowerwall authtoken")
             print("=" * 60)
-            token = get_authtoken(region=args.region, debug=getattr(args, 'debug', False))
+            rt, at, email = get_authtoken(region=args.region, debug=getattr(args, 'debug', False))
             print("\n" + "=" * 60)
-            print("Refresh Token:")
+            print("✅ Tesla Refresh Token (RT — valid 90 days):")
             print("-" * 60)
-            print(token)
+            print(rt)
             print("-" * 60)
-            print("\nCopy the token above and use it on your remote machine.")
+            if at:
+                print()
+                print("✅ Tesla Access Token (AT — valid ~8 hours):")
+                print("-" * 60)
+                print(at)
+                print("-" * 60)
+                print()
+                print("  When running 'python -m pypowerwall setup -headless',")
+                print("  paste the RT when prompted for 'Refresh Token (RT)'")
+                print("  and paste the AT when prompted for 'Access Token (AT)'.")
+                print("  The AT bootstraps the session — after the first connect,")
+                print("  the library auto-refreshes via the RT when the AT expires.")
+            else:
+                print("\nCopy the refresh token above and use it on your remote machine.")
         except (KeyboardInterrupt, EOFError):
             print("\nLogin cancelled.")
             sys.exit(1)
@@ -557,6 +880,15 @@ def main():
     # Print Version
     elif command == 'version':
         print("pyPowerwall [%s]" % version)
+
+    # Cloud Diagnostics
+    elif command == 'cloudcheck':
+        _run_cloud_diagnostics(
+            authpath=authpath,
+            email=getattr(args, 'email', None),
+            skip_connect=getattr(args, 'noconnect', False),
+        )
+
     # Print Usage
     else:
         p.print_help()

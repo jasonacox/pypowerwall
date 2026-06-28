@@ -1,6 +1,7 @@
 # This file is used to install the necessary Python packages for the project.
 requests
 protobuf>=6.33.6
+httpx[http2]>=0.27.0
 python-dotenv
 pyroute2
 bs4
