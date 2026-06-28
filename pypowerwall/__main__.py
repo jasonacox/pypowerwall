@@ -28,6 +28,7 @@ import json
 
 # Modules
 from pypowerwall import version, set_debug
+from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 
 
 def _email_from_auth(authpath):
@@ -477,6 +478,9 @@ def main():
                              help="Path to RSA private key PEM for v1r mode")
     tedapi_args.add_argument("-wifi_host", type=str, default=None,
                              help="Optional WiFi TEDAPI host for v1r follower fallback")
+    tedapi_args.add_argument("-tedapi_api_version", type=str, default=None,
+                             choices=[v.value for v in TEDAPIApiVersion],
+                             help="TEDAPI query/protobuf version to use (june_2024 or june_2026)")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -733,6 +737,8 @@ def main():
             tedapi_argv.extend(['-rsa_key_path', args.rsa_key_path])
         if args.wifi_host:
             tedapi_argv.extend(['-wifi_host', args.wifi_host])
+        if args.tedapi_api_version:
+            tedapi_argv.extend(['-tedapi_api_version', args.tedapi_api_version])
         if args.debug:
             tedapi_argv.append('--debug')
         run_tedapi_test(argv=tedapi_argv, debug=args.debug)

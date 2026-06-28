@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## Unreleased - TEDAPI june_2026 Query Set (Signed GraphQL / Bearer Mode)
+
+* feat(tedapi): add date-labeled TEDAPI query/protobuf sets selectable via `tedapi_api_version` (`"june_2024"` default, `"june_2026"`). `june_2026` sends Tesla-signed `SignedGraphQLQuery` payloads over the energy_device GraphQL path; `june_2024` keeps the original hand-rolled captures. Selectable in code (`TEDAPI(..., tedapi_api_version=...)`), env/CLI (`-tedapi_api_version=june_2026`), and coerced from plain strings.
+* **BREAKING (dependency): `protobuf` floor raised to `>=6.33.6`** (was `>=4.25.1`). The `june_2026` `*_pb2.py` files are generated with protobuf 6.x tooling, which embeds a `runtime_version.ValidateProtobufRuntimeVersion()` guard — importing them on a **protobuf 4.x/5.x runtime fails at import time** with a version-mismatch error. Users upgrading must ensure `protobuf>=6.33.6` (e.g. `pip install -U protobuf`); this reverses the deliberately-low floor set in v0.15.2, so pin accordingly if you depend on an older protobuf elsewhere (e.g. via TensorFlow). If you see an `ImportError` on import mentioning `Detected incompatible Protobuf Gencode/Runtime versions` (or a `google.protobuf.runtime_version` mismatch), run `pip install --upgrade protobuf`.
+* robustness(tedapi): when the gateway rejects a `june_2026` signed query, pyPowerwall now logs a warning suggesting a fallback to `tedapi_api_version="june_2024"` — a total `june_2026` failure after a firmware update most likely means Tesla rotated the query signing keys, so the bundled signatures no longer validate.
+
 ## v0.16.0 - Code Review Fixes: Correctness, Security, and Robustness
 
 Full-codebase review sweep (see `docs/code-review-2026-07-03.md` for the complete findings). 104 new regression tests (227 passing, up from 123). No public API signatures or return shapes changed. Hardware-verified against production proxies with `proxy/regression_test.py`: all 76 non-control endpoints byte-compatible across TEDAPI WiFi, v1r+WiFi hybrid, Cloud, and FleetAPI modes.
