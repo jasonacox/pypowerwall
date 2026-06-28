@@ -84,8 +84,8 @@ except ImportError:
     HAS_HTTPX = False
 
 # Defaults
-CONFIGFILE = "/home/christopher/.pypowerwall.fleetapi"
-SCOPE = "openid offline_access user_data energy_device_data energy_cmds"
+CONFIGFILE = ".pypowerwall.fleetapi"
+SCOPE = "openid offline_access energy_device_data energy_cmds"
 SETUP_TIMEOUT = 15   # Time in seconds to wait for setup related API response
 REFRESH_TIMEOUT = 60 # Time in seconds to wait for refresh token response
 API_TIMEOUT = 10     # Time in seconds to wait for FleetAPI response
