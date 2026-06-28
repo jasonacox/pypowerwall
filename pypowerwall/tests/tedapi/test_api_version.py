@@ -85,6 +85,65 @@ def test_get_query_by_name_diagnostics():
         assert q.get_query_by_name(name).signed_bytes
 
 
+# --- TEDAPIApiVersion.coerce() ----------------------------------------------
+
+def test_coerce_string_input():
+    assert TEDAPIApiVersion.coerce("june_2024") is TEDAPIApiVersion.JUNE_2024
+    assert TEDAPIApiVersion.coerce("june_2026") is TEDAPIApiVersion.JUNE_2026
+
+
+def test_coerce_enum_input_passthrough():
+    assert TEDAPIApiVersion.coerce(TEDAPIApiVersion.JUNE_2026) is TEDAPIApiVersion.JUNE_2026
+
+
+@pytest.mark.parametrize("bad", ["nonsense", "legacy", "", None, 123])
+def test_coerce_invalid_falls_back_to_june_2024(bad):
+    # invalid input (incl. the retired "legacy" label and non-strings) -> default
+    assert TEDAPIApiVersion.coerce(bad) is TEDAPIApiVersion.JUNE_2024
+
+
+# --- get_query() missing role + call-site coverage --------------------------
+
+def test_get_query_missing_role_raises():
+    with pytest.raises(KeyError):
+        q.get_query("no_such_role")                       # june_2024 set
+    with pytest.raises(KeyError):
+        q.get_query("no_such_role", "june_2026")          # june_2026 role map
+
+
+def test_june_2026_call_site_roles_are_all_mapped():
+    """Guard: every ``get_query(<role>, JUNE_2026)`` call in tedapi/__init__.py
+    must use a role present in JUNE_2026_ROLES — otherwise it KeyErrors at
+    runtime under june_2026. Scans the real source so a new call site (or a
+    renamed role) can't silently regress this."""
+    import ast
+    import pypowerwall.tedapi as tedapi_mod
+
+    src = open(tedapi_mod.__file__, encoding="utf-8").read()
+    used = set()
+    for node in ast.walk(ast.parse(src)):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "get_query" and len(node.args) >= 2):
+            second = node.args[1]
+            is_2026 = (
+                (isinstance(second, ast.Attribute) and second.attr == "JUNE_2026")
+                or (isinstance(second, ast.Constant) and second.value == "june_2026")
+            )
+            role = node.args[0]
+            if is_2026 and isinstance(role, ast.Constant) and isinstance(role.value, str):
+                used.add(role.value)
+
+    assert used, "no get_query(..., JUNE_2026) call sites found — scan logic broke?"
+    # safety: no call-site role is unmapped (would KeyError at runtime)
+    unmapped = used - set(q.JUNE_2026_ROLES)
+    assert not unmapped, f"june_2026 call-site roles missing from JUNE_2026_ROLES: {unmapped}"
+    # completeness: JUNE_2026_ROLES maps exactly the roles the call sites need
+    assert used == set(q.JUNE_2026_ROLES), (
+        f"JUNE_2026_ROLES out of sync with call sites; symmetric diff: "
+        f"{used ^ set(q.JUNE_2026_ROLES)}"
+    )
+
+
 # --- default-unchanged regression -------------------------------------------
 
 def _june_2024_status_bytes(din):
