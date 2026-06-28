@@ -24,7 +24,7 @@ import requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
-from . import tedapi_combined_pb2 as combined_pb2
+from .protobuf.june_2024 import tedapi_combined_pb2 as combined_pb2
 
 urllib3.disable_warnings(InsecureRequestWarning)
 

@@ -48,6 +48,7 @@ def test_run_tedapi_test_v1r_derives_password_from_gw_pwd(tmp_path, monkeypatch)
         password='XXXXX',
         rsa_key_path='/tmp/test.pem',
         wifi_host=None,
+        tedapi_api_version='june_2024',
     )
 
 
@@ -80,4 +81,5 @@ def test_run_tedapi_test_v1r_password_only_no_gw_pwd(tmp_path, monkeypatch):
         password='mypass',
         rsa_key_path='/tmp/test.pem',
         wifi_host=None,
+        tedapi_api_version='june_2024',
     )

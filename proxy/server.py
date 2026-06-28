@@ -188,6 +188,7 @@ control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
+tedapi_api_version = os.getenv("PW_TEDAPI_API_VERSION", "june_2024")
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 try:
     site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
@@ -238,6 +239,7 @@ proxystats = {
     "tedapi": False,
     "pw3": False,
     "tedapi_mode": "off",
+    "tedapi_api_version": "june_2024",
     "siteid": None,
     "counter": 0,
     "cf": cachefile,
@@ -821,6 +823,7 @@ try:
         gw_pwd=gw_pwd,
         rsa_key_path=rsa_key_path,
         wifi_host=wifi_host,
+        tedapi_api_version=tedapi_api_version,
     )
 except Exception as e:
     log.error(f"Powerwall Connection Error: {str(e)}")
@@ -855,8 +858,9 @@ else:
     if pw.tedapi:
         proxystats["tedapi"] = True
         proxystats["tedapi_mode"] = pw.tedapi_mode
+        proxystats["tedapi_api_version"] = pw.tedapi_api_version
         proxystats["pw3"] = pw.tedapi.pw3
-        log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode})")
+        log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode}, queries={pw.tedapi_api_version})")
     # Set mode string with transport detail
     def build_mode_string(control=False):
         """Build mode display string from active transports."""

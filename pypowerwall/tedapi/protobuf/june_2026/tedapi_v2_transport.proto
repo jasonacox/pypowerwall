@@ -1,0 +1,22 @@
+// TEDAPI v2 LAN transport wrapper (reverse-engineered, not from the app bundle).
+//
+// The gateway's /tedapi/v1 LAN endpoint frames each request as an outer
+// Message { MessageEnvelope message = 1; Tail tail = 2; }. The energy_device
+// MessageEnvelope (package tesla.proto.energy_device.v1) carries GraphQLMessages
+// at field 16; this wrapper supplies the surrounding Message + Tail, mirroring
+// the legacy tedapi.proto Message so the two query paths are wire-equivalent.
+
+syntax = "proto3";
+
+package tedapi_v2_transport;
+
+import "tedapi_v2_energy_device.proto";
+
+message Message {
+  tesla.proto.energy_device.v1.MessageEnvelope message = 1;
+  Tail tail = 2;
+}
+
+message Tail {
+  int32 value = 1;
+}
