@@ -16,11 +16,15 @@ FROM base-${TARGETARCH}${TARGETVARIANT}
 
 WORKDIR /app
 
-# Install system dependencies (package manager differs by base image)
+# Install system dependencies (package manager differs by base image).
+# tini is a tiny init that, as PID 1, reaps orphaned child processes (e.g. the
+# wget spawned by the container HEALTHCHECK) and forwards signals. This is
+# defense-in-depth alongside the SIGCHLD reaper in server.py, and also covers
+# any future child processes regardless of how the operator runs the image.
 RUN if command -v apk > /dev/null; then \
-      apk add --no-cache git curl; \
+      apk add --no-cache git curl tini; \
     else \
-      apt-get update && apt-get install -y --no-install-recommends git curl gcc libffi-dev python3-dev && rm -rf /var/lib/apt/lists/*; \
+      apt-get update && apt-get install -y --no-install-recommends git curl tini gcc libffi-dev python3-dev && rm -rf /var/lib/apt/lists/*; \
     fi
 
 COPY beta.txt /app/requirements.txt
@@ -32,4 +36,6 @@ COPY web/ /app/web/
 # Copy local pypowerwall source for beta testing (placed here by upload-beta.sh)
 COPY pypowerwall/ /app/pypowerwall/
 EXPOSE 8675
+# Run under tini as PID 1 so orphaned children are reaped and signals forwarded.
+ENTRYPOINT ["tini", "--"]
 CMD ["python3", "server.py"]

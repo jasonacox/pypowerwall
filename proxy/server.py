@@ -128,7 +128,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t93"
+BUILD = "t94"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -790,6 +790,37 @@ def sig_term_handle(signum, frame):
 
 # Register signal handler
 signal.signal(signal.SIGTERM, sig_term_handle)
+
+
+# Reap terminated child processes to prevent zombie (<defunct>) accumulation.
+#
+# In the Docker image this server runs as PID 1. The container HEALTHCHECK
+# (wget --spider ... /api/site_info, every 30s) executes inside the container,
+# so each wget is an orphaned child that the kernel reparents to PID 1. As the
+# init process, PID 1 is responsible for wait()-ing on such children; a bare
+# Python process installs no SIGCHLD handler and never reaps them, so every
+# terminated healthcheck becomes an unreaped zombie that accumulates over the
+# life of the container and can eventually exhaust the PID table.
+#
+# This server spawns no child processes of its own, so reaping every available
+# child here is safe and cannot interfere with a subprocess.wait() elsewhere.
+# A targeted waitpid(WNOHANG) loop is preferred over signal.SIG_IGN so that, if
+# subprocess use is ever added, this only reaps children that have actually
+# exited rather than blanket-discarding all exit status.
+# noinspection PyUnusedLocal
+def reap_children(signum, frame):
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            break  # no child processes remain
+        if pid == 0:
+            break  # no more terminated children to reap right now
+
+
+# SIGCHLD is not available on Windows; guard so the proxy still imports there.
+if hasattr(signal, "SIGCHLD"):
+    signal.signal(signal.SIGCHLD, reap_children)
 
 
 # Get Value Function - Key to Value or Return Null
