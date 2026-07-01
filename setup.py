@@ -28,8 +28,8 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=[
         'requests',
+        'protobuf>=6.33.6',
         'httpx[http2]>=0.27.0',
-        'protobuf>=4.25.1',
         'python-dotenv',
         'pyroute2',
         'bs4',
@@ -40,6 +40,8 @@ setuptools.setup(
     ],
     package_data={
         'pypowerwall.cloud.teslapy': ['endpoints.json', 'option_codes.json'],
+        # TEDAPI query sets are loaded from JSON at runtime — must ship in the wheel.
+        'pypowerwall.tedapi.queries': ['*.json'],
     },
     include_package_data=True,
     entry_points={
