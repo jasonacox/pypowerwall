@@ -802,11 +802,11 @@ signal.signal(signal.SIGTERM, sig_term_handle)
 # terminated healthcheck becomes an unreaped zombie that accumulates over the
 # life of the container and can eventually exhaust the PID table.
 #
-# This server spawns no child processes of its own, so reaping every available
-# child here is safe and cannot interfere with a subprocess.wait() elsewhere.
-# A targeted waitpid(WNOHANG) loop is preferred over signal.SIG_IGN so that, if
-# subprocess use is ever added, this only reaps children that have actually
-# exited rather than blanket-discarding all exit status.
+# This server currently spawns no child processes of its own. The WNOHANG flag
+# ensures only already-exited children are collected; if subprocess use is added
+# later, review whether a shared SIGCHLD handler remains appropriate.
+# A targeted waitpid(WNOHANG) loop is preferred over signal.SIG_IGN so that
+# exit status is not silently discarded.
 # noinspection PyUnusedLocal
 def reap_children(signum, frame):
     while True:
@@ -818,8 +818,11 @@ def reap_children(signum, frame):
             break  # no more terminated children to reap right now
 
 
-# SIGCHLD is not available on Windows; guard so the proxy still imports there.
-if hasattr(signal, "SIGCHLD"):
+# SIGCHLD is not available on Windows. Only register when this process is PID 1
+# (bare container without tini). When tini is the ENTRYPOINT it runs as PID 1
+# and handles zombie reaping itself; this handler is defense-in-depth for
+# deployments that skip the ENTRYPOINT (e.g. --entrypoint python3).
+if hasattr(signal, "SIGCHLD") and os.getpid() == 1:
     signal.signal(signal.SIGCHLD, reap_children)
 
 
