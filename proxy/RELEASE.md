@@ -1,5 +1,12 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t94 (29 Jun 2026)
+
+* Fixed accumulation of zombie (`<defunct>`) child processes when the proxy runs as PID 1 in the Docker container
+* The container `HEALTHCHECK` spawns a `wget` every 30s as a child of PID 1; `server.py` previously installed no `SIGCHLD` handler, so each terminated `wget` was left unreaped and zombies built up over the container's lifetime (eventually able to exhaust the PID table)
+* `server.py` now installs a `SIGCHLD` reaper (`os.waitpid(-1, WNOHANG)` loop); guarded for platforms without `SIGCHLD` (e.g. Windows)
+* Dockerfiles now use `tini` as the entrypoint init as defense-in-depth, so orphaned children are reaped and signals forwarded regardless of how the image is run
+
 ### Proxy t89 (6 Mar 2026)
 
 * Added `/control/max_backup` endpoint for scheduling, cancelling, and querying max backup events over v1r LAN

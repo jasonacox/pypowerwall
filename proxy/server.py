@@ -128,7 +128,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t93"
+BUILD = "t94"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -790,6 +790,40 @@ def sig_term_handle(signum, frame):
 
 # Register signal handler
 signal.signal(signal.SIGTERM, sig_term_handle)
+
+
+# Reap terminated child processes to prevent zombie (<defunct>) accumulation.
+#
+# In the Docker image this server runs as PID 1. The container HEALTHCHECK
+# (wget --spider ... /api/site_info, every 30s) executes inside the container,
+# so each wget is an orphaned child that the kernel reparents to PID 1. As the
+# init process, PID 1 is responsible for wait()-ing on such children; a bare
+# Python process installs no SIGCHLD handler and never reaps them, so every
+# terminated healthcheck becomes an unreaped zombie that accumulates over the
+# life of the container and can eventually exhaust the PID table.
+#
+# This server currently spawns no child processes of its own. The WNOHANG flag
+# ensures only already-exited children are collected; if subprocess use is added
+# later, review whether a shared SIGCHLD handler remains appropriate.
+# A targeted waitpid(WNOHANG) loop is preferred over signal.SIG_IGN so that
+# exit status is not silently discarded.
+# noinspection PyUnusedLocal
+def reap_children(signum, frame):
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            break  # no child processes remain
+        if pid == 0:
+            break  # no more terminated children to reap right now
+
+
+# SIGCHLD is not available on Windows. Only register when this process is PID 1
+# (bare container without tini). When tini is the ENTRYPOINT it runs as PID 1
+# and handles zombie reaping itself; this handler is defense-in-depth for
+# deployments that skip the ENTRYPOINT (e.g. --entrypoint python3).
+if hasattr(signal, "SIGCHLD") and os.getpid() == 1:
+    signal.signal(signal.SIGCHLD, reap_children)
 
 
 # Get Value Function - Key to Value or Return Null
