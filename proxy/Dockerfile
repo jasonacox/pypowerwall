@@ -6,12 +6,13 @@
 ARG TARGETARCH
 ARG TARGETVARIANT
 
-# Base images per platform — arm/v8 (32-bit ARMv8 Raspberry Pi) needs slim-bullseye;
-# amd64 and arm64 use the smaller alpine image.
-FROM python:3.10-alpine AS base-amd64
-FROM python:3.10-alpine AS base-arm64
-FROM python:3.10-slim-bullseye AS base-armv7
-FROM python:3.10-slim-bullseye AS base-armv8
+# Base images per platform — all targets use Debian-slim to avoid Alpine/musl
+# TLS fingerprint issues that cause Tesla token refresh 403 errors.
+# See: https://github.com/jasonacox/pypowerwall/issues/344
+FROM python:3.10-slim AS base-amd64
+FROM python:3.10-slim AS base-arm64
+FROM python:3.10-slim AS base-armv7
+FROM python:3.10-slim AS base-armv8
 FROM base-${TARGETARCH}${TARGETVARIANT}
 
 WORKDIR /app
