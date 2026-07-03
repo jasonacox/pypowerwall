@@ -215,9 +215,9 @@ You can also access these endpoints directly without pypowerwall using a Bearer 
 ```bash
 # Get a Bearer token using the customer password (last 5 chars of GW password)
 TOKEN=$(curl -sk -X POST https://10.0.1.50/api/login/Basic \
-  -H ‘Content-Type: application/json’ \
-  -d ‘{"username":"customer","password":"XXXXX","email":"user@example.com","force_sm_off":false}’ \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)[‘token’])")
+  -H 'Content-Type: application/json' \
+  -d '{"username":"customer","password":"XXXXX","email":"user@example.com","force_sm_off":false}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
 
 # Power data (solar, battery, grid, load)
 curl -sk -H "Authorization: Bearer $TOKEN" https://10.0.1.50/api/meters/aggregates
@@ -291,12 +291,12 @@ print(pw.strings())     # Solar string data
 print(pw.alerts())      # Active device alerts
 
 # API polling:
-pw.poll(‘/api/meters/aggregates’)              # Detailed meter data
-pw.poll(‘/api/system_status/soe’)              # Battery state of energy
-pw.poll(‘/api/system_status/grid_status’)      # Grid connection status
-pw.poll(‘/api/system_status’)                  # Full system status
-pw.poll(‘/api/site_info’)                      # Site configuration
-pw.poll(‘/api/operation’)                      # Operation mode
+pw.poll('/api/meters/aggregates')              # Detailed meter data
+pw.poll('/api/system_status/soe')              # Battery state of energy
+pw.poll('/api/system_status/grid_status')      # Grid connection status
+pw.poll('/api/system_status')                  # Full system status
+pw.poll('/api/site_info')                      # Site configuration
+pw.poll('/api/operation')                      # Operation mode
 ```
 
 #### v1r Docker Proxy Setup
@@ -430,7 +430,7 @@ Via ports:
 # cd /usr/ports/net-mgmt/py-pypowerwall/ && make install clean
 ```
 
-Note: pyPowerwall installation will attempt to install these required Python packages: _requests_, _protobuf_ and _teslapy_.
+Note: pyPowerwall installation will attempt to install the required Python packages, including _requests_, _httpx[http2]_, _protobuf_ and _cryptography_ (see [requirements.txt](requirements.txt) for the full list). TeslaPy is bundled with pyPowerwall as a patched fork and is not installed separately.
 
 ## Programming with pyPowerwall
 
@@ -489,7 +489,7 @@ if OPTION == 5:
    password = ""                       # Not needed — auto-derived from gw_pwd
    email = ""
    timezone = "America/Los_Angeles"
-rsa_key_path = "/path/to/tedapi_rsa_private.pem"  # From v1r_register.py
+   rsa_key_path = "/path/to/tedapi_rsa_private.pem"  # From v1r_register.py
 
 # Note on gw_pwd (Gateway Password)
 # - `gw_pwd` is the full Gateway Wi‑Fi password printed on the QR label.
@@ -556,7 +556,7 @@ print("System Status: %r\n" % pw.system_status())
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize,
         cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd,
-        rsa_key_path)
+        rsa_key_path, wifi_host)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway; may include :port for non-standard HTTPS (e.g. 10.0.1.99:8443); default port is 443 if omitted
@@ -573,16 +573,17 @@ print("System Status: %r\n" % pw.system_status())
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
-    auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
     retry_modes = False       # If True, retry connection to Powerwall
     gw_pwd = None             # Full gateway password from QR sticker; used for TEDAPI (mode 4)
                                 and auto-derived (last 5 chars) for v1r login (mode 5)
     rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi (Powerwall 3)
+    wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
 
  Functions
-   poll(api, json, force)    # Return data from Powerwall API (dict if json=True, bypass cache force=True)
-   post(api, payload, json)  # Send payload to Powerwall API (dict if json=True)
+    connect(retry)            # Connect to Powerwall and select mode (retry=True to keep retrying)
+    poll(api, jsonformat, raw, force)   # Return data from Powerwall API (dict by default, JSON string if jsonformat=True, bypass cache force=True)
+    post(api, payload, din, jsonformat) # Send payload to Powerwall API (dict by default, JSON string if jsonformat=True)
     level(scale)              # Return battery power level percentage (scale=False: actual level, scale=True: Tesla app level)
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -591,8 +592,8 @@ print("System Status: %r\n" % pw.system_status())
     load(verbose)             # Return load sensor data (W or raw JSON if verbose=True)
     grid()                    # Alias for site()
     home()                    # Alias for load()
-    vitals(json)              # Return Powerwall device vitals (dict or json if True)
-    strings(json, verbose)    # Return solar panel string data
+    vitals(jsonformat)        # Return Powerwall device vitals (dict by default, JSON string if jsonformat=True)
+    strings(jsonformat, verbose) # Return solar panel string data
     din()                     # Return DIN
     uptime()                  # Return uptime - string hms format
     version()                 # Return system version
@@ -602,9 +603,10 @@ print("System Status: %r\n" % pw.system_status())
     alerts()                  # Return array of Alerts from devices
     system_status(json)       # Returns the system status
     battery_blocks(json)      # Returns battery specific information merged from system_status() and vitals()
-    grid_status(type)         # Return the power grid status, type ="string" (default), "json", or "numeric"
+    grid_status(output_type)  # Return the power grid status, output_type="string" (default), "json", or "numeric"
                               #     - "string": "UP", "DOWN", "SYNCING"
                               #     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
+                              #     - (the old `type` parameter is deprecated)
     is_connected()            # Returns True if able to connect and login to Powerwall
     get_reserve(scale)        # Get Battery Reserve Percentage
     get_mode()                # Get Current Battery Operation Mode
@@ -616,6 +618,11 @@ print("System Status: %r\n" % pw.system_status())
     set_grid_export(mode)     # Set grid export mode (mode = battery_ok, pv_only, never)
     get_grid_charging()       # Get the current grid charging mode
     get_grid_export()         # Get the current grid export mode
+    schedule_max_backup(duration_seconds) # Schedule manual backup event (max backup / storm watch) - v1r mode only
+    cancel_max_backup()       # Cancel the current manual backup event - v1r mode only
+    get_backup_events()       # Get current backup events - v1r mode only
+    go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True
+    reconnect_grid()          # Reconnect to the grid (close contactor)
 ```
 
 ## Tools
@@ -624,7 +631,7 @@ The following are some useful tools based on pypowerwall:
 
 * [Powerwall Proxy](proxy) - Use this caching proxy to handle authentication to the Powerwall Gateway and make basic read-only API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level) and many [others](https://github.com/jasonacox/pypowerwall/blob/main/proxy/API.md). This is useful for metrics gathering tools like telegraf to pull metrics without needing to authenticate. Because pyPowerwall is designed to cache the auth and high frequency API calls, this will also reduce the load on the Gateway and prevent crash/restart issues that can happen if too many sessions are created on the Gateway.
 
-* [Powerwall Simulator](simulator) - A Powerwall simulator to mimic the responses from the Tesla Powerwall Gateway. This is useful for testing purposes.
+* [Powerwall Simulator](pwsimulator) - A Powerwall simulator to mimic the responses from the Tesla Powerwall Gateway. This is useful for testing purposes.
 
 * [Powerwall Dashboard](https://github.com/jasonacox/Powerwall-Dashboard#powerwall-dashboard) - Monitoring Dashboard for the Tesla Powerwall using Grafana, InfluxDB, Telegraf and pyPowerwall.
 
@@ -634,10 +641,10 @@ pyPowerwall includes a CLI for scanning your network, setting up cloud/gateway a
 
 ```
 Usage: PyPowerwall [-h] [-debug] [-authpath AUTHPATH]
-                   {setup,login,authtoken,fleetapi,tedapi,register,scan,set,get,version}
+                   {setup,login,authtoken,fleetapi,tedapi,register,scan,set,get,version,cloudcheck}
                    ...
 
-PyPowerwall Module v0.15.6
+PyPowerwall Module v0.15.13
 
 Global options (apply to all commands):
   -debug              Enable debug output
@@ -654,6 +661,7 @@ Commands (run <command> -h for full usage):
   set                 Set Powerwall operating mode and reserve level
   get                 Get Powerwall settings and power levels
   version             Print version information
+  cloudcheck          Diagnose cloud auth environment (-email EMAIL, -noconnect)
 ```
 
 ### Setup
@@ -719,7 +727,7 @@ python -m pypowerwall get -v1r -host 10.42.1.40 -gw_pwd ABCDEXXXXX \
 Example output (`-format text`, the default):
 
 ```
-pyPowerwall [0.15.6] - Get Powerwall settings using Local (v1r+wifi+control) mode.
+pyPowerwall [0.15.13] - Get Powerwall settings using Local (v1r+wifi+control) mode.
 
   Site               Cox Power Plant
   Site ID            N/A
@@ -783,7 +791,7 @@ python -m pypowerwall scan
 
 Example Output
 ```
-pyPowerwall Network Scanner [0.1.2]
+pyPowerwall Network Scanner [0.15.13]
 Scan local network for Tesla Powerwall Gateways
 
     Your network appears to be: 10.0.1.0/24

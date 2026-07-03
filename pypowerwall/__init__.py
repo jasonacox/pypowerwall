@@ -35,14 +35,14 @@
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
-    auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
     retry_modes = False       # If True, retry connection to Powerwall
     gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
+    wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
     
  Functions 
-    poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
-    post(api, payload, json)  # Send payload to Powerwall api (dict if json=True)
+    poll(api, jsonformat, raw, force)   # Return data from Powerwall api (JSON string if jsonformat=True, bypass cache force=True)
+    post(api, payload, din, jsonformat) # Send payload to Powerwall api (JSON string if jsonformat=True)
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)

@@ -6,10 +6,10 @@ PyPowerwall is a Python library for interfacing with the Tesla Solar Powerwall G
 
 ## Getting Started
 
-Install the required dependencies:
+Install the library (dependencies are installed automatically; see [requirements.txt](requirements.txt)):
 
 ```sh
-pip install requests protobuf
+pip install pypowerwall
 ```
 
 Import the library in your Python code:
@@ -48,7 +48,8 @@ pw = pypowerwall.Powerwall(
     auto_select=False,
     retry_modes=False,
     gw_pwd=None,
-    rsa_key_path=None
+    rsa_key_path=None,
+    wifi_host=None
 )
 ```
 
@@ -70,6 +71,7 @@ pw = pypowerwall.Powerwall(
 - `retry_modes`: Retry connection attempts
 - `gw_pwd`: Full gateway password from QR sticker (used for TEDAPI and v1r modes; last 5 chars auto-derived for Basic login)
 - `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 wired LAN)
+- `wifi_host`: Optional WiFi TEDAPI host used as fallback transport for follower queries in v1r mode
 
 ---
 
@@ -90,10 +92,18 @@ pw = pypowerwall.Powerwall(
   Returns firmware version (as string or int).
 
 - `uptime()` → str/None  
-  Returns system uptime in seconds.
+  Returns system uptime as a duration string (e.g. `62h48m24s`).
 
 - `din()` → str/None  
   Returns the system DIN.
+
+### Raw API Access
+
+- `poll(api, jsonformat=False, raw=False, recursive=False, force=False)` → dict/str/None  
+  Returns data from the specified Powerwall API endpoint (e.g. `/api/meters/aggregates`). Returns a dict by default, or a JSON string if `jsonformat=True`. Set `raw=True` for the raw response payload and `force=True` to bypass the cache.
+
+- `post(api, payload, din=None, jsonformat=False, raw=False, recursive=False)` → dict/str/None  
+  Sends a POST payload (dict) to the specified Powerwall API endpoint. Returns a dict by default, or a JSON string if `jsonformat=True`.
 
 ### Power and Energy
 
@@ -143,8 +153,8 @@ pw = pypowerwall.Powerwall(
 - `battery_blocks(jsonformat=False)` → dict/str  
   Returns battery-specific information merged from system status and vitals.
 
-- `grid_status(type="string")` → str/int/None  
-  Returns the power grid status. `type` can be "string" (default), "json", or "numeric".
+- `grid_status(output_type="string")` → str/int/None  
+  Returns the power grid status. `output_type` can be "string" (default), "json", or "numeric" (the old `type` parameter is deprecated).
     - "string": "UP", "DOWN", "SYNCING"
     - "numeric": -1 (Syncing), 0 (DOWN), 1 (UP)
 
@@ -181,6 +191,25 @@ pw = pypowerwall.Powerwall(
 
 - `get_grid_export()` → str/None
   Get the current grid export mode.
+
+### Backup Events (v1r mode only)
+
+- `schedule_max_backup(duration_seconds=7200)` → dict/None
+  Schedule a manual backup event (max backup / storm watch mode) for the given duration.
+
+- `cancel_max_backup()` → dict/None
+  Cancel the current manual backup event.
+
+- `get_backup_events()` → dict/None
+  Get current backup events.
+
+### Grid Island Control
+
+- `go_off_grid(confirm=False)` → dict/None
+  Physically disconnect the Powerwall from the grid (open contactor), islanding the home. Requires explicit confirmation — pass `confirm=True` to send the command.
+
+- `reconnect_grid()` → dict/None
+  Reconnect the Powerwall to the grid (close contactor).
 
 > **v1r LAN Control:** In v1r mode (Powerwall 3 wired LAN with RSA key), all control methods work directly over the local network via config file writes — no cloud API or Tesla account needed. In other modes (WiFi TEDAPI, local), control requires FleetAPI or Cloud API access.
 
@@ -249,8 +278,8 @@ pw.set_grid_export("pv_only")
 
 ## Requirements
 
-- Python 3.7+
-- `requests`, `protobuf`
+- Python 3.8+ (3.9+ for the proxy server)
+- Python packages listed in [requirements.txt](requirements.txt)
 
 Install requirements:
 
@@ -331,7 +360,7 @@ classDiagram
         +vehicle integration
     }
     
-    Powerwall --|> PyPowerwallBase : extends
+    Powerwall --> PyPowerwallBase : uses
     TEDAPI --|> PyPowerwallBase : implements
     Local --|> PyPowerwallBase : implements
     Cloud --|> PyPowerwallBase : implements
@@ -358,7 +387,7 @@ sequenceDiagram
     Note over Base: Layer 2: No Caching<br/>(Clean API)
     Note over Backend: Layer 1: Network Cache<br/>(5s default, configurable)
     
-    App->>Proxy: GET /api/freq
+    App->>Proxy: GET /freq
     
     alt Cache Hit (< 5s)
         Proxy-->>App: Cached Response (~1ms)
@@ -444,17 +473,17 @@ pypowerwall implements intelligent caching at multiple levels:
 - Default TTL: 5 seconds (configurable via `PW_CACHE_EXPIRE`)
 - Caches processed responses for high-frequency endpoints
 - Dramatically improves response time (900ms → <1ms)
-- Used for: `/api/csv`, `/api/freq`, `/api/pod`, `/api/json`
+- Used for: `/aggregates`, `/csv`, `/freq`, `/pod`, `/json`, `/vitals`, `/strings`, `/temps/pw`, `/alerts/pw`
 - Separate cache keys per endpoint
 - Thread-safe with locks
 
 **Layer 3b: Proxy Graceful Degradation Cache**
-- Default TTL: 15 seconds (configurable via `PW_CACHE_TTL_SECONDS`)
+- Default TTL: 30 seconds (configurable via `PW_CACHE_TTL`)
 - Stores last successful response
 - Used when gateway is unreachable
 - Prevents service interruption during brief outages
 
-### Example: Request Flow for `/api/freq`
+### Example: Request Flow for `/freq`
 
 1. **Application** makes HTTP request to proxy server
 2. **Proxy** checks performance cache (5s TTL)

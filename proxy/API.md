@@ -33,6 +33,7 @@ The proxy server exposes a RESTful API for accessing Powerwall data, including s
 | `/vitals`                       | Device vitals (JSON)                             |
 | `/strings`                      | Solar string data (JSON)                         |
 | `/temps`                        | Powerwall temperatures (JSON)                    |
+| `/temps/pw`                     | Powerwall temperatures, simplified keys (JSON)   |
 | `/alerts`                       | Alerts (JSON array)                              |
 | `/alerts/pw`                    | Alerts (JSON object)                             |
 | `/stats`                        | Internal proxy stats (JSON)                      |
@@ -114,7 +115,7 @@ Security guidelines:
 
 Supported control values:
 - Reserve: integer 0–100 (% of battery to reserve)
-- Mode: `self_consumption`, `backup`, `autonomous`, `time_of_use`
+- Mode: `self_consumption`, `backup`, `autonomous`
 - Grid Charging: `true` or `false`
 - Grid Export: `battery_ok`, `pv_only`, `never`
 - Max Backup: duration in seconds (min 60), or `cancel` to stop (v1r only)
@@ -123,25 +124,25 @@ Supported control values:
 
 ```bash
 # Get current reserve
-curl 'http://localhost:8675/control/reserve?token=<secret>'
+curl http://localhost:8675/control/reserve
 
 # Set reserve to 20%
 curl -X POST -d 'value=20&token=<secret>' http://localhost:8675/control/reserve
 
 # Get current operating mode
-curl 'http://localhost:8675/control/mode?token=<secret>'
+curl http://localhost:8675/control/mode
 
 # Set operating mode
 curl -X POST -d 'value=backup&token=<secret>' http://localhost:8675/control/mode
 
 # Get grid charging state
-curl 'http://localhost:8675/control/grid_charging?token=<secret>'
+curl http://localhost:8675/control/grid_charging
 
 # Enable grid charging
 curl -X POST -d 'value=true&token=<secret>' http://localhost:8675/control/grid_charging
 
 # Get grid export policy
-curl 'http://localhost:8675/control/grid_export?token=<secret>'
+curl http://localhost:8675/control/grid_export
 
 # Set grid export policy (options: battery_ok, pv_only, never)
 curl -X POST -d 'value=pv_only&token=<secret>' http://localhost:8675/control/grid_export
@@ -156,14 +157,13 @@ curl -X POST -d 'value=3600&token=<secret>' http://localhost:8675/control/max_ba
 curl -X POST -d 'value=cancel&token=<secret>' http://localhost:8675/control/max_backup
 ```
 
-POST success responses return a JSON object with the updated field, or an error object on failure. GET requests return the current setting. Missing or invalid `token` returns an authorization error.
+POST success responses return a JSON object with the updated field, or an error object on failure. GET (read) requests return the current setting and require no token; POST (set) requests require `token=<PW_CONTROL_SECRET>`. Missing or invalid `token` on a POST returns an authorization error.
 
 Max backup sets the Powerwall reserve to 100% for the specified duration (like Storm Watch in the Tesla app). It uses the TEGMessages protobuf command pathway over v1r LAN — only available in v1r mode. The gateway requires cancelling any existing event before scheduling a new one; `schedule` does this automatically. The gateway leaves expired events lingering; the proxy automatically cancels them when detected on GET (mirroring Tesla app behavior).
 
 Mode clarification:
 - `self_consumption` / `autonomous`: Maximize local solar usage (firmware may use either term; treat as equivalent).
 - `backup`: Preserve charge for outage protection.
-- `time_of_use`: Optimize around configured TOU rates.
 
 ---
 
@@ -225,7 +225,7 @@ Update interval: Fan metrics refresh with standard polling (same cadence as vita
 | `/api/meters/solar`               | Solar meter data                                 |
 | `/api/sitemaster`                 | Sitemaster status                                |
 | `/api/powerwalls`                 | Powerwall details                                |
-| `/api/customer/registration`      | Customer registration info                       |
+| `/api/customer/registration`      | Disabled - returns `404 Response - API Disabled` |
 | `/api/system_status`              | System status information                        |
 | `/api/system_status/grid_status`  | Grid status details                              |
 | `/api/system/update/status`       | System update status                             |
@@ -241,6 +241,10 @@ Update interval: Fan metrics refresh with standard polling (same cadence as vita
 | `/api/networks`                   | Network configuration                            |
 | `/api/system/networks`            | System network status                            |
 | `/api/meters/readings`            | Meter readings data                              |
+| `/api/synchrometer/ct_voltage_references` | Synchrometer CT voltage references       |
+| `/api/auth/toggle/supported`      | Auth toggle support info                         |
+| `/api/solar_powerwall`            | Solar Powerwall data                             |
+| `/api/troubleshooting/problems`   | Simulated - always returns `{"problems": []}`    |
 
 ## Optional API Endpoints (TEDAPI, Cloud, FleetAPI)
 
@@ -269,27 +273,27 @@ The proxy server implements robust error handling and caching:
 - **TTL Behavior**: After cache TTL expires (default 30 seconds), endpoints return `null` instead of stale data
 - **Network Resilience**: Graceful handling of network errors with configurable retry and fallback behavior
 - **Health Monitoring**: Track connection health and cache status via `/health` endpoint
-- **SOE Scaling Note**: `/soe` reports true 0–100% whereas `/api/system_status/soe` reports a 0–95% firmware-limited scale.
+- **SOE Scaling Note**: `/soe` returns the raw gateway percentage (includes the 5% reserve); `/api/system_status/soe` returns the Tesla-app-scaled value (`(level / 0.95) - (5 / 0.95)`).
 
 Environment Variables Influencing Behavior:
 - `PW_CACHE_TTL` Cache duration (seconds) for key endpoints (default 30).
 - `PW_GRACEFUL_DEGRADATION` If enabled, reduces hard failures under transient errors.
 - `PW_FAIL_FAST` Return quickly on errors instead of longer retries.
 - `PW_SUPPRESS_NETWORK_ERRORS` Suppress repetitive network error logs.
-- `PW_NETWORK_ERROR_RATE_LIMIT` Rate limit interval (seconds) for repeated network error messages.
+- `PW_NETWORK_ERROR_RATE_LIMIT` Maximum network errors logged per minute per function (default 5).
 - `PW_CONTROL_SECRET` Enables control endpoints & required `token` value.
 
 Authentication Overview:
 - Read-only endpoints generally need no client token; underlying gateway/cloud auth is handled internally.
-- Control endpoints always require `token=<PW_CONTROL_SECRET>`.
+- Control GET (read) requests require no token; control POST (set) requests require `token=<PW_CONTROL_SECRET>`.
 
 Error Responses (examples):
 | Scenario | HTTP | JSON |
 |----------|------|------|
-| Control disabled | 200 | `{ "error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable" }` |
-| Missing/invalid token | 403 | `{ "error": "Unauthorized" }` |
-| Invalid value | 400 | `{ "error": "Invalid Value" }` |
-| Upstream failure | 500 | `{ "error": "Request Failed" }` |
+| Control disabled | 400 | `{ "error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable" }` |
+| Missing/invalid token | 401 | `{ "unauthorized": "Control Command Token Invalid" }` |
+| Invalid value | 400 | `{ "error": "Control Command Value Invalid" }` |
+| Upstream failure | 400 | `{ "error": "Failed to set ..." }` (e.g. `"Failed to set reserve"`) |
 
 Sample JSON Snippets:
 ```json
@@ -311,24 +315,31 @@ Sample JSON Snippets:
 
 // /health - abbreviated
 {
-    "pypowerwall": "0.14.1 Proxy t81",
-    "cache_ttl_seconds": 30,
+    "pypowerwall": "0.15.13 Proxy t94",
+    "mode": "Local",
+    "tedapi_mode": "full",
+    "pypowerwall_cache_expire": 5,
+    "degradation_cache_ttl_seconds": 30,
     "graceful_degradation": true,
     "fail_fast_mode": false,
     "health_check_enabled": true,
     "startup_time": "2025-09-05T23:21:42",
     "current_time": "2025-09-14T11:58:57.239988",
+    "transports": {},
     "proxy_stats": {},
     "connection_health": {},
     "cached_data": {},
     "endpoint_statistics": {}
 }
 
-// POST /control/reserve success
-{"reserve": "Set Successfully"}
+// POST /control/reserve and /control/mode success - returns the raw
+// set_operation() response (passthrough from the backend)
 
-// POST /control/reserve invalid token
-{"error": "Unauthorized"}
+// POST /control/grid_charging or /control/grid_export success
+{"grid_charging": "Set Successfully"}
+
+// POST /control/* invalid token
+{"unauthorized": "Control Command Token Invalid"}
 
 // GET /control/max_backup (active event)
 {"manual_backup": {"start_time": 1772813197, "duration_seconds": 3600, "end_time": 1772816797, "active": true, "priority": 18446744073709551615}, "backup_events": []}
