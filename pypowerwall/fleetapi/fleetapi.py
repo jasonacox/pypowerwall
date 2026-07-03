@@ -138,26 +138,50 @@ class _HTTP2Response:
                 response=self)
 
 
+# Shared httpx client - creating a client per request means a full TLS
+# handshake every call. httpx.Client is thread-safe, so one lazily created
+# client is reused for all requests (recreated if it was closed).
+_http2_client = None
+_http2_client_lock = threading.Lock()
+
+
+def _get_http2_client():
+    """Lazily create (or recreate if closed) the shared HTTP/2 client."""
+    global _http2_client
+    with _http2_client_lock:
+        if _http2_client is None or _http2_client.is_closed:
+            _http2_client = httpx.Client(http2=True,
+                                         verify=_httpx_auth_verify(True),
+                                         follow_redirects=True)
+        return _http2_client
+
+
+def _requests_fallback(method, url, headers, data, json_data, params, timeout, verify):
+    """HTTP/1.1 fallback via requests."""
+    if method == 'GET':
+        return requests.get(url, headers=headers, params=params,
+                            timeout=timeout, verify=verify)
+    return requests.post(url, headers=headers, data=data,
+                         json=json_data, params=params,
+                         timeout=timeout, verify=verify)
+
+
 def _http2_request(method, url, *, headers=None, data=None, json_data=None,
                    params=None, timeout=API_TIMEOUT, verify=True):
     """Make an HTTP/2 request via httpx, falling back to requests on failure.
 
     Returns a response object that is either a requests.Response or an
     _HTTP2Response wrapper — both implement .status_code, .text, .json(),
-    and .raise_for_status().
+    and .raise_for_status(). Returns None when a POST fails after it may
+    already have been transmitted (retrying could duplicate the operation,
+    e.g. set a battery reserve twice) — callers treat None like any other
+    request failure.
     """
     if not HAS_HTTPX:
         # No httpx available — use requests (HTTP/1.1)
-        if method == 'GET':
-            return requests.get(url, headers=headers, params=params,
-                                timeout=timeout, verify=verify)
-        else:
-            return requests.post(url, headers=headers, data=data,
-                                 json=json_data, params=params,
-                                 timeout=timeout, verify=verify)
+        return _requests_fallback(method, url, headers, data, json_data,
+                                  params, timeout, verify)
 
-    ssl_verify = _httpx_auth_verify(verify)
-    client_kwargs = {'http2': True, 'verify': ssl_verify}
     request_kwargs = {'headers': headers or {}, 'timeout': timeout,
                       'follow_redirects': True}
     if params:
@@ -173,22 +197,37 @@ def _http2_request(method, url, *, headers=None, data=None, json_data=None,
             request_kwargs['content'] = data.encode() if isinstance(data, str) else data
 
     try:
-        with httpx.Client(**client_kwargs) as client:
+        if verify is True:
+            client = _get_http2_client()
             resp = client.request(method, url, **request_kwargs)
+        else:
+            # Non-default verify settings are rare (setup paths) - use a
+            # one-off client rather than polluting the shared one
+            with httpx.Client(http2=True, verify=_httpx_auth_verify(verify)) as client:
+                resp = client.request(method, url, **request_kwargs)
         log.debug('FleetAPI HTTP/2 %s %s → HTTP %d (protocol=%s)',
                   method, url, resp.status_code, resp.http_version)
         if resp.status_code >= 400:
             log.error('FleetAPI HTTP %d body: %s', resp.status_code, resp.text[:600])
         return _HTTP2Response(resp)
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        # Connection was never established - the request cannot have reached
+        # the server, so an HTTP/1.1 retry is safe for any method
+        log.warning('HTTP/2 connection failed, falling back to HTTP/1.1: %s', exc)
+        return _requests_fallback(method, url, headers, data, json_data,
+                                  params, timeout, verify)
     except Exception as exc:
-        log.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
         if method == 'GET':
-            return requests.get(url, headers=headers, params=params,
-                                timeout=timeout, verify=verify)
-        else:
-            return requests.post(url, headers=headers, data=data,
-                                 json=json_data, params=params,
-                                 timeout=timeout, verify=verify)
+            # GETs are idempotent - safe to retry over HTTP/1.1
+            log.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
+            return _requests_fallback(method, url, headers, data, json_data,
+                                      params, timeout, verify)
+        # POST may already have been transmitted (e.g. read timeout after the
+        # request was sent) - retrying could silently duplicate the operation.
+        # Report failure instead and let the caller's error path handle it.
+        log.error('HTTP/2 %s request failed (no fallback to avoid duplicate '
+                  'POST): %s', method, exc)
+        return None
 
 fleet_api_urls = {
     "North America, Asia-Pacific": "https://fleet-api.prd.na.vn.cloud.tesla.com",
@@ -370,7 +409,12 @@ class FleetAPI:
             except requests.exceptions.Timeout:
                 log.error(f"Timeout error polling {url}")
                 return None
-        if response.status_code == 401 and not recursive:
+        if response is None:
+            # Request failed without a usable response (e.g. a POST that may
+            # already have been transmitted - never retried to avoid duplicates)
+            log.error(f"No response from FleetAPI for {api}")
+            data = None
+        elif response.status_code == 401 and not recursive:
             # Token expired, refresh token and try again
             self.new_token()
             data = self.poll(api, action, data, True)
@@ -382,8 +426,11 @@ class FleetAPI:
             data = None
         else:
             data = response.json()
-        if action == "GET":
-            # Cache the data
+        if action == "GET" and data is not None and '?' not in api:
+            # Cache successful responses only - caching errors (None) would
+            # serve failures from cache. Parameterized history URLs (unique
+            # timestamped query strings) are never cached, otherwise each call
+            # would add a permanent entry and grow pwcache without bound.
             self.pwcachetime[api] = time.time()
             self.pwcache[api] = data
         return data
@@ -874,6 +921,9 @@ class FleetAPI:
             log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps({**data, 'client_secret': '[redacted]'})}")
             response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                             data=data, headers=headers, timeout=SETUP_TIMEOUT)
+            if response is None:
+                print("ERROR: No response from Tesla auth endpoint - try again.")
+                return False
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
@@ -901,6 +951,9 @@ class FleetAPI:
             log.debug(f"POST: {url} {json.dumps(data)}")
             response = _http2_request('POST', url, headers=headers,
                                      data=json.dumps(data), timeout=SETUP_TIMEOUT)
+            if response is None:
+                print("ERROR: No response registering partner account - try again.")
+                return False
             log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
             log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
@@ -952,6 +1005,9 @@ class FleetAPI:
                   f"{json.dumps({**data, 'client_secret': '[redacted]', 'code': '[redacted]'})}")
         response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers, timeout=SETUP_TIMEOUT)
+        if response is None:
+            print("ERROR: No response exchanging authorization code - try again.")
+            return False
         log.debug(f"Response Code: {response.status_code}")
         # Extract access_token and refresh_token from this response
         access_token = response.json().get('access_token')

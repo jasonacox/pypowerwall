@@ -278,6 +278,10 @@ proxystats = {
     },
 }
 proxystats_lock = threading.RLock()
+# Cap on distinct paths tracked in proxystats["uri"] (matches the 100-entry
+# cap used by _endpoint_stats). Query strings are stripped before counting;
+# new distinct paths beyond the cap are aggregated under "other".
+URI_STATS_MAX = 100
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -1263,11 +1267,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             with proxystats_lock:
                 proxystats["posts"] = proxystats["posts"] + 1
+        # Encode once - Content-Length must count bytes, not characters
+        body = message.encode("utf8")
         self.send_header("Content-type", contenttype)
-        self.send_header("Content-Length", str(len(message)))
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(message.encode("utf8"))
+        self.wfile.write(body)
 
     def do_GET(self):
         global proxystats
@@ -1437,12 +1443,17 @@ class Handler(BaseHTTPRequestHandler):
             )
         elif request_path == "/stats":
             # Give Internal Stats
+            # Do the slow work (network call, rusage) BEFORE taking the lock -
+            # holding proxystats_lock across a gateway call would serialize
+            # every other request thread for up to the pw timeout during outages
+            stats_site_name = safe_pw_call(pw.site_name)
+            stats_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             with proxystats_lock:
                 proxystats["ts"] = int(time.time())
                 delta = proxystats["ts"] - proxystats["start"]
                 proxystats["uptime"] = str(datetime.timedelta(seconds=delta))
-                proxystats["mem"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                proxystats["site_name"] = safe_pw_call(pw.site_name)
+                proxystats["mem"] = stats_mem
+                proxystats["site_name"] = stats_site_name
                 proxystats["cloudmode"] = pw.cloudmode
                 proxystats["fleetapi"] = pw.fleetapi
                 if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
@@ -1921,12 +1932,15 @@ class Handler(BaseHTTPRequestHandler):
                 message: str = json.dumps(v)
         elif request_path == "/help":
             # Display friendly help screen link and stats
+            # Slow work (network call, rusage) happens before taking the lock
+            help_site_name = safe_pw_call(pw.site_name)
+            help_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             with proxystats_lock:
                 proxystats["ts"] = int(time.time())
                 delta = proxystats["ts"] - proxystats["start"]
                 proxystats["uptime"] = str(datetime.timedelta(seconds=delta))
-                proxystats["mem"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                proxystats["site_name"] = safe_pw_call(pw.site_name)
+                proxystats["mem"] = help_mem
+                proxystats["site_name"] = help_site_name
                 proxystats["cloudmode"] = pw.cloudmode
                 proxystats["fleetapi"] = pw.fleetapi
                 if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
@@ -2297,22 +2311,25 @@ class Handler(BaseHTTPRequestHandler):
                 proxystats["errors"] = proxystats["errors"] + 1
             message = "ERROR!"
         else:
+            # Count by query-stripped path so unique querystring URLs cannot
+            # grow proxystats["uri"] without bound
+            uri_key = urlparse(request_path).path
             with proxystats_lock:
                 proxystats["gets"] = proxystats["gets"] + 1
-                if request_path in proxystats["uri"]:
-                    proxystats["uri"][request_path] = (
-                        proxystats["uri"][request_path] + 1
-                    )
-                else:
-                    proxystats["uri"][request_path] = 1
+                if uri_key not in proxystats["uri"] and len(proxystats["uri"]) >= URI_STATS_MAX:
+                    # Cap reached - aggregate new distinct paths under "other"
+                    uri_key = "other"
+                proxystats["uri"][uri_key] = proxystats["uri"].get(uri_key, 0) + 1
 
         # Send headers and payload
         try:
+            # Encode once - Content-Length must count bytes, not characters
+            body = message.encode("utf8")
             self.send_header("Content-type", contenttype)
-            self.send_header("Content-Length", str(len(message)))
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(message.encode("utf8"))
+            self.wfile.write(body)
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 

@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import threading
 import time
 from typing import Optional, Union, List
 
@@ -55,7 +56,9 @@ class PyPowerwallCloud(PyPowerwallBase):
         super().__init__(email)
         self.site = None
         self.tesla = None
-        self.apilock = {}  # holds lock flag for pending cloud api requests
+        self.apilock = {}  # legacy flag dict (kept for compat - no longer load-bearing)
+        self._api_locks = {}  # per-API-name threading.Lock for _site_api
+        self._api_locks_guard = threading.Lock()  # guards creation of per-name locks
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.siteindex = 0  # site index to use
@@ -411,35 +414,44 @@ class PyPowerwallCloud(PyPowerwallBase):
         if self.tesla is None:
             log.debug(" -- cloud: No connection to Tesla Cloud")
             return None, False
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
-                    return None, False
-        # Check to see if we have cached data
+        # Fast path: return fresh cached data without touching the lock
         if self.pwcache.get(name) is not None and not force:
             if self.pwcachetime[name] > time.perf_counter() - ttl:
                 log.debug(f" -- cloud: Returning cached {name} data")
                 return self.pwcache[name], True
-
-        response = None
+        # Per-name real lock (the old boolean-flag "lock" was racy - two
+        # threads could both pass the check and send duplicate Tesla calls)
+        with self._api_locks_guard:
+            lock = self._api_locks.setdefault(name, threading.Lock())
+        if not lock.acquire(timeout=self.timeout):
+            log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
+            # Another thread likely just refreshed the cache - serve it if present
+            if self.pwcache.get(name) is not None:
+                return self.pwcache[name], True
+            return None, False
         try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name, **kwargs)
-        except Exception as err:
-            log.error(f"Failed to retrieve {name} - {repr(err)}")
-        else:
-            log.debug(f" -- cloud: Retrieved {name} data")
-            self.pwcache[name] = response
-            self.pwcachetime[name] = time.perf_counter()
+            # Double-checked cache read under the lock - another thread may
+            # have fetched the data while we were waiting
+            if self.pwcache.get(name) is not None and not force:
+                if self.pwcachetime[name] > time.perf_counter() - ttl:
+                    log.debug(f" -- cloud: Returning cached {name} data")
+                    return self.pwcache[name], True
+            response = None
+            try:
+                # Set legacy flag (kept for compat - not used for locking)
+                self.apilock[name] = True
+                response = self.site.api(name, **kwargs)
+            except Exception as err:
+                log.error(f"Failed to retrieve {name} - {repr(err)}")
+            else:
+                log.debug(f" -- cloud: Retrieved {name} data")
+                self.pwcache[name] = response
+                self.pwcachetime[name] = time.perf_counter()
+            finally:
+                self.apilock[name] = False
+            return response, False
         finally:
-            # Release lock
-            self.apilock[name] = False
-        return response, False
+            lock.release()
 
     def get_battery(self, force: bool = False):
         """

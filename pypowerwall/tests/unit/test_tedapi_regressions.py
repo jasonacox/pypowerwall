@@ -196,3 +196,62 @@ class TestApiLockTimeout:
         ted.pwcache['config'] = {'vin': 'GW--123'}
         with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
             assert ted.get_config() == {'vin': 'GW--123'}
+
+
+class TestConnectHygiene:
+    """connect() session/PW3-detection hygiene:
+    - any non-200 on GET / used to flip PW3 mode (429/503 misclassified a PW2)
+    - repeated connect() calls used to rebuild the session (and leak the old
+      one) even when a DIN was already known
+    """
+
+    def _make_tedapi(self):
+        with patch.object(TEDAPI, 'connect', return_value='DIN'):
+            ted = TEDAPI(gw_pwd='password')
+        return ted
+
+    def _run_connect(self, ted, status_code):
+        response = MagicMock()
+        response.status_code = status_code
+        session = MagicMock()
+        session.get.return_value = response
+        with patch.object(ted, '_init_session', return_value=session), \
+             patch.object(ted, 'get_din', return_value='TEST_DIN'):
+            return ted.connect(force=True)
+
+    def test_403_detected_as_pw3(self):
+        ted = self._make_tedapi()
+        assert self._run_connect(ted, 403) == 'TEST_DIN'
+        assert ted.pw3 is True
+
+    def test_503_does_not_flip_pw3(self):
+        """Transient gateway errors must not misclassify a PW2 as PW3."""
+        ted = self._make_tedapi()
+        assert self._run_connect(ted, 503) == 'TEST_DIN'
+        assert ted.pw3 is False
+
+    def test_503_keeps_prior_pw3_true(self):
+        ted = self._make_tedapi()
+        ted.pw3 = True
+        self._run_connect(ted, 503)
+        assert ted.pw3 is True
+
+    def test_connect_noop_when_already_connected(self):
+        """connect() must not rebuild the session when DIN+session exist."""
+        ted = self._make_tedapi()
+        ted.din = 'TEST_DIN'
+        ted.session = MagicMock()
+        with patch.object(ted, '_init_session') as mock_init, \
+             patch.object(ted, 'get_din') as mock_din:
+            assert ted.connect() == 'TEST_DIN'
+        mock_init.assert_not_called()
+        mock_din.assert_not_called()
+
+    def test_connect_force_closes_previous_session(self):
+        """A forced reconnect must close the old session before replacing it."""
+        ted = self._make_tedapi()
+        ted.din = 'TEST_DIN'
+        old_session = MagicMock()
+        ted.session = old_session
+        self._run_connect(ted, 200)
+        old_session.close.assert_called_once()

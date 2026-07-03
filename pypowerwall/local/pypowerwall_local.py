@@ -15,6 +15,11 @@ from pypowerwall.tedapi import TEDAPI, GW_IP
 
 log = logging.getLogger(__name__)
 
+# Sentinel for negative cache entries (failed endpoints like 404/403/503).
+# Must be distinct from None: _invalidate_cache() in pypowerwall_base.py sets
+# pwcache[key] = None to force a re-fetch, so None always means "cache miss".
+_NEG_CACHE = object()
+
 
 class PyPowerwallLocal(PyPowerwallBase):
 
@@ -135,6 +140,13 @@ class PyPowerwallLocal(PyPowerwallBase):
             self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
 
         self.auth = {}
+        # Close hybrid-mode TEDAPI session if in use
+        if self.tedapi:
+            self.tedapi.close_session()
+        # Close the underlying requests.Session - when poolmaxsize is 0
+        # self.session is the requests module itself and has nothing to close
+        if isinstance(self.session, requests.Session):
+            self.session.close()
 
     def poll(self, api: str, force: bool = False,
              recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
@@ -146,9 +158,16 @@ class PyPowerwallLocal(PyPowerwallBase):
         if self.pwcache.get(api) is not None and self.pwcachetime.get(api) is not None:
             # is it expired?
             if time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire:
-                payload = self.pwcache[api]
-                log.debug(' -- local: Returning cached %s' % api)
-                # We do the override here to ensure that we cache the force entry
+                if self.pwcache[api] is _NEG_CACHE:
+                    # Negative cache hit - endpoint recently failed (404/403/503);
+                    # suppress re-requests until the entry expires (force overrides)
+                    if not force:
+                        log.debug(' -- local: Returning cached error (None) for %s' % api)
+                        return None
+                else:
+                    payload = self.pwcache[api]
+                    log.debug(' -- local: Returning cached %s' % api)
+                    # We do the override here to ensure that we cache the force entry
 
         if not payload or force:
             if self.pwcooldown > time.perf_counter():
@@ -192,7 +211,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                         log.error('Firmware %s detected - Does not support vitals API - disabling.' % version)
                         # Cache and increase cache TTL by 10 minutes
                 self.pwcachetime[api] = time.perf_counter() + 600
-                self.pwcache[api] = None
+                self.pwcache[api] = _NEG_CACHE
                 return None
             elif r.status_code == 429:
                 # Rate limited - Switch to cooldown mode for 5 minutes
@@ -216,7 +235,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                         log.error('403 Unauthorized by Powerwall API at %s - Endpoint disabled in this firmware or '
                                   'user lacks permission' % url)
                     self.pwcachetime[api] = time.perf_counter() + 600
-                    self.pwcache[api] = None
+                    self.pwcache[api] = _NEG_CACHE
                     return None
             elif 400 <= r.status_code < 500:
                 log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
@@ -224,7 +243,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             elif r.status_code == 503:
                 log.error('503 Service Unavailable at %s - Activating 5 minute API cooldown' % url)
                 self.pwcachetime[api] = time.perf_counter() + 300
-                self.pwcache[api] = None
+                self.pwcache[api] = _NEG_CACHE
                 return None
             elif r.status_code >= 500:
                 log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))

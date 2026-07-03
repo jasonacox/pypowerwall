@@ -1469,19 +1469,40 @@ class TEDAPI:
             self.wifi_available = False
             return None
 
-    def connect(self):
-        """Connect to the Powerwall Gateway and retrieve the DIN."""
+    def connect(self, force=False):
+        """Connect to the Powerwall Gateway and retrieve the DIN.
+
+        If a DIN is already known and a session exists, this is a no-op that
+        returns the cached DIN - startup used to reconnect up to 3 times
+        (TEDAPI.__init__, PyPowerwallTEDAPI.__init__ and authenticate()).
+        Pass force=True to tear down the session and reconnect.
+        """
+        if not force and self.din:
+            if self.v1r or getattr(self, 'session', None) is not None:
+                log.debug("Already connected to Powerwall Gateway - skipping reconnect")
+                return self.din
         if self.v1r:
             return self._connect_v1r()
         # Test IP Connection to Powerwall Gateway
         log.debug(f"Testing Connection to Powerwall Gateway: {self.gw_ip}")
         url = f'https://{self.gw_ip}'
         self.din = None
+        # Close any previous session before replacing it - reconnects used to
+        # leak the old session's pooled connections
+        old_session = getattr(self, 'session', None)
+        if old_session is not None:
+            try:
+                old_session.close()
+            except Exception as e:
+                log.debug(f"Error closing previous session: {e}")
         self.session = self._init_session()
         try:
             resp = self.session.get(url, timeout=self.timeout)
-            if resp.status_code != HTTPStatus.OK:
-                # Connected but appears to be Powerwall 3
+            if resp.status_code == HTTPStatus.FORBIDDEN:
+                # PW2/+ gateways serve their web portal on GET / (HTTP 200);
+                # Powerwall 3 has no local web portal and returns 403. Only
+                # the 403 signature means PW3 - transient errors (429/503/5xx)
+                # must not flip PW3 detection, so keep the prior value there.
                 log.debug("Detected Powerwall 3 Gateway")
                 self.pw3 = True
             self.din = self.get_din()
@@ -1515,6 +1536,22 @@ class TEDAPI:
         except Exception as e:
             log.error(f"v1r: Connection error: {e}")
         return self.din
+
+    def close_session(self):
+        """Close the underlying requests.Session objects to the Gateway."""
+        for attr in ('session', 'wifi_session'):
+            s = getattr(self, attr, None)
+            if s is not None:
+                try:
+                    s.close()
+                except Exception as e:
+                    log.debug(f"Error closing {attr}: {e}")
+        v1r_session = getattr(self.v1r_transport, 'session', None) if self.v1r_transport else None
+        if v1r_session is not None:
+            try:
+                v1r_session.close()
+            except Exception as e:
+                log.debug(f"Error closing v1r session: {e}")
 
     def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
         """

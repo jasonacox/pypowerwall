@@ -758,6 +758,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return None
 
     def close_session(self):
+        # Close the underlying requests.Session to the Gateway
+        if self.tedapi:
+            self.tedapi.close_session()
         return True
 
     def vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
