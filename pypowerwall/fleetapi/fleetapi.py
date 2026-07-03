@@ -71,6 +71,7 @@ import os
 import json
 import logging
 import sys
+import threading
 import time
 import ssl
 import urllib.parse
@@ -217,7 +218,7 @@ class FleetAPI:
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcache = {}  # holds the cached data for api
-        self.refreshing = False
+        self.refresh_lock = threading.Lock()  # prevents concurrent token refreshes
         self.timeout = timeout
 
         if debug:
@@ -287,38 +288,49 @@ class FleetAPI:
 
     # Refresh Token
     def new_token(self):
-        #  Lock to prevent multiple refreshes
-        if self.refreshing:
+        #  Lock to prevent multiple refreshes - if another thread is already
+        #  refreshing, return immediately (matches the previous flag behavior)
+        if not self.refresh_lock.acquire(blocking=False):
             return
-        self.refreshing = True
-        log.info("Token expired, refreshing token")
-        data = {
-            'grant_type': 'refresh_token',
-            'client_id': self.CLIENT_ID,
-            'refresh_token': self.refresh_token
-        }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-        response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers, timeout=REFRESH_TIMEOUT)
-        # Extract access_token and refresh_token from this response
-        access = response.json().get('access_token')
-        refresh = response.json().get('refresh_token')
-        # If access or refresh token is None return
-        if not access or not refresh or response.status_code > 201:
-            log.error(f"Unable to refresh token. Response code: {response.status_code}")
-            self.refreshing = False
-            return
-        self.access_token = access
-        self.refresh_token = refresh
-        log.info("Token refreshed - saving.")
-        log.debug(f"  Response Code: {response.status_code}")
-        log.debug(f"  Access Token: {self.access_token}")
-        log.debug(f"  Refresh Token: {self.refresh_token}")
-        # Update config
-        self.save_config()
-        self.refreshing = False
+        try:
+            log.info("Token expired, refreshing token")
+            data = {
+                'grant_type': 'refresh_token',
+                'client_id': self.CLIENT_ID,
+                'refresh_token': self.refresh_token
+            }
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
+                            data=data, headers=headers, timeout=REFRESH_TIMEOUT)
+            # Verify response before attempting to parse the body
+            if response is None or response.status_code != 200:
+                code = getattr(response, 'status_code', None)
+                log.error(f"Unable to refresh token. Response code: {code}")
+                return
+            try:
+                body = response.json()
+            except Exception as exc:
+                log.error(f"Unable to refresh token. Invalid JSON response: {exc}")
+                return
+            # Extract access_token and refresh_token from this response
+            access = body.get('access_token')
+            refresh = body.get('refresh_token')
+            # If access or refresh token is None return
+            if not access or not refresh:
+                log.error(f"Unable to refresh token. Response code: {response.status_code}")
+                return
+            self.access_token = access
+            self.refresh_token = refresh
+            log.info("Token refreshed - saving.")
+            log.debug(f"  Response Code: {response.status_code}")
+            log.debug(f"  Access Token: {self.access_token}")
+            log.debug(f"  Refresh Token: {self.refresh_token}")
+            # Update config
+            self.save_config()
+        finally:
+            self.refresh_lock.release()
 
     # Poll FleetAPI
     def poll(self, api="api/1/products", action="GET", data=None, recursive=False, force=False):

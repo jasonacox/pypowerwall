@@ -624,6 +624,7 @@ class Powerwall(object):
           alertonly  = If True, return only alerts without device name
         """
         alerts = set()
+        device_alerts = set()  # (device, alert) tuples - dicts are unhashable, rebuilt at return
         devices: dict = self.vitals() or {}
         if devices:
             for device in devices:
@@ -633,7 +634,7 @@ class Powerwall(object):
                     if alertsonly:
                         alerts.add(i)
                         continue
-                    alerts.add({device: i})
+                    device_alerts.add((device, i))
         elif not devices and alertsonly is True:
             # Vitals API is not present in firmware versions > 23.44 for local mode.
             # This is a workaround to get alerts from the /api/solar_powerwall endpoint
@@ -658,6 +659,9 @@ class Powerwall(object):
 
         # In the future, if more replacements are needed, create a utility function here.
         normalized_alerts = list({s.replace("SystemGridConnected", "SystemConnectedToGrid") for s in alerts})
+        if not alertsonly:
+            # Append per-device alerts as {device: alert} entries
+            normalized_alerts += [{device: alert} for device, alert in sorted(device_alerts)]
 
         if jsonformat:
             return json.dumps(normalized_alerts, indent=4, sort_keys=True)
@@ -731,7 +735,14 @@ class Powerwall(object):
             return None
 
         if level is None:
-            level = self.get_reserve()
+            # Back-fill the current reserve so the write does not change it. The scale must
+            # match the write path: the local backend passes the payload verbatim to the
+            # gateway's raw-scale /api/operation, while cloud/fleetapi/tedapi writes expect
+            # the Tesla-app scale (tedapi converts app->raw internally on write).
+            level = self.get_reserve(scale=not isinstance(self.client, PyPowerwallLocal))
+            if level is None:
+                log.error("Unable to determine current reserve level - unable to set operation.")
+                return None
 
         if not mode:
             mode = self.get_mode()

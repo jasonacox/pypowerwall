@@ -273,3 +273,74 @@ class TestTEDAPIv1rReserveScaling:
         raw = written['site_info.backup_reserve_percent']
         # 0 * 0.95 + 5 = 5.0
         assert abs(raw - 5.0) < 0.001, f"Expected raw 5.0, got {raw}"
+
+
+# ---------------------------------------------------------------------------
+# set_operation() reserve back-fill regression tests
+# ---------------------------------------------------------------------------
+
+class TestSetOperationBackfill:
+    """Verify set_operation() back-fills the reserve in the scale the backend expects."""
+
+    def test_backfill_uses_app_scale_for_non_local(self, pw):
+        # Non-local backends (cloud/fleetapi/tedapi) expect Tesla-app scale on write.
+        # Raw 20% -> app scale (20/0.95) - (5/0.95) = 15.789...
+        resp = pw.set_operation(mode='backup')
+        assert resp['ok'] is True
+        payload = pw.client.calls[-1][2]
+        assert payload['real_mode'] == 'backup'
+        assert payload['backup_reserve_percent'] == pytest.approx((20 / 0.95) - (5 / 0.95))
+
+    def test_backfill_uses_raw_scale_for_local(self, pw):
+        from unittest.mock import patch
+        # Local backend passes the payload verbatim to the gateway's raw-scale API,
+        # so the back-fill must not apply the Tesla-app scale conversion.
+        with patch('pypowerwall.PyPowerwallLocal', StubClient):
+            resp = pw.set_operation(mode='backup')
+        assert resp['ok'] is True
+        payload = pw.client.calls[-1][2]
+        assert payload['backup_reserve_percent'] == 20
+
+    def test_backfill_none_returns_none(self, pw):
+        # Gateway unreachable: get_reserve() returns None - must not raise TypeError
+        del pw.client._poll_map['/api/operation']
+        resp = pw.set_operation(mode='backup')
+        assert resp is None
+
+
+# ---------------------------------------------------------------------------
+# alerts() regression tests (alertsonly=False used to raise TypeError)
+# ---------------------------------------------------------------------------
+
+class TestAlertsDeviceEntries:
+
+    def test_alertsonly_true_returns_strings(self, pw):
+        pw.client._vitals = {
+            'TETHC--X--SN123': {'alerts': ['ThermalFault', 'ThermalFault']},
+            'TEPINV--Y--SN456': {'alerts': ['GridCodesWrite']},
+        }
+        alerts = pw.alerts()
+        assert isinstance(alerts, list)
+        assert all(isinstance(a, str) for a in alerts)
+        assert 'ThermalFault' in alerts
+        assert 'GridCodesWrite' in alerts
+        assert 'SystemConnectedToGrid' in alerts  # normalized from grid_status
+        assert alerts.count('ThermalFault') == 1  # deduplicated
+
+    def test_alertsonly_false_returns_device_entries(self, pw):
+        pw.client._vitals = {
+            'TETHC--X--SN123': {'alerts': ['ThermalFault']},
+            'TEPINV--Y--SN456': {'alerts': ['GridCodesWrite']},
+        }
+        alerts = pw.alerts(alertsonly=False)  # used to raise TypeError: unhashable dict
+        assert isinstance(alerts, list)
+        assert {'TETHC--X--SN123': 'ThermalFault'} in alerts
+        assert {'TEPINV--Y--SN456': 'GridCodesWrite'} in alerts
+        assert 'SystemConnectedToGrid' in alerts  # inferred grid alert stays a string
+
+    def test_alertsonly_false_jsonformat(self, pw):
+        pw.client._vitals = {'TETHC--X--SN123': {'alerts': ['ThermalFault']}}
+        out = pw.alerts(jsonformat=True, alertsonly=False)
+        assert isinstance(out, str)
+        data = json.loads(out)
+        assert {'TETHC--X--SN123': 'ThermalFault'} in data

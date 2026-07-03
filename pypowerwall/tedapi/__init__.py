@@ -2025,7 +2025,7 @@ class TEDAPI:
                 "PINV_EnergyCharged": None,
                 "PINV_EnergyDischarged": None,
                 "PINV_Fout": lookup(pinv, ['PINV_Status', 'PINV_Fout']),
-                "PINV_GridState": lookup(p, ['PINV_Status', 'PINV_GridState']),
+                "PINV_GridState": lookup(pinv, ['PINV_Status', 'PINV_GridState']),
                 "PINV_HardwareEnableLine": None,
                 "PINV_PllFrequency": None,
                 "PINV_PllLocked": None,

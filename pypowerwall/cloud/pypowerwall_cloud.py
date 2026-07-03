@@ -880,7 +880,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         else:
             log.debug(f"Invalid mode: {mode}")
             return False
-        response = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
+        (response, _) = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
                                    disallow_charge_from_grid_with_solar_installed = mode)
         # invalidate cache
         super()._invalidate_cache("SITE_CONFIG")
@@ -904,7 +904,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         if mode not in ["battery_ok", "pv_only", "never"]:
             log.debug(f"Invalid mode: {mode} - must be battery_ok, pv_only, or never")
         # POST api/1/energy_sites/{site_id}/grid_import_export
-        response = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
+        (response, _) = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
                                     customer_preferred_export_rule = mode)
         # invalidate cache
         super()._invalidate_cache("SITE_CONFIG")
@@ -1204,33 +1204,40 @@ class PyPowerwallCloud(PyPowerwallBase):
         for battery in batteries:
             if din and battery.get('gateway_id') != din:
                 continue
+            resp = {}
             try:
-                op_level = battery.set_backup_reserve_percent(payload['backup_reserve_percent'])
-                op_mode = battery.set_operation(payload['real_mode'])
-                log.debug(f"Op Level: {op_level}")
-                log.debug(f"Op Mode: {op_mode}")
-                return {
-                    'set_backup_reserve_percent': {
+                # Handle each key independently - partial payloads are valid
+                if payload.get('backup_reserve_percent') is not None:
+                    backup_reserve_percent = payload['backup_reserve_percent']
+                    if backup_reserve_percent is False:
+                        # Convert False to 0 for Tesla Cloud API
+                        backup_reserve_percent = 0
+                    op_level = battery.set_backup_reserve_percent(backup_reserve_percent)
+                    log.debug(f"Op Level: {op_level}")
+                    resp['set_backup_reserve_percent'] = {
                         'backup_reserve_percent': payload['backup_reserve_percent'],
                         'din': din,
                         'result': op_level
-                    },
-                    'set_operation': {
+                    }
+                if payload.get('real_mode') is not None:
+                    op_mode = battery.set_operation(payload['real_mode'])
+                    log.debug(f"Op Mode: {op_mode}")
+                    resp['set_operation'] = {
                         'real_mode': payload['real_mode'],
                         'din': din,
                         'result': op_mode
                     }
-                }
+                return resp
             except Exception as exc:
                 return {'error': f"{exc}"}
         return {
             'set_backup_reserve_percent': {
-                'backup_reserve_percent': payload['backup_reserve_percent'],
+                'backup_reserve_percent': payload.get('backup_reserve_percent'),
                 'din': din,
                 'result': 'BatteryNotFound'
             },
             'set_operation': {
-                'real_mode': payload['real_mode'],
+                'real_mode': payload.get('real_mode'),
                 'din': din,
                 'result': 'BatteryNotFound'
             }

@@ -747,6 +747,11 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
     Returns:
         Response data on success, cached data if available and fresh enough, None if no data available
     """
+    # Namespace the degradation-cache key by response format: the same endpoint can be
+    # called with jsonformat=True (caches a JSON string) and jsonformat=False (caches a
+    # dict). Sharing one key would serve a string to dict consumers during outages.
+    cache_key = f"{endpoint_name}:json" if jsonformat else endpoint_name
+
     # Try to get fresh data
     if jsonformat:
         result = safe_pw_call(pw_func, *args, jsonformat=True, **kwargs)
@@ -755,7 +760,7 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
 
     # Only treat as a true success if result is not None and is not a cached response
     if result is not None:
-        cache_response(endpoint_name, result)
+        cache_response(cache_key, result)
         track_endpoint_call(endpoint_name, success=True)
         return result
 
@@ -763,7 +768,7 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
     track_endpoint_call(endpoint_name, success=False)
 
     # Try cached response (do NOT reset consecutive_failures if using cache)
-    cached_result = get_cached_response(endpoint_name)
+    cached_result = get_cached_response(cache_key)
     if cached_result is not None:
         # Do not call update_connection_health(success=True) here
         return cached_result

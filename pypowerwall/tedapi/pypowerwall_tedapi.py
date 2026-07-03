@@ -625,10 +625,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         grid_status = self.extract_grid_status(status)
         total_pack_energy = lookup(status, ["control", "systemStatus", "nominalFullPackEnergyWh"])
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
-        batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
+        batteryBlocks = lookup(status, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
-        blocks = self.tedapi.get_blocks(force=force)
+        blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
         for bk in blocks:
             b.append(blocks[bk])
