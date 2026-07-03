@@ -1,5 +1,18 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t95 (3 Jul 2026)
+
+* Upgraded to pyPowerwall v0.16.0 (code review sweep — see library release notes)
+* Security: DISABLED/ALLOWLIST endpoint matching is no longer bypassable with a query string, and unallowlisted `/api/*` paths are no longer forwarded to the gateway with the proxy's credentials attached (web app asset passthrough unchanged)
+* Security: GET `/control/max_backup` no longer auto-cancels expired backup events without a valid `token` (tokenless GET stays read-only); control token comparison is constant-time; `/control` POST bodies capped at 4KB; `/help` page escapes request paths (stored XSS)
+* Fixed graceful-degradation cache crash: `/csv` and `/json` failed with `AttributeError` during gateway outages when the cache held the JSON-string form of `/aggregates` (cache keys now namespaced by format)
+* Fixed unhandled exceptions during outages in the gateway passthrough and the `/tedapi/*`, `/cloud/*`, `/fleetapi/*` routes (now return `null` like other endpoints)
+* Fixed `TypeError` in `/csv` and `/aggregates` when the gateway reports JSON-null `instant_power` fields
+* `/stats` and `/help` no longer hold the stats lock across a network call (stalled all request threads during outages); URI stats are query-stripped and capped at 100 entries (unbounded memory growth over long uptimes)
+* `Content-Length` now counts encoded bytes (non-ASCII payloads were truncated by strict clients)
+* Replaced `ssl.wrap_socket` (removed in Python 3.12) with `ssl.SSLContext` for `PW_HTTPS=yes`
+* Guard against missing `pw.client` in the cookie handout path (AttributeError on failed init)
+
 ### Proxy t94 (29 Jun 2026)
 
 * Fixed accumulation of zombie (`<defunct>`) child processes when the proxy runs as PID 1 in the Docker container
