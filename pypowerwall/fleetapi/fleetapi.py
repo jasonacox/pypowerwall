@@ -282,8 +282,9 @@ class FleetAPI:
             "refresh_token": self.refresh_token,
             "site_id": self.site_id
         }
-        # Save the config dictionary to the file
-        with open(self.configfile, 'w') as f:
+        # Save the config dictionary to the file - contains client secret and
+        # tokens, so create with 0o600 (owner-only) permissions at open time
+        with open(os.open(self.configfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as f:
             f.write(json.dumps(config, indent=4))
 
     # Refresh Token
@@ -325,8 +326,9 @@ class FleetAPI:
             self.refresh_token = refresh
             log.info("Token refreshed - saving.")
             log.debug(f"  Response Code: {response.status_code}")
-            log.debug(f"  Access Token: {self.access_token}")
-            log.debug(f"  Refresh Token: {self.refresh_token}")
+            # Never log token values - length only
+            log.debug(f"  Access Token: [redacted] (len={len(self.access_token)})")
+            log.debug(f"  Refresh Token: [redacted] (len={len(self.refresh_token)})")
             # Update config
             self.save_config()
         finally:
@@ -848,7 +850,7 @@ class FleetAPI:
         # Check to see if already cached
         if self.partner_token:
             print("  Using cached token.")
-            log.debug(f"Cached partner token: {self.partner_token}")
+            log.debug(f"Cached partner token: [redacted] (len={len(self.partner_token)})")
         else:
             # If not cached, generate a new token
             data = {
@@ -861,14 +863,15 @@ class FleetAPI:
             headers = {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
-            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+            # Redact the client secret from the debug log
+            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps({**data, 'client_secret': '[redacted]'})}")
             response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                             data=data, headers=headers, timeout=SETUP_TIMEOUT)
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
             print(f"   Got Token: {partner_token[:40]}...\n")
-            log.debug(f"Partner Token: {partner_token}")
+            log.debug(f"Partner Token: [redacted] (len={len(partner_token) if partner_token else 0})")
             # Save the configuration
             self.save_config()
             print("  Configuration saved")
@@ -919,7 +922,7 @@ class FleetAPI:
         if code.startswith("http"):
             code = code.split("code=")[1].split("&")[0]
         print()
-        log.debug(f"Code: {code}")
+        log.debug(f"Code: [redacted] (len={len(code)})")
 
         # Step 3D - Exchange the authorization code for a token
         #   The access_token will be used as the Bearer token
@@ -937,7 +940,9 @@ class FleetAPI:
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
-        log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+        # Redact the client secret and one-time auth code from the debug log
+        log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token "
+                  f"{json.dumps({**data, 'client_secret': '[redacted]', 'code': '[redacted]'})}")
         response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers, timeout=SETUP_TIMEOUT)
         log.debug(f"Response Code: {response.status_code}")

@@ -81,6 +81,8 @@
 
 """
 import datetime
+import hmac
+import html
 import json
 import logging
 import os
@@ -160,6 +162,8 @@ ALLOWLIST = [
 DISABLED = [
     "/api/customer/registration",
 ]
+# Maximum POST body size (bytes) accepted for /control commands
+MAX_POST_BODY = 4096
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
 # Configuration for Proxy - Check for environmental variables
@@ -1042,12 +1046,20 @@ class Handler(BaseHTTPRequestHandler):
             if not control_secret:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
+                value = token = ""
                 try:
                     action = urlparse(request_path).path.split("/")[2]
-                    post_data = self.rfile.read(int(self.headers["Content-Length"]))
-                    query_params = parse_qs(post_data.decode("utf-8"))
-                    value = query_params.get("value", [""])[0]
-                    token = query_params.get("token", [""])[0]
+                    content_length = int(self.headers["Content-Length"])
+                    # Cap the POST body size - control commands are tiny
+                    # (value/token/mode params); anything larger is abuse.
+                    if content_length < 0 or content_length > MAX_POST_BODY:
+                        message = '{"error": "Control Command Error: Invalid Request"}'
+                        log.error(f"Control Command Error: POST body too large ({content_length} bytes)")
+                    else:
+                        post_data = self.rfile.read(content_length)
+                        query_params = parse_qs(post_data.decode("utf-8"))
+                        value = query_params.get("value", [""])[0]
+                        token = query_params.get("token", [""])[0]
                 except Exception as er:
                     message = '{"error": "Control Command Error: Invalid Request"}'
                     log.error(f"Control Command Error: {er}")
@@ -1060,7 +1072,8 @@ class Handler(BaseHTTPRequestHandler):
                             "Control Command Error: Unable to connect to cloud mode - Run Setup"
                         )
                     else:
-                        if token == control_secret:
+                        # Constant-time compare to avoid timing side channel
+                        if token and hmac.compare_digest(token, control_secret):
                             if action == "reserve":
                                 # ensure value is an integer
                                 if not value:
@@ -1934,11 +1947,13 @@ class Handler(BaseHTTPRequestHandler):
                 "%BUILD%", BUILD
             )
             with proxystats_lock:
+                # html.escape() everything interpolated into the page - URI keys
+                # are attacker-controlled request paths (stored XSS vector)
                 for i in proxystats:
                     if i != "uri" and i != "config":
-                        message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
+                        message += f'<tr><td align="left">{html.escape(str(i))}</td><td align ="left">{html.escape(str(proxystats[i]))}</td></tr>\n'
                 for i in proxystats["uri"]:
-                    message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats["uri"][i]}</td></tr>\n'
+                    message += f'<tr><td align="left">URI: {html.escape(str(i))}</td><td align ="left">{html.escape(str(proxystats["uri"][i]))}</td></tr>\n'
             message += """
             <tr>
                 <td align="left">Config:</td>
@@ -1949,7 +1964,7 @@ class Handler(BaseHTTPRequestHandler):
             """
             with proxystats_lock:
                 for i in proxystats["config"]:
-                    message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats["config"][i]}</td></tr>\n'
+                    message += f'<tr><td align="left">{html.escape(str(i))}</td><td align ="left">{html.escape(str(proxystats["config"][i]))}</td></tr>\n'
             message += """
                         </table>
                     </details>
@@ -2011,12 +2026,13 @@ class Handler(BaseHTTPRequestHandler):
                     message = json.dumps(pw.client.get_live_status())
             else:
                 message = '{"error": "FleetAPI not enabled"}'
-        elif request_path in DISABLED:
-            # Disabled API Calls
+        elif urlparse(request_path).path in DISABLED:
+            # Disabled API Calls - match on path only so a query string
+            # (e.g. ?x=1) cannot be used to bypass the block
             message = '{"status": "404 Response - API Disabled"}'
-        elif request_path in ALLOWLIST:
-            # Allowed API Calls - Proxy to Powerwall
-            message: str = safe_pw_call(pw.poll, request_path, jsonformat=True)
+        elif urlparse(request_path).path in ALLOWLIST:
+            # Allowed API Calls - Proxy to Powerwall (query string stripped)
+            message: str = safe_pw_call(pw.poll, urlparse(request_path).path, jsonformat=True)
         elif request_path.startswith("/control/reserve"):
             # Current battery reserve level
             if not pw_control:
@@ -2059,11 +2075,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 result = safe_pw_call(pw.tedapi.get_backup_events)
                 if result is not None:
-                    # Auto-cancel expired events (gateway leaves them lingering)
+                    # Auto-cancel expired events (gateway leaves them lingering).
+                    # Cancel is a *write*, so it requires a valid control token
+                    # (?token=<PW_CONTROL_SECRET>); a plain GET stays read-only.
                     mb = result.get('manual_backup')
                     if mb and not mb.get('active'):
-                        safe_pw_call(pw.tedapi.cancel_max_backup)
-                        result['manual_backup'] = None
+                        token = parse_qs(urlparse(request_path).query).get("token", [""])[0]
+                        if token and control_secret and hmac.compare_digest(token, control_secret):
+                            safe_pw_call(pw.tedapi.cancel_max_backup)
+                            result['manual_backup'] = None
                     message = json.dumps(result)
                 else:
                     message = '{"error": "Failed to get backup events"}'
@@ -2134,15 +2154,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Set-Cookie", f"AuthCookie=1234567890;{cookiesuffix}")
                 self.send_header("Set-Cookie", f"UserRecord=1234567890;{cookiesuffix}")
             else:
-                # Safely access auth cookies with fallback
+                # Safely access auth cookies with fallback - pw.client can be
+                # None if backend init failed, so guard before touching .auth
+                client_auth = pw.client.auth if pw.client is not None else None
                 auth_cookie = (
-                    pw.client.auth.get("AuthCookie", "1234567890")
-                    if pw.client.auth
+                    client_auth.get("AuthCookie", "1234567890")
+                    if client_auth
                     else "1234567890"
                 )
                 user_record = (
-                    pw.client.auth.get("UserRecord", "1234567890")
-                    if pw.client.auth
+                    client_auth.get("UserRecord", "1234567890")
+                    if client_auth
                     else "1234567890"
                 )
                 self.send_header(
@@ -2188,8 +2210,15 @@ class Handler(BaseHTTPRequestHandler):
                 log.debug("Cloud Mode - File not found: {}".format(request_path))
                 fcontent = bytes("Not Found", "utf-8")
                 ftype = "text/plain"
+            elif urlparse(request_path).path.startswith("/api/"):
+                # Never proxy unmatched /api/ paths to the gateway - only
+                # ALLOWLIST endpoints may reach the gateway API with the
+                # proxy's credentials attached (open-proxy prevention).
+                log.debug("API not allowed: {}".format(request_path))
+                fcontent = bytes("Not Found", "utf-8")
+                ftype = "text/plain"
             else:
-                # Proxy request to Powerwall web server.
+                # Proxy request to Powerwall web server (web app assets).
                 proxy_path = request_path
                 if proxy_path.startswith("/"):
                     proxy_path = proxy_path[1:]

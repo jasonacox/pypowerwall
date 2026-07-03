@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 from typing import Union, Tuple, Optional, Any
 
@@ -94,7 +95,8 @@ class PyPowerwallLocal(PyPowerwallBase):
                  "email": self.email, "clientInfo": {"timezone": self.timezone}}
         try:
             r = self.session.post(url, data=pload, verify=False, timeout=self.timeout)
-            log.debug('login - %s' % r.text)
+            # Do not log the response body - it contains the auth token/cookies
+            log.debug('login - HTTP %s' % r.status_code)
         except Exception as exc:
             err = f"Unable to connect to Powerwall at https://{self.host}: {exc}"
             log.error(f'{err} - check that the gateway is reachable on the network')
@@ -108,7 +110,9 @@ class PyPowerwallLocal(PyPowerwallBase):
             else:
                 self.auth = {'AuthCookie': r.cookies['AuthCookie'], 'UserRecord': r.cookies['UserRecord']}
             try:
-                f = open(self.cachefile, "w")
+                # Cache file holds the auth cookie/bearer token - create with
+                # 0o600 (owner-only) permissions at open time
+                f = open(os.open(self.cachefile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w")
                 json.dump(self.auth, f)
                 f.close()
             except Exception as exc:

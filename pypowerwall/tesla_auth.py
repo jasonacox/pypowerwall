@@ -1206,7 +1206,9 @@ def save_token(token_data: dict, path: str = None, email: str = None, region: st
     if dir_name:
         os.makedirs(dir_name, exist_ok=True)
 
-    with open(path, "w") as f:
+    # Create with 0o600 at open time (owner-only) - chmod-after-write leaves
+    # a window where the token file is world-readable
+    with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
         json.dump(cache, f, indent=2)
     os.chmod(path, 0o600)
 

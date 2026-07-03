@@ -96,7 +96,7 @@ class TEDAPIv1r:
                 return False
             data = r.json()
             self.token = data.get("token")
-            log.debug(f"v1r login successful, token: {self.token[:20]}...")
+            log.debug(f"v1r login successful, token: [redacted] (len={len(self.token) if self.token else 0})")
             return True
         except Exception as e:
             log.error(f"v1r login error: {e}")
