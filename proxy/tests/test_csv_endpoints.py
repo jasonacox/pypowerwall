@@ -284,7 +284,34 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
                     self.assertEqual(cached_data["load"]["instant_power"], 
                                    scenario["expected"]["load"]["instant_power"])
 
-    @common_patches  
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.get_performance_cached', return_value=None)  # Force cache miss
+    @patch('proxy.server.cache_performance_response')  # Mock cache write
+    def test_aggregates_with_null_instant_power(self, proxystats_lock, mock_cache_write, mock_cache_get, mock_safe_call, mock_pw):
+        """Regression: null solar/site instant_power must pass through, not crash"""
+        self.handler.path = "/aggregates"
+        mock_pw.poll = Mock()
+        mock_safe_call.return_value = {
+            "site": {"instant_power": None},
+            "solar": {"instant_power": None},
+            "battery": {"instant_power": None},
+            "load": {"instant_power": 1500},
+        }
+
+        self.handler.do_GET()  # used to raise TypeError on None < 0 comparison
+
+        self.handler.send_response.assert_called_with(HTTPStatus.OK)
+        result = self.get_written_json()
+        # Nulls indicate a data gap and are passed through unchanged
+        self.assertIsNone(result["site"]["instant_power"])
+        self.assertIsNone(result["solar"]["instant_power"])
+        self.assertIsNone(result["battery"]["instant_power"])
+        self.assertEqual(result["load"]["instant_power"], 1500)
+
+    @common_patches
     @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', True)  # Test with neg_solar ENABLED
     @patch('proxy.server.safe_endpoint_call')
@@ -513,6 +540,32 @@ class TestCSVEndpoints(BaseDoGetTest):
             
             result = self.get_written_text()
             self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.safe_pw_call')
+    def test_csv_with_null_instant_power_fields(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
+        """Regression: per-field null instant_power must not crash the
+        neg-solar/threshold comparisons (nulls are output as 0)"""
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': None},
+                'solar': {'instant_power': None},
+                'battery': {'instant_power': None},
+                'load': {'instant_power': 250}
+            }
+
+            mock_safe_pw_call.return_value = 42.0
+
+            self.handler.do_GET()  # used to raise TypeError on None < 0
+
+            result = self.get_written_text()
+            self.assertEqual(result, "0.00,250.00,0.00,0.00,42.00\n")
 
     @common_patches
     @patch('proxy.server.pw')

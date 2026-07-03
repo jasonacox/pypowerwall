@@ -1310,9 +1310,9 @@ class Handler(BaseHTTPRequestHandler):
 
                 if aggregates and not neg_solar and "solar" in aggregates:
                     solar = aggregates["solar"]
-                    if solar and "instant_power" in solar and solar["instant_power"] < 0:
+                    if solar and solar.get("instant_power") is not None and solar["instant_power"] < 0:
                         # Shift energy from solar to load
-                        if "load" in aggregates and "instant_power" in aggregates["load"]:
+                        if "load" in aggregates and (aggregates["load"] or {}).get("instant_power") is not None:
                             aggregates["load"]["instant_power"] -= solar["instant_power"]
                         # Finally, clamp solar to 0
                         solar["instant_power"] = 0
@@ -1361,13 +1361,20 @@ class Handler(BaseHTTPRequestHandler):
                 # Optimization: Use single aggregates call for all power values
                 aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
                 if aggregates:
-                    grid = aggregates.get('site', {}).get('instant_power', 0)
-                    solar = aggregates.get('solar', {}).get('instant_power', 0)
-                    battery = aggregates.get('battery', {}).get('instant_power', 0)
-                    home = aggregates.get('load', {}).get('instant_power', 0)
+                    grid = (aggregates.get('site') or {}).get('instant_power', 0)
+                    solar = (aggregates.get('solar') or {}).get('instant_power', 0)
+                    battery = (aggregates.get('battery') or {}).get('instant_power', 0)
+                    home = (aggregates.get('load') or {}).get('instant_power', 0)
                 else:
                     grid = solar = battery = home = 0
-                
+
+                # Convert None to 0 for output BEFORE any comparisons below
+                # (None = data gap, output as 0; comparing None crashes)
+                grid = grid or 0
+                solar = solar or 0
+                battery = battery or 0
+                home = home or 0
+
                 # Apply negative solar correction if configured
                 if not neg_solar and solar < 0:
                     # Shift energy from solar to load
@@ -1375,15 +1382,8 @@ class Handler(BaseHTTPRequestHandler):
                     solar = 0
 
                 # Apply site zero threshold - suppress phantom grid noise
-                # Pass through None values — they indicate a data gap, not zero
                 if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
                     grid = 0
-
-                # Convert None to 0 for output (None = data gap, output as 0)
-                grid = grid or 0
-                solar = solar or 0
-                battery = battery or 0
-                home = home or 0
 
                 # Get battery level - poll() handles caching internally
                 batterylevel = safe_pw_call(pw.level) or 0
@@ -1993,15 +1993,15 @@ class Handler(BaseHTTPRequestHandler):
             if pw.tedapi:
                 message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"}'
                 if request_path == "/tedapi/config":
-                    message = json.dumps(pw.tedapi.get_config())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_config))
                 if request_path == "/tedapi/status":
-                    message = json.dumps(pw.tedapi.get_status())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_status))
                 if request_path == "/tedapi/components":
-                    message = json.dumps(pw.tedapi.get_components())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_components))
                 if request_path == "/tedapi/battery":
-                    message = json.dumps(pw.tedapi.get_battery_blocks())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_battery_blocks))
                 if request_path == "/tedapi/controller":
-                    message = json.dumps(pw.tedapi.get_device_controller())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_device_controller))
             else:
                 message = '{"error": "TEDAPI not enabled"}'
         elif request_path.startswith("/cloud"):
@@ -2009,11 +2009,11 @@ class Handler(BaseHTTPRequestHandler):
             if pw.cloudmode and not pw.fleetapi:
                 message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
                 if request_path == "/cloud/battery":
-                    message = json.dumps(pw.client.get_battery())
+                    message = json.dumps(safe_pw_call(pw.client.get_battery))
                 if request_path == "/cloud/power":
-                    message = json.dumps(pw.client.get_site_power())
+                    message = json.dumps(safe_pw_call(pw.client.get_site_power))
                 if request_path == "/cloud/config":
-                    message = json.dumps(pw.client.get_site_config())
+                    message = json.dumps(safe_pw_call(pw.client.get_site_config))
             else:
                 message = '{"error": "Cloud API not enabled"}'
         elif request_path.startswith("/fleetapi"):
@@ -2021,9 +2021,9 @@ class Handler(BaseHTTPRequestHandler):
             if pw.fleetapi:
                 message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
                 if request_path == "/fleetapi/info":
-                    message = json.dumps(pw.client.get_site_info())
+                    message = json.dumps(safe_pw_call(pw.client.get_site_info))
                 if request_path == "/fleetapi/status":
-                    message = json.dumps(pw.client.get_live_status())
+                    message = json.dumps(safe_pw_call(pw.client.get_live_status))
             else:
                 message = '{"error": "FleetAPI not enabled"}'
         elif urlparse(request_path).path in DISABLED:
@@ -2242,14 +2242,13 @@ class Handler(BaseHTTPRequestHandler):
                             timeout=pw.timeout,
                         )
                     fcontent = r.content
-                    ftype = r.headers["content-type"]
-                except AttributeError:
-                    # Display 404
-                    log.debug("File not found: {}".format(request_path))
+                    ftype = r.headers.get("content-type", "text/plain")
+                except (AttributeError, requests.exceptions.RequestException) as exc:
+                    # Gateway unreachable, timed out, or session unavailable -
+                    # fall through and serve the standard "Not Found" body
+                    log.debug("Unable to fetch {} from gateway: {}".format(request_path, exc))
                     fcontent = bytes("Not Found", "utf-8")
                     ftype = "text/plain"
-                    self.send_response(404)
-                    return
 
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (
@@ -2323,15 +2322,12 @@ def main() -> None:
         if https_mode == "yes":
             # Activate HTTPS
             log.debug("Activating HTTPS")
-            # pylint: disable=deprecated-method
-            server.socket = ssl.wrap_socket(
-                server.socket,
-                certfile=os.path.join(os.path.dirname(__file__), "localhost.pem"),
-                server_side=True,
-                ssl_version=ssl.PROTOCOL_TLSv1_2,
-                ca_certs=None,
-                do_handshake_on_connect=True,
+            # ssl.wrap_socket() was removed in Python 3.12 - use SSLContext instead
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(
+                os.path.join(os.path.dirname(__file__), "localhost.pem")
             )
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
 
         # noinspection PyBroadException
         try:

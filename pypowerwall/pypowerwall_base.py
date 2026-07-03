@@ -18,7 +18,13 @@ def parse_version(version: str) -> Optional[int]:
     val = ''.join(i for i in val if i.isdigit() or i in './\\')
     while len(val.split('.')) < 3:
         val = val + ".0"
-    line = [int(x, 10) for x in val.split('.')]
+    try:
+        # Versions with no digits (e.g. "unknown") produce empty fields and
+        # int('') raises ValueError - treat as unparseable and return None
+        line = [int(x, 10) for x in val.split('.')]
+    except ValueError:
+        log.debug(f"Unable to parse version string '{version}'")
+        return None
     line.reverse()
     vint = sum(x * (100 ** i) for i, x in enumerate(line))
     return vint

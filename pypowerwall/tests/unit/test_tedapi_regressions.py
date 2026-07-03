@@ -100,3 +100,99 @@ class TestVitalsPinvGridState:
         # Regression: was looked up in the THC entry ('p') and always None
         assert pinv['PINV_GridState'] == 'Grid_Compliant'
         assert pinv['PINV_State'] == 'PINV_GridFollowing'
+
+
+class TestNoneConfigGuards:
+    """get_pw3_vitals()/get_battery_blocks() must not crash when get_config()
+    returns None (gateway outage or lock timeout)."""
+
+    def _make_tedapi(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.din = '1707000-11-J--TG123456789012'
+        return ted
+
+    def test_get_pw3_vitals_none_config(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_components', return_value={'pch': []}), \
+             patch.object(ted, 'get_config', return_value=None):
+            # Used to raise TypeError on config['battery_blocks']
+            assert ted.get_pw3_vitals() is None
+
+    def test_get_pw3_vitals_config_without_battery_blocks(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_components', return_value={'pch': []}), \
+             patch.object(ted, 'get_config', return_value={'vin': 'GW--123'}):
+            assert ted.get_pw3_vitals() == {}
+
+    def test_get_battery_blocks_none_config(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_config', return_value=None):
+            # Used to raise AttributeError on None.get()
+            assert ted.get_battery_blocks() == []
+
+
+class TestVitalsPodPinvBoundsGuard:
+    """POD/PINV lists shorter than the THC list must not raise IndexError."""
+
+    def test_vitals_missing_pod_pinv_entries(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.pw3 = False
+        config = {'vin': 'GW--123'}
+        status = {
+            'control': {'alerts': {'active': []}},
+            'components': {'msa': []},
+            'esCan': {
+                'bus': {
+                    'PVAC': [],
+                    'PVS': [],
+                    'THC': [{
+                        'packagePartNumber': 'X1',
+                        'packageSerialNumber': 'S1',
+                        'alerts': {'active': []},
+                    }],
+                    'POD': [],   # shorter than THC
+                    'PINV': [],  # shorter than THC
+                    'SYNC': {},
+                    'ISLANDER': {},
+                    'MSA': {},
+                },
+            },
+        }
+        ted.get_config = MagicMock(return_value=config)
+        ted.get_device_controller = MagicMock(return_value=status)
+
+        vitals = ted.vitals()  # used to raise IndexError
+        assert vitals is not None
+        assert vitals['TEPOD--X1--S1']['POD_nom_energy_remaining'] is None
+        assert vitals['TEPINV--X1--S1']['PINV_Pout'] is None
+
+
+class TestApiLockTimeout:
+    """Lock contention must degrade to cached-data/None, not raise
+    TimeoutError out of poll()/vitals()."""
+
+    def _make_tedapi(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.din = 'DIN--X'
+        return ted
+
+    def test_get_status_lock_timeout_returns_cached(self):
+        ted = self._make_tedapi()
+        ted.pwcache['status'] = {'cached': True}
+        with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
+            assert ted.get_status() == {'cached': True}  # used to raise TimeoutError
+
+    def test_get_status_lock_timeout_no_cache_returns_none(self):
+        ted = self._make_tedapi()
+        ted.pwcache.pop('status', None)
+        with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
+            assert ted.get_status() is None
+
+    def test_get_config_lock_timeout_returns_cached(self):
+        ted = self._make_tedapi()
+        ted.pwcache['config'] = {'vin': 'GW--123'}
+        with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
+            assert ted.get_config() == {'vin': 'GW--123'}

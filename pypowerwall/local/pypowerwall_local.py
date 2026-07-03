@@ -186,7 +186,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                 if api == '/api/devices/vitals':
                     # Check Powerwall Firmware version
                     version = self.version(int_value=True)
-                    if version >= 23440:
+                    if version is not None and version >= 23440:
                         # Vitals API not available for Firmware >= 23.44.0
                         self.vitals_api = False
                         log.error('Firmware %s detected - Does not support vitals API - disabling.' % version)
@@ -237,7 +237,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                 if not payload:
                     log.debug(f"Empty response from Powerwall at {url}")
                     return None
-                elif 'application/json' in r.headers.get('Content-Type'):
+                elif 'application/json' in r.headers.get('Content-Type', ''):
                     try:
                         payload = json.loads(payload)
                     except Exception as exc:
@@ -311,7 +311,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             if not response:
                 log.debug(f"Empty response from Powerwall at {url}")
                 return None
-            elif 'application/json' in r.headers.get('Content-Type'):
+            elif 'application/json' in r.headers.get('Content-Type', ''):
                 try:
                     response = json.loads(response)
                 except Exception as exc:

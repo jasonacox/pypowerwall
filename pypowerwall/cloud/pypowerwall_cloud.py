@@ -75,8 +75,10 @@ class PyPowerwallCloud(PyPowerwallBase):
                     try:
                         self.siteid = int(file.read())
                     except Exception as exc:
-                        log.debug(f"Unable to determine siteid from sitefile, using ID '0' instead: {exc}")
-                        self.siteid = 0
+                        # Leave siteid as None so connect() can auto-select the first site;
+                        # a bogus default like 0 would hard-fail the connection
+                        log.debug(f"Unable to determine siteid from sitefile, will auto-select site: {exc}")
+                        self.siteid = None
             else:
                 self.siteindex = 0
         log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
@@ -601,7 +603,8 @@ class PyPowerwallCloud(PyPowerwallBase):
         # {'response': {'time_remaining_hours': 7.909122698326978}}
         if response is None or not isinstance(response, dict):
             return None
-        if 'response' in response and 'time_remaining_hours' in response.get('response'):
+        # response['response'] can be None - guard the membership test
+        if 'time_remaining_hours' in (response.get('response') or {}):
             return response['response']['time_remaining_hours']
 
         return 0.0

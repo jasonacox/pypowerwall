@@ -107,3 +107,21 @@ class TestPostApiOperation:
         resp = cloud.post_api_operation(payload={'real_mode': 'backup'})
         assert resp['set_operation']['result'] == 'BatteryNotFound'
         assert resp['set_backup_reserve_percent']['backup_reserve_percent'] is None
+
+
+class TestGetTimeRemaining:
+    """get_time_remaining() must not crash when the cloud returns
+    {'response': None} - `'key' in None` raises TypeError."""
+
+    def test_null_response_body(self, cloud):
+        with patch.object(cloud, '_site_api', return_value=({'response': None}, False)):
+            assert cloud.get_time_remaining() == 0.0
+
+    def test_none_response(self, cloud):
+        with patch.object(cloud, '_site_api', return_value=(None, False)):
+            assert cloud.get_time_remaining() is None
+
+    def test_valid_response(self, cloud):
+        payload = {'response': {'time_remaining_hours': 7.9}}
+        with patch.object(cloud, '_site_api', return_value=(payload, False)):
+            assert cloud.get_time_remaining() == 7.9

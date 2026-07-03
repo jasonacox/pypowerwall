@@ -259,8 +259,15 @@ class FleetAPI:
             self.site_id = config.get('site_id')
             # Check for valid site_id
             if not self.site_id:
-                sites = self.getsites()
-                self.site_id = sites[0]['energy_site_id']
+                # getsites() returns the products list which can be None (API error)
+                # and can mix in vehicles - select the first energy site
+                sites = self.getsites() or []
+                energy_sites = [s for s in sites if isinstance(s, dict)
+                                and s.get('energy_site_id') is not None]
+                if energy_sites:
+                    self.site_id = energy_sites[0]['energy_site_id']
+                else:
+                    log.error("No energy sites found in FleetAPI products list - site_id not set")
             log.debug(f"Configuration loaded: {self.configfile}")
             return config
         else:

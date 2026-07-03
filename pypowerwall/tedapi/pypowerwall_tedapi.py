@@ -529,7 +529,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         count_solar = 0
         # Check for PW3 data first
         if self.tedapi.pw3:
-            pw3_data = self.tedapi.get_pw3_vitals()
+            pw3_data = self.tedapi.get_pw3_vitals() or {}
             for p in pw3_data:
                 if p.startswith("PVAC--"):
                     v = pw3_data[p].get("PVAC_Vout")
@@ -540,8 +540,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
             if not p['packageSerialNumber']:
                 continue
-            v_solar_sum += lookup(p, ['PVAC_Status', 'PVAC_Vout'])
-            count_solar += 1
+            # PVAC_Vout can be missing/None - only count devices that report a voltage
+            # so the average is not dragged down by zeros
+            v = lookup(p, ['PVAC_Status', 'PVAC_Vout'])
+            if v:
+                v_solar_sum += v
+                count_solar += 1
         vll_solar = v_solar_sum / count_solar if count_solar else 0
         meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
         yi1 = meter_y.get("METER_Y_CTA_I", 0)
@@ -575,7 +579,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         count_battery = 0
         # Check for PW3 data first
         if self.tedapi.pw3:
-            pw3_data = self.tedapi.get_pw3_vitals()
+            pw3_data = self.tedapi.get_pw3_vitals() or {}
             for p in pw3_data:
                 if p.startswith("TEPINV--"):
                     v = pw3_data[p].get("PINV_Vout")

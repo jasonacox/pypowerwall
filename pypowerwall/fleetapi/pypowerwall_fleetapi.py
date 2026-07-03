@@ -218,8 +218,6 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         """
         Get list of Tesla Energy sites
         """
-        if self.siteid is None:
-            return None
         try:
             sitelist = self.fleet.getsites()
         except Exception as err:
