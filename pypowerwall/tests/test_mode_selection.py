@@ -216,3 +216,41 @@ class TestMode1Selection:
         )
         assert pw.tedapi_mode in ("hybrid", "off")
         mock_clients['local'].assert_called_once()
+
+
+class TestConnectFailureRestoresMode:
+    """A total connect() failure must not leave the mode fallback mutation
+    behind - the configured mode is retried first on the next connect()."""
+
+    def _fail_all(self, mock_clients):
+        for mock_cls in mock_clients.values():
+            mock_cls.return_value.authenticate.side_effect = ConnectionError('down')
+
+    def test_failed_connect_keeps_local_mode(self, mock_clients):
+        import pypowerwall
+        self._fail_all(mock_clients)
+        pw = pypowerwall.Powerwall(host="10.42.1.56", password="LNDYT")
+        # Fallback walked local -> fleetapi -> cloud, but the configured
+        # mode must be restored after total failure
+        assert pw.mode == "local"
+        assert pw.cloudmode is False
+        assert pw.fleetapi is False
+
+    def test_failed_connect_keeps_cloud_mode(self, mock_clients):
+        import pypowerwall
+        self._fail_all(mock_clients)
+        pw = pypowerwall.Powerwall(host="", password="", cloudmode=True)
+        assert pw.mode == "cloud"
+        assert pw.cloudmode is True
+        assert pw.fleetapi is False
+
+    def test_reconnect_after_failure_tries_configured_mode_first(self, mock_clients):
+        import pypowerwall
+        self._fail_all(mock_clients)
+        pw = pypowerwall.Powerwall(host="10.42.1.56", password="LNDYT")
+        assert pw.mode == "local"
+        # Second attempt succeeds - it must start with the configured (local) mode
+        for mock_cls in mock_clients.values():
+            mock_cls.return_value.authenticate.side_effect = None
+        assert pw.connect() is True
+        assert pw.mode == "local"

@@ -3,6 +3,8 @@
   the firmware version could not be determined (version() returned None)
 - negative caching stored None, which the cache-hit check treated as a miss,
   so failing endpoints (404/403/503) were re-requested on every poll
+- poll(api, raw=True) unconditionally reset raw to False, so the documented
+  raw-bytes mode never worked except on the internal vitals path
 """
 from unittest.mock import MagicMock, patch
 
@@ -45,6 +47,44 @@ def test_vitals_404_with_new_firmware_disables_vitals():
 
     assert result is None
     assert client.vitals_api is False
+
+
+def test_poll_raw_true_returns_bytes():
+    """poll(api, raw=True) must return raw response bytes (was forced to False)."""
+    client = _make_client()
+    response = MagicMock()
+    response.status_code = 200
+    response.raw.data = b'\x08\x01binary-payload'
+    client.session.get.return_value = response
+
+    assert client.poll('/api/status', raw=True) == b'\x08\x01binary-payload'
+    # The request must be streamed for raw mode
+    assert client.session.get.call_args.kwargs.get('stream') is True
+
+
+def test_poll_default_still_parses_json():
+    """Default (raw=False) behavior is unchanged - JSON payloads are parsed."""
+    client = _make_client()
+    response = MagicMock()
+    response.status_code = 200
+    response.text = '{"din": "123"}'
+    response.headers = {'Content-Type': 'application/json'}
+    client.session.get.return_value = response
+
+    assert client.poll('/api/status') == {'din': '123'}
+    assert client.session.get.call_args.kwargs.get('stream') is False
+
+
+def test_poll_vitals_internally_raw():
+    """The internal vitals path must still force raw mode (protobuf stream)."""
+    client = _make_client()
+    response = MagicMock()
+    response.status_code = 200
+    response.raw.data = b'protobuf-bytes'
+    client.session.get.return_value = response
+
+    assert client.poll('/api/devices/vitals') == b'protobuf-bytes'
+    assert client.session.get.call_args.kwargs.get('stream') is True
 
 
 def test_negative_cache_suppresses_refetch():

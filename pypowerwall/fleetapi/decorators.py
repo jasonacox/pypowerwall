@@ -1,19 +1,10 @@
-import functools
 import logging
+
+from pypowerwall.helpers import not_implemented_mock_data_factory
 
 log = logging.getLogger('pypowerwall.fleetapi.pypowerwall_fleetapi')
 WARNED_ONCE = {}
 
-
-def not_implemented_mock_data(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        if not WARNED_ONCE.get(func.__name__):
-            log.warning(f"This API [{func.__name__}] is using mock data in fleetapi mode. This message will be "
-                        "printed only once at the warning level.")
-            WARNED_ONCE[func.__name__] = 1
-        else:
-            log.debug(f"This API [{func.__name__}] is using mock data in fleetapi mode.")
-        return func(*args, **kwargs)
-
-    return wrapper
+# Thin shim - the shared implementation lives in pypowerwall.helpers;
+# this binds the fleetapi logger and mode string for the log messages
+not_implemented_mock_data = not_implemented_mock_data_factory(log, 'fleetapi', WARNED_ONCE)

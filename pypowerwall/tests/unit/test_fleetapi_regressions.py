@@ -172,3 +172,24 @@ def test_poll_does_not_cache_errors_or_history_urls(tmp_path, monkeypatch):
     # Normal endpoints still cache successful responses
     assert fleet.poll('api/1/products') == {'response': []}
     assert fleet.pwcache['api/1/products'] == {'response': []}
+
+
+class TestSimulatedVitalsAlerts:
+    """Simulated vitals used to inject an empty-string alert when
+    island_status was unrecognized, so Powerwall.alerts() returned ""."""
+
+    def _vitals(self, tmp_path, island_status, grid_status=None):
+        backend = PyPowerwallFleetAPI(email='test@example.com', authpath=str(tmp_path))
+        backend.fleet = MagicMock()
+        backend.fleet.get_site_info.return_value = {'id': 'PN--SN', 'version': '23.44.0'}
+        backend.fleet.get_live_status.return_value = {'island_status': island_status,
+                                                      'grid_status': grid_status}
+        return backend.get_vitals()
+
+    def test_unknown_island_status_no_empty_alert(self, tmp_path):
+        vitals = self._vitals(tmp_path, island_status='mystery_state')
+        assert vitals['STSTSM--PN--SN']['alerts'] == []
+
+    def test_on_grid_alert_present(self, tmp_path):
+        vitals = self._vitals(tmp_path, island_status='on_grid')
+        assert vitals['STSTSM--PN--SN']['alerts'] == ['SystemConnectedToGrid']

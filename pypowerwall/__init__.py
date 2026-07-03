@@ -36,7 +36,8 @@
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
     auto_select = False       # If True, select the best available mode to connect (default is False)
-    retry_modes = False       # If True, retry connection to Powerwall
+    retry_modes = False       # If True, retry connection to Powerwall - WARNING: blocks
+                                indefinitely until a connection succeeds (daemon use)
     gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
     wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
     
@@ -153,7 +154,8 @@ class Powerwall(object):
             cachefile    = Path to cache file (default current directory)
             fleetapi     = If True, use Tesla FleetAPI for data (default is False)
             auto_select  = If True, select the best available mode to connect (default is False)
-            retry_modes  = If True, retry connection to Powerwall
+            retry_modes  = If True, retry connection to Powerwall - WARNING: blocks
+                           indefinitely until a connection succeeds (daemon use)
             gw_pwd       = Full gateway password from QR sticker; used for TEDAPI (mode 4)
                            and auto-derived (last 5 chars) for v1r login (mode 5)
             rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
@@ -238,18 +240,33 @@ class Powerwall(object):
         """
         Connect to Tesla Energy Gateway Powerwall
 
+        Tries the configured mode first and falls back to the other modes
+        (local -> fleetapi -> cloud -> local) on failure. If every mode fails,
+        the configured mode is restored so a later connect() retries in the
+        configured order.
+
         Args:
-            retry = If True, retry connection to Powerwall
+            retry = If True, keep cycling through the modes until one connects.
+                    WARNING: this blocks the calling thread indefinitely (by
+                    design for daemon use, e.g. the proxy) - it only returns
+                    once a connection succeeds.
         """
         if self.mode == "unknown":
             log.error("Unable to determine mode to connect.")
             return False
+        # Snapshot the configured mode - fallback mutates self.mode/cloudmode/
+        # fleetapi, and a total failure must not leave that mutation behind
+        configured_mode = (self.mode, self.cloudmode, self.fleetapi)
+        total_wait = 0
         count = 0
         while count < 3:
             count += 1
             if retry and count == 3:
-                log.error("Failed to connect to Powerwall with all modes. Waiting 30s to retry.")
+                log.warning("Failed to connect to Powerwall with all modes. Waiting 30s to retry "
+                            "(retry enabled - blocking until a connection succeeds; "
+                            "%ds cumulative wait so far)." % total_wait)
                 time.sleep(30)
+                total_wait += 30
                 count = 0
             if self.mode == "local":
                 log.debug(f"password = {'[set]' if self.password else '[empty]'}, "
@@ -326,6 +343,9 @@ class Powerwall(object):
                     log.warning(f"Failed to connect using Cloud mode: {exc} - trying local mode.")
                     self.mode = "local"
                     continue
+        # Total failure - restore the configured mode so a subsequent
+        # connect() retries in the configured order, not where fallback left off
+        self.mode, self.cloudmode, self.fleetapi = configured_mode
         return False
 
     def _no_client(self) -> bool:

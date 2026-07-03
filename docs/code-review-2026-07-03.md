@@ -149,6 +149,8 @@ unless explicitly marked "maintainer decision".
 
 ## P4 — API inconsistencies (flag for maintainer decision; do not change silently)
 
+Status: safe subset fixed on fix/fable-5-review-findings; remaining shape inconsistencies documented in DESIGN.md (frozen public API).
+
 - **Failure shapes vary**: `None` vs `0.0` (`site()` etc. after parse failure) vs `{}` vs `[]` vs
   proxy literal `TIMEOUT!` body with HTTP 200. Downstream tools likely depend on some of these.
 - **`poll(api, raw=True)` is ignored in local mode** (`local/pypowerwall_local.py:139` zeroes it).

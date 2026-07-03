@@ -255,3 +255,102 @@ class TestConnectHygiene:
         ted.session = old_session
         self._run_connect(ted, 200)
         old_session.close.assert_called_once()
+
+
+class TestGetGridExportDefault:
+    """get_grid_export() must fall back to Tesla's default ("battery_ok") when
+    the config field is unset, matching cloud/fleetapi behavior."""
+
+    def _make_backend(self):
+        with patch('pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI'):
+            backend = PyPowerwallTEDAPI(gw_pwd='password')
+        return backend
+
+    def test_unset_field_returns_battery_ok(self):
+        backend = self._make_backend()
+        backend.tedapi.get_config.return_value = {'site_info': {}}
+        assert backend.get_grid_export() == 'battery_ok'
+
+    def test_explicit_value_passthrough(self):
+        backend = self._make_backend()
+        backend.tedapi.get_config.return_value = {
+            'site_info': {'customer_preferred_export_rule': 'pv_only'}
+        }
+        assert backend.get_grid_export() == 'pv_only'
+
+    def test_config_failure_returns_none(self):
+        backend = self._make_backend()
+        backend.tedapi.get_config.return_value = None
+        assert backend.get_grid_export() is None
+
+
+class TestPollVitalsForwardsForce:
+    """The '/vitals' poll-map entry must forward the force kwarg to
+    tedapi.vitals() (it used to route to vitals(), which dropped it)."""
+
+    def test_force_forwarded(self):
+        with patch('pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI'):
+            backend = PyPowerwallTEDAPI(gw_pwd='password')
+        backend.tedapi.vitals.return_value = {'VITALS': {}}
+        backend.poll('/vitals', force=True)
+        backend.tedapi.vitals.assert_called_once_with(force=True)
+
+
+class TestVitalsPhantomBlocks:
+    """When esCan.bus.SYNC is absent (typical PW3), vitals() used to emit
+    all-None TESYNC--None--None and TESLA--None blocks."""
+
+    def _make_ted(self, status):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.pw3 = False
+        ted.get_config = MagicMock(return_value={'vin': 'GW--123'})
+        ted.get_device_controller = MagicMock(return_value=status)
+        return ted
+
+    def _status(self, sync=None, msa=None):
+        return {
+            'control': {'alerts': {'active': []}},
+            'components': {'msa': []},
+            'esCan': {
+                'bus': {
+                    'PVAC': [],
+                    'PVS': [],
+                    'THC': [],
+                    'POD': [],
+                    'PINV': [],
+                    'SYNC': sync or {},
+                    'ISLANDER': {},
+                    'MSA': msa or {},
+                },
+            },
+        }
+
+    def test_no_sync_omits_phantom_blocks(self):
+        ted = self._make_ted(self._status())
+        vitals = ted.vitals()
+        assert vitals is not None
+        assert 'TESYNC--None--None' not in vitals
+        assert 'TESLA--None' not in vitals
+        assert not any(k.startswith('TESYNC--') for k in vitals)
+
+    def test_sync_present_emits_tesync(self):
+        sync = {
+            'packagePartNumber': 'SYNCPN',
+            'packageSerialNumber': 'SYNCSN',
+            'alerts': {'active': []},
+        }
+        ted = self._make_ted(self._status(sync=sync))
+        vitals = ted.vitals()
+        assert 'TESYNC--SYNCPN--SYNCSN' in vitals
+
+    def test_msa_present_emits_temsa_and_tesla(self):
+        msa = {
+            'packagePartNumber': 'MSAPN',
+            'packageSerialNumber': 'MSASN',
+            'alerts': {'active': []},
+        }
+        ted = self._make_ted(self._status(msa=msa))
+        vitals = ted.vitals()
+        assert 'TEMSA--MSAPN--MSASN' in vitals
+        assert 'TESLA--MSASN' in vitals

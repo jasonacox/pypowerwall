@@ -152,7 +152,6 @@ class PyPowerwallLocal(PyPowerwallBase):
              recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
 
         # Query powerwall and return payload
-        raw = False
         payload = None
         # Check cache
         if self.pwcache.get(api) is not None and self.pwcachetime.get(api) is not None:

@@ -120,7 +120,7 @@ Example: `pw.power()`
 There are up to four cache layers between a dashboard and the gateway:
 
 1. **Backend `pwcache`** (library) — per-URI response cache, TTL `pwcacheexpire` (default 5s). Local mode also negative-caches 404s (600s) and rate-limit cooldowns (300s). TEDAPI has separate TTLs for status (`pwcacheexpire`) and config (`pwconfigexpire`).
-2. **TEDAPI per-function locks** — the `@uses_api_lock` decorator attaches a `threading.Lock` to each fetch function; callers use `acquire_lock_with_backoff()` (jittered exponential backoff) and double-check the cache under the lock, so concurrent callers don't stampede the gateway.
+2. **TEDAPI per-function locks** — the `@uses_api_lock` decorator attaches a `threading.Lock` to each fetch function; callers use `acquire_lock_with_backoff()` (native lock timeout; raises `TimeoutError`, which call sites convert to cached data or `None`) and double-check the cache under the lock, so concurrent callers don't stampede the gateway.
 3. **Proxy performance cache** (`cached_route_handler` in [proxy/server.py](proxy/server.py)) — short-TTL response cache for hot routes (`/aggregates`, `/csv`, `/freq`, `/pod`, `/json`, `/vitals`, `/strings`, `/temps/pw`, `/alerts/pw`).
 4. **Proxy graceful-degradation cache** (`safe_endpoint_call`) — last-known-good responses served during gateway outages, TTL `PW_CACHE_TTL` (default 30s), size-capped.
 
@@ -176,6 +176,27 @@ These conventions are load-bearing — the proxy and downstream dashboards depen
 - **The proxy never lets an exception reach the client**: `safe_pw_call()` converts all library exceptions to `None` plus categorized, rate-limited logging.
 
 Known wart (do not "fix" casually — return shapes are public API): failure shapes are not fully consistent across methods and endpoints (`None` vs `0.0` vs `{}` vs `[]` vs the proxy's literal `TIMEOUT!` body). Changes here need a deprecation plan.
+
+### Known cross-backend inconsistencies
+
+These shapes differ between backends but are **frozen public API** — downstream consumers
+(Powerwall-Dashboard, Telegraf configs) depend on the current behavior of the backend they
+run against. Do not harmonize without a deprecation plan.
+
+| Surface | local | tedapi | cloud / fleetapi |
+|---|---|---|---|
+| `get_time_remaining()` when unknown | `None` | `None` | `0.0` |
+| `status()['git_hash']` | real value | `None` | hard-coded fake hash |
+| `grid_status()` reachable states | 7 states (UP, DOWN, SYNCING, ...) | UP/DOWN | UP/DOWN |
+| `system_status()['battery_blocks']` | real list | synthesized list | `[]` stub |
+
+Proxy-level inconsistencies (equally frozen):
+
+- `/fans` returns `null` on failure but `/fans/pw` returns `{}`.
+- Some GET error bodies return HTTP 200 with a literal error body (e.g. `TIMEOUT!`),
+  while POST errors map to 400/401.
+- `/soe` returns the raw gateway percentage; `/api/system_status/soe` returns the
+  Tesla-app scale — two different values for the same metric.
 
 ## Threading Model
 

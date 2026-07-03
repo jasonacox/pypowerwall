@@ -9,6 +9,7 @@ from pypowerwall.fleetapi.decorators import not_implemented_mock_data
 from pypowerwall.fleetapi.exceptions import * # pylint: disable=unused-wildcard-import
 from pypowerwall.fleetapi.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.fleetapi.stubs import *
+from pypowerwall.helpers import lookup
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 from pypowerwall import __version__
 
@@ -37,20 +38,8 @@ def set_debug(debug=False, quiet=False, color=True):
         log.setLevel(logging.NOTSET)
 
 
-def lookup(data, keylist):
-    """
-    Lookup a value in a nested dictionary or return None if not found.
-        data - nested dictionary
-        keylist - list of keys to traverse
-    """
-    if len(keylist) == 1:
-        return data.get(keylist[0])
-    for key in keylist:
-        if key in data:
-            data = data[key]
-        else:
-            return None
-    return data
+# lookup() is re-exported here for backward compatibility - the shared
+# None-safe implementation lives in pypowerwall.helpers
 
 
 # pylint: disable=too-many-public-methods
@@ -540,9 +529,9 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
                         'ecuType': 207
                     },
                     'STSTSM-Location': 'Simulated',
-                    'alerts': [
-                        alert
-                    ]
+                    # Only include the alert when one was determined - an empty
+                    # string would otherwise surface as "" in alerts()
+                    'alerts': [alert] if alert else []
                 }
             }
         return data

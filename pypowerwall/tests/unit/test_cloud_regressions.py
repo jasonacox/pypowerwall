@@ -125,3 +125,37 @@ class TestGetTimeRemaining:
         payload = {'response': {'time_remaining_hours': 7.9}}
         with patch.object(cloud, '_site_api', return_value=(payload, False)):
             assert cloud.get_time_remaining() == 7.9
+
+
+class TestSimulatedVitalsAlerts:
+    """Simulated vitals used to inject an empty-string alert when
+    island_status was unrecognized, so Powerwall.alerts() returned ""."""
+
+    def _vitals(self, cloud, island_status, grid_status=None):
+        config = {'response': {'id': 'PN--SN', 'version': '23.44.0'}}
+        power = {'response': {'island_status': island_status,
+                              'grid_status': grid_status}}
+        with patch.object(cloud, 'get_site_config', return_value=config), \
+             patch.object(cloud, 'get_site_power', return_value=power):
+            return cloud.get_vitals()
+
+    def test_unknown_island_status_no_empty_alert(self, cloud):
+        vitals = self._vitals(cloud, island_status='mystery_state')
+        assert vitals['STSTSM--PN--SN']['alerts'] == []
+
+    def test_on_grid_alert_present(self, cloud):
+        vitals = self._vitals(cloud, island_status='on_grid')
+        assert vitals['STSTSM--PN--SN']['alerts'] == ['SystemConnectedToGrid']
+
+    def test_alerts_facade_no_empty_string(self, cloud):
+        """Powerwall.alerts() with these vitals must not contain ""."""
+        from unittest.mock import MagicMock as MM
+        import pypowerwall
+        vitals = self._vitals(cloud, island_status='mystery_state')
+        pw = pypowerwall.Powerwall(host='', password='', email='test@example.com',
+                                   cloudmode=True)
+        pw.client = MM()
+        pw.client.vitals.return_value = vitals
+        pw.client.poll.return_value = None  # no grid_status augmentation
+        alerts = pw.alerts()
+        assert '' not in alerts

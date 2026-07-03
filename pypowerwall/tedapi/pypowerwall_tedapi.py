@@ -127,7 +127,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "/api/system_status": self.get_api_system_status,
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
             "/api/system_status/soe": self.get_api_system_status_soe,
-            "/vitals": self.vitals,
+            "/vitals": self.get_vitals,  # forwards the force kwarg (vitals() drops it)
             # Possible Actions
             "/api/login/Basic": self.api_login_basic,
             "/api/logout": self.api_logout,
@@ -833,7 +833,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         config = self.tedapi.get_config(force=force)
         if not isinstance(config, dict):
             return None
-        return lookup(config, ["site_info", "customer_preferred_export_rule"])
+        # Field is unset when the site uses Tesla's default export rule - fall
+        # back to "battery_ok" to match cloud/fleetapi behavior
+        return lookup(config, ["site_info", "customer_preferred_export_rule"]) or "battery_ok"
 
     def set_grid_export(self, mode: str) -> Optional[bool]:
         """Set grid export mode via LAN config write."""
