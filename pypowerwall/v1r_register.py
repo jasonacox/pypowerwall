@@ -163,7 +163,9 @@ def generate_rsa_key(authpath=""):
     )
     if authpath:
         os.makedirs(authpath, exist_ok=True)
-    with open(private_key_file, "wb") as f:
+    # Create with 0o600 at open time (owner-only) - chmod-after-write leaves
+    # a window where the private key is world-readable
+    with open(os.open(private_key_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as f:
         f.write(pem)
     os.chmod(private_key_file, 0o600)
 
@@ -255,7 +257,8 @@ def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api
 
     # Save tokens
     tokens["obtained_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    with open(tokens_file, "w") as f:
+    # Create with 0o600 at open time - avoid chmod-after-write race
+    with open(os.open(tokens_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
         json.dump(tokens, f, indent=2)
     os.chmod(tokens_file, 0o600)
 
@@ -572,7 +575,8 @@ def owner_api_login(email=None, authpath="", force_reauth=False):
                         sso.update(new_data)
                         sso["expires_at"] = int(_time.time() + new_data.get("expires_in", 28800))
                         cache[cached_email]["sso"] = sso
-                        with open(authfile, "w") as f:
+                        # Create with 0o600 at open time - avoid chmod-after-write race
+                        with open(os.open(authfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
                             json.dump(cache, f, indent=2)
                         os.chmod(authfile, 0o600)
                         print(f"  Token refreshed successfully.")

@@ -1,0 +1,369 @@
+"""Regression tests for TEDAPI backend bugs:
+- available_blocks read control.batteryBlocks from config instead of status (always 0)
+- get_blocks() returning None crashed get_api_system_status()
+- PINV_GridState was looked up in the THC entry instead of the PINV entry
+"""
+from unittest.mock import MagicMock, patch
+
+from pypowerwall.tedapi import TEDAPI
+from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
+
+
+class TestGetApiSystemStatus:
+
+    def _make_backend(self):
+        with patch('pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI') as mock_tedapi_class:
+            backend = PyPowerwallTEDAPI(gw_pwd='password')
+        assert backend.tedapi is mock_tedapi_class.return_value
+        return backend
+
+    def test_available_blocks_from_status(self):
+        backend = self._make_backend()
+        backend.tedapi.get_status.return_value = {
+            'control': {
+                'batteryBlocks': [{'din': 'PW1'}, {'din': 'PW2'}],
+                'systemStatus': {
+                    'nominalFullPackEnergyWh': 27000,
+                    'nominalEnergyRemainingWh': 13500,
+                },
+                'alerts': {'active': ['SystemConnectedToGrid']},
+            },
+        }
+        backend.tedapi.get_config.return_value = {'vin': 'GW--123'}  # no batteryBlocks here
+        backend.tedapi.get_blocks.return_value = {'PW1': {'Type': 'battery'}}
+
+        data = backend.get_api_system_status()
+        assert data['available_blocks'] == 2
+        assert data['blocks_controlled'] == 2
+        assert data['battery_blocks'] == [{'Type': 'battery'}]
+
+    def test_get_blocks_none_does_not_crash(self):
+        backend = self._make_backend()
+        backend.tedapi.get_status.return_value = {
+            'control': {
+                'batteryBlocks': [{'din': 'PW1'}],
+                'systemStatus': {},
+                'alerts': {'active': []},
+            },
+        }
+        backend.tedapi.get_config.return_value = {'vin': 'GW--123'}
+        backend.tedapi.get_blocks.return_value = None  # gateway outage
+
+        data = backend.get_api_system_status()  # used to raise TypeError
+        assert data['available_blocks'] == 1
+        assert data['battery_blocks'] == []
+
+
+class TestVitalsPinvGridState:
+
+    def test_pinv_grid_state_from_pinv_entry(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.pw3 = False
+        config = {'vin': 'GW--123'}
+        status = {
+            'control': {'alerts': {'active': []}},
+            'components': {'msa': []},
+            'esCan': {
+                'bus': {
+                    'PVAC': [],
+                    'PVS': [],
+                    'THC': [{
+                        'packagePartNumber': 'X1',
+                        'packageSerialNumber': 'S1',
+                        'alerts': {'active': []},
+                    }],
+                    'POD': [{
+                        'POD_EnergyStatus': {
+                            'POD_nom_energy_remaining': 1000,
+                            'POD_nom_full_pack_energy': 2000,
+                        },
+                    }],
+                    'PINV': [{
+                        'PINV_Status': {
+                            'PINV_GridState': 'Grid_Compliant',
+                            'PINV_State': 'PINV_GridFollowing',
+                        },
+                    }],
+                    'SYNC': {},
+                    'ISLANDER': {},
+                    'MSA': {},
+                },
+            },
+        }
+        ted.get_config = MagicMock(return_value=config)
+        ted.get_device_controller = MagicMock(return_value=status)
+
+        vitals = ted.vitals()
+        assert vitals is not None
+        pinv = vitals['TEPINV--X1--S1']
+        # Regression: was looked up in the THC entry ('p') and always None
+        assert pinv['PINV_GridState'] == 'Grid_Compliant'
+        assert pinv['PINV_State'] == 'PINV_GridFollowing'
+
+
+class TestNoneConfigGuards:
+    """get_pw3_vitals()/get_battery_blocks() must not crash when get_config()
+    returns None (gateway outage or lock timeout)."""
+
+    def _make_tedapi(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.din = '1707000-11-J--TG123456789012'
+        return ted
+
+    def test_get_pw3_vitals_none_config(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_components', return_value={'pch': []}), \
+             patch.object(ted, 'get_config', return_value=None):
+            # Used to raise TypeError on config['battery_blocks']
+            assert ted.get_pw3_vitals() is None
+
+    def test_get_pw3_vitals_config_without_battery_blocks(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_components', return_value={'pch': []}), \
+             patch.object(ted, 'get_config', return_value={'vin': 'GW--123'}):
+            assert ted.get_pw3_vitals() == {}
+
+    def test_get_battery_blocks_none_config(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_config', return_value=None):
+            # Used to raise AttributeError on None.get()
+            assert ted.get_battery_blocks() == []
+
+
+class TestVitalsPodPinvBoundsGuard:
+    """POD/PINV lists shorter than the THC list must not raise IndexError."""
+
+    def test_vitals_missing_pod_pinv_entries(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.pw3 = False
+        config = {'vin': 'GW--123'}
+        status = {
+            'control': {'alerts': {'active': []}},
+            'components': {'msa': []},
+            'esCan': {
+                'bus': {
+                    'PVAC': [],
+                    'PVS': [],
+                    'THC': [{
+                        'packagePartNumber': 'X1',
+                        'packageSerialNumber': 'S1',
+                        'alerts': {'active': []},
+                    }],
+                    'POD': [],   # shorter than THC
+                    'PINV': [],  # shorter than THC
+                    'SYNC': {},
+                    'ISLANDER': {},
+                    'MSA': {},
+                },
+            },
+        }
+        ted.get_config = MagicMock(return_value=config)
+        ted.get_device_controller = MagicMock(return_value=status)
+
+        vitals = ted.vitals()  # used to raise IndexError
+        assert vitals is not None
+        assert vitals['TEPOD--X1--S1']['POD_nom_energy_remaining'] is None
+        assert vitals['TEPINV--X1--S1']['PINV_Pout'] is None
+
+
+class TestApiLockTimeout:
+    """Lock contention must degrade to cached-data/None, not raise
+    TimeoutError out of poll()/vitals()."""
+
+    def _make_tedapi(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.din = 'DIN--X'
+        return ted
+
+    def test_get_status_lock_timeout_returns_cached(self):
+        ted = self._make_tedapi()
+        ted.pwcache['status'] = {'cached': True}
+        with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
+            assert ted.get_status() == {'cached': True}  # used to raise TimeoutError
+
+    def test_get_status_lock_timeout_no_cache_returns_none(self):
+        ted = self._make_tedapi()
+        ted.pwcache.pop('status', None)
+        with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
+            assert ted.get_status() is None
+
+    def test_get_config_lock_timeout_returns_cached(self):
+        ted = self._make_tedapi()
+        ted.pwcache['config'] = {'vin': 'GW--123'}
+        with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
+            assert ted.get_config() == {'vin': 'GW--123'}
+
+
+class TestConnectHygiene:
+    """connect() session/PW3-detection hygiene:
+    - any non-200 on GET / used to flip PW3 mode (429/503 misclassified a PW2)
+    - repeated connect() calls used to rebuild the session (and leak the old
+      one) even when a DIN was already known
+    """
+
+    def _make_tedapi(self):
+        with patch.object(TEDAPI, 'connect', return_value='DIN'):
+            ted = TEDAPI(gw_pwd='password')
+        return ted
+
+    def _run_connect(self, ted, status_code):
+        response = MagicMock()
+        response.status_code = status_code
+        session = MagicMock()
+        session.get.return_value = response
+        with patch.object(ted, '_init_session', return_value=session), \
+             patch.object(ted, 'get_din', return_value='TEST_DIN'):
+            return ted.connect(force=True)
+
+    def test_403_detected_as_pw3(self):
+        ted = self._make_tedapi()
+        assert self._run_connect(ted, 403) == 'TEST_DIN'
+        assert ted.pw3 is True
+
+    def test_404_detected_as_pw3(self):
+        """PW3 firmware variants answer GET / with 404 instead of 403 - any
+        non-transient non-200 must be treated as the PW3 signature
+        (regression: /pod lost battery data in TEDAPI WiFi mode)."""
+        ted = self._make_tedapi()
+        assert self._run_connect(ted, 404) == 'TEST_DIN'
+        assert ted.pw3 is True
+
+    def test_503_does_not_flip_pw3(self):
+        """Transient gateway errors must not misclassify a PW2 as PW3."""
+        ted = self._make_tedapi()
+        assert self._run_connect(ted, 503) == 'TEST_DIN'
+        assert ted.pw3 is False
+
+    def test_503_keeps_prior_pw3_true(self):
+        ted = self._make_tedapi()
+        ted.pw3 = True
+        self._run_connect(ted, 503)
+        assert ted.pw3 is True
+
+    def test_connect_noop_when_already_connected(self):
+        """connect() must not rebuild the session when DIN+session exist."""
+        ted = self._make_tedapi()
+        ted.din = 'TEST_DIN'
+        ted.session = MagicMock()
+        with patch.object(ted, '_init_session') as mock_init, \
+             patch.object(ted, 'get_din') as mock_din:
+            assert ted.connect() == 'TEST_DIN'
+        mock_init.assert_not_called()
+        mock_din.assert_not_called()
+
+    def test_connect_force_closes_previous_session(self):
+        """A forced reconnect must close the old session before replacing it."""
+        ted = self._make_tedapi()
+        ted.din = 'TEST_DIN'
+        old_session = MagicMock()
+        ted.session = old_session
+        self._run_connect(ted, 200)
+        old_session.close.assert_called_once()
+
+
+class TestGetGridExportDefault:
+    """get_grid_export() must fall back to Tesla's default ("battery_ok") when
+    the config field is unset, matching cloud/fleetapi behavior."""
+
+    def _make_backend(self):
+        with patch('pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI'):
+            backend = PyPowerwallTEDAPI(gw_pwd='password')
+        return backend
+
+    def test_unset_field_returns_battery_ok(self):
+        backend = self._make_backend()
+        backend.tedapi.get_config.return_value = {'site_info': {}}
+        assert backend.get_grid_export() == 'battery_ok'
+
+    def test_explicit_value_passthrough(self):
+        backend = self._make_backend()
+        backend.tedapi.get_config.return_value = {
+            'site_info': {'customer_preferred_export_rule': 'pv_only'}
+        }
+        assert backend.get_grid_export() == 'pv_only'
+
+    def test_config_failure_returns_none(self):
+        backend = self._make_backend()
+        backend.tedapi.get_config.return_value = None
+        assert backend.get_grid_export() is None
+
+
+class TestPollVitalsForwardsForce:
+    """The '/vitals' poll-map entry must forward the force kwarg to
+    tedapi.vitals() (it used to route to vitals(), which dropped it)."""
+
+    def test_force_forwarded(self):
+        with patch('pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI'):
+            backend = PyPowerwallTEDAPI(gw_pwd='password')
+        backend.tedapi.vitals.return_value = {'VITALS': {}}
+        backend.poll('/vitals', force=True)
+        backend.tedapi.vitals.assert_called_once_with(force=True)
+
+
+class TestVitalsPhantomBlocks:
+    """When esCan.bus.SYNC is absent (typical PW3), vitals() emits
+    TESYNC--None--None and TESLA--None blocks. Despite the odd names these
+    are FROZEN behavior: TESLA--None's componentParentDin (STSTSM--<vin>) is
+    the only place the gateway DIN/serial appears in TEDAPI vitals and
+    consumers depend on it (hardware regression, PR #349)."""
+
+    def _make_ted(self, status):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='password')
+        ted.pw3 = False
+        ted.get_config = MagicMock(return_value={'vin': 'GW--123'})
+        ted.get_device_controller = MagicMock(return_value=status)
+        return ted
+
+    def _status(self, sync=None, msa=None):
+        return {
+            'control': {'alerts': {'active': []}},
+            'components': {'msa': []},
+            'esCan': {
+                'bus': {
+                    'PVAC': [],
+                    'PVS': [],
+                    'THC': [],
+                    'POD': [],
+                    'PINV': [],
+                    'SYNC': sync or {},
+                    'ISLANDER': {},
+                    'MSA': msa or {},
+                },
+            },
+        }
+
+    def test_no_sync_still_emits_tesla_block_with_gateway_din(self):
+        """TESLA--None must be emitted even without SYNC data - its
+        componentParentDin carries the gateway DIN/serial."""
+        ted = self._make_ted(self._status())
+        vitals = ted.vitals()
+        assert vitals is not None
+        assert 'TESYNC--None--None' in vitals
+        assert 'TESLA--None' in vitals
+        assert vitals['TESLA--None']['componentParentDin'] == 'STSTSM--GW--123'
+
+    def test_sync_present_emits_tesync(self):
+        sync = {
+            'packagePartNumber': 'SYNCPN',
+            'packageSerialNumber': 'SYNCSN',
+            'alerts': {'active': []},
+        }
+        ted = self._make_ted(self._status(sync=sync))
+        vitals = ted.vitals()
+        assert 'TESYNC--SYNCPN--SYNCSN' in vitals
+
+    def test_msa_present_emits_temsa_and_tesla(self):
+        msa = {
+            'packagePartNumber': 'MSAPN',
+            'packageSerialNumber': 'MSASN',
+            'alerts': {'active': []},
+        }
+        ted = self._make_ted(self._status(msa=msa))
+        vitals = ted.vitals()
+        assert 'TEMSA--MSAPN--MSASN' in vitals
+        assert 'TESLA--MSASN' in vitals

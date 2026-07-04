@@ -1,13 +1,10 @@
 import logging
-import random
 import threading
-import time
-from collections import defaultdict
 from contextlib import contextmanager
-from typing import DefaultDict
 
 log = logging.getLogger(__name__)
 
+# pylint: disable=unused-argument
 def acquire_with_exponential_backoff(
     lock: threading.Lock,
     timeout: float,
@@ -17,41 +14,31 @@ def acquire_with_exponential_backoff(
     jitter: float = 0.1
 ) -> bool:
     """
-    Attempts to acquire a lock using exponential backoff with jitter.
+    Attempts to acquire a lock, waiting up to timeout seconds.
 
-    This function repeatedly attempts to acquire the given lock without blocking.
-    If the lock is not immediately available, it waits for a delay period that increases
-    exponentially with each attempt, plus a random jitter to reduce contention. The process
-    continues until the lock is acquired or the total elapsed time exceeds the specified timeout.
+    This now uses the native (C-level) blocking acquire with a timeout, which
+    wakes up as soon as the lock is released. The previous implementation
+    polled with exponentially increasing sleeps, which could add up to ~2s of
+    idle latency after the lock was already free.
+
+    The backoff parameters (initial_delay, factor, max_delay, jitter) are kept
+    for signature compatibility but are no longer used - the kernel-level wait
+    has no polling delay to tune.
 
     Args:
         lock (threading.Lock): The lock instance to acquire.
-        timeout (float): The total time (in seconds) to keep trying to acquire the lock.
-        initial_delay (float, optional): The initial delay (in seconds) before retrying after a failed attempt. Defaults to 0.1.
-        factor (int, optional): The multiplier for the delay after each failed attempt. Defaults to 2.
-        max_delay (int, optional): The maximum delay (in seconds) between retries. Defaults to 2.
-        jitter (float, optional): The maximum additional random delay (in seconds) added to each sleep interval. Defaults to 0.1.
+        timeout (float): The maximum time (in seconds) to wait for the lock.
 
     Returns:
         bool: True if the lock was acquired within the timeout period, otherwise False.
     """
-    start_time = time.perf_counter()
-    delay = initial_delay
-
-    # Continue trying until the elapsed time exceeds the timeout
-    elapsed = time.perf_counter() - start_time
-    while elapsed < timeout:
-        if lock.acquire(blocking=False):
-            return True
-        remaining_time = timeout - elapsed
-        # Ensure we don't sleep past the timeout and add a bit of random jitter
-        sleep_time = min(delay, remaining_time) + random.uniform(0, jitter)
-        time.sleep(sleep_time)
-        delay = min(delay * factor, max_delay)
-        log.debug(f"Timeout for {lock}")
-        elapsed = time.perf_counter() - start_time
-
-    return False
+    if timeout is None or timeout <= 0:
+        # Preserve prior behavior: a non-positive timeout never acquires
+        return False
+    acquired = lock.acquire(timeout=timeout)
+    if not acquired:
+        log.debug(f"Unable to acquire {lock} within {timeout}s")
+    return acquired
 
 
 @contextmanager

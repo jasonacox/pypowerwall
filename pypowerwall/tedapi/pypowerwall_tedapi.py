@@ -127,7 +127,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "/api/system_status": self.get_api_system_status,
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
             "/api/system_status/soe": self.get_api_system_status_soe,
-            "/vitals": self.vitals,
+            "/vitals": self.get_vitals,  # forwards the force kwarg (vitals() drops it)
             # Possible Actions
             "/api/login/Basic": self.api_login_basic,
             "/api/logout": self.api_logout,
@@ -529,7 +529,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         count_solar = 0
         # Check for PW3 data first
         if self.tedapi.pw3:
-            pw3_data = self.tedapi.get_pw3_vitals()
+            pw3_data = self.tedapi.get_pw3_vitals() or {}
             for p in pw3_data:
                 if p.startswith("PVAC--"):
                     v = pw3_data[p].get("PVAC_Vout")
@@ -540,8 +540,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         for p in lookup(status, ['esCan', 'bus', 'PVAC']) or {}:
             if not p['packageSerialNumber']:
                 continue
-            v_solar_sum += lookup(p, ['PVAC_Status', 'PVAC_Vout'])
-            count_solar += 1
+            # PVAC_Vout can be missing/None - only count devices that report a voltage
+            # so the average is not dragged down by zeros
+            v = lookup(p, ['PVAC_Status', 'PVAC_Vout'])
+            if v:
+                v_solar_sum += v
+                count_solar += 1
         vll_solar = v_solar_sum / count_solar if count_solar else 0
         meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
         yi1 = meter_y.get("METER_Y_CTA_I", 0)
@@ -575,7 +579,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         count_battery = 0
         # Check for PW3 data first
         if self.tedapi.pw3:
-            pw3_data = self.tedapi.get_pw3_vitals()
+            pw3_data = self.tedapi.get_pw3_vitals() or {}
             for p in pw3_data:
                 if p.startswith("TEPINV--"):
                     v = pw3_data[p].get("PINV_Vout")
@@ -625,10 +629,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         grid_status = self.extract_grid_status(status)
         total_pack_energy = lookup(status, ["control", "systemStatus", "nominalFullPackEnergyWh"])
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
-        batteryBlocks = lookup(config, ["control", "batteryBlocks"]) or []
+        batteryBlocks = lookup(status, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
-        blocks = self.tedapi.get_blocks(force=force)
+        blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
         for bk in blocks:
             b.append(blocks[bk])
@@ -754,6 +758,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return None
 
     def close_session(self):
+        # Close the underlying requests.Session to the Gateway
+        if self.tedapi:
+            self.tedapi.close_session()
         return True
 
     def vitals(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
@@ -826,7 +833,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         config = self.tedapi.get_config(force=force)
         if not isinstance(config, dict):
             return None
-        return lookup(config, ["site_info", "customer_preferred_export_rule"])
+        # Field is unset when the site uses Tesla's default export rule - fall
+        # back to "battery_ok" to match cloud/fleetapi behavior
+        return lookup(config, ["site_info", "customer_preferred_export_rule"]) or "battery_ok"
 
     def set_grid_export(self, mode: str) -> Optional[bool]:
         """Set grid export mode via LAN config write."""

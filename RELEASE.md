@@ -1,5 +1,24 @@
 # RELEASE NOTES
 
+## v0.16.0 - Code Review Fixes: Correctness, Security, and Robustness
+
+Full-codebase review sweep (see `docs/code-review-2026-07-03.md` for the complete findings). 104 new regression tests (227 passing, up from 123). No public API signatures or return shapes changed. Hardware-verified against production proxies with `proxy/regression_test.py`: all 76 non-control endpoints byte-compatible across TEDAPI WiFi, v1r+WiFi hybrid, Cloud, and FleetAPI modes.
+
+* fix(core): `set_operation()`/`set_mode()` no longer silently lowers the real battery reserve — the reserve back-fill is now scale-aware per backend (raw for local, app-scale for cloud/fleetapi/tedapi) and guards an unreadable reserve
+* fix(core): `alerts(alertsonly=False)` crashed with `TypeError` since introduction; device alerts now returned as `{device: alert}` dicts as documented
+* fix(core): a fully-failed `connect()` no longer leaves the facade without a client (raw `AttributeError` on every call) or with a mutated fallback mode; `retry_modes` indefinite blocking documented
+* fix(fleetapi): token refresh could permanently wedge the client via a stuck `refreshing` flag; now lock-based with proper error handling
+* fix(fleetapi): reuse one HTTP/2 client (was a TLS handshake per request); never re-send a POST via the HTTP/1.1 fallback after it may have been transmitted (duplicate write commands); stop caching errors and unique history URLs
+* fix(tedapi): `available_blocks` always 0 (read from wrong payload); `PINV_GridState` always None (copy-paste); PW3 vitals None-crashes; POD/PINV bounds guards; lock timeouts return cached data instead of raising; 429/5xx no longer misclassifies PW2 as PW3; sessions closed on reconnect and `close_session()` (note: `TESYNC--None--None`/`TESLA--None` vitals blocks are intentionally kept - `TESLA--None` carries the gateway DIN in `componentParentDin`)
+* fix(cloud): `set_grid_charging`/`set_grid_export` returned a raw tuple; `post_api_operation` failed on partial payloads and `False` reserve; racy `_site_api` flag replaced with real per-name locks; sitefile parse failure falls back to auto-select
+* fix(local): documented `poll(api, raw=True)` now works; negative caching (404/403/503) now actually suppresses re-requests; missing Content-Type and None firmware version no longer raise
+* fix(security): credential files (`.pypowerwall.auth`, `.pypowerwall.fleetapi`, `.powerwall`, v1r RSA keys/tokens) created with `0600` permissions atomically; tokens/secrets redacted from debug logs
+* fix(cli): `-local` without `-host` errors clearly instead of silently using cloud mode; `set -current` handles unavailable battery level
+* feat(docs): new `AGENTS.md` and `DESIGN.md` (architecture, conventions, invariants for contributors and AI agents); README/API docs corrected against the code
+* refactor: shared None-safe `lookup()` and mock-data decorator in `pypowerwall/helpers.py` (ends three-way copy drift; existing import paths preserved)
+* Proxy hardened separately — see `proxy/RELEASE.md` t95
+* Bump library version to `0.16.0` (minor bump to signal the breadth of behavioral fixes; no public API signatures or return shapes changed)
+
 ## v0.15.13 - Fleet API HTTP/2 Upgrade
 
 * feat(fleetapi): upgrade Fleet API transport to HTTP/2 with TLS 1.3 (#338)

@@ -112,6 +112,10 @@ def _build_powerwall(args, authpath):
         host = args.host or "192.168.91.1"
         return pypowerwall.Powerwall(host=host, gw_pwd=args.gw_pwd, authpath=authpath)
     if getattr(args, 'local', False):
+        if not args.host:
+            # Powerwall(host="") silently flips to cloud mode - reject instead
+            print("ERROR: -local requires -host <gateway_ip>")
+            sys.exit(1)
         return pypowerwall.Powerwall(host=args.host, password=args.password, authpath=authpath)
     if getattr(args, 'cloud', False):
         auth_file = os.path.join(authpath, ".pypowerwall.auth") if authpath else ".pypowerwall.auth"
@@ -786,7 +790,11 @@ def main():
                 if actual is not None and actual <= 80:
                     print(f"NOTE: Tesla capped reserve at {actual}% instead of {reserve}%.")
         if args.current:
-            current = float(pw.level())
+            level = pw.level()
+            if level is None:
+                print("ERROR: Unable to read current battery level from Powerwall")
+                sys.exit(1)
+            current = float(level)
             if current > 80 and pw.mode in ('cloud', 'fleetapi'):
                 print(f"WARNING: Tesla cloud/FleetAPI limits backup reserve to 80% max. "
                       f"Current charge is {current:.0f}% but Tesla may cap reserve at 80%. "

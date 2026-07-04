@@ -16,3 +16,13 @@ def test_parse_version_weird_chars():
     v = parse_version('v23.44.1-build')
     # 23.44.1 -> reversed [1,44,23] => 1 + 44*100 + 23*10000
     assert v == 1 + 44*100 + 23*10000
+
+def test_parse_version_no_digits():
+    # Gateway can report "unknown" - used to raise ValueError on int('')
+    assert parse_version('unknown') is None
+
+def test_parse_version_empty_string():
+    assert parse_version('') is None
+
+def test_parse_version_non_string():
+    assert parse_version(12345) is None

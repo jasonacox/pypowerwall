@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 from typing import Union, Tuple, Optional, Any
 
@@ -13,6 +14,11 @@ from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
 from pypowerwall.tedapi import TEDAPI, GW_IP
 
 log = logging.getLogger(__name__)
+
+# Sentinel for negative cache entries (failed endpoints like 404/403/503).
+# Must be distinct from None: _invalidate_cache() in pypowerwall_base.py sets
+# pwcache[key] = None to force a re-fetch, so None always means "cache miss".
+_NEG_CACHE = object()
 
 
 class PyPowerwallLocal(PyPowerwallBase):
@@ -94,7 +100,8 @@ class PyPowerwallLocal(PyPowerwallBase):
                  "email": self.email, "clientInfo": {"timezone": self.timezone}}
         try:
             r = self.session.post(url, data=pload, verify=False, timeout=self.timeout)
-            log.debug('login - %s' % r.text)
+            # Do not log the response body - it contains the auth token/cookies
+            log.debug('login - HTTP %s' % r.status_code)
         except Exception as exc:
             err = f"Unable to connect to Powerwall at https://{self.host}: {exc}"
             log.error(f'{err} - check that the gateway is reachable on the network')
@@ -108,7 +115,9 @@ class PyPowerwallLocal(PyPowerwallBase):
             else:
                 self.auth = {'AuthCookie': r.cookies['AuthCookie'], 'UserRecord': r.cookies['UserRecord']}
             try:
-                f = open(self.cachefile, "w")
+                # Cache file holds the auth cookie/bearer token - create with
+                # 0o600 (owner-only) permissions at open time
+                f = open(os.open(self.cachefile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w")
                 json.dump(self.auth, f)
                 f.close()
             except Exception as exc:
@@ -131,20 +140,33 @@ class PyPowerwallLocal(PyPowerwallBase):
             self.session.get(url, cookies=self.auth, verify=False, timeout=self.timeout)
 
         self.auth = {}
+        # Close hybrid-mode TEDAPI session if in use
+        if self.tedapi:
+            self.tedapi.close_session()
+        # Close the underlying requests.Session - when poolmaxsize is 0
+        # self.session is the requests module itself and has nothing to close
+        if isinstance(self.session, requests.Session):
+            self.session.close()
 
     def poll(self, api: str, force: bool = False,
              recursive: bool = False, raw: bool = False) -> Optional[Union[dict, list, str, bytes]]:
 
         # Query powerwall and return payload
-        raw = False
         payload = None
         # Check cache
         if self.pwcache.get(api) is not None and self.pwcachetime.get(api) is not None:
             # is it expired?
             if time.perf_counter() - self.pwcachetime[api] < self.pwcacheexpire:
-                payload = self.pwcache[api]
-                log.debug(' -- local: Returning cached %s' % api)
-                # We do the override here to ensure that we cache the force entry
+                if self.pwcache[api] is _NEG_CACHE:
+                    # Negative cache hit - endpoint recently failed (404/403/503);
+                    # suppress re-requests until the entry expires (force overrides)
+                    if not force:
+                        log.debug(' -- local: Returning cached error (None) for %s' % api)
+                        return None
+                else:
+                    payload = self.pwcache[api]
+                    log.debug(' -- local: Returning cached %s' % api)
+                    # We do the override here to ensure that we cache the force entry
 
         if not payload or force:
             if self.pwcooldown > time.perf_counter():
@@ -182,13 +204,13 @@ class PyPowerwallLocal(PyPowerwallBase):
                 if api == '/api/devices/vitals':
                     # Check Powerwall Firmware version
                     version = self.version(int_value=True)
-                    if version >= 23440:
+                    if version is not None and version >= 23440:
                         # Vitals API not available for Firmware >= 23.44.0
                         self.vitals_api = False
                         log.error('Firmware %s detected - Does not support vitals API - disabling.' % version)
                         # Cache and increase cache TTL by 10 minutes
                 self.pwcachetime[api] = time.perf_counter() + 600
-                self.pwcache[api] = None
+                self.pwcache[api] = _NEG_CACHE
                 return None
             elif r.status_code == 429:
                 # Rate limited - Switch to cooldown mode for 5 minutes
@@ -212,7 +234,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                         log.error('403 Unauthorized by Powerwall API at %s - Endpoint disabled in this firmware or '
                                   'user lacks permission' % url)
                     self.pwcachetime[api] = time.perf_counter() + 600
-                    self.pwcache[api] = None
+                    self.pwcache[api] = _NEG_CACHE
                     return None
             elif 400 <= r.status_code < 500:
                 log.error('Unhandled HTTP response code %s at %s' % (r.status_code, url))
@@ -220,7 +242,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             elif r.status_code == 503:
                 log.error('503 Service Unavailable at %s - Activating 5 minute API cooldown' % url)
                 self.pwcachetime[api] = time.perf_counter() + 300
-                self.pwcache[api] = None
+                self.pwcache[api] = _NEG_CACHE
                 return None
             elif r.status_code >= 500:
                 log.error('Server-side problem at Powerwall API (status code %s) at %s' % (r.status_code, url))
@@ -233,7 +255,7 @@ class PyPowerwallLocal(PyPowerwallBase):
                 if not payload:
                     log.debug(f"Empty response from Powerwall at {url}")
                     return None
-                elif 'application/json' in r.headers.get('Content-Type'):
+                elif 'application/json' in r.headers.get('Content-Type', ''):
                     try:
                         payload = json.loads(payload)
                     except Exception as exc:
@@ -307,7 +329,7 @@ class PyPowerwallLocal(PyPowerwallBase):
             if not response:
                 log.debug(f"Empty response from Powerwall at {url}")
                 return None
-            elif 'application/json' in r.headers.get('Content-Type'):
+            elif 'application/json' in r.headers.get('Content-Type', ''):
                 try:
                     response = json.loads(response)
                 except Exception as exc:

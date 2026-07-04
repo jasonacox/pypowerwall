@@ -71,6 +71,7 @@ import os
 import json
 import logging
 import sys
+import threading
 import time
 import ssl
 import urllib.parse
@@ -137,26 +138,50 @@ class _HTTP2Response:
                 response=self)
 
 
+# Shared httpx client - creating a client per request means a full TLS
+# handshake every call. httpx.Client is thread-safe, so one lazily created
+# client is reused for all requests (recreated if it was closed).
+_http2_client = None
+_http2_client_lock = threading.Lock()
+
+
+def _get_http2_client():
+    """Lazily create (or recreate if closed) the shared HTTP/2 client."""
+    global _http2_client
+    with _http2_client_lock:
+        if _http2_client is None or _http2_client.is_closed:
+            _http2_client = httpx.Client(http2=True,
+                                         verify=_httpx_auth_verify(True),
+                                         follow_redirects=True)
+        return _http2_client
+
+
+def _requests_fallback(method, url, headers, data, json_data, params, timeout, verify):
+    """HTTP/1.1 fallback via requests."""
+    if method == 'GET':
+        return requests.get(url, headers=headers, params=params,
+                            timeout=timeout, verify=verify)
+    return requests.post(url, headers=headers, data=data,
+                         json=json_data, params=params,
+                         timeout=timeout, verify=verify)
+
+
 def _http2_request(method, url, *, headers=None, data=None, json_data=None,
                    params=None, timeout=API_TIMEOUT, verify=True):
     """Make an HTTP/2 request via httpx, falling back to requests on failure.
 
     Returns a response object that is either a requests.Response or an
     _HTTP2Response wrapper — both implement .status_code, .text, .json(),
-    and .raise_for_status().
+    and .raise_for_status(). Returns None when a POST fails after it may
+    already have been transmitted (retrying could duplicate the operation,
+    e.g. set a battery reserve twice) — callers treat None like any other
+    request failure.
     """
     if not HAS_HTTPX:
         # No httpx available — use requests (HTTP/1.1)
-        if method == 'GET':
-            return requests.get(url, headers=headers, params=params,
-                                timeout=timeout, verify=verify)
-        else:
-            return requests.post(url, headers=headers, data=data,
-                                 json=json_data, params=params,
-                                 timeout=timeout, verify=verify)
+        return _requests_fallback(method, url, headers, data, json_data,
+                                  params, timeout, verify)
 
-    ssl_verify = _httpx_auth_verify(verify)
-    client_kwargs = {'http2': True, 'verify': ssl_verify}
     request_kwargs = {'headers': headers or {}, 'timeout': timeout,
                       'follow_redirects': True}
     if params:
@@ -172,22 +197,37 @@ def _http2_request(method, url, *, headers=None, data=None, json_data=None,
             request_kwargs['content'] = data.encode() if isinstance(data, str) else data
 
     try:
-        with httpx.Client(**client_kwargs) as client:
+        if verify is True:
+            client = _get_http2_client()
             resp = client.request(method, url, **request_kwargs)
+        else:
+            # Non-default verify settings are rare (setup paths) - use a
+            # one-off client rather than polluting the shared one
+            with httpx.Client(http2=True, verify=_httpx_auth_verify(verify)) as client:
+                resp = client.request(method, url, **request_kwargs)
         log.debug('FleetAPI HTTP/2 %s %s → HTTP %d (protocol=%s)',
                   method, url, resp.status_code, resp.http_version)
         if resp.status_code >= 400:
             log.error('FleetAPI HTTP %d body: %s', resp.status_code, resp.text[:600])
         return _HTTP2Response(resp)
+    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+        # Connection was never established - the request cannot have reached
+        # the server, so an HTTP/1.1 retry is safe for any method
+        log.warning('HTTP/2 connection failed, falling back to HTTP/1.1: %s', exc)
+        return _requests_fallback(method, url, headers, data, json_data,
+                                  params, timeout, verify)
     except Exception as exc:
-        log.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
         if method == 'GET':
-            return requests.get(url, headers=headers, params=params,
-                                timeout=timeout, verify=verify)
-        else:
-            return requests.post(url, headers=headers, data=data,
-                                 json=json_data, params=params,
-                                 timeout=timeout, verify=verify)
+            # GETs are idempotent - safe to retry over HTTP/1.1
+            log.warning('HTTP/2 request failed, falling back to HTTP/1.1: %s', exc)
+            return _requests_fallback(method, url, headers, data, json_data,
+                                      params, timeout, verify)
+        # POST may already have been transmitted (e.g. read timeout after the
+        # request was sent) - retrying could silently duplicate the operation.
+        # Report failure instead and let the caller's error path handle it.
+        log.error('HTTP/2 %s request failed (no fallback to avoid duplicate '
+                  'POST): %s', method, exc)
+        return None
 
 fleet_api_urls = {
     "North America, Asia-Pacific": "https://fleet-api.prd.na.vn.cloud.tesla.com",
@@ -217,7 +257,7 @@ class FleetAPI:
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.pwcache = {}  # holds the cached data for api
-        self.refreshing = False
+        self.refresh_lock = threading.Lock()  # prevents concurrent token refreshes
         self.timeout = timeout
 
         if debug:
@@ -258,8 +298,15 @@ class FleetAPI:
             self.site_id = config.get('site_id')
             # Check for valid site_id
             if not self.site_id:
-                sites = self.getsites()
-                self.site_id = sites[0]['energy_site_id']
+                # getsites() returns the products list which can be None (API error)
+                # and can mix in vehicles - select the first energy site
+                sites = self.getsites() or []
+                energy_sites = [s for s in sites if isinstance(s, dict)
+                                and s.get('energy_site_id') is not None]
+                if energy_sites:
+                    self.site_id = energy_sites[0]['energy_site_id']
+                else:
+                    log.error("No energy sites found in FleetAPI products list - site_id not set")
             log.debug(f"Configuration loaded: {self.configfile}")
             return config
         else:
@@ -281,44 +328,57 @@ class FleetAPI:
             "refresh_token": self.refresh_token,
             "site_id": self.site_id
         }
-        # Save the config dictionary to the file
-        with open(self.configfile, 'w') as f:
+        # Save the config dictionary to the file - contains client secret and
+        # tokens, so create with 0o600 (owner-only) permissions at open time
+        with open(os.open(self.configfile, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as f:
             f.write(json.dumps(config, indent=4))
 
     # Refresh Token
     def new_token(self):
-        #  Lock to prevent multiple refreshes
-        if self.refreshing:
+        #  Lock to prevent multiple refreshes - if another thread is already
+        #  refreshing, return immediately (matches the previous flag behavior)
+        if not self.refresh_lock.acquire(blocking=False):
             return
-        self.refreshing = True
-        log.info("Token expired, refreshing token")
-        data = {
-            'grant_type': 'refresh_token',
-            'client_id': self.CLIENT_ID,
-            'refresh_token': self.refresh_token
-        }
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded'
-        }
-        response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
-                        data=data, headers=headers, timeout=REFRESH_TIMEOUT)
-        # Extract access_token and refresh_token from this response
-        access = response.json().get('access_token')
-        refresh = response.json().get('refresh_token')
-        # If access or refresh token is None return
-        if not access or not refresh or response.status_code > 201:
-            log.error(f"Unable to refresh token. Response code: {response.status_code}")
-            self.refreshing = False
-            return
-        self.access_token = access
-        self.refresh_token = refresh
-        log.info("Token refreshed - saving.")
-        log.debug(f"  Response Code: {response.status_code}")
-        log.debug(f"  Access Token: {self.access_token}")
-        log.debug(f"  Refresh Token: {self.refresh_token}")
-        # Update config
-        self.save_config()
-        self.refreshing = False
+        try:
+            log.info("Token expired, refreshing token")
+            data = {
+                'grant_type': 'refresh_token',
+                'client_id': self.CLIENT_ID,
+                'refresh_token': self.refresh_token
+            }
+            headers = {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
+                            data=data, headers=headers, timeout=REFRESH_TIMEOUT)
+            # Verify response before attempting to parse the body
+            if response is None or response.status_code != 200:
+                code = getattr(response, 'status_code', None)
+                log.error(f"Unable to refresh token. Response code: {code}")
+                return
+            try:
+                body = response.json()
+            except Exception as exc:
+                log.error(f"Unable to refresh token. Invalid JSON response: {exc}")
+                return
+            # Extract access_token and refresh_token from this response
+            access = body.get('access_token')
+            refresh = body.get('refresh_token')
+            # If access or refresh token is None return
+            if not access or not refresh:
+                log.error(f"Unable to refresh token. Response code: {response.status_code}")
+                return
+            self.access_token = access
+            self.refresh_token = refresh
+            log.info("Token refreshed - saving.")
+            log.debug(f"  Response Code: {response.status_code}")
+            # Never log token values - length only
+            log.debug(f"  Access Token: [redacted] (len={len(self.access_token)})")
+            log.debug(f"  Refresh Token: [redacted] (len={len(self.refresh_token)})")
+            # Update config
+            self.save_config()
+        finally:
+            self.refresh_lock.release()
 
     # Poll FleetAPI
     def poll(self, api="api/1/products", action="GET", data=None, recursive=False, force=False):
@@ -349,7 +409,12 @@ class FleetAPI:
             except requests.exceptions.Timeout:
                 log.error(f"Timeout error polling {url}")
                 return None
-        if response.status_code == 401 and not recursive:
+        if response is None:
+            # Request failed without a usable response (e.g. a POST that may
+            # already have been transmitted - never retried to avoid duplicates)
+            log.error(f"No response from FleetAPI for {api}")
+            data = None
+        elif response.status_code == 401 and not recursive:
             # Token expired, refresh token and try again
             self.new_token()
             data = self.poll(api, action, data, True)
@@ -361,8 +426,11 @@ class FleetAPI:
             data = None
         else:
             data = response.json()
-        if action == "GET":
-            # Cache the data
+        if action == "GET" and data is not None and '?' not in api:
+            # Cache successful responses only - caching errors (None) would
+            # serve failures from cache. Parameterized history URLs (unique
+            # timestamped query strings) are never cached, otherwise each call
+            # would add a permanent entry and grow pwcache without bound.
             self.pwcachetime[api] = time.time()
             self.pwcache[api] = data
         return data
@@ -836,7 +904,7 @@ class FleetAPI:
         # Check to see if already cached
         if self.partner_token:
             print("  Using cached token.")
-            log.debug(f"Cached partner token: {self.partner_token}")
+            log.debug(f"Cached partner token: [redacted] (len={len(self.partner_token)})")
         else:
             # If not cached, generate a new token
             data = {
@@ -849,14 +917,18 @@ class FleetAPI:
             headers = {
                 'Content-Type': 'application/x-www-form-urlencoded'
             }
-            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+            # Redact the client secret from the debug log
+            log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps({**data, 'client_secret': '[redacted]'})}")
             response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                             data=data, headers=headers, timeout=SETUP_TIMEOUT)
+            if response is None:
+                print("ERROR: No response from Tesla auth endpoint - try again.")
+                return False
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
             print(f"   Got Token: {partner_token[:40]}...\n")
-            log.debug(f"Partner Token: {partner_token}")
+            log.debug(f"Partner Token: [redacted] (len={len(partner_token) if partner_token else 0})")
             # Save the configuration
             self.save_config()
             print("  Configuration saved")
@@ -879,6 +951,9 @@ class FleetAPI:
             log.debug(f"POST: {url} {json.dumps(data)}")
             response = _http2_request('POST', url, headers=headers,
                                      data=json.dumps(data), timeout=SETUP_TIMEOUT)
+            if response is None:
+                print("ERROR: No response registering partner account - try again.")
+                return False
             log.debug(f"  Response Code: {response.status_code}")
             self.partner_account = response.json()
             log.debug(f"Partner Account: {json.dumps(self.partner_account, indent=4)}\n")
@@ -907,7 +982,7 @@ class FleetAPI:
         if code.startswith("http"):
             code = code.split("code=")[1].split("&")[0]
         print()
-        log.debug(f"Code: {code}")
+        log.debug(f"Code: [redacted] (len={len(code)})")
 
         # Step 3D - Exchange the authorization code for a token
         #   The access_token will be used as the Bearer token
@@ -925,9 +1000,14 @@ class FleetAPI:
         headers = {
             'Content-Type': 'application/x-www-form-urlencoded'
         }
-        log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token {json.dumps(data)}")
+        # Redact the client secret and one-time auth code from the debug log
+        log.debug(f"POST: https://auth.tesla.com/oauth2/v3/token "
+                  f"{json.dumps({**data, 'client_secret': '[redacted]', 'code': '[redacted]'})}")
         response = _http2_request('POST', 'https://auth.tesla.com/oauth2/v3/token',
                         data=data, headers=headers, timeout=SETUP_TIMEOUT)
+        if response is None:
+            print("ERROR: No response exchanging authorization code - try again.")
+            return False
         log.debug(f"Response Code: {response.status_code}")
         # Extract access_token and refresh_token from this response
         access_token = response.json().get('access_token')

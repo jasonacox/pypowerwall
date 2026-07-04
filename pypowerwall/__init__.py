@@ -35,14 +35,15 @@
     authmode = "cookie"       # "cookie" (default) or "token" - use cookie or bearer token for auth
     cachefile = ".powerwall"  # Path to cache file (default current directory)
     fleetapi = False          # If True, use Tesla FleetAPI for data (default is False)
-    auth_path = ""            # Path to configfile (default current directory)
     auto_select = False       # If True, select the best available mode to connect (default is False)
-    retry_modes = False       # If True, retry connection to Powerwall
+    retry_modes = False       # If True, retry connection to Powerwall - WARNING: blocks
+                                indefinitely until a connection succeeds (daemon use)
     gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
+    wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
     
  Functions 
-    poll(api, json, force)    # Return data from Powerwall api (dict if json=True, bypass cache force=True)
-    post(api, payload, json)  # Send payload to Powerwall api (dict if json=True)
+    poll(api, jsonformat, raw, force)   # Return data from Powerwall api (JSON string if jsonformat=True, bypass cache force=True)
+    post(api, payload, din, jsonformat) # Send payload to Powerwall api (JSON string if jsonformat=True)
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -86,10 +87,9 @@ import logging
 import os.path
 import sys
 import time
-from json import JSONDecodeError
 from typing import Optional, Union
 
-version_tuple = (0, 15, 13)
+version_tuple = (0, 16, 0)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -154,7 +154,8 @@ class Powerwall(object):
             cachefile    = Path to cache file (default current directory)
             fleetapi     = If True, use Tesla FleetAPI for data (default is False)
             auto_select  = If True, select the best available mode to connect (default is False)
-            retry_modes  = If True, retry connection to Powerwall
+            retry_modes  = If True, retry connection to Powerwall - WARNING: blocks
+                           indefinitely until a connection succeeds (daemon use)
             gw_pwd       = Full gateway password from QR sticker; used for TEDAPI (mode 4)
                            and auto-derived (last 5 chars) for v1r login (mode 5)
             rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
@@ -177,7 +178,9 @@ class Powerwall(object):
         self.authmode = authmode  # cookie or token
         self.pwcooldown = 0  # rate limit cooldown time - pause api calls
         self.vitals_api = True  # vitals api is available for local mode
-        self.client: PyPowerwallBase
+        # Backend client - remains None if connect() fails for all modes so that
+        # method calls degrade to None instead of raising AttributeError
+        self.client: Optional[PyPowerwallBase] = None
         self.fleetapi = fleetapi
         self.retry_modes = retry_modes
         self.mode = "unknown"
@@ -237,18 +240,33 @@ class Powerwall(object):
         """
         Connect to Tesla Energy Gateway Powerwall
 
+        Tries the configured mode first and falls back to the other modes
+        (local -> fleetapi -> cloud -> local) on failure. If every mode fails,
+        the configured mode is restored so a later connect() retries in the
+        configured order.
+
         Args:
-            retry = If True, retry connection to Powerwall
+            retry = If True, keep cycling through the modes until one connects.
+                    WARNING: this blocks the calling thread indefinitely (by
+                    design for daemon use, e.g. the proxy) - it only returns
+                    once a connection succeeds.
         """
         if self.mode == "unknown":
             log.error("Unable to determine mode to connect.")
             return False
+        # Snapshot the configured mode - fallback mutates self.mode/cloudmode/
+        # fleetapi, and a total failure must not leave that mutation behind
+        configured_mode = (self.mode, self.cloudmode, self.fleetapi)
+        total_wait = 0
         count = 0
         while count < 3:
             count += 1
             if retry and count == 3:
-                log.error("Failed to connect to Powerwall with all modes. Waiting 30s to retry.")
+                log.warning("Failed to connect to Powerwall with all modes. Waiting 30s to retry "
+                            "(retry enabled - blocking until a connection succeeds; "
+                            "%ds cumulative wait so far)." % total_wait)
                 time.sleep(30)
+                total_wait += 30
                 count = 0
             if self.mode == "local":
                 log.debug(f"password = {'[set]' if self.password else '[empty]'}, "
@@ -325,6 +343,17 @@ class Powerwall(object):
                     log.warning(f"Failed to connect using Cloud mode: {exc} - trying local mode.")
                     self.mode = "local"
                     continue
+        # Total failure - restore the configured mode so a subsequent
+        # connect() retries in the configured order, not where fallback left off
+        self.mode, self.cloudmode, self.fleetapi = configured_mode
+        return False
+
+    def _no_client(self) -> bool:
+        """Return True (and log an error) if no backend client is connected."""
+        if self.client is None:
+            log.error("Not connected to Powerwall - no backend client available. "
+                      "Check connection settings and call connect().")
+            return True
         return False
 
     def is_connected(self):
@@ -354,12 +383,15 @@ class Powerwall(object):
             recursive   = If True, this is a recursive call and do not allow additional recursive calls
             force       = If True, bypass the cache and make the API call to the gateway, has no meaning in Cloud mode
         """
+        if self._no_client():
+            return None
         payload = self.client.poll(api, force, recursive, raw)
         if jsonformat:
             try:
                 return json.dumps(payload)
-            except JSONDecodeError:
+            except (TypeError, ValueError):
                 log.error(f"Unable to dump response '{payload}' as JSON. I know you asked for it, sorry.")
+                return None
         else:
             return payload
 
@@ -375,12 +407,15 @@ class Powerwall(object):
             raw         = If True, send raw data back (useful for binary responses, has no meaning in Cloud mode)
             recursive   = If True, this is a recursive call and do not allow additional recursive calls
         """
+        if self._no_client():
+            return None
         response = self.client.post(api, payload, din, recursive, raw)
         if jsonformat:
             try:
                 return json.dumps(response)
-            except JSONDecodeError:
+            except (TypeError, ValueError):
                 log.error(f"Unable to dump response '{response}' as JSON. I know you asked for it, sorry.")
+                return None
         else:
             return response
 
@@ -409,6 +444,8 @@ class Powerwall(object):
         Power Usage for Site, Solar, Battery and Load
         """
         # Return power for (site, solar, battery, load) as dictionary
+        if self._no_client():
+            return None
         return self.client.power()
 
     def vitals(self, jsonformat=False):
@@ -418,6 +455,8 @@ class Powerwall(object):
         Args:
            jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
+        if self._no_client():
+            return None
         output = self.client.vitals()
 
         # Return result
@@ -450,7 +489,8 @@ class Powerwall(object):
                             v[device][ee] = v[look][ee]
                 if verbose:
                     result[device] = {}
-                    result[device]['PVAC_Pout'] = v[device]['PVAC_Pout']
+                    # PVAC_Pout may be missing depending on firmware - default to None
+                    result[device]['PVAC_Pout'] = v[device].get('PVAC_Pout')
                     for e in v[device]:
                         if 'PVAC_PVCurrent' in e or 'PVAC_PVMeasuredPower' in e or \
                                 'PVAC_PVMeasuredVoltage' in e or 'PVAC_PvState' in e or \
@@ -461,7 +501,8 @@ class Powerwall(object):
                         if 'PVAC_PVCurrent' in e or 'PVAC_PVMeasuredPower' in e or \
                                 'PVAC_PVMeasuredVoltage' in e or 'PVAC_PvState' in e or \
                                 'PVS_String' in e:
-                            name = e[-1] + devicemap[deviceidx]
+                            # Guard against more PVAC devices than devicemap entries
+                            name = e[-1] + devicemap[deviceidx % len(devicemap)]
                             if 'Current' in e:
                                 idxname = 'Current'
                             elif 'Power' in e:
@@ -472,7 +513,7 @@ class Powerwall(object):
                                 idxname = 'State'
                             elif 'Connected' in e:
                                 idxname = 'Connected'
-                                name = e[10] + devicemap[deviceidx]
+                                name = e[10] + devicemap[deviceidx % len(devicemap)]
                             else:
                                 idxname = 'Unknown'
                             if name not in result:
@@ -496,6 +537,11 @@ class Powerwall(object):
                 if 'string_vitals' in pvac:
                     i = 0
                     for string in pvac['string_vitals']:
+                        if i >= len(string_map):
+                            # More strings than the map can name - ignore the extras
+                            log.debug("strings(): more than %d string_vitals entries - ignoring extras"
+                                      % len(string_map))
+                            break
                         name = string_map[i]
                         result[name] = {}
                         result[name]['Connected'] = string['connected']
@@ -512,18 +558,26 @@ class Powerwall(object):
     # Pull Power Data
     def site(self, verbose=False):
         """ Grid Usage """
+        if self._no_client():
+            return None
         return self.client.fetchpower('site', verbose)
 
     def solar(self, verbose=False):
         """" Solar Power Generation """
+        if self._no_client():
+            return None
         return self.client.fetchpower('solar', verbose)
 
     def battery(self, verbose=False):
         """ Battery Power Flow """
+        if self._no_client():
+            return None
         return self.client.fetchpower('battery', verbose)
 
     def load(self, verbose=False):
         """ Home Power Usage """
+        if self._no_client():
+            return None
         return self.client.fetchpower('load', verbose)
 
     # Helpful Power Aliases
@@ -568,6 +622,8 @@ class Powerwall(object):
             followers = payload['followers']
             cellular_disabled = payload['cellular_disabled']
         """
+        if self._no_client():
+            return None
         payload = self.client.poll('/api/status')
         if payload is None:
             return None
@@ -624,6 +680,7 @@ class Powerwall(object):
           alertonly  = If True, return only alerts without device name
         """
         alerts = set()
+        device_alerts = set()  # (device, alert) tuples - dicts are unhashable, rebuilt at return
         devices: dict = self.vitals() or {}
         if devices:
             for device in devices:
@@ -633,7 +690,7 @@ class Powerwall(object):
                     if alertsonly:
                         alerts.add(i)
                         continue
-                    alerts.add({device: i})
+                    device_alerts.add((device, i))
         elif not devices and alertsonly is True:
             # Vitals API is not present in firmware versions > 23.44 for local mode.
             # This is a workaround to get alerts from the /api/solar_powerwall endpoint
@@ -658,6 +715,9 @@ class Powerwall(object):
 
         # In the future, if more replacements are needed, create a utility function here.
         normalized_alerts = list({s.replace("SystemGridConnected", "SystemConnectedToGrid") for s in alerts})
+        if not alertsonly:
+            # Append per-device alerts as {device: alert} entries
+            normalized_alerts += [{device: alert} for device, alert in sorted(device_alerts)]
 
         if jsonformat:
             return json.dumps(normalized_alerts, indent=4, sort_keys=True)
@@ -731,7 +791,14 @@ class Powerwall(object):
             return None
 
         if level is None:
-            level = self.get_reserve()
+            # Back-fill the current reserve so the write does not change it. The scale must
+            # match the write path: the local backend passes the payload verbatim to the
+            # gateway's raw-scale /api/operation, while cloud/fleetapi/tedapi writes expect
+            # the Tesla-app scale (tedapi converts app->raw internally on write).
+            level = self.get_reserve(scale=not isinstance(self.client, PyPowerwallLocal))
+            if level is None:
+                log.error("Unable to determine current reserve level - unable to set operation.")
+                return None
 
         if not mode:
             mode = self.get_mode()
@@ -877,8 +944,10 @@ class Powerwall(object):
         result = {}
         # copy the info from system_status into result
         # but change the key to the battery serial number
-        for bat in system_status['battery_blocks']:
-            sn = bat['PackageSerialNumber']
+        # battery_blocks and PackageSerialNumber may be missing depending on
+        # firmware/mode - guard with .get() instead of direct indexing
+        for bat in system_status.get('battery_blocks') or []:
+            sn = bat.get('PackageSerialNumber')
             bat_res = {}
             for j in bat:
                 if j != 'PackageSerialNumber':
@@ -892,8 +961,8 @@ class Powerwall(object):
             if device.startswith("TETHC--"):
                 sn = device.split("--")[2]
                 bat_res = {
-                    'THC_State': devices[device]['THC_State'],
-                    'temperature': devices[device]['THC_AmbientTemp']
+                    'THC_State': devices[device].get('THC_State'),
+                    'temperature': devices[device].get('THC_AmbientTemp')
                 }
                 # Some firmware or modes may return vitals entries before /api/system_status
                 # includes corresponding battery_blocks. Guard against missing keys.
@@ -913,6 +982,8 @@ class Powerwall(object):
         Returns:
             The time remaining in hours
         """
+        if self._no_client():
+            return None
         return self.client.get_time_remaining()
 
     def set_grid_charging(self, mode) -> Optional[dict]:
@@ -925,6 +996,8 @@ class Powerwall(object):
         Returns:
             Dictionary with operation results.
         """
+        if self._no_client():
+            return None
         return self.client.set_grid_charging(mode)
 
     def get_grid_charging(self) -> Optional[bool]:
@@ -938,6 +1011,8 @@ class Powerwall(object):
         Returns:
             True if grid charging is enabled, False if it is disabled, None if unsupported
         """
+        if self._no_client():
+            return None
         return self.client.get_grid_charging()
 
     def set_grid_export(self, mode: str) -> Optional[dict]:
@@ -953,6 +1028,8 @@ class Powerwall(object):
         # Check for valid mode
         if mode not in ['battery_ok', 'pv_only', 'never']:
             raise ValueError(f"Invalid value for parameter 'mode': {mode}")
+        if self._no_client():
+            return None
         return self.client.set_grid_export(mode)
 
     def get_grid_export(self) -> Optional[str]:
@@ -966,6 +1043,8 @@ class Powerwall(object):
         Returns:
             The current grid export mode, or None if unsupported
         """
+        if self._no_client():
+            return None
         return self.client.get_grid_export()
 
     def go_off_grid(self, confirm: bool = False) -> Optional[dict]:

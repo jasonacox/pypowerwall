@@ -81,6 +81,8 @@
 
 """
 import datetime
+import hmac
+import html
 import json
 import logging
 import os
@@ -128,7 +130,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t94"
+BUILD = "t95"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -160,6 +162,8 @@ ALLOWLIST = [
 DISABLED = [
     "/api/customer/registration",
 ]
+# Maximum POST body size (bytes) accepted for /control commands
+MAX_POST_BODY = 4096
 web_root = os.path.join(os.path.dirname(__file__), "web")
 
 # Configuration for Proxy - Check for environmental variables
@@ -274,6 +278,10 @@ proxystats = {
     },
 }
 proxystats_lock = threading.RLock()
+# Cap on distinct paths tracked in proxystats["uri"] (matches the 100-entry
+# cap used by _endpoint_stats). Query strings are stripped before counting;
+# new distinct paths beyond the cap are aggregated under "other".
+URI_STATS_MAX = 100
 
 if https_mode == "yes":
     # run https mode with self-signed cert
@@ -747,6 +755,11 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
     Returns:
         Response data on success, cached data if available and fresh enough, None if no data available
     """
+    # Namespace the degradation-cache key by response format: the same endpoint can be
+    # called with jsonformat=True (caches a JSON string) and jsonformat=False (caches a
+    # dict). Sharing one key would serve a string to dict consumers during outages.
+    cache_key = f"{endpoint_name}:json" if jsonformat else endpoint_name
+
     # Try to get fresh data
     if jsonformat:
         result = safe_pw_call(pw_func, *args, jsonformat=True, **kwargs)
@@ -755,7 +768,7 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
 
     # Only treat as a true success if result is not None and is not a cached response
     if result is not None:
-        cache_response(endpoint_name, result)
+        cache_response(cache_key, result)
         track_endpoint_call(endpoint_name, success=True)
         return result
 
@@ -763,7 +776,7 @@ def safe_endpoint_call(endpoint_name, pw_func, *args, jsonformat=True, **kwargs)
     track_endpoint_call(endpoint_name, success=False)
 
     # Try cached response (do NOT reset consecutive_failures if using cache)
-    cached_result = get_cached_response(endpoint_name)
+    cached_result = get_cached_response(cache_key)
     if cached_result is not None:
         # Do not call update_connection_health(success=True) here
         return cached_result
@@ -1037,12 +1050,20 @@ class Handler(BaseHTTPRequestHandler):
             if not control_secret:
                 message = '{"error": "Control Commands Disabled - Set PW_CONTROL_SECRET to enable"}'
             else:
+                value = token = ""
                 try:
                     action = urlparse(request_path).path.split("/")[2]
-                    post_data = self.rfile.read(int(self.headers["Content-Length"]))
-                    query_params = parse_qs(post_data.decode("utf-8"))
-                    value = query_params.get("value", [""])[0]
-                    token = query_params.get("token", [""])[0]
+                    content_length = int(self.headers["Content-Length"])
+                    # Cap the POST body size - control commands are tiny
+                    # (value/token/mode params); anything larger is abuse.
+                    if content_length < 0 or content_length > MAX_POST_BODY:
+                        message = '{"error": "Control Command Error: Invalid Request"}'
+                        log.error(f"Control Command Error: POST body too large ({content_length} bytes)")
+                    else:
+                        post_data = self.rfile.read(content_length)
+                        query_params = parse_qs(post_data.decode("utf-8"))
+                        value = query_params.get("value", [""])[0]
+                        token = query_params.get("token", [""])[0]
                 except Exception as er:
                     message = '{"error": "Control Command Error: Invalid Request"}'
                     log.error(f"Control Command Error: {er}")
@@ -1055,7 +1076,8 @@ class Handler(BaseHTTPRequestHandler):
                             "Control Command Error: Unable to connect to cloud mode - Run Setup"
                         )
                     else:
-                        if token == control_secret:
+                        # Constant-time compare to avoid timing side channel
+                        if token and hmac.compare_digest(token, control_secret):
                             if action == "reserve":
                                 # ensure value is an integer
                                 if not value:
@@ -1245,11 +1267,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             with proxystats_lock:
                 proxystats["posts"] = proxystats["posts"] + 1
+        # Encode once - Content-Length must count bytes, not characters
+        body = message.encode("utf8")
         self.send_header("Content-type", contenttype)
-        self.send_header("Content-Length", str(len(message)))
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
-        self.wfile.write(message.encode("utf8"))
+        self.wfile.write(body)
 
     def do_GET(self):
         global proxystats
@@ -1292,9 +1316,9 @@ class Handler(BaseHTTPRequestHandler):
 
                 if aggregates and not neg_solar and "solar" in aggregates:
                     solar = aggregates["solar"]
-                    if solar and "instant_power" in solar and solar["instant_power"] < 0:
+                    if solar and solar.get("instant_power") is not None and solar["instant_power"] < 0:
                         # Shift energy from solar to load
-                        if "load" in aggregates and "instant_power" in aggregates["load"]:
+                        if "load" in aggregates and (aggregates["load"] or {}).get("instant_power") is not None:
                             aggregates["load"]["instant_power"] -= solar["instant_power"]
                         # Finally, clamp solar to 0
                         solar["instant_power"] = 0
@@ -1343,13 +1367,20 @@ class Handler(BaseHTTPRequestHandler):
                 # Optimization: Use single aggregates call for all power values
                 aggregates = safe_endpoint_call("/aggregates", pw.poll, "/api/meters/aggregates", jsonformat=False)
                 if aggregates:
-                    grid = aggregates.get('site', {}).get('instant_power', 0)
-                    solar = aggregates.get('solar', {}).get('instant_power', 0)
-                    battery = aggregates.get('battery', {}).get('instant_power', 0)
-                    home = aggregates.get('load', {}).get('instant_power', 0)
+                    grid = (aggregates.get('site') or {}).get('instant_power', 0)
+                    solar = (aggregates.get('solar') or {}).get('instant_power', 0)
+                    battery = (aggregates.get('battery') or {}).get('instant_power', 0)
+                    home = (aggregates.get('load') or {}).get('instant_power', 0)
                 else:
                     grid = solar = battery = home = 0
-                
+
+                # Convert None to 0 for output BEFORE any comparisons below
+                # (None = data gap, output as 0; comparing None crashes)
+                grid = grid or 0
+                solar = solar or 0
+                battery = battery or 0
+                home = home or 0
+
                 # Apply negative solar correction if configured
                 if not neg_solar and solar < 0:
                     # Shift energy from solar to load
@@ -1357,15 +1388,8 @@ class Handler(BaseHTTPRequestHandler):
                     solar = 0
 
                 # Apply site zero threshold - suppress phantom grid noise
-                # Pass through None values — they indicate a data gap, not zero
                 if site_zero_threshold > 0 and abs(grid) <= site_zero_threshold:
                     grid = 0
-
-                # Convert None to 0 for output (None = data gap, output as 0)
-                grid = grid or 0
-                solar = solar or 0
-                battery = battery or 0
-                home = home or 0
 
                 # Get battery level - poll() handles caching internally
                 batterylevel = safe_pw_call(pw.level) or 0
@@ -1419,12 +1443,17 @@ class Handler(BaseHTTPRequestHandler):
             )
         elif request_path == "/stats":
             # Give Internal Stats
+            # Do the slow work (network call, rusage) BEFORE taking the lock -
+            # holding proxystats_lock across a gateway call would serialize
+            # every other request thread for up to the pw timeout during outages
+            stats_site_name = safe_pw_call(pw.site_name)
+            stats_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             with proxystats_lock:
                 proxystats["ts"] = int(time.time())
                 delta = proxystats["ts"] - proxystats["start"]
                 proxystats["uptime"] = str(datetime.timedelta(seconds=delta))
-                proxystats["mem"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                proxystats["site_name"] = safe_pw_call(pw.site_name)
+                proxystats["mem"] = stats_mem
+                proxystats["site_name"] = stats_site_name
                 proxystats["cloudmode"] = pw.cloudmode
                 proxystats["fleetapi"] = pw.fleetapi
                 if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
@@ -1903,12 +1932,15 @@ class Handler(BaseHTTPRequestHandler):
                 message: str = json.dumps(v)
         elif request_path == "/help":
             # Display friendly help screen link and stats
+            # Slow work (network call, rusage) happens before taking the lock
+            help_site_name = safe_pw_call(pw.site_name)
+            help_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
             with proxystats_lock:
                 proxystats["ts"] = int(time.time())
                 delta = proxystats["ts"] - proxystats["start"]
                 proxystats["uptime"] = str(datetime.timedelta(seconds=delta))
-                proxystats["mem"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                proxystats["site_name"] = safe_pw_call(pw.site_name)
+                proxystats["mem"] = help_mem
+                proxystats["site_name"] = help_site_name
                 proxystats["cloudmode"] = pw.cloudmode
                 proxystats["fleetapi"] = pw.fleetapi
                 if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
@@ -1929,11 +1961,13 @@ class Handler(BaseHTTPRequestHandler):
                 "%BUILD%", BUILD
             )
             with proxystats_lock:
+                # html.escape() everything interpolated into the page - URI keys
+                # are attacker-controlled request paths (stored XSS vector)
                 for i in proxystats:
                     if i != "uri" and i != "config":
-                        message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats[i]}</td></tr>\n'
+                        message += f'<tr><td align="left">{html.escape(str(i))}</td><td align ="left">{html.escape(str(proxystats[i]))}</td></tr>\n'
                 for i in proxystats["uri"]:
-                    message += f'<tr><td align="left">URI: {i}</td><td align ="left">{proxystats["uri"][i]}</td></tr>\n'
+                    message += f'<tr><td align="left">URI: {html.escape(str(i))}</td><td align ="left">{html.escape(str(proxystats["uri"][i]))}</td></tr>\n'
             message += """
             <tr>
                 <td align="left">Config:</td>
@@ -1944,7 +1978,7 @@ class Handler(BaseHTTPRequestHandler):
             """
             with proxystats_lock:
                 for i in proxystats["config"]:
-                    message += f'<tr><td align="left">{i}</td><td align ="left">{proxystats["config"][i]}</td></tr>\n'
+                    message += f'<tr><td align="left">{html.escape(str(i))}</td><td align ="left">{html.escape(str(proxystats["config"][i]))}</td></tr>\n'
             message += """
                         </table>
                     </details>
@@ -1973,45 +2007,47 @@ class Handler(BaseHTTPRequestHandler):
             if pw.tedapi:
                 message = '{"error": "Use /tedapi/config, /tedapi/status, /tedapi/components, /tedapi/battery, /tedapi/controller"}'
                 if request_path == "/tedapi/config":
-                    message = json.dumps(pw.tedapi.get_config())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_config))
                 if request_path == "/tedapi/status":
-                    message = json.dumps(pw.tedapi.get_status())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_status))
                 if request_path == "/tedapi/components":
-                    message = json.dumps(pw.tedapi.get_components())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_components))
                 if request_path == "/tedapi/battery":
-                    message = json.dumps(pw.tedapi.get_battery_blocks())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_battery_blocks))
                 if request_path == "/tedapi/controller":
-                    message = json.dumps(pw.tedapi.get_device_controller())
+                    message = json.dumps(safe_pw_call(pw.tedapi.get_device_controller))
             else:
                 message = '{"error": "TEDAPI not enabled"}'
         elif request_path.startswith("/cloud"):
-            # Cloud API Specific Calls
-            if pw.cloudmode and not pw.fleetapi:
+            # Cloud API Specific Calls - pw.client can be None if connect() failed,
+            # so guard before dereferencing (safe_pw_call can't catch that)
+            if pw.cloudmode and not pw.fleetapi and pw.client is not None:
                 message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
                 if request_path == "/cloud/battery":
-                    message = json.dumps(pw.client.get_battery())
+                    message = json.dumps(safe_pw_call(pw.client.get_battery))
                 if request_path == "/cloud/power":
-                    message = json.dumps(pw.client.get_site_power())
+                    message = json.dumps(safe_pw_call(pw.client.get_site_power))
                 if request_path == "/cloud/config":
-                    message = json.dumps(pw.client.get_site_config())
+                    message = json.dumps(safe_pw_call(pw.client.get_site_config))
             else:
                 message = '{"error": "Cloud API not enabled"}'
         elif request_path.startswith("/fleetapi"):
-            # FleetAPI Specific Calls
-            if pw.fleetapi:
+            # FleetAPI Specific Calls - guard pw.client like the /cloud routes
+            if pw.fleetapi and pw.client is not None:
                 message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
                 if request_path == "/fleetapi/info":
-                    message = json.dumps(pw.client.get_site_info())
+                    message = json.dumps(safe_pw_call(pw.client.get_site_info))
                 if request_path == "/fleetapi/status":
-                    message = json.dumps(pw.client.get_live_status())
+                    message = json.dumps(safe_pw_call(pw.client.get_live_status))
             else:
                 message = '{"error": "FleetAPI not enabled"}'
-        elif request_path in DISABLED:
-            # Disabled API Calls
+        elif urlparse(request_path).path in DISABLED:
+            # Disabled API Calls - match on path only so a query string
+            # (e.g. ?x=1) cannot be used to bypass the block
             message = '{"status": "404 Response - API Disabled"}'
-        elif request_path in ALLOWLIST:
-            # Allowed API Calls - Proxy to Powerwall
-            message: str = safe_pw_call(pw.poll, request_path, jsonformat=True)
+        elif urlparse(request_path).path in ALLOWLIST:
+            # Allowed API Calls - Proxy to Powerwall (query string stripped)
+            message: str = safe_pw_call(pw.poll, urlparse(request_path).path, jsonformat=True)
         elif request_path.startswith("/control/reserve"):
             # Current battery reserve level
             if not pw_control:
@@ -2054,11 +2090,15 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 result = safe_pw_call(pw.tedapi.get_backup_events)
                 if result is not None:
-                    # Auto-cancel expired events (gateway leaves them lingering)
+                    # Auto-cancel expired events (gateway leaves them lingering).
+                    # Cancel is a *write*, so it requires a valid control token
+                    # (?token=<PW_CONTROL_SECRET>); a plain GET stays read-only.
                     mb = result.get('manual_backup')
                     if mb and not mb.get('active'):
-                        safe_pw_call(pw.tedapi.cancel_max_backup)
-                        result['manual_backup'] = None
+                        token = parse_qs(urlparse(request_path).query).get("token", [""])[0]
+                        if token and control_secret and hmac.compare_digest(token, control_secret):
+                            safe_pw_call(pw.tedapi.cancel_max_backup)
+                            result['manual_backup'] = None
                     message = json.dumps(result)
                 else:
                     message = '{"error": "Failed to get backup events"}'
@@ -2129,15 +2169,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Set-Cookie", f"AuthCookie=1234567890;{cookiesuffix}")
                 self.send_header("Set-Cookie", f"UserRecord=1234567890;{cookiesuffix}")
             else:
-                # Safely access auth cookies with fallback
+                # Safely access auth cookies with fallback - pw.client can be
+                # None if backend init failed, so guard before touching .auth
+                client_auth = pw.client.auth if pw.client is not None else None
                 auth_cookie = (
-                    pw.client.auth.get("AuthCookie", "1234567890")
-                    if pw.client.auth
+                    client_auth.get("AuthCookie", "1234567890")
+                    if client_auth
                     else "1234567890"
                 )
                 user_record = (
-                    pw.client.auth.get("UserRecord", "1234567890")
-                    if pw.client.auth
+                    client_auth.get("UserRecord", "1234567890")
+                    if client_auth
                     else "1234567890"
                 )
                 self.send_header(
@@ -2183,8 +2225,15 @@ class Handler(BaseHTTPRequestHandler):
                 log.debug("Cloud Mode - File not found: {}".format(request_path))
                 fcontent = bytes("Not Found", "utf-8")
                 ftype = "text/plain"
+            elif urlparse(request_path).path.startswith("/api/"):
+                # Never proxy unmatched /api/ paths to the gateway - only
+                # ALLOWLIST endpoints may reach the gateway API with the
+                # proxy's credentials attached (open-proxy prevention).
+                log.debug("API not allowed: {}".format(request_path))
+                fcontent = bytes("Not Found", "utf-8")
+                ftype = "text/plain"
             else:
-                # Proxy request to Powerwall web server.
+                # Proxy request to Powerwall web server (web app assets).
                 proxy_path = request_path
                 if proxy_path.startswith("/"):
                     proxy_path = proxy_path[1:]
@@ -2208,14 +2257,13 @@ class Handler(BaseHTTPRequestHandler):
                             timeout=pw.timeout,
                         )
                     fcontent = r.content
-                    ftype = r.headers["content-type"]
-                except AttributeError:
-                    # Display 404
-                    log.debug("File not found: {}".format(request_path))
+                    ftype = r.headers.get("content-type", "text/plain")
+                except (AttributeError, requests.exceptions.RequestException) as exc:
+                    # Gateway unreachable, timed out, or session unavailable -
+                    # fall through and serve the standard "Not Found" body
+                    log.debug("Unable to fetch {} from gateway: {}".format(request_path, exc))
                     fcontent = bytes("Not Found", "utf-8")
                     ftype = "text/plain"
-                    self.send_response(404)
-                    return
 
             # Allow browser caching, if user permits, only for CSS, JavaScript and PNG images...
             if browser_cache > 0 and (
@@ -2264,22 +2312,25 @@ class Handler(BaseHTTPRequestHandler):
                 proxystats["errors"] = proxystats["errors"] + 1
             message = "ERROR!"
         else:
+            # Count by query-stripped path so unique querystring URLs cannot
+            # grow proxystats["uri"] without bound
+            uri_key = urlparse(request_path).path
             with proxystats_lock:
                 proxystats["gets"] = proxystats["gets"] + 1
-                if request_path in proxystats["uri"]:
-                    proxystats["uri"][request_path] = (
-                        proxystats["uri"][request_path] + 1
-                    )
-                else:
-                    proxystats["uri"][request_path] = 1
+                if uri_key not in proxystats["uri"] and len(proxystats["uri"]) >= URI_STATS_MAX:
+                    # Cap reached - aggregate new distinct paths under "other"
+                    uri_key = "other"
+                proxystats["uri"][uri_key] = proxystats["uri"].get(uri_key, 0) + 1
 
         # Send headers and payload
         try:
+            # Encode once - Content-Length must count bytes, not characters
+            body = message.encode("utf8")
             self.send_header("Content-type", contenttype)
-            self.send_header("Content-Length", str(len(message)))
+            self.send_header("Content-Length", str(len(body)))
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            self.wfile.write(message.encode("utf8"))
+            self.wfile.write(body)
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
@@ -2289,15 +2340,12 @@ def main() -> None:
         if https_mode == "yes":
             # Activate HTTPS
             log.debug("Activating HTTPS")
-            # pylint: disable=deprecated-method
-            server.socket = ssl.wrap_socket(
-                server.socket,
-                certfile=os.path.join(os.path.dirname(__file__), "localhost.pem"),
-                server_side=True,
-                ssl_version=ssl.PROTOCOL_TLSv1_2,
-                ca_certs=None,
-                do_handshake_on_connect=True,
+            # ssl.wrap_socket() was removed in Python 3.12 - use SSLContext instead
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.load_cert_chain(
+                os.path.join(os.path.dirname(__file__), "localhost.pem")
             )
+            server.socket = ctx.wrap_socket(server.socket, server_side=True)
 
         # noinspection PyBroadException
         try:

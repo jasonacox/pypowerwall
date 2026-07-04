@@ -284,7 +284,34 @@ class TestDoGetAggregatesEndpoints(BaseDoGetTest):
                     self.assertEqual(cached_data["load"]["instant_power"], 
                                    scenario["expected"]["load"]["instant_power"])
 
-    @common_patches  
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.get_performance_cached', return_value=None)  # Force cache miss
+    @patch('proxy.server.cache_performance_response')  # Mock cache write
+    def test_aggregates_with_null_instant_power(self, proxystats_lock, mock_cache_write, mock_cache_get, mock_safe_call, mock_pw):
+        """Regression: null solar/site instant_power must pass through, not crash"""
+        self.handler.path = "/aggregates"
+        mock_pw.poll = Mock()
+        mock_safe_call.return_value = {
+            "site": {"instant_power": None},
+            "solar": {"instant_power": None},
+            "battery": {"instant_power": None},
+            "load": {"instant_power": 1500},
+        }
+
+        self.handler.do_GET()  # used to raise TypeError on None < 0 comparison
+
+        self.handler.send_response.assert_called_with(HTTPStatus.OK)
+        result = self.get_written_json()
+        # Nulls indicate a data gap and are passed through unchanged
+        self.assertIsNone(result["site"]["instant_power"])
+        self.assertIsNone(result["solar"]["instant_power"])
+        self.assertIsNone(result["battery"]["instant_power"])
+        self.assertEqual(result["load"]["instant_power"], 1500)
+
+    @common_patches
     @patch('proxy.server.pw')
     @patch('proxy.server.neg_solar', True)  # Test with neg_solar ENABLED
     @patch('proxy.server.safe_endpoint_call')
@@ -519,6 +546,32 @@ class TestCSVEndpoints(BaseDoGetTest):
     @patch('proxy.server.neg_solar', False)
     @patch('proxy.server.safe_endpoint_call')
     @patch('proxy.server.safe_pw_call')
+    def test_csv_with_null_instant_power_fields(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
+        """Regression: per-field null instant_power must not crash the
+        neg-solar/threshold comparisons (nulls are output as 0)"""
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/csv"
+            mock_pw.poll = Mock()
+
+            mock_safe_endpoint_call.return_value = {
+                'site': {'instant_power': None},
+                'solar': {'instant_power': None},
+                'battery': {'instant_power': None},
+                'load': {'instant_power': 250}
+            }
+
+            mock_safe_pw_call.return_value = 42.0
+
+            self.handler.do_GET()  # used to raise TypeError on None < 0
+
+            result = self.get_written_text()
+            self.assertEqual(result, "0.00,250.00,0.00,0.00,42.00\n")
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.safe_endpoint_call')
+    @patch('proxy.server.safe_pw_call')
     def test_csv_zero_values(self, proxystats_lock, mock_safe_pw_call, mock_safe_endpoint_call, mock_pw):
         """Test /csv endpoint with zero values"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):
@@ -538,3 +591,90 @@ class TestCSVEndpoints(BaseDoGetTest):
             
             result = self.get_written_text()
             self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
+
+
+class TestDegradationCacheFormatSeparation(BaseDoGetTest):
+    """Regression: /aggregates caches a JSON string while /csv and /json cache a
+    dict for the same endpoint. The degradation cache must keep the two formats
+    in separate slots or the CSV/JSON paths crash on a cached string during an
+    outage (AttributeError: 'str' object has no attribute 'get')."""
+
+    def tearDown(self):
+        proxy.server._last_good_responses.clear()
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.graceful_degradation', True)
+    def test_csv_during_outage_after_string_cached_aggregates(self, proxystats_lock, mock_pw):
+        """Prime the degradation cache via the JSON-string route, then serve /csv in an outage"""
+        aggregates = {
+            'site': {'instant_power': 100.0},
+            'solar': {'instant_power': 200.0},
+            'battery': {'instant_power': -50.0},
+            'load': {'instant_power': 250.0},
+        }
+        outage = {'active': False}
+
+        def fake_poll(api, jsonformat=False, **kwargs):
+            if outage['active']:
+                return None
+            return json.dumps(aggregates) if jsonformat else dict(aggregates)
+
+        mock_pw.poll = Mock(side_effect=fake_poll)
+        mock_pw.level = Mock(side_effect=lambda *a, **k: None if outage['active'] else 50.0)
+
+        proxy.server._last_good_responses.clear()
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            # Prime the degradation cache with the JSON *string* response
+            self.handler.path = "/aggregates"
+            self.handler.do_GET()
+
+            # Gateway outage: /csv must not crash on the string-cached entry
+            outage['active'] = True
+            self.handler.wfile.write.reset_mock()
+            self.handler.path = "/csv"
+            self.handler.do_GET()  # raised AttributeError before the cache-key fix
+
+        result = self.get_written_text()
+        # No dict-format cache entry exists, so the CSV degrades to zeros
+        self.assertEqual(result, "0.00,0.00,0.00,0.00,0.00\n")
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.neg_solar', False)
+    @patch('proxy.server.graceful_degradation', True)
+    def test_csv_during_outage_uses_dict_cache(self, proxystats_lock, mock_pw):
+        """A dict entry cached by /csv itself is still served during an outage"""
+        aggregates = {
+            'site': {'instant_power': 100.0},
+            'solar': {'instant_power': 200.0},
+            'battery': {'instant_power': -50.0},
+            'load': {'instant_power': 250.0},
+        }
+        outage = {'active': False}
+
+        def fake_poll(api, jsonformat=False, **kwargs):
+            if outage['active']:
+                return None
+            return json.dumps(aggregates) if jsonformat else dict(aggregates)
+
+        mock_pw.poll = Mock(side_effect=fake_poll)
+        mock_pw.level = Mock(side_effect=lambda *a, **k: None if outage['active'] else 50.0)
+
+        proxy.server._last_good_responses.clear()
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            # Prime the degradation cache with the dict response via /csv
+            self.handler.path = "/csv"
+            self.handler.do_GET()
+
+            # Outage: clear the performance cache so /csv regenerates from the
+            # degradation cache (dict slot) without crashing
+            outage['active'] = True
+            with patch.dict('proxy.server._performance_cache', {}, clear=True):
+                self.handler.wfile.write.reset_mock()
+                self.handler.path = "/csv"
+                self.handler.do_GET()
+
+        result = self.get_written_text()
+        self.assertEqual(result, "100.00,250.00,200.00,-50.00,0.00\n")

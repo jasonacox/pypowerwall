@@ -81,3 +81,18 @@ def test_run_tedapi_test_v1r_password_only_no_gw_pwd(tmp_path, monkeypatch):
         rsa_key_path='/tmp/test.pem',
         wifi_host=None,
     )
+
+def test_get_local_without_host_exits_with_error(capsys):
+    """CLI 'get -local' without -host used to silently flip to cloud mode."""
+    import pytest
+    from pypowerwall.__main__ import main
+
+    argv = ['pypowerwall', 'get', '-local']
+    with patch('sys.argv', argv), \
+         patch('pypowerwall.Powerwall') as mock_pw:
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+
+    assert excinfo.value.code == 1
+    assert '-local requires -host' in capsys.readouterr().out
+    mock_pw.assert_not_called()

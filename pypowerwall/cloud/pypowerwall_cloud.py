@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import threading
 import time
 from typing import Optional, Union, List
 
@@ -11,6 +12,7 @@ from pypowerwall.cloud.decorators import not_implemented_mock_data
 from pypowerwall.cloud.exceptions import * # pylint: disable=unused-wildcard-import
 from pypowerwall.cloud.mock_data import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.cloud.stubs import *
+from pypowerwall.helpers import lookup
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 from pypowerwall import __version__
 
@@ -34,18 +36,8 @@ def set_debug(debug=False, quiet=False, color=True):
         log.setLevel(logging.NOTSET)
 
 
-def lookup(data, keylist):
-    """
-    Lookup a value in a nested dictionary or return None if not found.
-        data - nested dictionary
-        keylist - list of keys to traverse
-    """
-    for key in keylist:
-        if key in data:
-            data = data[key]
-        else:
-            return None
-    return data
+# lookup() is re-exported here for backward compatibility - the shared
+# None-safe implementation lives in pypowerwall.helpers
 
 # pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
@@ -55,7 +47,9 @@ class PyPowerwallCloud(PyPowerwallBase):
         super().__init__(email)
         self.site = None
         self.tesla = None
-        self.apilock = {}  # holds lock flag for pending cloud api requests
+        self.apilock = {}  # legacy flag dict (kept for compat - no longer load-bearing)
+        self._api_locks = {}  # per-API-name threading.Lock for _site_api
+        self._api_locks_guard = threading.Lock()  # guards creation of per-name locks
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.siteindex = 0  # site index to use
@@ -75,8 +69,10 @@ class PyPowerwallCloud(PyPowerwallBase):
                     try:
                         self.siteid = int(file.read())
                     except Exception as exc:
-                        log.debug(f"Unable to determine siteid from sitefile, using ID '0' instead: {exc}")
-                        self.siteid = 0
+                        # Leave siteid as None so connect() can auto-select the first site;
+                        # a bogus default like 0 would hard-fail the connection
+                        log.debug(f"Unable to determine siteid from sitefile, will auto-select site: {exc}")
+                        self.siteid = None
             else:
                 self.siteindex = 0
         log.debug(f" -- cloud: Using site {self.siteid} for {self.email}")
@@ -409,35 +405,44 @@ class PyPowerwallCloud(PyPowerwallBase):
         if self.tesla is None:
             log.debug(" -- cloud: No connection to Tesla Cloud")
             return None, False
-        # Check for lock and wait if api request already sent
-        if name in self.apilock:
-            locktime = time.perf_counter()
-            while self.apilock[name]:
-                time.sleep(0.2)
-                if time.perf_counter() >= locktime + self.timeout:
-                    log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
-                    return None, False
-        # Check to see if we have cached data
+        # Fast path: return fresh cached data without touching the lock
         if self.pwcache.get(name) is not None and not force:
             if self.pwcachetime[name] > time.perf_counter() - ttl:
                 log.debug(f" -- cloud: Returning cached {name} data")
                 return self.pwcache[name], True
-
-        response = None
+        # Per-name real lock (the old boolean-flag "lock" was racy - two
+        # threads could both pass the check and send duplicate Tesla calls)
+        with self._api_locks_guard:
+            lock = self._api_locks.setdefault(name, threading.Lock())
+        if not lock.acquire(timeout=self.timeout):
+            log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
+            # Another thread likely just refreshed the cache - serve it if present
+            if self.pwcache.get(name) is not None:
+                return self.pwcache[name], True
+            return None, False
         try:
-            # Set lock
-            self.apilock[name] = True
-            response = self.site.api(name, **kwargs)
-        except Exception as err:
-            log.error(f"Failed to retrieve {name} - {repr(err)}")
-        else:
-            log.debug(f" -- cloud: Retrieved {name} data")
-            self.pwcache[name] = response
-            self.pwcachetime[name] = time.perf_counter()
+            # Double-checked cache read under the lock - another thread may
+            # have fetched the data while we were waiting
+            if self.pwcache.get(name) is not None and not force:
+                if self.pwcachetime[name] > time.perf_counter() - ttl:
+                    log.debug(f" -- cloud: Returning cached {name} data")
+                    return self.pwcache[name], True
+            response = None
+            try:
+                # Set legacy flag (kept for compat - not used for locking)
+                self.apilock[name] = True
+                response = self.site.api(name, **kwargs)
+            except Exception as err:
+                log.error(f"Failed to retrieve {name} - {repr(err)}")
+            else:
+                log.debug(f" -- cloud: Retrieved {name} data")
+                self.pwcache[name] = response
+                self.pwcachetime[name] = time.perf_counter()
+            finally:
+                self.apilock[name] = False
+            return response, False
         finally:
-            # Release lock
-            self.apilock[name] = False
-        return response, False
+            lock.release()
 
     def get_battery(self, force: bool = False):
         """
@@ -601,7 +606,8 @@ class PyPowerwallCloud(PyPowerwallBase):
         # {'response': {'time_remaining_hours': 7.909122698326978}}
         if response is None or not isinstance(response, dict):
             return None
-        if 'response' in response and 'time_remaining_hours' in response.get('response'):
+        # response['response'] can be None - guard the membership test
+        if 'time_remaining_hours' in (response.get('response') or {}):
             return response['response']['time_remaining_hours']
 
         return 0.0
@@ -761,9 +767,9 @@ class PyPowerwallCloud(PyPowerwallBase):
                         'ecuType': 207
                     },
                     'STSTSM-Location': 'Simulated',
-                    'alerts': [
-                        alert
-                    ]
+                    # Only include the alert when one was determined - an empty
+                    # string would otherwise surface as "" in alerts()
+                    'alerts': [alert] if alert else []
                 }
             }
         return data
@@ -880,7 +886,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         else:
             log.debug(f"Invalid mode: {mode}")
             return False
-        response = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
+        (response, _) = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
                                    disallow_charge_from_grid_with_solar_installed = mode)
         # invalidate cache
         super()._invalidate_cache("SITE_CONFIG")
@@ -904,7 +910,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         if mode not in ["battery_ok", "pv_only", "never"]:
             log.debug(f"Invalid mode: {mode} - must be battery_ok, pv_only, or never")
         # POST api/1/energy_sites/{site_id}/grid_import_export
-        response = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
+        (response, _) = self._site_api("ENERGY_SITE_IMPORT_EXPORT_CONFIG", ttl=SITE_CONFIG_TTL, force=True,
                                     customer_preferred_export_rule = mode)
         # invalidate cache
         super()._invalidate_cache("SITE_CONFIG")
@@ -1204,33 +1210,40 @@ class PyPowerwallCloud(PyPowerwallBase):
         for battery in batteries:
             if din and battery.get('gateway_id') != din:
                 continue
+            resp = {}
             try:
-                op_level = battery.set_backup_reserve_percent(payload['backup_reserve_percent'])
-                op_mode = battery.set_operation(payload['real_mode'])
-                log.debug(f"Op Level: {op_level}")
-                log.debug(f"Op Mode: {op_mode}")
-                return {
-                    'set_backup_reserve_percent': {
+                # Handle each key independently - partial payloads are valid
+                if payload.get('backup_reserve_percent') is not None:
+                    backup_reserve_percent = payload['backup_reserve_percent']
+                    if backup_reserve_percent is False:
+                        # Convert False to 0 for Tesla Cloud API
+                        backup_reserve_percent = 0
+                    op_level = battery.set_backup_reserve_percent(backup_reserve_percent)
+                    log.debug(f"Op Level: {op_level}")
+                    resp['set_backup_reserve_percent'] = {
                         'backup_reserve_percent': payload['backup_reserve_percent'],
                         'din': din,
                         'result': op_level
-                    },
-                    'set_operation': {
+                    }
+                if payload.get('real_mode') is not None:
+                    op_mode = battery.set_operation(payload['real_mode'])
+                    log.debug(f"Op Mode: {op_mode}")
+                    resp['set_operation'] = {
                         'real_mode': payload['real_mode'],
                         'din': din,
                         'result': op_mode
                     }
-                }
+                return resp
             except Exception as exc:
                 return {'error': f"{exc}"}
         return {
             'set_backup_reserve_percent': {
-                'backup_reserve_percent': payload['backup_reserve_percent'],
+                'backup_reserve_percent': payload.get('backup_reserve_percent'),
                 'din': din,
                 'result': 'BatteryNotFound'
             },
             'set_operation': {
-                'real_mode': payload['real_mode'],
+                'real_mode': payload.get('real_mode'),
                 'din': din,
                 'result': 'BatteryNotFound'
             }

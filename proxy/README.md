@@ -243,12 +243,12 @@ Powerwall Settings
 
 Proxy Settings
 
-* PW_BIND_ADDRESS - IP address ("") - Required
+* PW_BIND_ADDRESS - IP address to listen on ("" = all interfaces)
 * PW_PORT - TCP port ("8675")
 * PW_DEBUG - Turn on debug logging ("no")
 * PW_CACHE_EXPIRE - Time to cache responses from Powerwall in sec ("5")
 * PW_BROWSER_CACHE - Sets Cache-Control for browser in sec ("0" = no-cache)
-* PW_TIMEOUT - Timeout waiting for Powerwall to respond in sec ("10")
+* PW_TIMEOUT - Timeout waiting for Powerwall to respond in sec ("5")
 * PW_POOL_MAXSIZE - Concurrent connections to Powerwall ("15")
 * PW_HTTPS - Set https mode - see HTTPS section above ("no")
 
@@ -271,8 +271,12 @@ UI and Advanced Settings
 * PW_AUTH_PATH - Location (path) for authentication and cache files ("")
 * PW_AUTH_MODE - Use `cookie` (default) or `token` for authentication
 * PW_CACHE_FILE - Proxy cache file path, with override PW_AUTH_PATH if provided (".powerwall")
-* PW_SITEID - For `cloud mode`, if you have multiple sites configured, use this site ID ("")
+* PW_SITEID - For `cloud mode`, if you have multiple sites configured, use this site ID (unset by default)
 * PW_CONTROL_SECRET - If provided, will activate the Powerwall control commands to adjust Powerwall backup reserve level and mode (disabled by default)
+* PW_RSA_KEY_PATH - Path to RSA-4096 private key PEM for v1r LAN mode ("")
+* PW_WIFI_HOST - Optional WiFi TEDAPI host used as fallback transport for v1r follower queries ("")
+* PW_NEG_SOLAR - Allow negative solar values ("yes") - set to "no" to clamp negative solar to 0 and shift it to load
+* PW_SITE_ZERO_THRESHOLD - Zero out site power readings below this absolute wattage to suppress phantom grid noise ("0" = disabled)
 * PROXY_BASE_URL - If you are using a reverse proxy to put pypowerwall in a subdirectory, set it here to adjust the URLs for the flow animation (`/` by default)
 
 ## Control Mode
