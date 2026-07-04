@@ -9,7 +9,7 @@
  For more information see https://github.com/jasonacox/pypowerwall
 
  Usage:
-    python3 regression_test.py --new http://localhost:9999 --old http://10.0.1.26:8675
+    python3 regression_test.py --new http://localhost:8675 --old http://oldhost:8675
     python3 regression_test.py --new ... --old ... --verbose      # show WARN details
     python3 regression_test.py --new ... --old ... --uri /pod     # single endpoint
 
