@@ -430,3 +430,39 @@ class TestJsonEndpoint(BaseDoGetTest):
             self.assertEqual(data['home'], 0)
             self.assertEqual(data['solar'], 0)
             self.assertEqual(data['battery'], 0)
+
+
+class TestBackendRoutesNoClient(BaseDoGetTest):
+    """Regression tests: /cloud/* and /fleetapi/* must not raise AttributeError
+    when the backend failed to initialize (pw.client is None) - PR #349 review"""
+
+    @common_patches
+    @patch('proxy.server.pw')
+    def test_cloud_route_with_none_client(self, proxystats_lock, mock_pw):
+        """Test /cloud/battery with cloudmode enabled but client None"""
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/cloud/battery"
+            mock_pw.cloudmode = True
+            mock_pw.fleetapi = False
+            mock_pw.client = None
+
+            self.handler.do_GET()
+
+            self.handler.send_response.assert_called_with(HTTPStatus.OK)
+            data = json.loads(self.get_written_text())
+            self.assertIn('error', data)
+
+    @common_patches
+    @patch('proxy.server.pw')
+    def test_fleetapi_route_with_none_client(self, proxystats_lock, mock_pw):
+        """Test /fleetapi/info with fleetapi enabled but client None"""
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/fleetapi/info"
+            mock_pw.fleetapi = True
+            mock_pw.client = None
+
+            self.handler.do_GET()
+
+            self.handler.send_response.assert_called_with(HTTPStatus.OK)
+            data = json.loads(self.get_written_text())
+            self.assertIn('error', data)

@@ -2019,8 +2019,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 message = '{"error": "TEDAPI not enabled"}'
         elif request_path.startswith("/cloud"):
-            # Cloud API Specific Calls
-            if pw.cloudmode and not pw.fleetapi:
+            # Cloud API Specific Calls - pw.client can be None if connect() failed,
+            # so guard before dereferencing (safe_pw_call can't catch that)
+            if pw.cloudmode and not pw.fleetapi and pw.client is not None:
                 message = '{"error": "Use /cloud/battery, /cloud/power, /cloud/config"}'
                 if request_path == "/cloud/battery":
                     message = json.dumps(safe_pw_call(pw.client.get_battery))
@@ -2031,8 +2032,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 message = '{"error": "Cloud API not enabled"}'
         elif request_path.startswith("/fleetapi"):
-            # FleetAPI Specific Calls
-            if pw.fleetapi:
+            # FleetAPI Specific Calls - guard pw.client like the /cloud routes
+            if pw.fleetapi and pw.client is not None:
                 message = '{"error": "Use /fleetapi/info, /fleetapi/status"}'
                 if request_path == "/fleetapi/info":
                     message = json.dumps(safe_pw_call(pw.client.get_site_info))
