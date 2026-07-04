@@ -2,7 +2,7 @@
 
 ## v0.16.0 - Code Review Fixes: Correctness, Security, and Robustness
 
-Full-codebase review sweep (see `docs/code-review-2026-07-03.md` for the complete findings). 101 new regression tests (224 passing, up from 123). No public API signatures or return shapes changed.
+Full-codebase review sweep (see `docs/code-review-2026-07-03.md` for the complete findings). 104 new regression tests (227 passing, up from 123). No public API signatures or return shapes changed. Hardware-verified against production proxies with `proxy/regression_test.py`: all 76 non-control endpoints byte-compatible across TEDAPI WiFi, v1r+WiFi hybrid, Cloud, and FleetAPI modes.
 
 * fix(core): `set_operation()`/`set_mode()` no longer silently lowers the real battery reserve — the reserve back-fill is now scale-aware per backend (raw for local, app-scale for cloud/fleetapi/tedapi) and guards an unreadable reserve
 * fix(core): `alerts(alertsonly=False)` crashed with `TypeError` since introduction; device alerts now returned as `{device: alert}` dicts as documented
