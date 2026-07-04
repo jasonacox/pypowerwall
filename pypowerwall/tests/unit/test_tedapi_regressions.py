@@ -224,6 +224,14 @@ class TestConnectHygiene:
         assert self._run_connect(ted, 403) == 'TEST_DIN'
         assert ted.pw3 is True
 
+    def test_404_detected_as_pw3(self):
+        """PW3 firmware variants answer GET / with 404 instead of 403 - any
+        non-transient non-200 must be treated as the PW3 signature
+        (regression: /pod lost battery data in TEDAPI WiFi mode)."""
+        ted = self._make_tedapi()
+        assert self._run_connect(ted, 404) == 'TEST_DIN'
+        assert ted.pw3 is True
+
     def test_503_does_not_flip_pw3(self):
         """Transient gateway errors must not misclassify a PW2 as PW3."""
         ted = self._make_tedapi()

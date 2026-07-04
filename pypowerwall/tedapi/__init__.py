@@ -1489,13 +1489,19 @@ class TEDAPI:
         self.session = self._init_session()
         try:
             resp = self.session.get(url, timeout=self.timeout)
-            if resp.status_code == HTTPStatus.FORBIDDEN:
+            if resp.status_code != HTTPStatus.OK:
                 # PW2/+ gateways serve their web portal on GET / (HTTP 200);
-                # Powerwall 3 has no local web portal and returns 403. Only
-                # the 403 signature means PW3 - transient errors (429/503/5xx)
-                # must not flip PW3 detection, so keep the prior value there.
-                log.debug("Detected Powerwall 3 Gateway")
-                self.pw3 = True
+                # Powerwall 3 has no local web portal and responds with an
+                # error (403/404 depending on firmware) - any non-200 means
+                # PW3, EXCEPT transient/retryable codes (429/5xx), which must
+                # not flip PW3 detection (a busy PW2 is still a PW2), so the
+                # prior value is kept for those.
+                if resp.status_code in BUSY_CODES or resp.status_code in RETRY_FORCE_CODES:
+                    log.debug(f"Transient response {resp.status_code} from gateway - "
+                              f"keeping PW3 detection as {self.pw3}")
+                else:
+                    log.debug("Detected Powerwall 3 Gateway")
+                    self.pw3 = True
             self.din = self.get_din()
         except Exception as e:
             log.error(f"Unable to connect to Powerwall Gateway {self.gw_ip}")
