@@ -197,6 +197,11 @@ Proxy-level inconsistencies (equally frozen):
   while POST errors map to 400/401.
 - `/soe` returns the raw gateway percentage; `/api/system_status/soe` returns the
   Tesla-app scale — two different values for the same metric.
+- TEDAPI `vitals()` emits `TESYNC--None--None` and `TESLA--None` blocks when the SYNC
+  bus is absent (typical PW3). The names look like garbage, but `TESLA--None`'s
+  `componentParentDin` (`STSTSM--<vin>`) is the only place the gateway DIN/serial
+  appears in TEDAPI vitals — consumers depend on it. Do not "clean up" these blocks
+  (verified by hardware regression during the v0.16.0 review).
 
 ## Threading Model
 

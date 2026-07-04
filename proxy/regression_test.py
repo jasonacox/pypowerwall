@@ -25,7 +25,6 @@
 """
 import argparse
 import json
-import re
 import sys
 import urllib.request
 
@@ -72,11 +71,6 @@ VOLATILE = [
 # Numeric tolerance for live readings: pass if within EITHER bound
 REL_TOL = 0.5       # 50% relative - live power values swing between polls
 ABS_TOL = 500.0     # or 500 absolute (watts-scale jitter, voltage wobble)
-
-# Device keys deliberately removed in v0.16.0: all-None phantom vitals blocks
-# (TESLA--None, TESYNC--None--None) are no longer emitted when the SYNC bus /
-# package serial is absent. Their absence in the new build is expected.
-PHANTOM_KEY = re.compile(r"--None(--None)?$")
 
 
 def is_volatile(key_path):
@@ -133,11 +127,6 @@ def compare(old, new, path=""):
     if isinstance(old, dict):
         missing = set(old) - set(new)
         extra = set(new) - set(old)
-        phantom = {k for k in missing if PHANTOM_KEY.search(k)}
-        missing -= phantom
-        if phantom:
-            warns.append(f"{path or '/'}: phantom blocks removed (expected in "
-                         f"v0.16.0): {sorted(phantom)[:8]}")
         if missing:
             fails.append(f"{path or '/'}: keys missing in new: {sorted(missing)[:8]}")
         if extra:

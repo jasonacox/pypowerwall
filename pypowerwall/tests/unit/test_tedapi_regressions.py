@@ -305,8 +305,11 @@ class TestPollVitalsForwardsForce:
 
 
 class TestVitalsPhantomBlocks:
-    """When esCan.bus.SYNC is absent (typical PW3), vitals() used to emit
-    all-None TESYNC--None--None and TESLA--None blocks."""
+    """When esCan.bus.SYNC is absent (typical PW3), vitals() emits
+    TESYNC--None--None and TESLA--None blocks. Despite the odd names these
+    are FROZEN behavior: TESLA--None's componentParentDin (STSTSM--<vin>) is
+    the only place the gateway DIN/serial appears in TEDAPI vitals and
+    consumers depend on it (hardware regression, PR #349)."""
 
     def _make_ted(self, status):
         with patch.object(TEDAPI, 'connect', return_value=True):
@@ -334,13 +337,15 @@ class TestVitalsPhantomBlocks:
             },
         }
 
-    def test_no_sync_omits_phantom_blocks(self):
+    def test_no_sync_still_emits_tesla_block_with_gateway_din(self):
+        """TESLA--None must be emitted even without SYNC data - its
+        componentParentDin carries the gateway DIN/serial."""
         ted = self._make_ted(self._status())
         vitals = ted.vitals()
         assert vitals is not None
-        assert 'TESYNC--None--None' not in vitals
-        assert 'TESLA--None' not in vitals
-        assert not any(k.startswith('TESYNC--') for k in vitals)
+        assert 'TESYNC--None--None' in vitals
+        assert 'TESLA--None' in vitals
+        assert vitals['TESLA--None']['componentParentDin'] == 'STSTSM--GW--123'
 
     def test_sync_present_emits_tesync(self):
         sync = {
