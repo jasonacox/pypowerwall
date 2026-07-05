@@ -86,14 +86,17 @@ def _httpx_auth_verify(verify=True):
         return verify
     if isinstance(verify, ssl.SSLContext):
         return verify
-    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_2"):
+    if hasattr(ssl, "TLSVersion"):
         try:
             ctx = ssl.create_default_context()
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-            if sys.platform == 'win32':
-                # Windows: cap to TLS 1.2 to avoid fingerprint rejection
+            if sys.platform == 'win32' and hasattr(ssl.TLSVersion, "TLSv1_2"):
+                # Windows: cap to TLS 1.2 — Windows OpenSSL's TLS 1.3 ClientHello
+                # fingerprint is rejected by Tesla, causing tainted tokens / 403.
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_2
                 ctx.maximum_version = ssl.TLSVersion.TLSv1_2
             elif hasattr(ssl.TLSVersion, "TLSv1_3"):
+                # macOS/Linux: strict TLS 1.3 pin (unchanged from pre-PR behaviour)
+                ctx.minimum_version = ssl.TLSVersion.TLSv1_3
                 ctx.maximum_version = ssl.TLSVersion.TLSv1_3
             return ctx
         except Exception:

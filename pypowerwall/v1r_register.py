@@ -43,12 +43,8 @@ OWNER_AUTHFILE = ".pypowerwall.auth"  # Shared with Cloud Mode
 
 CERT_DIR = os.getcwd()
 
-# Legacy SSL context for non-Tesla urllib calls (e.g. local fleet token exchange)
+# Default SSL context for urllib fallback paths (non-httpx calls)
 SSL_CTX = ssl.create_default_context()
-
-# Platform-aware Tesla SSL context (used by _ssl_ctx() and httpx calls)
-# Windows: TLS 1.2 only (Tesla rejects TLS 1.3 fingerprint from Windows OpenSSL)
-# Other:   TLS 1.3 preferred
 
 # Fleet API region endpoints
 FLEET_REGIONS = {
@@ -111,15 +107,16 @@ def _ssl_ctx():
     """Build an SSLContext matching the platform-aware Tesla TLS policy.
 
     Mirrors _httpx_auth_verify() in tesla_auth.py:
-      * TLS 1.2 floor (HTTP/2 minimum)
-      * Windows capped at TLS 1.2 (fingerprint rejection at 1.3)
-      * Other platforms pin to TLS 1.3
+      * Windows: TLS 1.2 only — Windows OpenSSL's TLS 1.3 fingerprint is
+        rejected by Tesla, causing tainted tokens / 403 errors.
+      * Other platforms: strict TLS 1.3 pin (unchanged from pre-PR behaviour).
     """
     ctx = ssl.create_default_context()
-    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    if sys.platform == 'win32':
+    if sys.platform == 'win32' and hasattr(ssl.TLSVersion, 'TLSv1_2'):
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.maximum_version = ssl.TLSVersion.TLSv1_2
     elif hasattr(ssl.TLSVersion, 'TLSv1_3'):
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_3
         ctx.maximum_version = ssl.TLSVersion.TLSv1_3
     return ctx
 
