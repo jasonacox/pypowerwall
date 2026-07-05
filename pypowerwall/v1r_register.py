@@ -43,7 +43,12 @@ OWNER_AUTHFILE = ".pypowerwall.auth"  # Shared with Cloud Mode
 
 CERT_DIR = os.getcwd()
 
+# Legacy SSL context for non-Tesla urllib calls (e.g. local fleet token exchange)
 SSL_CTX = ssl.create_default_context()
+
+# Platform-aware Tesla SSL context (used by _ssl_ctx() and httpx calls)
+# Windows: TLS 1.2 only (Tesla rejects TLS 1.3 fingerprint from Windows OpenSSL)
+# Other:   TLS 1.3 preferred
 
 # Fleet API region endpoints
 FLEET_REGIONS = {
@@ -102,8 +107,55 @@ def get_config():
     return client_id, client_secret, redirect_uri, fleet_api_base
 
 
+def _ssl_ctx():
+    """Build an SSLContext matching the platform-aware Tesla TLS policy.
+
+    Mirrors _httpx_auth_verify() in tesla_auth.py:
+      * TLS 1.2 floor (HTTP/2 minimum)
+      * Windows capped at TLS 1.2 (fingerprint rejection at 1.3)
+      * Other platforms pin to TLS 1.3
+    """
+    ctx = ssl.create_default_context()
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    if sys.platform == 'win32':
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    elif hasattr(ssl.TLSVersion, 'TLSv1_3'):
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+    return ctx
+
+
 def api_call(url, method="GET", data=None, headers=None, token=None):
-    """Make an API call."""
+    """Make an API call to Tesla endpoints using HTTP/2 when available.
+
+    Tesla now requires HTTP/2 for owner-api.teslamotors.com calls (June 2026).
+    Falls back to urllib (HTTP/1.1) for non-Tesla URLs or if httpx is missing.
+    """
+    # Use httpx with HTTP/2 for Tesla API endpoints
+    is_tesla = 'teslamotors.com' in url or 'tesla.com' in url or 'tesla.cn' in url
+    if is_tesla:
+        try:
+            import httpx
+        except ImportError:
+            httpx = None
+        if httpx:
+            req_headers = {}
+            if token:
+                req_headers['Authorization'] = f"Bearer {token}"
+            if headers:
+                req_headers.update(headers)
+            client_kwargs = {'http2': True, 'verify': _ssl_ctx(), 'timeout': 30}
+            try:
+                with httpx.Client(**client_kwargs) as client:
+                    resp = client.request(method, url, json=data if isinstance(data, dict) else None,
+                                          headers=req_headers)
+                    try:
+                        return resp.status_code, resp.json()
+                    except json.JSONDecodeError:
+                        return resp.status_code, resp.text
+            except Exception:
+                pass  # fall through to urllib fallback
+
+    # Fallback: urllib (HTTP/1.1) for non-Tesla URLs or missing httpx
     req = urllib.request.Request(url, method=method)
     if token:
         req.add_header("Authorization", f"Bearer {token}")

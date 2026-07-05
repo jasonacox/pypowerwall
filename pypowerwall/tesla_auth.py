@@ -69,18 +69,32 @@ REGION_HOSTS = {
 
 
 def _httpx_auth_verify(verify=True):
-    """Return an httpx-compatible verify setting pinned to TLS 1.3 when possible."""
+    """Return an httpx-compatible SSLContext for Tesla auth endpoints.
+
+    Uses TLS 1.2 as the floor (required for HTTP/2). On Linux/macOS we pin
+    to TLS 1.3 (existing behaviour). On Windows we cap at TLS 1.2 because
+    Windows Python's bundled OpenSSL produces a TLS 1.3 ClientHello
+    fingerprint that Tesla rejects during PKCE code exchange and token
+    refresh — the tokens come back "tainted" and every subsequent
+    owner-api.teslamotors.com call returns 403.
+
+    See: https://github.com/jasonacox/pypowerwall/issues/350
+    """
     if verify is False:
         return False
     if isinstance(verify, (str, bytes)):
         return verify
     if isinstance(verify, ssl.SSLContext):
         return verify
-    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_3"):
+    if hasattr(ssl, "TLSVersion") and hasattr(ssl.TLSVersion, "TLSv1_2"):
         try:
             ctx = ssl.create_default_context()
-            ctx.minimum_version = ssl.TLSVersion.TLSv1_3
-            ctx.maximum_version = ssl.TLSVersion.TLSv1_3
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            if sys.platform == 'win32':
+                # Windows: cap to TLS 1.2 to avoid fingerprint rejection
+                ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+            elif hasattr(ssl.TLSVersion, "TLSv1_3"):
+                ctx.maximum_version = ssl.TLSVersion.TLSv1_3
             return ctx
         except Exception:
             pass
