@@ -49,7 +49,8 @@ pw = pypowerwall.Powerwall(
     retry_modes=False,
     gw_pwd=None,
     rsa_key_path=None,
-    wifi_host=None
+    wifi_host=None,
+    tedapi_api_version="V2024_06"
 )
 ```
 
@@ -72,6 +73,7 @@ pw = pypowerwall.Powerwall(
 - `gw_pwd`: Full gateway password from QR sticker (used for TEDAPI and v1r modes; last 5 chars auto-derived for Basic login)
 - `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 wired LAN)
 - `wifi_host`: Optional WiFi TEDAPI host used as fallback transport for follower queries in v1r mode
+- `tedapi_api_version`: TEDAPI query/protobuf set — `"V2024_06"` (default, legacy QueryType path) or `"V2026_06"` (Tesla-signed GraphQL / bearer path)
 
 ---
 

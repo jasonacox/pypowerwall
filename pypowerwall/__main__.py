@@ -480,7 +480,7 @@ def main():
                              help="Optional WiFi TEDAPI host for v1r follower fallback")
     tedapi_args.add_argument("-tedapi_api_version", type=str, default=None,
                              choices=[v.value for v in TEDAPIApiVersion],
-                             help="TEDAPI query/protobuf version to use (june_2024 or june_2026)")
+                             help="TEDAPI query/protobuf version to use (V2024_06 or V2026_06)")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')

@@ -133,7 +133,7 @@ class Powerwall(object):
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
-                 rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.JUNE_2024):
+                 rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.V2024_06):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -188,7 +188,7 @@ class Powerwall(object):
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
         self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r wifi fallback
-        # TEDAPIApiVersion.JUNE_2024 (default) or .JUNE_2026; coerce str inputs.
+        # TEDAPIApiVersion.V2024_06 (default) or .V2026_06; coerce str inputs.
         self.tedapi_api_version = TEDAPIApiVersion.coerce(tedapi_api_version)
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid

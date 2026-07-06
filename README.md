@@ -556,7 +556,7 @@ print("System Status: %r\n" % pw.system_status())
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize,
         cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd,
-        rsa_key_path, wifi_host)
+        rsa_key_path, wifi_host, tedapi_api_version)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway; may include :port for non-standard HTTPS (e.g. 10.0.1.99:8443); default port is 443 if omitted
@@ -579,6 +579,9 @@ print("System Status: %r\n" % pw.system_status())
                                 and auto-derived (last 5 chars) for v1r login (mode 5)
     rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi (Powerwall 3)
     wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
+    tedapi_api_version = "V2024_06"  # TEDAPI query/protobuf set: "V2024_06" (default,
+                                #   legacy QueryType path) or "V2026_06" (Tesla-signed
+                                #   GraphQL / bearer path)
 
  Functions
     connect(retry)            # Connect to Powerwall and select mode (retry=True to keep retrying)

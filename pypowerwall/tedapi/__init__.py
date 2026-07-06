@@ -8,7 +8,8 @@
 
  Class:
     TEDAPI(gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-              pwconfigexpire: int = 5, host: str = GW_IP) - Initialize TEDAPI
+              pwconfigexpire: int = 5, host: str = GW_IP,
+              tedapi_api_version: str = "V2024_06") - Initialize TEDAPI
 
  Parameters:
     gw_pwd - Powerwall Gateway Password
@@ -17,6 +18,9 @@
     timeout - API Timeout in seconds
     pwconfigexpire - Configuration Cache Expiration in seconds
     host - Powerwall Gateway IP Address (default: 192.168.91.1)
+    tedapi_api_version - Query/protobuf set: "V2024_06" (default, legacy QueryType
+                         path) or "V2026_06" (Tesla-signed GraphQL / bearer path).
+                         Accepts a string or TEDAPIApiVersion.
 
  Functions:
     get_din() - Get the DIN from the Powerwall Gateway
@@ -67,10 +71,10 @@ from pypowerwall import __version__
 from pypowerwall.api_lock import acquire_lock_with_backoff
 from pypowerwall.helpers import lookup
 
-from .protobuf.june_2024 import tedapi_pb2
-from .protobuf.june_2024 import tedapi_combined_pb2 as combined_pb2
+from .protobuf.V2024_06 import tedapi_pb2
+from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
-from .queries import apply_query, get_query
+from .queries import apply_query, get_query, QueryRole
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -134,11 +138,11 @@ class TEDAPI:
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str | None = None, rsa_key_path: str | None = None,
                  wifi_host: str | None = None,
-                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.JUNE_2024) -> None:
+                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication."""
         self.debug = debug
-        # Query/protobuf version set: JUNE_2024 (default, hand-rolled captures) or
-        # JUNE_2026 (Tesla-signed pairs sent via the energy_device graphql path).
+        # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
+        # V2026_06 (Tesla-signed pairs sent via the energy_device graphql path).
         # Accepts a TEDAPIApiVersion or a plain string (e.g. from an env var / CLI).
         self.tedapi_api_version = TEDAPIApiVersion.coerce(tedapi_api_version)
         self.pwcachetime = {}  # holds the cached data timestamps for api
@@ -656,32 +660,12 @@ class TEDAPI:
                 log.debug("Get Status from Powerwall")
 
                 # Build Protobuf to fetch status
-                if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                    request_bytes = self._build_signed_query_request(
-                        get_query("device_controller_basic", TEDAPIApiVersion.JUNE_2026))
-                else:
-                    pb = tedapi_pb2.Message()
-                    pb.message.deliveryChannel = 1
-                    pb.message.sender.local = 1
-                    pb.message.recipient.din = self.din  # DIN of Powerwall
-                    pb.message.payload.send.num = 2
-                    pb.message.payload.send.payload.value = 1
-                    apply_query(pb.message.payload.send, get_query("device_controller_basic"))
-                    pb.tail.value = 1
-                    request_bytes = pb.SerializeToString()
+                request_bytes = self._build_request(QueryRole.DEVICE_CONTROLLER_BASIC)
                 try:
                     response = self._post_tedapi(request_bytes)
                     if response is None:
                         return None
-                    if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                        payload = self._parse_signed_query_response(response)
-                    elif self.v1r:
-                        payload = self._parse_v1r_query_response(response)
-                    else:
-                        # Decode WiFi v1 response
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.payload.recv.text
+                    payload = self._parse_response(response)
                     try:
                         data = json.loads(payload)
                     except (json.JSONDecodeError, TypeError) as e:
@@ -755,31 +739,12 @@ class TEDAPI:
                 log.debug("Get controller data from Powerwall")
 
                 # Build Protobuf to fetch controller data
-                if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                    request_bytes = self._build_signed_query_request(
-                        get_query("device_controller_full", TEDAPIApiVersion.JUNE_2026))
-                else:
-                    pb = tedapi_pb2.Message()
-                    pb.message.deliveryChannel = 1
-                    pb.message.sender.local = 1
-                    pb.message.recipient.din = self.din  # DIN of Powerwall
-                    pb.message.payload.send.num = 2
-                    pb.message.payload.send.payload.value = 1
-                    apply_query(pb.message.payload.send, get_query("device_controller_full"))
-                    pb.tail.value = 1
-                    request_bytes = pb.SerializeToString()
+                request_bytes = self._build_request(QueryRole.DEVICE_CONTROLLER_FULL)
                 try:
                     response = self._post_tedapi(request_bytes)
                     if response is None:
                         return None
-                    if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                        payload = self._parse_signed_query_response(response)
-                    elif self.v1r:
-                        payload = self._parse_v1r_query_response(response)
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.payload.recv.text
+                    payload = self._parse_response(response)
                     log.debug(f"Payload: {payload}")
                     try:
                         data = json.loads(payload)
@@ -969,31 +934,12 @@ class TEDAPI:
                 log.debug("Get PW3 Components from Powerwall")
 
                 # Build Protobuf to fetch config
-                if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                    request_bytes = self._build_signed_query_request(
-                        get_query("components", TEDAPIApiVersion.JUNE_2026))
-                else:
-                    pb = tedapi_pb2.Message()
-                    pb.message.deliveryChannel = 1
-                    pb.message.sender.local = 1
-                    pb.message.recipient.din = self.din  # DIN of Powerwall
-                    pb.message.payload.send.num = 2
-                    pb.message.payload.send.payload.value = 1
-                    apply_query(pb.message.payload.send, get_query("components"))
-                    pb.tail.value = 1
-                    request_bytes = pb.SerializeToString()
+                request_bytes = self._build_request(QueryRole.COMPONENTS)
                 try:
                     response = self._post_tedapi(request_bytes)
                     if response is None:
                         return None
-                    if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                        payload = self._parse_signed_query_response(response)
-                    elif self.v1r:
-                        payload = self._parse_v1r_query_response(response)
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.payload.recv.text
+                    payload = self._parse_response(response)
                     log.debug(f"Payload (len={len(payload) if payload else 0}): {payload}")
                     components = json.loads(payload)
                     log.debug(f"Components: {components}")
@@ -1097,42 +1043,20 @@ class TEDAPI:
                 url_suffix = '/tedapi/v1'
             else:
                 url_suffix = f'/tedapi/device/{pw_din}/v1'
-            if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                request_bytes = self._build_signed_query_request(
-                    get_query("components", TEDAPIApiVersion.JUNE_2026),
-                    recipient_din=pw_din,
-                    sender_din=None if single_pw else din,
-                    tail=1 if single_pw else 2)
-            else:
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.recipient.din = pw_din  # DIN of Powerwall of Interest
-                pb.message.payload.send.num = 2
-                pb.message.payload.send.payload.value = 1
-                apply_query(pb.message.payload.send, get_query("components"))
-                if single_pw:
-                    # If only one Powerwall, use basic tedapi URL
-                    pb.tail.value = 1
-                else:
-                    # If multiple Powerwalls, use tedapi/device/{pw_din}/v1
-                    pb.tail.value = 2
-                    pb.message.sender.din = din  # DIN of Primary Powerwall 3 / System
-                request_bytes = pb.SerializeToString()
+            # single_pw -> local sender, tail 1, basic URL; multi -> follower
+            # routed via the primary DIN (sender), tail 2, per-device URL
+            request_bytes = self._build_request(
+                QueryRole.COMPONENTS,
+                recipient_din=pw_din,
+                sender_din=None if single_pw else din,
+                tail=1 if single_pw else 2)
             if use_wifi:
                 # WiFi fallback for follower — use WiFi session (standard protobuf response)
                 api_response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
             else:
                 api_response = self._post_tedapi(request_bytes, din=pw_din, url_suffix=url_suffix)
             if api_response is not None:
-                if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                    payload = self._parse_signed_query_response(api_response)
-                elif self.v1r and not use_wifi:
-                    payload = self._parse_v1r_query_response(api_response)
-                else:
-                    tedapi = tedapi_pb2.Message()
-                    tedapi.ParseFromString(api_response)
-                    payload = tedapi.message.payload.recv.text
+                payload = self._parse_response(api_response, from_wifi=use_wifi)
                 if payload:
                     # Guard the JSON parse and component access - a malformed or
                     # partial follower payload should not abort the whole vitals call
@@ -1320,22 +1244,9 @@ class TEDAPI:
                 # Fetch Battery Block from Powerwall
                 log.debug(f"Get Battery Block from Powerwall ({din})")
 
-                # Build Protobuf to fetch config
-                if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                    request_bytes = self._build_signed_query_request(
-                        get_query("components", TEDAPIApiVersion.JUNE_2026),
-                        recipient_din=din, sender_din=self.din, tail=2)
-                else:
-                    pb = tedapi_pb2.Message()
-                    pb.message.deliveryChannel = 1
-                    pb.message.sender.local = 1
-                    pb.message.sender.din = self.din  # DIN of Primary Powerwall 3 / System
-                    pb.message.recipient.din = din  # DIN of Powerwall of Interest
-                    pb.message.payload.send.num = 2
-                    pb.message.payload.send.payload.value = 1
-                    apply_query(pb.message.payload.send, get_query("components"))
-                    pb.tail.value = 2
-                    request_bytes = pb.SerializeToString()
+                # Build Protobuf to fetch config (follower routed via primary DIN)
+                request_bytes = self._build_request(
+                    QueryRole.COMPONENTS, recipient_din=din, sender_din=self.din, tail=2)
                 try:
                     url_suffix = f'/tedapi/device/{din}/v1'
                     if use_wifi:
@@ -1345,25 +1256,15 @@ class TEDAPI:
                                                      url_suffix=url_suffix)
                     if response is None:
                         return None
-                    if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                        payload_text = self._parse_signed_query_response(response)
+                    # battery block is a config fetch (legacy text lives in
+                    # config.recv.file.text); a malformed payload -> {} rather
+                    # than aborting the whole call
+                    payload_text = self._parse_response(response, from_wifi=use_wifi, config=True)
+                    try:
                         data = json.loads(payload_text) if payload_text else {}
-                    elif self.v1r and not use_wifi:
-                        # v1r battery block config — try parsing as query response first
-                        payload_text = self._parse_v1r_query_response(response)
-                        if payload_text:
-                            data = json.loads(payload_text)
-                        else:
-                            data = {}
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.config.recv.file.text
-                        try:
-                            data = json.loads(payload)
-                        except json.JSONDecodeError as e:
-                            log.error(f"Error Decoding JSON: {e}")
-                            data = {}
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
                     log.debug(f"Configuration: {data}")
                     self.pwcachetime[din] = time.time()
                     self.pwcache[din] = data
@@ -1592,17 +1493,36 @@ class TEDAPI:
             except Exception as e:
                 log.debug(f"Error closing v1r session: {e}")
 
+    @staticmethod
+    def _import_v2026_pb2():
+        """Import the V2026_06 (Tesla-signed GraphQL) transport + energy_device
+        protobuf modules, raising a clear, actionable error on an old runtime.
+
+        These are the only protobufs in the package built with the latest protoc:
+        their `*_pb2.py` embed a `runtime_version.ValidateProtobufRuntimeVersion()`
+        guard and require protobuf>=6.33.6. The library floor stays at 4.25.1 and
+        the default V2024_06 path never imports these — so this newer requirement
+        (and this error) is only reached when a caller opts into the V2026_06 set."""
+        try:
+            from .protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
+            from .protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
+            return tx, ed
+        except Exception as e:
+            raise ImportError(
+                'tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — '
+                'pip install -U protobuf'
+            ) from e
+
     def _build_signed_query_request(self, query, *, recipient_din: str = None,
                                     sender_din: str = None, tail: int = 1) -> bytes:
-        """Build a june_2026 SIGNED GraphQL request: the energy_device
+        """Build a V2026_06 SIGNED GraphQL request: the energy_device
         MessageEnvelope (graphql.queryRequest, format=SIGNED) wrapped in the
-        v2 transport Message + Tail. `query` is a june_2026 TEDAPIQuery whose
+        v2 transport Message + Tail. `query` is a V2026_06 TEDAPIQuery whose
         signed_bytes/code carry the Tesla-signed SignedGraphQLQuery + signature.
 
         Returns full Message bytes (same shape as the legacy path); _post_tedapi
         extracts the bare envelope for v1r."""
-        from .protobuf.june_2026 import tedapi_v2_transport_pb2 as tx
-        from .protobuf.june_2026 import tedapi_v2_energy_device_pb2 as ed
+        tx, ed = self._import_v2026_pb2()
         pb = tx.Message()
         pb.message.deliveryChannel = ed.DELIVERY_CHANNEL_LOCAL_HTTPS
         if sender_din:
@@ -1618,17 +1538,27 @@ class TEDAPI:
         pb.tail.value = tail
         return pb.SerializeToString()
 
-    def _parse_signed_query_response(self, response: bytes) -> Optional[str]:
-        """Extract the JSON payload from a june_2026 GraphQLAPIQueryResponse.
+    def _parse_signed_query_response(self, response: bytes, from_wifi: bool = False) -> Optional[str]:
+        """Extract the JSON payload from a V2026_06 GraphQLAPIQueryResponse.
 
-        Basic mode returns a full transport Message; v1r returns a bare
-        energy_device MessageEnvelope. Returns the JSON text, or None."""
+        The wire shape depends on the transport, not the mode: only a v1r LAN
+        response is a bare energy_device MessageEnvelope; basic mode AND the v1r
+        WiFi-follower fallback (`_post_tedapi_wifi`) both return a full transport
+        Message with a tail. Callers on the WiFi-follower path must therefore pass
+        `from_wifi=True` even when `self.v1r` is set, otherwise the full Message is
+        misparsed as a bare envelope (protobuf parses it leniently, yielding an
+        empty queryResponse and a silent None). Returns the JSON text, or None.
+
+        TODO: `from_wifi` is a misnomer — the real distinction is full transport
+        Message (with tail) vs. bare MessageEnvelope, not the transport medium.
+        Now that the LAN bearer path also returns a full Message, rename to
+        something like `full_message`/`wrapped` and invert the callers
+        accordingly (condition becomes `full_message or not self.v1r`)."""
         if not response:
             return None
-        from .protobuf.june_2026 import tedapi_v2_transport_pb2 as tx
-        from .protobuf.june_2026 import tedapi_v2_energy_device_pb2 as ed
+        tx, ed = self._import_v2026_pb2()
         try:
-            if self.v1r:
+            if self.v1r and not from_wifi:
                 env = ed.MessageEnvelope()
                 env.ParseFromString(response)
             else:
@@ -1636,24 +1566,70 @@ class TEDAPI:
                 m.ParseFromString(response)
                 env = m.message
         except Exception as e:
-            log.error(f"Error parsing june_2026 response: {e}")
+            log.error(f"Error parsing V2026_06 response: {e}")
             return None
         resp = env.graphql.queryResponse
         if resp.errors:
             log.error("GraphQL errors: %s",
                       [(er.code, er.message) for er in resp.errors])
-            # A june_2026 query carries a Tesla-signed SignedGraphQLQuery. If the
+            # A V2026_06 query carries a Tesla-signed SignedGraphQLQuery. If the
             # gateway rejects every query after a firmware update, Tesla has most
             # likely rotated the query signing keys and the bundled signatures no
             # longer validate. Point the user at the legacy fallback so a total
-            # june_2026 outage is diagnosable rather than a silent empty payload.
+            # V2026_06 outage is diagnosable rather than a silent empty payload.
             log.warning(
-                "june_2026 signed query rejected by the gateway. If this persists "
+                "V2026_06 signed query rejected by the gateway. If this persists "
                 "after a firmware update, Tesla may have rotated the query signing "
-                'keys; fall back with tedapi_api_version="june_2024" '
-                "(CLI: -tedapi_api_version=june_2024)."
+                'keys; fall back with tedapi_api_version="V2024_06" '
+                "(CLI: -tedapi_api_version=V2024_06)."
             )
         return resp.data or None
+
+    def _build_request(self, role: QueryRole, *, recipient_din: str = None,
+                       sender_din: str = None, tail: int = 1) -> bytes:
+        """Build a TEDAPI request for ``role``, dispatching on tedapi_api_version.
+
+        V2026_06 emits a Tesla-signed GraphQL request; every other version emits
+        the legacy QueryType protobuf. Single place the version split lives for the
+        request side — a future june_20xx adds one branch here, not one at every
+        build call site. ``sender_din`` selects follower routing (else local),
+        ``recipient_din`` defaults to this gateway's DIN."""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            return self._build_signed_query_request(
+                get_query(role, TEDAPIApiVersion.V2026_06),
+                recipient_din=recipient_din, sender_din=sender_din, tail=tail)
+        pb = tedapi_pb2.Message()
+        pb.message.deliveryChannel = 1
+        if sender_din:
+            pb.message.sender.din = sender_din
+        else:
+            pb.message.sender.local = 1
+        pb.message.recipient.din = recipient_din or self.din
+        pb.message.payload.send.num = 2
+        pb.message.payload.send.payload.value = 1
+        apply_query(pb.message.payload.send, get_query(role))
+        pb.tail.value = tail
+        return pb.SerializeToString()
+
+    def _parse_response(self, response: bytes, *, from_wifi: bool = False,
+                        config: bool = False) -> Optional[str]:
+        """Decode a TEDAPI response to its JSON payload text, dispatching on
+        tedapi_api_version and transport. V2026_06 -> signed GraphQL; v1r LAN ->
+        v1r query response; otherwise the legacy WiFi/basic protobuf. Config
+        fetches carry the text in ``config.recv.file.text``, queries in
+        ``payload.recv.text``. Single place the version+transport split lives for
+        the response side, so the WiFi-fallback context (``from_wifi``) can't be
+        forgotten at a call site (see the transport note on
+        _parse_signed_query_response)."""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            return self._parse_signed_query_response(response, from_wifi=from_wifi)
+        if self.v1r and not from_wifi:
+            return self._parse_v1r_query_response(response)
+        tedapi = tedapi_pb2.Message()
+        tedapi.ParseFromString(response)
+        if config:
+            return tedapi.message.config.recv.file.text
+        return tedapi.message.payload.recv.text
 
     def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
         """
@@ -1699,14 +1675,17 @@ class TEDAPI:
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message
             # wrapper with tail). Extract the envelope from the full Message.
+            if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+                # Parse with the v2 transport proto so the field-16 graphql
+                # payload survives the re-extract (legacy proto would drop it).
+                # Import outside the try so an old-protobuf error isn't masked by
+                # the parse-fallback below (unreachable in practice — the request
+                # was already built via the guarded _build_signed_query_request).
+                _tx, _ = self._import_v2026_pb2()
+                msg = _tx.Message()
+            else:
+                msg = tedapi_pb2.Message()
             try:
-                if self.tedapi_api_version == TEDAPIApiVersion.JUNE_2026:
-                    # Parse with the v2 transport proto so the field-16 graphql
-                    # payload survives the re-extract (legacy proto would drop it).
-                    from .protobuf.june_2026 import tedapi_v2_transport_pb2 as _tx
-                    msg = _tx.Message()
-                else:
-                    msg = tedapi_pb2.Message()
                 msg.ParseFromString(pb_bytes)
                 envelope_bytes = msg.message.SerializeToString()
             except Exception:

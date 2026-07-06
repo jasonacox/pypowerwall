@@ -1,1 +1,1 @@
-"""Versioned TEDAPI protobuf packages (june_2024 = legacy, june_2026 = energy_device.v1)."""
+"""Versioned TEDAPI protobuf packages (V2024_06 = legacy, V2026_06 = energy_device.v1)."""

@@ -1,8 +1,9 @@
-"""Tests for the two-version TEDAPI query path (june_2024 + june_2026).
+"""Tests for the two-version TEDAPI query path (V2024_06 + V2026_06).
 
 Priority is the default-unchanged guarantee: with tedapi_api_version unset the
-june_2024 request bytes must be exactly what they were before the migration.
+V2024_06 request bytes must be exactly what they were before the migration.
 """
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -10,8 +11,8 @@ import pytest
 from pypowerwall.tedapi import TEDAPI, tedapi_pb2
 from pypowerwall.tedapi import queries as q
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
-from pypowerwall.tedapi.protobuf.june_2026 import tedapi_v2_transport_pb2 as tx
-from pypowerwall.tedapi.protobuf.june_2026 import tedapi_v2_energy_device_pb2 as ed
+from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
+from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
 
 
 @pytest.fixture
@@ -25,59 +26,59 @@ def api():
 
 # --- version selection ------------------------------------------------------
 
-def test_default_version_is_june_2024(api):
-    assert api.tedapi_api_version == "june_2024"
+def test_default_version_is_V2024_06(api):
+    assert api.tedapi_api_version == "V2024_06"
 
 
-def test_invalid_version_falls_back_to_june_2024():
+def test_invalid_version_falls_back_to_V2024_06():
     with patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
         a = TEDAPI("pw", tedapi_api_version="nonsense")
-    assert a.tedapi_api_version == "june_2024"
+    assert a.tedapi_api_version == "V2024_06"
 
 
-def test_june_2026_version_is_stored():
+def test_V2026_06_version_is_stored():
     with patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
-        a = TEDAPI("pw", tedapi_api_version="june_2026")
-    assert a.tedapi_api_version == "june_2026"
+        a = TEDAPI("pw", tedapi_api_version="V2026_06")
+    assert a.tedapi_api_version == "V2026_06"
 
 
 def test_version_is_enum_instance(api):
     # stored value is the enum (str input is coerced), and still == the string
     assert isinstance(api.tedapi_api_version, TEDAPIApiVersion)
-    assert api.tedapi_api_version is TEDAPIApiVersion.JUNE_2024
+    assert api.tedapi_api_version is TEDAPIApiVersion.V2024_06
 
 
 def test_accepts_enum_input():
     with patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
-        a = TEDAPI("pw", tedapi_api_version=TEDAPIApiVersion.JUNE_2026)
-    assert a.tedapi_api_version is TEDAPIApiVersion.JUNE_2026
+        a = TEDAPI("pw", tedapi_api_version=TEDAPIApiVersion.V2026_06)
+    assert a.tedapi_api_version is TEDAPIApiVersion.V2026_06
 
 
 # --- query registry ---------------------------------------------------------
 
-def test_get_query_june_2024_default():
+def test_get_query_V2024_06_default():
     dc = q.get_query("device_controller_basic")
-    assert dc is q.JUNE_2024_QUERIES["device_controller_basic"]
+    assert dc is q.V2024_06_QUERIES["device_controller_basic"]
     assert dc.version == 0 and not dc.signed_bytes
 
 
-def test_get_query_june_2026_maps_device_controller():
-    dc = q.get_query("device_controller_full", "june_2026")
+def test_get_query_V2026_06_maps_device_controller():
+    dc = q.get_query("device_controller_full", "V2026_06")
     assert dc.version == 2 and dc.signed_bytes and len(dc.code) == 139
 
 
-def test_get_query_june_2026_components_maps_to_pw3query():
+def test_get_query_V2026_06_components_maps_to_pw3query():
     # Full parity: Tesla replaced ComponentsQuery with PW3Query (same component
-    # types); june_2026 uses Tesla's query, never the june_2024 fallback.
-    comp = q.get_query("components", "june_2026")
-    assert comp is q.JUNE_2026_QUERIES["PW3Query"]
+    # types); V2026_06 uses Tesla's query, never the V2024_06 fallback.
+    comp = q.get_query("components", "V2026_06")
+    assert comp is q.V2026_06_QUERIES["PW3Query"]
     assert comp.version == 2 and comp.signed_bytes
 
 
-def test_june_2026_never_falls_back_to_june_2024():
-    # Every june_2024 role must resolve to a real Tesla query under june_2026.
-    for role in q.JUNE_2024_QUERIES:
-        assert q.get_query(role, "june_2026") in q.JUNE_2026_QUERIES.values()
+def test_V2026_06_never_falls_back_to_V2024_06():
+    # Every V2024_06 role must resolve to a real Tesla query under V2026_06.
+    for role in q.V2024_06_QUERIES:
+        assert q.get_query(role, "V2026_06") in q.V2026_06_QUERIES.values()
 
 
 def test_get_query_by_name_diagnostics():
@@ -85,69 +86,95 @@ def test_get_query_by_name_diagnostics():
         assert q.get_query_by_name(name).signed_bytes
 
 
+def test_query_role_enum():
+    # str-enum: members equal their string value and interoperate as dict keys
+    # against both the string-keyed query sets and the QueryRole-keyed roles map.
+    assert q.QueryRole.COMPONENTS == "components"
+    assert q.V2024_06_QUERIES[q.QueryRole.DEVICE_CONTROLLER_BASIC].version == 0
+    assert q.get_query(q.QueryRole.COMPONENTS, "V2026_06") is q.V2026_06_QUERIES["PW3Query"]
+    # roles map is keyed by the enum but still reachable by a plain string
+    assert q.V2026_06_ROLES[q.QueryRole.COMPONENTS] == "PW3Query"
+    assert q.V2026_06_ROLES["components"] == "PW3Query"
+
+
 # --- TEDAPIApiVersion.coerce() ----------------------------------------------
 
 def test_coerce_string_input():
-    assert TEDAPIApiVersion.coerce("june_2024") is TEDAPIApiVersion.JUNE_2024
-    assert TEDAPIApiVersion.coerce("june_2026") is TEDAPIApiVersion.JUNE_2026
+    assert TEDAPIApiVersion.coerce("V2024_06") is TEDAPIApiVersion.V2024_06
+    assert TEDAPIApiVersion.coerce("V2026_06") is TEDAPIApiVersion.V2026_06
 
 
 def test_coerce_enum_input_passthrough():
-    assert TEDAPIApiVersion.coerce(TEDAPIApiVersion.JUNE_2026) is TEDAPIApiVersion.JUNE_2026
+    assert TEDAPIApiVersion.coerce(TEDAPIApiVersion.V2026_06) is TEDAPIApiVersion.V2026_06
 
 
 @pytest.mark.parametrize("bad", ["nonsense", "legacy", "", None, 123])
-def test_coerce_invalid_falls_back_to_june_2024(bad):
+def test_coerce_invalid_falls_back_to_V2024_06(bad):
     # invalid input (incl. the retired "legacy" label and non-strings) -> default
-    assert TEDAPIApiVersion.coerce(bad) is TEDAPIApiVersion.JUNE_2024
+    assert TEDAPIApiVersion.coerce(bad) is TEDAPIApiVersion.V2024_06
+
+
+def test_coerce_unrecognized_logs_warning(caplog):
+    # a typo'd value (e.g. from PW_TEDAPI_API_VERSION) must not fall back silently:
+    # warn, naming the bad value and every valid choice.
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi.api_version"):
+        TEDAPIApiVersion.coerce("V2024_6")
+    assert "V2024_6" in caplog.text          # the offending value
+    assert "V2024_06" in caplog.text and "V2026_06" in caplog.text  # valid choices
+
+
+def test_coerce_valid_input_is_silent(caplog):
+    # valid values and enum passthrough must not emit the fallback warning
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi.api_version"):
+        TEDAPIApiVersion.coerce("V2026_06")
+        TEDAPIApiVersion.coerce(TEDAPIApiVersion.V2024_06)
+    assert "Unrecognized" not in caplog.text
 
 
 # --- get_query() missing role + call-site coverage --------------------------
 
 def test_get_query_missing_role_raises():
     with pytest.raises(KeyError):
-        q.get_query("no_such_role")                       # june_2024 set
+        q.get_query("no_such_role")                       # V2024_06 set
     with pytest.raises(KeyError):
-        q.get_query("no_such_role", "june_2026")          # june_2026 role map
+        q.get_query("no_such_role", "V2026_06")          # V2026_06 role map
 
 
-def test_june_2026_call_site_roles_are_all_mapped():
-    """Guard: every ``get_query(<role>, JUNE_2026)`` call in tedapi/__init__.py
-    must use a role present in JUNE_2026_ROLES — otherwise it KeyErrors at
-    runtime under june_2026. Scans the real source so a new call site (or a
-    renamed role) can't silently regress this."""
+def test_V2026_06_call_site_roles_are_all_mapped():
+    """Guard: every role passed to ``self._build_request(<role>, ...)`` in
+    tedapi/__init__.py must be present in V2026_06_ROLES — otherwise it
+    KeyErrors at runtime under V2026_06 (``_build_request`` dispatches to
+    ``get_query(role, V2026_06)``). Scans the real source so a new call site
+    (or a renamed role) can't silently regress this."""
     import ast
     import pypowerwall.tedapi as tedapi_mod
 
     src = open(tedapi_mod.__file__, encoding="utf-8").read()
     used = set()
     for node in ast.walk(ast.parse(src)):
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == "get_query" and len(node.args) >= 2):
-            second = node.args[1]
-            is_2026 = (
-                (isinstance(second, ast.Attribute) and second.attr == "JUNE_2026")
-                or (isinstance(second, ast.Constant) and second.value == "june_2026")
-            )
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "_build_request" and node.args):
             role = node.args[0]
-            if is_2026 and isinstance(role, ast.Constant) and isinstance(role.value, str):
+            if isinstance(role, ast.Attribute):        # QueryRole.DEVICE_CONTROLLER_BASIC
+                used.add(q.QueryRole[role.attr].value)
+            elif isinstance(role, ast.Constant) and isinstance(role.value, str):
                 used.add(role.value)
 
-    assert used, "no get_query(..., JUNE_2026) call sites found — scan logic broke?"
+    assert used, "no _build_request(...) call sites found — scan logic broke?"
+    mapped = {str(r) for r in q.V2026_06_ROLES}   # QueryRole keys -> their string values
     # safety: no call-site role is unmapped (would KeyError at runtime)
-    unmapped = used - set(q.JUNE_2026_ROLES)
-    assert not unmapped, f"june_2026 call-site roles missing from JUNE_2026_ROLES: {unmapped}"
-    # completeness: JUNE_2026_ROLES maps exactly the roles the call sites need
-    assert used == set(q.JUNE_2026_ROLES), (
-        f"JUNE_2026_ROLES out of sync with call sites; symmetric diff: "
-        f"{used ^ set(q.JUNE_2026_ROLES)}"
+    unmapped = used - mapped
+    assert not unmapped, f"V2026_06 call-site roles missing from V2026_06_ROLES: {unmapped}"
+    # completeness: V2026_06_ROLES maps exactly the roles the call sites need
+    assert used == mapped, (
+        f"V2026_06_ROLES out of sync with call sites; symmetric diff: {used ^ mapped}"
     )
 
 
 # --- default-unchanged regression -------------------------------------------
 
-def _june_2024_status_bytes(din):
-    """Reconstruct the june_2024 device_controller_basic request exactly as the
+def _V2024_06_status_bytes(din):
+    """Reconstruct the V2024_06 device_controller_basic request exactly as the
     pre-migration inline code built it."""
     pb = tedapi_pb2.Message()
     pb.message.deliveryChannel = 1
@@ -160,23 +187,23 @@ def _june_2024_status_bytes(din):
     return pb.SerializeToString()
 
 
-def test_june_2024_request_is_stable(api):
-    # Snapshot invariants: june_2024 build is deterministic and carries the signed
+def test_V2024_06_request_is_stable(api):
+    # Snapshot invariants: V2024_06 build is deterministic and carries the signed
     # 'code' over the QueryType payload (the original wire shape).
-    raw = _june_2024_status_bytes(api.din)
-    again = _june_2024_status_bytes(api.din)
+    raw = _V2024_06_status_bytes(api.din)
+    again = _V2024_06_status_bytes(api.din)
     assert raw == again
     m = tedapi_pb2.Message()
     m.ParseFromString(raw)
     assert m.message.recipient.din == api.din
-    assert m.message.payload.send.code == q.JUNE_2024_QUERIES["device_controller_basic"].code
+    assert m.message.payload.send.code == q.V2024_06_QUERIES["device_controller_basic"].code
     assert m.tail.value == 1
 
 
-# --- june_2026 build / parse ------------------------------------------------
+# --- V2026_06 build / parse ------------------------------------------------
 
 def test_build_signed_query_request(api):
-    query = q.get_query("device_controller_full", "june_2026")
+    query = q.get_query("device_controller_full", "V2026_06")
     raw = api._build_signed_query_request(query)
     m = tx.Message()
     m.ParseFromString(raw)
@@ -220,3 +247,43 @@ def test_parse_signed_response_v1r_bare_envelope(api):
 
 def test_parse_signed_response_empty_returns_none(api):
     assert api._parse_signed_query_response(b"") is None
+
+
+def test_parse_signed_response_v1r_wifi_follower(api):
+    # The v1r WiFi-follower fallback (_post_tedapi_wifi) returns a FULL transport
+    # Message with a tail, not a bare envelope. from_wifi=True must select the
+    # Message parser even though self.v1r is set.
+    api.v1r = True
+    resp = tx.Message()
+    resp.message.graphql.queryResponse.status = 1
+    resp.message.graphql.queryResponse.data = '{"wifi":true}'
+    raw = resp.SerializeToString()
+    assert api._parse_signed_query_response(raw, from_wifi=True) == '{"wifi":true}'
+
+
+def test_parse_signed_response_v1r_wifi_without_flag_drops_payload(api):
+    # Regression guard: without from_wifi, the pre-fix code parsed a full Message
+    # as a bare MessageEnvelope. Protobuf parses leniently, so no exception is
+    # raised — the payload is silently lost (None). Proves from_wifi does real
+    # work: the SAME bytes yield data with the flag and None without it.
+    api.v1r = True
+    resp = tx.Message()
+    resp.message.graphql.queryResponse.status = 1
+    resp.message.graphql.queryResponse.data = '{"wifi":true}'
+    raw = resp.SerializeToString()
+    assert api._parse_signed_query_response(raw, from_wifi=False) is None
+
+
+# --- back-compat import shims -----------------------------------------------
+
+def test_legacy_pb2_deep_import_paths_still_resolve():
+    # The pb2 modules moved to protobuf/V2024_06/, but pre-move deep imports
+    # (import pypowerwall.tedapi.tedapi_pb2) must keep resolving via the shims,
+    # and to the *same* class objects (protobuf descriptor identity matters).
+    import importlib
+    for mod, cls in (("tedapi_pb2", "Message"),
+                     ("tedapi_combined_pb2", "MessageEnvelope")):
+        shim = importlib.import_module(f"pypowerwall.tedapi.{mod}")
+        real = importlib.import_module(f"pypowerwall.tedapi.protobuf.V2024_06.{mod}")
+        assert getattr(shim, cls) is getattr(real, cls)
+        assert shim.DESCRIPTOR is real.DESCRIPTOR

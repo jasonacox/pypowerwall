@@ -26,9 +26,9 @@ def _build_tedapi_arg_parser(default_host):
                         help='Path to RSA private key PEM for v1r mode')
     parser.add_argument('-wifi_host', default=None,
                         help='Optional WiFi TEDAPI host for v1r follower fallback')
-    parser.add_argument('-tedapi_api_version', default=TEDAPIApiVersion.JUNE_2024.value,
+    parser.add_argument('-tedapi_api_version', default=TEDAPIApiVersion.V2024_06.value,
                         choices=[v.value for v in TEDAPIApiVersion],
-                        help='Query/protobuf version set (default: june_2024)')
+                        help='Query/protobuf version set (default: V2024_06)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     return parser
 

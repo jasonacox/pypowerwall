@@ -84,7 +84,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str = None, rsa_key_path: str = None,
                  wifi_host: str = None,
-                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.JUNE_2024) -> None:
+                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout

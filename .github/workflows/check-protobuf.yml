@@ -26,10 +26,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pinned protobuf tools
-        run: pip install -r tools/requirements-tools.txt
-
-      - name: Regenerate protobuf files
+      - name: Regenerate protobuf files (dual toolchain)
+        # gen_proto.sh provisions two throwaway venvs (legacy protobuf 4.25 for
+        # tesla/V2024_06, latest protoc for V2026_06). Python 3.12 has wheels for
+        # both grpcio-tools 1.62.x and 1.81.x, so point both at this interpreter.
+        env:
+          LEGACY_PY: python
+          V2_PY: python
         run: bash tools/gen_proto.sh
 
       - name: Check for uncommitted changes

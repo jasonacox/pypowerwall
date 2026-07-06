@@ -29,7 +29,7 @@ setuptools.setup(
     install_requires=[
         'requests',
         'httpx[http2]>=0.27.0',
-        'protobuf>=6.33.6',
+        'protobuf>=4.25.1',
         'python-dotenv',
         'pyroute2',
         'bs4',

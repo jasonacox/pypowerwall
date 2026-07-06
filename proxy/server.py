@@ -192,7 +192,7 @@ control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
-tedapi_api_version = os.getenv("PW_TEDAPI_API_VERSION", "june_2024")
+tedapi_api_version = os.getenv("PW_TEDAPI_API_VERSION", "V2024_06")
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 try:
     site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
@@ -243,7 +243,7 @@ proxystats = {
     "tedapi": False,
     "pw3": False,
     "tedapi_mode": "off",
-    "tedapi_api_version": "june_2024",
+    "tedapi_api_version": "V2024_06",
     "siteid": None,
     "counter": 0,
     "cf": cachefile,
