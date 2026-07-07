@@ -110,6 +110,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Throwaway protobuf generator toolchains (tools/gen_proto.sh)
+.gen-legacy/
+.gen-v2/
+
 # Spyder project settings
 .spyderproject
 .spyproject

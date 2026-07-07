@@ -1,0 +1,17 @@
+# Pinned build tools for the V2026_06 (Tesla-signed GraphQL) protobufs ONLY.
+#
+# These are DEVELOPER/CI tools only — not runtime dependencies.
+# Used by tools/gen_proto.sh to generate pypowerwall/tedapi/protobuf/V2026_06/*_pb2.py.
+#
+# grpcio-tools 1.81.x ships a protoc that emits gencode tagged
+# "Protobuf Python Version: 6.33.5" with a ValidateProtobufRuntimeVersion guard,
+# so the V2026_06 pb2 files require protobuf>=6.33.6 at runtime. That is fine:
+# the V2026_06 modules are imported lazily and only when a caller opts into
+# tedapi_api_version="V2026_06" (see TEDAPI._import_v2026_pb2). The library's
+# runtime floor stays at protobuf>=4.25.1 for the default path — do NOT raise the
+# floor in requirements.txt / setup.py to match this toolchain.
+#
+# Unlike the legacy 4.25.x toolchain (tools/requirements-tools.txt), this ships
+# wheels for current Python versions (3.13+).
+grpcio-tools==1.81.1
+protobuf==6.33.6

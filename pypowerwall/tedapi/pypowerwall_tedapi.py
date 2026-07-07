@@ -6,6 +6,7 @@ from typing import Optional, Union
 from pypowerwall import __version__
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 from pypowerwall.tedapi import GW_IP, TEDAPI, lookup
+from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
 from pypowerwall.tedapi.exceptions import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.tedapi.mock_data import *  # pylint: disable=unused-wildcard-import
@@ -82,7 +83,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str = None, rsa_key_path: str = None,
-                 wifi_host: str = None) -> None:
+                 wifi_host: str = None,
+                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout
@@ -103,7 +105,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                              timeout=self.timeout, pwcacheexpire=self.pwcacheexpire,
                              pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
                              v1r=v1r, password=password, rsa_key_path=rsa_key_path,
-                             wifi_host=wifi_host)
+                             wifi_host=wifi_host, tedapi_api_version=tedapi_api_version)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")

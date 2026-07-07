@@ -8,7 +8,8 @@
 
  Class:
     TEDAPI(gw_pwd: str, debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
-              pwconfigexpire: int = 5, host: str = GW_IP) - Initialize TEDAPI
+              pwconfigexpire: int = 5, host: str = GW_IP,
+              tedapi_api_version: str = "V2024_06") - Initialize TEDAPI
 
  Parameters:
     gw_pwd - Powerwall Gateway Password
@@ -17,6 +18,9 @@
     timeout - API Timeout in seconds
     pwconfigexpire - Configuration Cache Expiration in seconds
     host - Powerwall Gateway IP Address (default: 192.168.91.1)
+    tedapi_api_version - Query/protobuf set: "V2024_06" (default, legacy QueryType
+                         path) or "V2026_06" (Tesla-signed GraphQL / bearer path).
+                         Accepts a string or TEDAPIApiVersion.
 
  Functions:
     get_din() - Get the DIN from the Powerwall Gateway
@@ -43,6 +47,9 @@
  Date: 1 Jun 2024
  For more information see https://github.com/jasonacox/pypowerwall
 """
+# Lazy annotations so PEP 604 syntax (e.g. `str | None`) in signatures is not
+# evaluated at runtime — keeps import working on Python < 3.10.
+from __future__ import annotations
 
 import gzip
 import json
@@ -64,8 +71,10 @@ from pypowerwall import __version__
 from pypowerwall.api_lock import acquire_lock_with_backoff
 from pypowerwall.helpers import lookup
 
-from . import tedapi_pb2
-from . import tedapi_combined_pb2 as combined_pb2
+from .protobuf.V2024_06 import tedapi_pb2
+from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
+from .api_version import TEDAPIApiVersion
+from .queries import apply_query, get_query, QueryRole
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -127,10 +136,15 @@ def decompress_response(content: bytes) -> bytes:
 class TEDAPI:
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
-                 v1r: bool = False, password: str = None, rsa_key_path: str = None,
-                 wifi_host: str = None) -> None:
+                 v1r: bool = False, password: str | None = None, rsa_key_path: str | None = None,
+                 wifi_host: str | None = None,
+                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication."""
         self.debug = debug
+        # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
+        # V2026_06 (Tesla-signed pairs sent via the energy_device graphql path).
+        # Accepts a TEDAPIApiVersion or a plain string (e.g. from an env var / CLI).
+        self.tedapi_api_version = TEDAPIApiVersion.coerce(tedapi_api_version)
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire status cache
         self.pwconfigexpire = pwconfigexpire  # seconds to expire config cache
@@ -646,27 +660,12 @@ class TEDAPI:
                 log.debug("Get Status from Powerwall")
 
                 # Build Protobuf to fetch status
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.recipient.din = self.din  # DIN of Powerwall
-                pb.message.payload.send.num = 2
-                pb.message.payload.send.payload.value = 1
-                pb.message.payload.send.payload.text = " query DeviceControllerQuery {\n  control {\n    systemStatus {\n        nominalFullPackEnergyWh\n        nominalEnergyRemainingWh\n    }\n    islanding {\n        customerIslandMode\n        contactorClosed\n        microGridOK\n        gridOK\n    }\n    meterAggregates {\n      location\n      realPowerW\n    }\n    alerts {\n      active\n    },\n    siteShutdown {\n      isShutDown\n      reasons\n    }\n    batteryBlocks {\n      din\n      disableReasons\n    }\n    pvInverters {\n      din\n      disableReasons\n    }\n  }\n  system {\n    time\n    sitemanagerStatus {\n      isRunning\n    }\n    updateUrgencyCheck  {\n      urgency\n      version {\n        version\n        gitHash\n      }\n      timestamp\n    }\n  }\n  neurio {\n    isDetectingWiredMeters\n    readings {\n      serial\n      dataRead {\n        voltageV\n        realPowerW\n        reactivePowerVAR\n        currentA\n      }\n      timestamp\n    }\n    pairings {\n      serial\n      shortId\n      status\n      errors\n      macAddress\n      isWired\n      modbusPort\n      modbusId\n      lastUpdateTimestamp\n    }\n  }\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  esCan {\n    bus {\n      PVAC {\n        packagePartNumber\n        packageSerialNumber\n        subPackagePartNumber\n        subPackageSerialNumber\n        PVAC_Status {\n          isMIA\n          PVAC_Pout\n          PVAC_State\n          PVAC_Vout\n          PVAC_Fout\n        }\n        PVAC_InfoMsg {\n          PVAC_appGitHash\n        }\n        PVAC_Logging {\n          isMIA\n          PVAC_PVCurrent_A\n          PVAC_PVCurrent_B\n          PVAC_PVCurrent_C\n          PVAC_PVCurrent_D\n          PVAC_PVMeasuredVoltage_A\n          PVAC_PVMeasuredVoltage_B\n          PVAC_PVMeasuredVoltage_C\n          PVAC_PVMeasuredVoltage_D\n          PVAC_VL1Ground\n          PVAC_VL2Ground\n        }\n        alerts {\n          isComplete\n          isMIA\n          active\n        }\n      }\n      PINV {\n        PINV_Status {\n          isMIA\n          PINV_Fout\n          PINV_Pout\n          PINV_Vout\n          PINV_State\n          PINV_GridState\n        }\n        PINV_AcMeasurements {\n          isMIA\n          PINV_VSplit1\n          PINV_VSplit2\n        }\n        PINV_PowerCapability {\n          isComplete\n          isMIA\n          PINV_Pnom\n        }\n        alerts {\n          isComplete\n          isMIA\n          active\n        }\n      }\n      PVS {\n        PVS_Status {\n          isMIA\n          PVS_State\n          PVS_vLL\n          PVS_StringA_Connected\n          PVS_StringB_Connected\n          PVS_StringC_Connected\n          PVS_StringD_Connected\n          PVS_SelfTestState\n        }\n        alerts {\n          isComplete\n          isMIA\n          active\n        }\n      }\n      THC {\n        packagePartNumber\n        packageSerialNumber\n        THC_InfoMsg {\n          isComplete\n          isMIA\n          THC_appGitHash\n        }\n        THC_Logging {\n          THC_LOG_PW_2_0_EnableLineState\n        }\n      }\n      POD {\n        POD_EnergyStatus {\n          isMIA\n          POD_nom_energy_remaining\n          POD_nom_full_pack_energy\n        }\n        POD_InfoMsg {\n            POD_appGitHash\n        }\n      }\n      MSA {\n        packagePartNumber\n        packageSerialNumber\n        MSA_InfoMsg {\n          isMIA\n          MSA_appGitHash\n          MSA_assemblyId\n        }\n        METER_Z_AcMeasurements {\n          isMIA\n          lastRxTime\n          METER_Z_CTA_InstRealPower\n          METER_Z_CTA_InstReactivePower\n          METER_Z_CTA_I\n          METER_Z_VL1G\n          METER_Z_CTB_InstRealPower\n          METER_Z_CTB_InstReactivePower\n          METER_Z_CTB_I\n          METER_Z_VL2G\n        }\n        MSA_Status {\n          lastRxTime\n        }\n      }\n      SYNC {\n        packagePartNumber\n        packageSerialNumber\n        SYNC_InfoMsg {\n          isMIA\n          SYNC_appGitHash\n        }\n        METER_X_AcMeasurements {\n          isMIA\n          isComplete\n          lastRxTime\n          METER_X_CTA_InstRealPower\n          METER_X_CTA_InstReactivePower\n          METER_X_CTA_I\n          METER_X_VL1N\n          METER_X_CTB_InstRealPower\n          METER_X_CTB_InstReactivePower\n          METER_X_CTB_I\n          METER_X_VL2N\n          METER_X_CTC_InstRealPower\n          METER_X_CTC_InstReactivePower\n          METER_X_CTC_I\n          METER_X_VL3N\n        }\n        METER_Y_AcMeasurements {\n          isMIA\n          isComplete\n          lastRxTime\n          METER_Y_CTA_InstRealPower\n          METER_Y_CTA_InstReactivePower\n          METER_Y_CTA_I\n          METER_Y_VL1N\n          METER_Y_CTB_InstRealPower\n          METER_Y_CTB_InstReactivePower\n          METER_Y_CTB_I\n          METER_Y_VL2N\n          METER_Y_CTC_InstRealPower\n          METER_Y_CTC_InstReactivePower\n          METER_Y_CTC_I\n          METER_Y_VL3N\n        }\n        SYNC_Status {\n          lastRxTime\n        }\n      }\n      ISLANDER {\n        ISLAND_GridConnection {\n          ISLAND_GridConnected\n          isComplete\n        }\n        ISLAND_AcMeasurements {\n          ISLAND_VL1N_Main\n          ISLAND_FreqL1_Main\n          ISLAND_VL2N_Main\n          ISLAND_FreqL2_Main\n          ISLAND_VL3N_Main\n          ISLAND_FreqL3_Main\n          ISLAND_VL1N_Load\n          ISLAND_FreqL1_Load\n          ISLAND_VL2N_Load\n          ISLAND_FreqL2_Load\n          ISLAND_VL3N_Load\n          ISLAND_FreqL3_Load\n          ISLAND_GridState\n          lastRxTime\n          isComplete\n          isMIA\n        }\n      }\n    }\n    enumeration {\n      inProgress\n      numACPW\n      numPVI\n    }\n    firmwareUpdate {\n      isUpdating\n      powerwalls {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n      msa {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n      sync {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n      pvInverters {\n        updating\n        numSteps\n        currentStep\n        currentStepProgress\n        progress\n      }\n    }\n    phaseDetection {\n      inProgress\n      lastUpdateTimestamp\n      powerwalls {\n        din\n        progress\n        phase\n      }\n    }\n    inverterSelfTests {\n      isRunning\n      isCanceled\n      pinvSelfTestsResults {\n        din\n        overall {\n          status\n          test\n          summary\n          setMagnitude\n          setTime\n          tripMagnitude\n          tripTime\n          accuracyMagnitude\n          accuracyTime\n          currentMagnitude\n          timestamp\n          lastError\n        }\n        testResults {\n          status\n          test\n          summary\n          setMagnitude\n          setTime\n          tripMagnitude\n          tripTime\n          accuracyMagnitude\n          accuracyTime\n          currentMagnitude\n          timestamp\n          lastError\n        }\n      }\n    }\n  }\n}\n"
-                pb.message.payload.send.code = b'0\201\206\002A\024\261\227\245\177\255\265\272\321r\032\250\275j\305\030\2300\266\022B\242\264pO\262\024vd\267\316\032\f\376\322V\001\f\177*\366\345\333g_/`\v\026\225_qc\023$\323\216y\276~\335A1\022x\002Ap\a_\264\037]\304>\362\356\005\245V\301\177*\b\307\016\246]\037\202\242\353I~\332\317\021\336\006\033q\317\311\264\315\374\036\365s\272\225\215#o!\315z\353\345z\226\365\341\f\265\256r\373\313/\027\037'
-                pb.message.payload.send.b.value = "{}"
-                pb.tail.value = 1
+                request_bytes = self._build_request(QueryRole.DEVICE_CONTROLLER_BASIC)
                 try:
-                    response = self._post_tedapi(pb.SerializeToString())
+                    response = self._post_tedapi(request_bytes)
                     if response is None:
                         return None
-                    if self.v1r:
-                        payload = self._parse_v1r_query_response(response)
-                    else:
-                        # Decode WiFi v1 response
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.payload.recv.text
+                    payload = self._parse_response(response)
                     try:
                         data = json.loads(payload)
                     except (json.JSONDecodeError, TypeError) as e:
@@ -740,26 +739,12 @@ class TEDAPI:
                 log.debug("Get controller data from Powerwall")
 
                 # Build Protobuf to fetch controller data
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.recipient.din = self.din  # DIN of Powerwall
-                pb.message.payload.send.num = 2
-                pb.message.payload.send.payload.value = 1
-                pb.message.payload.send.payload.text = 'query DeviceControllerQuery($msaComp:ComponentFilter$msaSignals:[String!]){control{systemStatus{nominalFullPackEnergyWh nominalEnergyRemainingWh}islanding{customerIslandMode contactorClosed microGridOK gridOK disableReasons}meterAggregates{location realPowerW}alerts{active}siteShutdown{isShutDown reasons}batteryBlocks{din disableReasons}pvInverters{din disableReasons}}system{time supportMode{remoteService{isEnabled expiryTime sessionId}}sitemanagerStatus{isRunning}updateUrgencyCheck{urgency version{version gitHash}timestamp}}neurio{isDetectingWiredMeters readings{firmwareVersion serial dataRead{voltageV realPowerW reactivePowerVAR currentA}timestamp}pairings{serial shortId status errors macAddress hostname isWired modbusPort modbusId lastUpdateTimestamp}}teslaRemoteMeter{meters{din reading{timestamp firmwareVersion ctReadings{voltageV realPowerW reactivePowerVAR energyExportedWs energyImportedWs currentA}}firmwareUpdate{updating numSteps currentStep currentStepProgress progress}}detectedWired{din serialPort}}pw3Can{firmwareUpdate{isUpdating progress{updating numSteps currentStep currentStepProgress progress}}enumeration{inProgress}}esCan{bus{PVAC{packagePartNumber packageSerialNumber subPackagePartNumber subPackageSerialNumber PVAC_Status{isMIA PVAC_Pout PVAC_State PVAC_Vout PVAC_Fout}PVAC_InfoMsg{PVAC_appGitHash}PVAC_Logging{isMIA PVAC_PVCurrent_A PVAC_PVCurrent_B PVAC_PVCurrent_C PVAC_PVCurrent_D PVAC_PVMeasuredVoltage_A PVAC_PVMeasuredVoltage_B PVAC_PVMeasuredVoltage_C PVAC_PVMeasuredVoltage_D PVAC_VL1Ground PVAC_VL2Ground}alerts{isComplete isMIA active}}PINV{PINV_Status{isMIA PINV_Fout PINV_Pout PINV_Vout PINV_State PINV_GridState}PINV_AcMeasurements{isMIA PINV_VSplit1 PINV_VSplit2}PINV_PowerCapability{isComplete isMIA PINV_Pnom}alerts{isComplete isMIA active}}PVS{PVS_Status{isMIA PVS_State PVS_vLL PVS_StringA_Connected PVS_StringB_Connected PVS_StringC_Connected PVS_StringD_Connected PVS_SelfTestState}PVS_Logging{PVS_numStringsLockoutBits PVS_sbsComplete}alerts{isComplete isMIA active}}THC{packagePartNumber packageSerialNumber THC_InfoMsg{isComplete isMIA THC_appGitHash}THC_Logging{THC_LOG_PW_2_0_EnableLineState}}POD{POD_EnergyStatus{isMIA POD_nom_energy_remaining POD_nom_full_pack_energy}POD_InfoMsg{POD_appGitHash}}SYNC{packagePartNumber packageSerialNumber SYNC_InfoMsg{isMIA SYNC_appGitHash SYNC_assemblyId}METER_X_AcMeasurements{isMIA isComplete METER_X_CTA_InstRealPower METER_X_CTA_InstReactivePower METER_X_CTA_I METER_X_VL1N METER_X_CTB_InstRealPower METER_X_CTB_InstReactivePower METER_X_CTB_I METER_X_VL2N METER_X_CTC_InstRealPower METER_X_CTC_InstReactivePower METER_X_CTC_I METER_X_VL3N}METER_Y_AcMeasurements{isMIA isComplete METER_Y_CTA_InstRealPower METER_Y_CTA_InstReactivePower METER_Y_CTA_I METER_Y_VL1N METER_Y_CTB_InstRealPower METER_Y_CTB_InstReactivePower METER_Y_CTB_I METER_Y_VL2N METER_Y_CTC_InstRealPower METER_Y_CTC_InstReactivePower METER_Y_CTC_I METER_Y_VL3N}}ISLANDER{ISLAND_GridConnection{ISLAND_GridConnected isComplete}ISLAND_AcMeasurements{ISLAND_VL1N_Main ISLAND_FreqL1_Main ISLAND_VL2N_Main ISLAND_FreqL2_Main ISLAND_VL3N_Main ISLAND_FreqL3_Main ISLAND_VL1N_Load ISLAND_FreqL1_Load ISLAND_VL2N_Load ISLAND_FreqL2_Load ISLAND_VL3N_Load ISLAND_FreqL3_Load ISLAND_GridState isComplete isMIA}}}enumeration{inProgress numACPW numPVI}firmwareUpdate{isUpdating powerwalls{updating numSteps currentStep currentStepProgress progress}msa{updating numSteps currentStep currentStepProgress progress}msa1{updating numSteps currentStep currentStepProgress progress}sync{updating numSteps currentStep currentStepProgress progress}pvInverters{updating numSteps currentStep currentStepProgress progress}}phaseDetection{inProgress lastUpdateTimestamp powerwalls{din progress phase}}inverterSelfTests{isRunning isCanceled pinvSelfTestsResults{din overall{status test summary setMagnitude setTime tripMagnitude tripTime accuracyMagnitude accuracyTime currentMagnitude timestamp lastError}testResults{status test summary setMagnitude setTime tripMagnitude tripTime accuracyMagnitude accuracyTime currentMagnitude timestamp lastError}}}}components{msa:components(filter:$msaComp){partNumber serialNumber signals(names:$msaSignals){name value textValue boolValue timestamp}activeAlerts{name}}}ieee20305{longFormDeviceID polledResources{url name pollRateSeconds lastPolledTimestamp}controls{defaultControl{mRID setGradW opModEnergize opModMaxLimW opModImpLimW opModExpLimW opModGenLimW opModLoadLimW}activeControls{opModEnergize opModMaxLimW opModImpLimW opModExpLimW opModGenLimW opModLoadLimW}}registration{dateTimeRegistered pin}}}'
-                pb.message.payload.send.code = b'0\x81\x87\x02B\x01A\x95\x12\xe3B\xd1\xca\x1a\xd3\x00\xf6}\x0bE@/\x9a\x9f\xc0\r\x06%\xac,\x0ej!)\nd\xef\xe67\x8b\xafb\xd7\xf8&\x0b.\xc1\xac\xd9!\x1f\xd6\x83\xffkIm\xf3\\J\xd8\xeeiTY\xde\x7f\xc5xR\x02A\x1dC\x03H\xfb8"\xb0\xe4\xd6\x18\xde\x11\xc45\xb2\xa9VB\xa6J\x8f\x08\x9d\xba\x86\xf1 W\xcdJ\x8c\x02*\x05\x12\xcb{<\x9b\xc8g\xc9\x9d9\x8bR\xb3\x89\xb8\xf1\xf1\x0f\x0e\x16E\xed\xd7\xbf\xd5&)\x92.\x12'
-                pb.message.payload.send.b.value = '{"msaComp":{"types" :["PVS","PVAC", "TESYNC", "TEPINV", "TETHC", "STSTSM",  "TEMSA", "TEPINV" ]},\n\t"msaSignals":[\n\t"MSA_pcbaId",\n\t"MSA_usageId",\n\t"MSA_appGitHash",\n\t"PVAC_Fan_Speed_Actual_RPM",\n\t"PVAC_Fan_Speed_Target_RPM",\n\t"MSA_HeatingRateOccurred",\n\t"THC_AmbientTemp",\n\t"METER_Z_CTA_InstRealPower",\n\t"METER_Z_CTA_InstReactivePower",\n\t"METER_Z_CTA_I",\n\t"METER_Z_VL1G",\n\t"METER_Z_CTB_InstRealPower",\n\t"METER_Z_CTB_InstReactivePower",\n\t"METER_Z_CTB_I",\n\t"METER_Z_VL2G",\n\t"METER_Z_CTC_InstRealPower",\n\t"METER_Z_CTC_InstReactivePower",\n\t"METER_Z_CTC_I",\n\t"METER_Z_VL3G",\n\t"METER_Z_LifetimeEnergyExport",\n\t"METER_Z_LifetimeEnergyImport"]}'
-                pb.tail.value = 1
+                request_bytes = self._build_request(QueryRole.DEVICE_CONTROLLER_FULL)
                 try:
-                    response = self._post_tedapi(pb.SerializeToString())
+                    response = self._post_tedapi(request_bytes)
                     if response is None:
                         return None
-                    if self.v1r:
-                        payload = self._parse_v1r_query_response(response)
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.payload.recv.text
+                    payload = self._parse_response(response)
                     log.debug(f"Payload: {payload}")
                     try:
                         data = json.loads(payload)
@@ -949,26 +934,12 @@ class TEDAPI:
                 log.debug("Get PW3 Components from Powerwall")
 
                 # Build Protobuf to fetch config
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.recipient.din = self.din  # DIN of Powerwall
-                pb.message.payload.send.num = 2
-                pb.message.payload.send.payload.value = 1
-                pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
-                pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
-                pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
-                pb.tail.value = 1
+                request_bytes = self._build_request(QueryRole.COMPONENTS)
                 try:
-                    response = self._post_tedapi(pb.SerializeToString())
+                    response = self._post_tedapi(request_bytes)
                     if response is None:
                         return None
-                    if self.v1r:
-                        payload = self._parse_v1r_query_response(response)
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.payload.recv.text
+                    payload = self._parse_response(response)
                     log.debug(f"Payload (len={len(payload) if payload else 0}): {payload}")
                     components = json.loads(payload)
                     log.debug(f"Components: {components}")
@@ -1068,36 +1039,24 @@ class TEDAPI:
                 use_wifi = True
                 log.debug("v1r: Querying follower %s via WiFi", pw_din)
             # Fetch Device ComponentsQuery from each Powerwall
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = pw_din  # DIN of Powerwall of Interest
-            pb.message.payload.send.num = 2
-            pb.message.payload.send.payload.value = 1
-            pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
-            pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
-            pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
             if single_pw:
-                # If only one Powerwall, use basic tedapi URL
-                pb.tail.value = 1
                 url_suffix = '/tedapi/v1'
             else:
-                # If multiple Powerwalls, use tedapi/device/{pw_din}/v1
-                pb.tail.value = 2
-                pb.message.sender.din = din  # DIN of Primary Powerwall 3 / System
                 url_suffix = f'/tedapi/device/{pw_din}/v1'
+            # single_pw -> local sender, tail 1, basic URL; multi -> follower
+            # routed via the primary DIN (sender), tail 2, per-device URL
+            request_bytes = self._build_request(
+                QueryRole.COMPONENTS,
+                recipient_din=pw_din,
+                sender_din=None if single_pw else din,
+                tail=1 if single_pw else 2)
             if use_wifi:
                 # WiFi fallback for follower — use WiFi session (standard protobuf response)
-                api_response = self._post_tedapi_wifi(pb.SerializeToString(), url_suffix=url_suffix)
+                api_response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
             else:
-                api_response = self._post_tedapi(pb.SerializeToString(), din=pw_din, url_suffix=url_suffix)
+                api_response = self._post_tedapi(request_bytes, din=pw_din, url_suffix=url_suffix)
             if api_response is not None:
-                if self.v1r and not use_wifi:
-                    payload = self._parse_v1r_query_response(api_response)
-                else:
-                    tedapi = tedapi_pb2.Message()
-                    tedapi.ParseFromString(api_response)
-                    payload = tedapi.message.payload.recv.text
+                payload = self._parse_response(api_response, from_wifi=use_wifi)
                 if payload:
                     # Guard the JSON parse and component access - a malformed or
                     # partial follower payload should not abort the whole vitals call
@@ -1285,43 +1244,27 @@ class TEDAPI:
                 # Fetch Battery Block from Powerwall
                 log.debug(f"Get Battery Block from Powerwall ({din})")
 
-                # Build Protobuf to fetch config
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.sender.din = self.din  # DIN of Primary Powerwall 3 / System
-                pb.message.recipient.din = din  # DIN of Powerwall of Interest
-                pb.message.payload.send.num = 2
-                pb.message.payload.send.payload.value = 1
-                pb.message.payload.send.payload.text = " query ComponentsQuery (\n  $pchComponentsFilter: ComponentFilter,\n  $pchSignalNames: [String!],\n  $pwsComponentsFilter: ComponentFilter,\n  $pwsSignalNames: [String!],\n  $bmsComponentsFilter: ComponentFilter,\n  $bmsSignalNames: [String!],\n  $hvpComponentsFilter: ComponentFilter,\n  $hvpSignalNames: [String!],\n  $baggrComponentsFilter: ComponentFilter,\n  $baggrSignalNames: [String!],\n  ) {\n  # TODO STST-57686: Introduce GraphQL fragments to shorten\n  pw3Can {\n    firmwareUpdate {\n      isUpdating\n      progress {\n         updating\n         numSteps\n         currentStep\n         currentStepProgress\n         progress\n      }\n    }\n  }\n  components {\n    pws: components(filter: $pwsComponentsFilter) {\n      signals(names: $pwsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    pch: components(filter: $pchComponentsFilter) {\n      signals(names: $pchSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    bms: components(filter: $bmsComponentsFilter) {\n      signals(names: $bmsSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    hvp: components(filter: $hvpComponentsFilter) {\n      partNumber\n      serialNumber\n      signals(names: $hvpSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n    baggr: components(filter: $baggrComponentsFilter) {\n      signals(names: $baggrSignalNames) {\n        name\n        value\n        textValue\n        boolValue\n        timestamp\n      }\n      activeAlerts {\n        name\n      }\n    }\n  }\n}\n"
-                pb.message.payload.send.code = b'0\201\210\002B\000\270q\354>\243m\325p\371S\253\231\346~:\032\216~\242\263\207\017L\273O\203u\241\270\333w\233\354\276\246h\262\243\255\261\007\202D\277\353x\023O\022\303\216\264\010-\'i6\360>B\237\236\304\244m\002B\001\023Pk\033)\277\236\342R\264\247g\260u\036\023\3662\354\242\353\035\221\234\027\245\321J\342\345\037q\262O\3446-\353\315m1\237zai0\341\207C4\307\300Z\177@h\335\327\0239\252f\n\206W'
-                pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF\"]},\"pwsSignalNames\":[\"PWS_SelfTest\",\"PWS_PeImpTestState\",\"PWS_PvIsoTestState\",\"PWS_RelaySelfTest_State\",\"PWS_MciTestState\",\"PWS_appGitHash\",\"PWS_ProdSwitch_State\"],\"pchComponentsFilter\":{\"types\":[\"PCH\"]},\"pchSignalNames\":[\"PCH_State\",\"PCH_PvState_A\",\"PCH_PvState_B\",\"PCH_PvState_C\",\"PCH_PvState_D\",\"PCH_PvState_E\",\"PCH_PvState_F\",\"PCH_AcFrequency\",\"PCH_AcVoltageAB\",\"PCH_AcVoltageAN\",\"PCH_AcVoltageBN\",\"PCH_packagePartNumber_1_7\",\"PCH_packagePartNumber_8_14\",\"PCH_packagePartNumber_15_20\",\"PCH_packageSerialNumber_1_7\",\"PCH_packageSerialNumber_8_14\",\"PCH_PvVoltageA\",\"PCH_PvVoltageB\",\"PCH_PvVoltageC\",\"PCH_PvVoltageD\",\"PCH_PvVoltageE\",\"PCH_PvVoltageF\",\"PCH_PvCurrentA\",\"PCH_PvCurrentB\",\"PCH_PvCurrentC\",\"PCH_PvCurrentD\",\"PCH_PvCurrentE\",\"PCH_PvCurrentF\",\"PCH_BatteryPower\",\"PCH_AcRealPowerAB\",\"PCH_SlowPvPowerSum\",\"PCH_AcMode\",\"PCH_AcFrequency\",\"PCH_DcdcState_A\",\"PCH_DcdcState_B\",\"PCH_appGitHash\"],\"bmsComponentsFilter\":{\"types\":[\"PW3BMS\"]},\"bmsSignalNames\":[\"BMS_nominalEnergyRemaining\",\"BMS_nominalFullPackEnergy\",\"BMS_appGitHash\"],\"hvpComponentsFilter\":{\"types\":[\"PW3HVP\"]},\"hvpSignalNames\":[\"HVP_State\",\"HVP_appGitHash\"],\"baggrComponentsFilter\":{\"types\":[\"BAGGR\"]},\"baggrSignalNames\":[\"BAGGR_State\",\"BAGGR_OperationRequest\",\"BAGGR_NumBatteriesConnected\",\"BAGGR_NumBatteriesPresent\",\"BAGGR_NumBatteriesExpected\",\"BAGGR_LOG_BattConnectionStatus0\",\"BAGGR_LOG_BattConnectionStatus1\",\"BAGGR_LOG_BattConnectionStatus2\",\"BAGGR_LOG_BattConnectionStatus3\"]}"
-                pb.tail.value = 2
+                # Build Protobuf to fetch config (follower routed via primary DIN)
+                request_bytes = self._build_request(
+                    QueryRole.COMPONENTS, recipient_din=din, sender_din=self.din, tail=2)
                 try:
                     url_suffix = f'/tedapi/device/{din}/v1'
                     if use_wifi:
-                        response = self._post_tedapi_wifi(pb.SerializeToString(), url_suffix=url_suffix)
+                        response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
                     else:
-                        response = self._post_tedapi(pb.SerializeToString(), din=din,
+                        response = self._post_tedapi(request_bytes, din=din,
                                                      url_suffix=url_suffix)
                     if response is None:
                         return None
-                    if self.v1r and not use_wifi:
-                        # v1r battery block config — try parsing as query response first
-                        payload_text = self._parse_v1r_query_response(response)
-                        if payload_text:
-                            data = json.loads(payload_text)
-                        else:
-                            data = {}
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        payload = tedapi.message.config.recv.file.text
-                        try:
-                            data = json.loads(payload)
-                        except json.JSONDecodeError as e:
-                            log.error(f"Error Decoding JSON: {e}")
-                            data = {}
+                    # battery block is a config fetch (legacy text lives in
+                    # config.recv.file.text); a malformed payload -> {} rather
+                    # than aborting the whole call
+                    payload_text = self._parse_response(response, from_wifi=use_wifi, config=True)
+                    try:
+                        data = json.loads(payload_text) if payload_text else {}
+                    except json.JSONDecodeError as e:
+                        log.error(f"Error Decoding JSON: {e}")
+                        data = {}
                     log.debug(f"Configuration: {data}")
                     self.pwcachetime[din] = time.time()
                     self.pwcache[din] = data
@@ -1550,6 +1493,144 @@ class TEDAPI:
             except Exception as e:
                 log.debug(f"Error closing v1r session: {e}")
 
+    @staticmethod
+    def _import_v2026_pb2():
+        """Import the V2026_06 (Tesla-signed GraphQL) transport + energy_device
+        protobuf modules, raising a clear, actionable error on an old runtime.
+
+        These are the only protobufs in the package built with the latest protoc:
+        their `*_pb2.py` embed a `runtime_version.ValidateProtobufRuntimeVersion()`
+        guard and require protobuf>=6.33.6. The library floor stays at 4.25.1 and
+        the default V2024_06 path never imports these — so this newer requirement
+        (and this error) is only reached when a caller opts into the V2026_06 set."""
+        try:
+            from .protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
+            from .protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
+            return tx, ed
+        except Exception as e:
+            raise ImportError(
+                'tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — '
+                'pip install -U protobuf'
+            ) from e
+
+    def _build_signed_query_request(self, query, *, recipient_din: str = None,
+                                    sender_din: str = None, tail: int = 1) -> bytes:
+        """Build a V2026_06 SIGNED GraphQL request: the energy_device
+        MessageEnvelope (graphql.queryRequest, format=SIGNED) wrapped in the
+        v2 transport Message + Tail. `query` is a V2026_06 TEDAPIQuery whose
+        signed_bytes/code carry the Tesla-signed SignedGraphQLQuery + signature.
+
+        Returns full Message bytes (same shape as the legacy path); _post_tedapi
+        extracts the bare envelope for v1r."""
+        tx, ed = self._import_v2026_pb2()
+        pb = tx.Message()
+        pb.message.deliveryChannel = ed.DELIVERY_CHANNEL_LOCAL_HTTPS
+        if sender_din:
+            pb.message.sender.din = sender_din
+        else:
+            pb.message.sender.local = ed.LOCAL_PARTICIPANT_INSTALLER
+        pb.message.recipient.din = recipient_din or self.din
+        gq = pb.message.graphql.queryRequest
+        gq.format = ed.GRAPH_QL_QUERY_FORMAT_SIGNED_SHA256_ECDSA_ASN1
+        gq.query = query.signed_bytes
+        gq.signature = query.code
+        gq.variablesJson.value = query.b_value
+        pb.tail.value = tail
+        return pb.SerializeToString()
+
+    def _parse_signed_query_response(self, response: bytes, from_wifi: bool = False) -> Optional[str]:
+        """Extract the JSON payload from a V2026_06 GraphQLAPIQueryResponse.
+
+        The wire shape depends on the transport, not the mode: only a v1r LAN
+        response is a bare energy_device MessageEnvelope; basic mode AND the v1r
+        WiFi-follower fallback (`_post_tedapi_wifi`) both return a full transport
+        Message with a tail. Callers on the WiFi-follower path must therefore pass
+        `from_wifi=True` even when `self.v1r` is set, otherwise the full Message is
+        misparsed as a bare envelope (protobuf parses it leniently, yielding an
+        empty queryResponse and a silent None). Returns the JSON text, or None.
+
+        TODO: `from_wifi` is a misnomer — the real distinction is full transport
+        Message (with tail) vs. bare MessageEnvelope, not the transport medium.
+        Now that the LAN bearer path also returns a full Message, rename to
+        something like `full_message`/`wrapped` and invert the callers
+        accordingly (condition becomes `full_message or not self.v1r`)."""
+        if not response:
+            return None
+        tx, ed = self._import_v2026_pb2()
+        try:
+            if self.v1r and not from_wifi:
+                env = ed.MessageEnvelope()
+                env.ParseFromString(response)
+            else:
+                m = tx.Message()
+                m.ParseFromString(response)
+                env = m.message
+        except Exception as e:
+            log.error(f"Error parsing V2026_06 response: {e}")
+            return None
+        resp = env.graphql.queryResponse
+        if resp.errors:
+            log.error("GraphQL errors: %s",
+                      [(er.code, er.message) for er in resp.errors])
+            # A V2026_06 query carries a Tesla-signed SignedGraphQLQuery. If the
+            # gateway rejects every query after a firmware update, Tesla has most
+            # likely rotated the query signing keys and the bundled signatures no
+            # longer validate. Point the user at the legacy fallback so a total
+            # V2026_06 outage is diagnosable rather than a silent empty payload.
+            log.warning(
+                "V2026_06 signed query rejected by the gateway. If this persists "
+                "after a firmware update, Tesla may have rotated the query signing "
+                'keys; fall back with tedapi_api_version="V2024_06" '
+                "(CLI: -tedapi_api_version=V2024_06)."
+            )
+        return resp.data or None
+
+    def _build_request(self, role: QueryRole, *, recipient_din: str = None,
+                       sender_din: str = None, tail: int = 1) -> bytes:
+        """Build a TEDAPI request for ``role``, dispatching on tedapi_api_version.
+
+        V2026_06 emits a Tesla-signed GraphQL request; every other version emits
+        the legacy QueryType protobuf. Single place the version split lives for the
+        request side — a future june_20xx adds one branch here, not one at every
+        build call site. ``sender_din`` selects follower routing (else local),
+        ``recipient_din`` defaults to this gateway's DIN."""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            return self._build_signed_query_request(
+                get_query(role, TEDAPIApiVersion.V2026_06),
+                recipient_din=recipient_din, sender_din=sender_din, tail=tail)
+        pb = tedapi_pb2.Message()
+        pb.message.deliveryChannel = 1
+        if sender_din:
+            pb.message.sender.din = sender_din
+        else:
+            pb.message.sender.local = 1
+        pb.message.recipient.din = recipient_din or self.din
+        pb.message.payload.send.num = 2
+        pb.message.payload.send.payload.value = 1
+        apply_query(pb.message.payload.send, get_query(role))
+        pb.tail.value = tail
+        return pb.SerializeToString()
+
+    def _parse_response(self, response: bytes, *, from_wifi: bool = False,
+                        config: bool = False) -> Optional[str]:
+        """Decode a TEDAPI response to its JSON payload text, dispatching on
+        tedapi_api_version and transport. V2026_06 -> signed GraphQL; v1r LAN ->
+        v1r query response; otherwise the legacy WiFi/basic protobuf. Config
+        fetches carry the text in ``config.recv.file.text``, queries in
+        ``payload.recv.text``. Single place the version+transport split lives for
+        the response side, so the WiFi-fallback context (``from_wifi``) can't be
+        forgotten at a call site (see the transport note on
+        _parse_signed_query_response)."""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            return self._parse_signed_query_response(response, from_wifi=from_wifi)
+        if self.v1r and not from_wifi:
+            return self._parse_v1r_query_response(response)
+        tedapi = tedapi_pb2.Message()
+        tedapi.ParseFromString(response)
+        if config:
+            return tedapi.message.config.recv.file.text
+        return tedapi.message.payload.recv.text
+
     def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
         """
         Transport abstraction: POST protobuf bytes to the appropriate TEDAPI endpoint.
@@ -1594,8 +1675,17 @@ class TEDAPI:
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message
             # wrapper with tail). Extract the envelope from the full Message.
-            try:
+            if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+                # Parse with the v2 transport proto so the field-16 graphql
+                # payload survives the re-extract (legacy proto would drop it).
+                # Import outside the try so an old-protobuf error isn't masked by
+                # the parse-fallback below (unreachable in practice — the request
+                # was already built via the guarded _build_signed_query_request).
+                _tx, _ = self._import_v2026_pb2()
+                msg = _tx.Message()
+            else:
                 msg = tedapi_pb2.Message()
+            try:
                 msg.ParseFromString(pb_bytes)
                 envelope_bytes = msg.message.SerializeToString()
             except Exception:

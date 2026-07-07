@@ -11,6 +11,8 @@ def _build_tedapi_arg_parser(default_host):
     """Build the CLI parser used by the TEDAPI test command."""
     import argparse
 
+    from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+
     parser = argparse.ArgumentParser(description='Tesla Powerwall Gateway TEDAPI Reader')
     parser.add_argument('gw_pwd', nargs='?', help='Powerwall Gateway Password')
     parser.add_argument('-gw_pwd', dest='gw_pwd_option', metavar='GW_PWD', default=None,
@@ -24,6 +26,9 @@ def _build_tedapi_arg_parser(default_host):
                         help='Path to RSA private key PEM for v1r mode')
     parser.add_argument('-wifi_host', default=None,
                         help='Optional WiFi TEDAPI host for v1r follower fallback')
+    parser.add_argument('-tedapi_api_version', default=TEDAPIApiVersion.V2024_06.value,
+                        choices=[v.value for v in TEDAPIApiVersion],
+                        help='Query/protobuf version set (default: V2024_06)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     return parser
 
@@ -113,9 +118,10 @@ def run_tedapi_test(argv=None, debug=False):
     if args.v1r:
         ted = TEDAPI(gw_pwd=gw_pwd or "", host=host, v1r=True,
                      password=password, rsa_key_path=args.rsa_key_path,
-                     wifi_host=args.wifi_host)
+                     wifi_host=args.wifi_host,
+                     tedapi_api_version=args.tedapi_api_version)
     else:
-        ted = TEDAPI(gw_pwd, host=host)
+        ted = TEDAPI(gw_pwd, host=host, tedapi_api_version=args.tedapi_api_version)
     if ted.din is None:
         print("\nERROR: Unable to connect to Powerwall Gateway. Check your password and try again")
         sys.exit(1)

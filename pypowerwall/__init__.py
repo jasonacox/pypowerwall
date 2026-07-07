@@ -104,6 +104,7 @@ from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
 from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
 from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
 from pypowerwall.regex import EMAIL_REGEX, HOST_REGEX, IPV4_6_REGEX
+from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
 
 urllib3.disable_warnings()  # Disable SSL warnings
@@ -132,7 +133,7 @@ class Powerwall(object):
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
-                 rsa_key_path=None, wifi_host=None):
+                 rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.V2024_06):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -187,6 +188,8 @@ class Powerwall(object):
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
         self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r wifi fallback
+        # TEDAPIApiVersion.V2024_06 (default) or .V2026_06; coerce str inputs.
+        self.tedapi_api_version = TEDAPIApiVersion.coerce(tedapi_api_version)
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -294,14 +297,16 @@ class Powerwall(object):
                             poolmaxsize=self.poolmaxsize,
                             v1r=True, password=pw,
                             rsa_key_path=self.rsa_key_path,
-                            wifi_host=self.wifi_host)
+                            wifi_host=self.wifi_host,
+                            tedapi_api_version=self.tedapi_api_version)
                     elif not self.password and self.gw_pwd:  # Full TEDAPI WiFi (mode 4)
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
                         self.client = PyPowerwallTEDAPI(self.gw_pwd, pwcacheexpire=self.pwcacheexpire,
                                                         pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host,
-                                                        poolmaxsize=self.poolmaxsize)
+                                                        poolmaxsize=self.poolmaxsize,
+                                                        tedapi_api_version=self.tedapi_api_version)
                     else:  # Hybrid (password + gw_pwd) or local-only (password only)
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,

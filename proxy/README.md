@@ -275,6 +275,7 @@ UI and Advanced Settings
 * PW_CONTROL_SECRET - If provided, will activate the Powerwall control commands to adjust Powerwall backup reserve level and mode (disabled by default)
 * PW_RSA_KEY_PATH - Path to RSA-4096 private key PEM for v1r LAN mode ("")
 * PW_WIFI_HOST - Optional WiFi TEDAPI host used as fallback transport for v1r follower queries ("")
+* PW_TEDAPI_API_VERSION - TEDAPI query/protobuf set: "V2024_06" (default, legacy QueryType path) or "V2026_06" (Tesla-signed GraphQL / bearer path) ("V2024_06")
 * PW_NEG_SOLAR - Allow negative solar values ("yes") - set to "no" to clamp negative solar to 0 and shift it to load
 * PW_SITE_ZERO_THRESHOLD - Zero out site power readings below this absolute wattage to suppress phantom grid noise ("0" = disabled)
 * PROXY_BASE_URL - If you are using a reverse proxy to put pypowerwall in a subdirectory, set it here to adjust the URLs for the flow animation (`/` by default)
