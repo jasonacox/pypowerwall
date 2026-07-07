@@ -282,6 +282,7 @@ Environment Variables Influencing Behavior:
 - `PW_SUPPRESS_NETWORK_ERRORS` Suppress repetitive network error logs.
 - `PW_NETWORK_ERROR_RATE_LIMIT` Maximum network errors logged per minute per function (default 5).
 - `PW_CONTROL_SECRET` Enables control endpoints & required `token` value.
+- `PW_TEDAPI_API_VERSION` TEDAPI query/protobuf set: `V2024_06` (default, legacy QueryType path) or `V2026_06` (Tesla-signed GraphQL / bearer path).
 
 Authentication Overview:
 - Read-only endpoints generally need no client token; underlying gateway/cloud auth is handled internally.
