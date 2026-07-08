@@ -11,6 +11,8 @@ import pytest
 from pypowerwall.tedapi import TEDAPI, tedapi_pb2
 from pypowerwall.tedapi import queries as q
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.auth_mode import AuthMode
+
 
 # The V2026_06 pb2 requires protobuf>=6.33.6 (guarded gencode); the default path
 # stays on the 4.25.1 floor, so import lazily and skip the build/parse tests when
@@ -290,6 +292,36 @@ def test_parse_signed_response_v1r_wifi_without_flag_drops_payload(api):
     resp.message.graphql.queryResponse.data = '{"wifi":true}'
     raw = resp.SerializeToString()
     assert api._parse_signed_query_response(raw, from_wifi=False) is None
+
+
+# --- auth_mode <-> version coupling warning ---------------------------------
+# Bearer/presence are the proof-of-presence transport the newer gateways use and
+# expect the V2026_06 signed-GraphQL query set. Selecting them with the legacy
+# V2024_06 default is a likely misconfiguration, so __init__ warns (non-fatal).
+
+@pytest.mark.parametrize("mode", [AuthMode.BEARER, AuthMode.PRESENCE, "bearer", "presence"])
+def test_bearer_presence_with_legacy_version_warns(mode, caplog):
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi"), \
+            patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
+        TEDAPI("pw", auth_mode=mode)  # tedapi_api_version defaults to V2024_06
+    assert "V2026_06" in caplog.text
+    assert "V2024_06" in caplog.text
+
+
+@pytest.mark.parametrize("mode", [AuthMode.BEARER, AuthMode.PRESENCE])
+def test_bearer_presence_with_V2026_06_is_silent(mode, caplog):
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi"), \
+            patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
+        TEDAPI("pw", auth_mode=mode, tedapi_api_version="V2026_06")
+    assert "expects the V2026_06" not in caplog.text
+
+
+def test_basic_mode_with_legacy_version_is_silent(caplog):
+    # the default transport must never emit the bearer/presence coupling warning
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi"), \
+            patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
+        TEDAPI("pw")  # auth_mode=basic, version=V2024_06 (both defaults)
+    assert "expects the V2026_06" not in caplog.text
 
 
 # --- back-compat import shims -----------------------------------------------

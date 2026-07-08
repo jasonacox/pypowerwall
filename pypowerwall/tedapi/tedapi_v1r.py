@@ -20,7 +20,8 @@ import struct
 import time
 import uuid
 import warnings
-from typing import Optional
+from typing import Optional, Union
+from zoneinfo import ZoneInfo
 
 import requests
 import urllib3
@@ -48,9 +49,11 @@ class TEDAPIv1r:
     """RSA-signed transport for Powerwall /tedapi/v1r endpoint."""
 
     def __init__(self, host: str, password: str, rsa_key_path: str,
-                 timeout: int = 5, poolmaxsize: int = 10) -> None:
+                 timeout: int = 5, poolmaxsize: int = 10,
+                 timezone: Union[str, ZoneInfo] = "America/Los_Angeles") -> None:
         self.host = host
         self.password = password
+        self.timezone = ZoneInfo(str(timezone))  # accepts IANA name or ZoneInfo; .key for wire payloads
         self.timeout = timeout
         self.poolmaxsize = poolmaxsize
         self.token: Optional[str] = None
@@ -107,7 +110,7 @@ class TEDAPIv1r:
             "username": "customer",
             "password": self.password,
             "email": "customer@customer.domain",
-            "clientInfo": {"timezone": "America/Chicago"},
+            "clientInfo": {"timezone": self.timezone.key},
         })
         try:
             r = self.session.post(url, data=payload,

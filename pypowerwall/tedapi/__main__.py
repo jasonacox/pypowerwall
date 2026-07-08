@@ -12,6 +12,7 @@ def _build_tedapi_arg_parser(default_host):
     import argparse
 
     from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+    from pypowerwall.tedapi.auth_mode import AuthMode
 
     parser = argparse.ArgumentParser(description='Tesla Powerwall Gateway TEDAPI Reader')
     parser.add_argument('gw_pwd', nargs='?', help='Powerwall Gateway Password')
@@ -33,6 +34,12 @@ def _build_tedapi_arg_parser(default_host):
                         help='Fetch and print the gateway firmware version, then exit')
     parser.add_argument('-details', action='store_true',
                         help='With -firmware: include full system info (part/serial, githash)')
+    parser.add_argument('--auth-mode', default=AuthMode.BASIC.value,
+                        choices=[m.value for m in AuthMode],
+                        help='Authentication mode: basic (default, requires a route to '
+                             '192.168.91.1), bearer (installer login, works from the '
+                             'home network), or presence (Powerwall 3 physical switch-flip '
+                             'installer login)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     return parser
 
@@ -152,7 +159,8 @@ def run_tedapi_test(argv=None, debug=False):
                      wifi_host=args.wifi_host,
                      tedapi_api_version=args.tedapi_api_version)
     else:
-        ted = TEDAPI(gw_pwd, host=host, tedapi_api_version=args.tedapi_api_version)
+        ted = TEDAPI(gw_pwd, host=host, tedapi_api_version=args.tedapi_api_version,
+                     auth_mode=args.auth_mode)
     if ted.din is None:
         print("\nERROR: Unable to connect to Powerwall Gateway. Check your password and try again")
         sys.exit(1)
