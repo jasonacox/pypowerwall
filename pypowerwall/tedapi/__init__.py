@@ -75,6 +75,7 @@ from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
 from .queries import apply_query, get_query, QueryRole
+from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -804,80 +805,13 @@ class TEDAPI:
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
                     return None
-                # Fetch Current Status from Powerwall
                 log.debug("Get Firmware Version from Powerwall")
-                # Build Protobuf to fetch firmware
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.recipient.din = self.din  # DIN of Powerwall
-                pb.message.firmware.request = ""
-                pb.tail.value = 1
                 try:
-                    response = self._post_tedapi(pb.SerializeToString())
-                    if response is None:
+                    info = self._get_system_info()
+                    if info is None:
                         return None
-                    # Decode response
-                    if self.v1r:
-                        # v1r response is a MessageEnvelope (not full Message)
-                        envelope = tedapi_pb2.MessageEnvelope()
-                        envelope.ParseFromString(response)
-                        firmware_version = envelope.firmware.system.version.text
-                        if details:
-                            payload = {
-                                "system": {
-                                    "gateway": {
-                                        "partNumber": envelope.firmware.system.gateway.partNumber,
-                                        "serialNumber": envelope.firmware.system.gateway.serialNumber
-                                    },
-                                    "din": envelope.firmware.system.din,
-                                    "version": {
-                                        "text": envelope.firmware.system.version.text,
-                                        "githash": envelope.firmware.system.version.githash
-                                    },
-                                    "five": envelope.firmware.system.five,
-                                    "six": envelope.firmware.system.six,
-                                    "wireless": {"device": []}
-                                }
-                            }
-                        else:
-                            payload = firmware_version
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        firmware_version = tedapi.message.firmware.system.version.text
-                        if details:
-                            payload = {
-                                "system": {
-                                    "gateway": {
-                                        "partNumber": tedapi.message.firmware.system.gateway.partNumber,
-                                        "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
-                                    },
-                                    "din": tedapi.message.firmware.system.din,
-                                    "version": {
-                                        "text": tedapi.message.firmware.system.version.text,
-                                        "githash": tedapi.message.firmware.system.version.githash
-                                    },
-                                    "five": tedapi.message.firmware.system.five,
-                                    "six": tedapi.message.firmware.system.six,
-                                    "wireless": {
-                                        "device": []
-                                    }
-                                }
-                            }
-                            try:
-                                for device in tedapi.message.firmware.system.wireless.device:
-                                    payload["system"]["wireless"]["device"].append({
-                                        "company": device.company.value,
-                                        "model": device.model.value,
-                                        "fcc_id": device.fcc_id.value,
-                                        "ic": device.ic.value
-                                    })
-                            except Exception as e:
-                                log.debug(f"Error parsing wireless devices: {e}")
-                            log.debug(f"Firmware Version: {payload}")
-                        else:
-                            payload = firmware_version
+                    firmware_version = info.version
+                    payload = info.to_details_dict() if details else firmware_version
                     log.debug(f"Firmware Version: {firmware_version}")
                     self.pwcachetime["firmware"] = time.time()
                     self.pwcache["firmware"] = firmware_version
@@ -890,6 +824,48 @@ class TEDAPI:
             return self.pwcache.get("firmware")
         return payload
 
+    def _get_system_info(self) -> Optional[SystemInfo]:
+        """Fetch the gateway firmware/system info and normalize it into a
+        :class:`SystemInfo`, identically across protobuf versions and transports.
+
+        V2026_06 uses the common.getSystemInfoRequest API; older versions use the
+        legacy firmware.request/firmware.system format. Returns the SystemInfo, or
+        None if nothing came back.
+        """
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            tx, ed = self._import_v2026_pb2()
+            pb = tx.Message()
+            pb.message.deliveryChannel = ed.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = ed.LOCAL_PARTICIPANT_INSTALLER
+            pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+            pb.message.common.getSystemInfoRequest.CopyFrom(
+                ed.CommonAPIGetSystemInfoRequest())
+            pb.tail.value = 1
+        else:
+            pb = tedapi_pb2.Message()
+            pb.message.deliveryChannel = 1
+            pb.message.sender.local = 1
+            pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+            pb.message.firmware.request = ""
+            pb.tail.value = 1
+        response = self._post_tedapi(pb.SerializeToString())
+        if response is None:
+            return None
+        return self._parse_system_info(response)
+
+    def _parse_system_info(self, response: bytes) -> SystemInfo:
+        """Parse a firmware/system-info response into a SystemInfo. The two api
+        versions differ only in the pb2 module and the protobuf field paths
+        (V2026_SYS_SCHEMA / V2024_SYS_SCHEMA); SystemInfo.from_proto does the rest."""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            tx, ed = self._import_v2026_pb2()
+            envelope_cls, message_cls, schema = ed.MessageEnvelope, tx.Message, V2026_SYS_SCHEMA
+        else:
+            envelope_cls, message_cls, schema = (
+                tedapi_pb2.MessageEnvelope, tedapi_pb2.Message, V2024_SYS_SCHEMA)
+        env = envelope_cls() if self.v1r else message_cls()
+        env.ParseFromString(response)
+        return SystemInfo.from_proto(env if self.v1r else env.message, schema)
 
     @uses_api_lock
     def get_components(self, self_function=None, force=False):

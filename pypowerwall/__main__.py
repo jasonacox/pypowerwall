@@ -67,7 +67,9 @@ def _add_connection_args(parser):
     parser.add_argument("-host", type=str, default="",
                         help="IP address of Powerwall Gateway [local/tedapi/v1r]")
     parser.add_argument("-password", type=str, default="",
-                        help="Customer password [local/v1r; v1r defaults to last 5 of gw_pwd]")
+                        help="Customer password = the LAST 5 characters of the gateway "
+                             "(QR sticker) password [used by -local and -v1r; v1r "
+                             "auto-derives it from -gw_pwd]")
     parser.add_argument("-gw_pwd", type=str, default=None,
                         help="Gateway password [required for -tedapi and -v1r]")
     parser.add_argument("-rsa_key_path", type=str, default=None,
@@ -481,6 +483,10 @@ def main():
     tedapi_args.add_argument("-tedapi_api_version", type=str, default=None,
                              choices=[v.value for v in TEDAPIApiVersion],
                              help="TEDAPI query/protobuf version to use (V2024_06 or V2026_06)")
+    tedapi_args.add_argument("-firmware", action="store_true", default=False,
+                             help="Fetch and print gateway firmware version, then exit")
+    tedapi_args.add_argument("-details", action="store_true", default=False,
+                             help="With -firmware: include full system info")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -739,6 +745,10 @@ def main():
             tedapi_argv.extend(['-wifi_host', args.wifi_host])
         if args.tedapi_api_version:
             tedapi_argv.extend(['-tedapi_api_version', args.tedapi_api_version])
+        if getattr(args, 'firmware', False):
+            tedapi_argv.append('-firmware')
+        if getattr(args, 'details', False):
+            tedapi_argv.append('-details')
         if args.debug:
             tedapi_argv.append('--debug')
         run_tedapi_test(argv=tedapi_argv, debug=args.debug)

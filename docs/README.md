@@ -42,7 +42,7 @@ You can use pyPowerwall to grab individual string data.  It uses the protobuf pa
 import pypowerwall
 
 # Credentials for your Powerwall
-password='password'
+password='password'               # Customer password = last 5 chars of the gateway (QR) password
 email='email@example.com'
 host = "10.0.1.123"               # Address of your Powerwall Gateway
 timezone = "America/Los_Angeles"  # Your local timezone
