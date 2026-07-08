@@ -105,6 +105,7 @@ from pypowerwall.local.pypowerwall_local import PyPowerwallLocal
 from pypowerwall.pypowerwall_base import PyPowerwallBase, parse_version
 from pypowerwall.regex import EMAIL_REGEX, HOST_REGEX, IPV4_6_REGEX
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
 
 urllib3.disable_warnings()  # Disable SSL warnings
@@ -133,7 +134,8 @@ class Powerwall(object):
                  timezone="America/Los_Angeles", pwcacheexpire=5, timeout=5, poolmaxsize=10,
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
-                 rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.V2024_06):
+                 rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.V2024_06,
+                 tedapi_auth_mode=AuthMode.BASIC):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -160,6 +162,11 @@ class Powerwall(object):
             gw_pwd       = Full gateway password from QR sticker; used for TEDAPI (mode 4)
                            and auto-derived (last 5 chars) for v1r login (mode 5)
             rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
+            tedapi_auth_mode = TEDAPI authentication mode: "basic" (default) HTTP
+                           Basic Auth (needs a route to 192.168.91.1); or "bearer"
+                           to log in via /api/login/Basic and wrap queries in an
+                           AuthEnvelope (works from the home network without a
+                           static route, and is what Powerwall 3 requires)
         """
 
         # Attributes
@@ -190,6 +197,8 @@ class Powerwall(object):
         self.wifi_host = wifi_host  # WiFi TEDAPI host for v1r wifi fallback
         # TEDAPIApiVersion.V2024_06 (default) or .V2026_06; coerce str inputs.
         self.tedapi_api_version = TEDAPIApiVersion.coerce(tedapi_api_version)
+        # basic / bearer for TEDAPI; coerce str inputs (raises on bad).
+        self.tedapi_auth_mode = AuthMode.coerce(tedapi_auth_mode)
         self.tedapi = False
         self.tedapi_mode = "off"  # off, full, hybrid
 
@@ -312,7 +321,9 @@ class Powerwall(object):
                                                         pwconfigexpire=self.pwcacheexpire,
                                                         timeout=self.timeout, host=self.host,
                                                         poolmaxsize=self.poolmaxsize,
-                                                        tedapi_api_version=self.tedapi_api_version)
+                                                        tedapi_api_version=self.tedapi_api_version,
+                                                        auth_mode=self.tedapi_auth_mode,
+                                                        timezone=self.timezone)
                     else:  # Hybrid (password + gw_pwd) or local-only (password only)
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,
