@@ -43,9 +43,6 @@ OWNER_AUTHFILE = ".pypowerwall.auth"  # Shared with Cloud Mode
 
 CERT_DIR = os.getcwd()
 
-# Default SSL context for urllib fallback paths (non-httpx calls)
-SSL_CTX = ssl.create_default_context()
-
 # Fleet API region endpoints
 FLEET_REGIONS = {
     "na":     "https://fleet-api.prd.na.vn.cloud.tesla.com",
@@ -168,7 +165,7 @@ def api_call(url, method="GET", data=None, headers=None, token=None):
         req.data = data
 
     try:
-        resp = urllib.request.urlopen(req, context=SSL_CTX, timeout=30)
+        resp = urllib.request.urlopen(req, context=_ssl_ctx(), timeout=30)
         body = resp.read().decode()
         try:
             return resp.status, json.loads(body)
@@ -297,7 +294,7 @@ def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
 
     try:
-        resp = urllib.request.urlopen(req, context=SSL_CTX, timeout=30)
+        resp = urllib.request.urlopen(req, context=_ssl_ctx(), timeout=30)
         tokens = json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body = e.read().decode()
