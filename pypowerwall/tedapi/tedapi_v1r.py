@@ -43,8 +43,9 @@ class TEDAPIv1r:
         self.poolmaxsize = poolmaxsize
         self.token: Optional[str] = None
         self.din: Optional[str] = None
-        # Tracks whether the registered key is stuck in PENDING_VERIFICATION
+        # Tracks key-auth failure state so warnings fire once per session
         self.pending_verification: bool = False
+        self.key_unknown: bool = False
 
         # Load RSA private key
         from cryptography.hazmat.primitives import serialization
@@ -211,8 +212,16 @@ class TEDAPIv1r:
             if fault != combined_pb2.MESSAGEFAULT_ERROR_NONE:
                 fault_name = combined_pb2.MessageFault_E.Name(fault)
                 if fault == combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID:
-                    log.error(f"v1r response fault: {fault_name}")
-                    log.error("RSA key not registered. Run v1r_register.py (or: python -m pypowerwall register) to register your key.")
+                    msg = (
+                        "v1r RSA key is not recognized by the gateway (UNKNOWN_KEY_ID). "
+                        "The key file may not match the registered key, or no key has been "
+                        "registered. Run 'python -m pypowerwall register' to register or "
+                        "verify your key. See: https://github.com/jasonacox/pypowerwall/issues/274"
+                    )
+                    log.error("v1r: %s", msg)
+                    if not self.key_unknown:
+                        self.key_unknown = True
+                        warnings.warn(msg, UserWarning, stacklevel=4)
                 elif fault == combined_pb2.MESSAGEFAULT_ERROR_TIMEOUT:
                     log.debug(f"v1r response fault: {fault_name} (sub-device may not be routable via v1r)")
                 else:
@@ -222,7 +231,12 @@ class TEDAPIv1r:
             # Extract inner protobuf bytes
             inner = resp_msg.protobuf_message_as_bytes
             if not inner:
-                log.error("v1r response has no protobuf_message_as_bytes")
+                # Empty inner payload with no fault code — unusual but should not
+                # pass silently.  Log the response size for diagnostic context.
+                log.error(
+                    "v1r response has no protobuf_message_as_bytes "
+                    "(response size: %d bytes)", len(r.content)
+                )
                 return None
 
             # Check for plain-text authorization errors in the inner payload.
