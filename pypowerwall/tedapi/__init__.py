@@ -1470,6 +1470,16 @@ class TEDAPI:
             self.lan_failed = False
             self.lan_fail_count = 0
             self.lan_recover_after = 0
+            # Probe key verification state. Login and DIN both succeed even when the
+            # RSA key is registered but not yet verified (PENDING_VERIFICATION). A test
+            # read here surfaces the warning at init time instead of silently returning
+            # None on every subsequent data call.
+            probe = self.v1r_transport.get_config_v1r(self.din)
+            if probe is None and self.v1r_transport.pending_verification:
+                log.error(
+                    "v1r: RSA key is PENDING_VERIFICATION — data calls will return None. "
+                    "Toggle a Powerwall circuit breaker OFF then back ON to trigger verification."
+                )
             # Test WiFi fallback path if configured
             if self.wifi_session:
                 self._test_wifi_path()

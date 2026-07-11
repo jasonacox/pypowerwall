@@ -18,6 +18,7 @@ import ssl
 import struct
 import time
 import uuid
+import warnings
 from typing import Optional
 
 import requests
@@ -42,6 +43,8 @@ class TEDAPIv1r:
         self.poolmaxsize = poolmaxsize
         self.token: Optional[str] = None
         self.din: Optional[str] = None
+        # Tracks whether the registered key is stuck in PENDING_VERIFICATION
+        self.pending_verification: bool = False
 
         # Load RSA private key
         from cryptography.hazmat.primitives import serialization
@@ -229,12 +232,20 @@ class TEDAPIv1r:
             # instead of a valid protobuf payload.
             # Check in bytes first to avoid decoding large protobuf blobs on every call.
             if b'authorization not verified' in inner.lower():
-                log.error("v1r: RSA key not yet VERIFIED by the gateway.")
-                log.error("  The key is registered but not yet VERIFIED (may be PENDING or PENDING_VERIFICATION).")
-                log.error("  1. Toggle ONE Powerwall breaker OFF, wait 2 seconds, then back ON.")
-                log.error("  2. Wait 30-60 seconds, then retry.")
-                log.error("  Re-run 'python -m pypowerwall register' to inspect registration and verification state.")
-                log.error("  See: https://github.com/jasonacox/pypowerwall/issues/274")
+                msg = (
+                    "v1r RSA key is registered but not yet VERIFIED by the gateway "
+                    "(PENDING_VERIFICATION). "
+                    "Toggle ONE Powerwall circuit breaker OFF, wait 2 seconds, then back ON. "
+                    "Wait 30-60 seconds, then retry. "
+                    "Run 'python -m pypowerwall register' to check key state. "
+                    "See: https://github.com/jasonacox/pypowerwall/issues/274"
+                )
+                log.error("v1r: %s", msg)
+                if not self.pending_verification:
+                    # Emit a visible warning the first time this is detected so users
+                    # see it without needing debug logging enabled.
+                    self.pending_verification = True
+                    warnings.warn(msg, UserWarning, stacklevel=4)
                 return None
 
             return inner
