@@ -6,6 +6,18 @@
 * note(tedapi): the default `V2024_06` path and its protobufs are unchanged — the library floor stays at `protobuf>=4.25.1` (the `local`/`V2024_06` `*_pb2.py` are still generated with the protobuf 4.25.x toolchain and are byte-identical to prior releases). Only the opt-in `V2026_06` query set is built with the latest protoc, so its `*_pb2.py` embed a `runtime_version.ValidateProtobufRuntimeVersion()` guard and require `protobuf>=6.33.6`. Those modules are imported lazily only when `tedapi_api_version="V2026_06"` is selected, so an older runtime raises a clear, actionable error (`tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — pip install -U protobuf`) at opt-in time — everyone on the default path is unaffected.
 * robustness(tedapi): when the gateway rejects a `V2026_06` signed query, pyPowerwall now logs a warning suggesting a fallback to `tedapi_api_version="V2024_06"` — a total `V2026_06` failure after a firmware update most likely means Tesla rotated the query signing keys, so the bundled signatures no longer validate.
 
+## v0.16.1 - Windows TLS Fix for Tesla Auth
+
+* fix(windows): cap TLS to 1.2 on Windows to avoid Tesla token fingerprint rejection (#350)
+  * Windows Python bundles an OpenSSL build whose TLS 1.3 ClientHello fingerprint is rejected by Tesla during PKCE code exchange and token refresh — tokens come back "tainted" and all `owner-api.teslamotors.com` calls return `403 Forbidden`
+  * `_httpx_auth_verify()` in `tesla_auth.py` and `teslapy/__init__.py` now caps `maximum_version` to TLS 1.2 on Windows (`sys.platform == 'win32'`); Linux/macOS retain TLS 1.3 pinning
+  * TLS 1.2 fully supports HTTP/2, so ALPN negotiation and h2 framing are unaffected
+* fix(register): `api_call()` in `v1r_register.py` now uses httpx with HTTP/2 for Tesla API endpoints (was urllib/HTTP/1.1)
+  * Tesla now requires HTTP/2 for `owner-api.teslamotors.com/api/1/*` calls (June 2026)
+  * Falls back to urllib for non-Tesla URLs or if httpx is not installed
+* docs(windows): README updated with Windows setup troubleshooting — native Windows TLS, WSL2 WebKitGTK limitation, and alternatives (tesla_auth app, full Linux VM, remote authtoken)
+* diagnostics: `cloudcheck` now reports platform-aware TLS behaviour on Windows
+
 ## v0.16.0 - Code Review Fixes: Correctness, Security, and Robustness
 
 Full-codebase review sweep (see `docs/code-review-2026-07-03.md` for the complete findings). 104 new regression tests (227 passing, up from 123). No public API signatures or return shapes changed. Hardware-verified against production proxies with `proxy/regression_test.py`: all 76 non-control endpoints byte-compatible across TEDAPI WiFi, v1r+WiFi hybrid, Cloud, and FleetAPI modes.

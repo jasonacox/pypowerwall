@@ -180,14 +180,17 @@ def _run_cloud_diagnostics(authpath="", email=None, skip_connect=False):
     info(f"Platform: {platform.platform()}")
     info(f"OpenSSL:  {ssl.OPENSSL_VERSION}")
 
-    # ── TLS 1.3 ───────────────────────────────────────────────────────────
+    # ── TLS ─────────────────────────────────────────────────────────────
     tls13_ok = False
     try:
         ctx = ssl.create_default_context()
         ctx.minimum_version = ssl.TLSVersion.TLSv1_3
         ctx.maximum_version = ssl.TLSVersion.TLSv1_3
         tls13_ok = True
-        ok("TLS 1.3 SSLContext: supported")
+        if sys.platform == 'win32':
+            info("TLS 1.3 SSLContext: supported (will use TLS 1.2 for Tesla endpoints — see #350)")
+        else:
+            ok("TLS 1.3 SSLContext: supported")
     except AttributeError:
         warn("TLS 1.3 SSLContext: ssl.TLSVersion not available (old OpenSSL)")
     except ssl.SSLError as e:
