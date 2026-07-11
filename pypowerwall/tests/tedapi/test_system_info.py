@@ -12,6 +12,7 @@ import pytest
 
 from pypowerwall.tedapi import TEDAPI
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.protobuf.V2024_06 import tedapi_pb2
 from pypowerwall.tedapi.system_info import SystemInfo, RadioDevice
 
 try:
@@ -111,27 +112,39 @@ def test_get_system_info_returns_none_when_gateway_silent():
         assert api._get_system_info() is None
 
 
-def test_get_system_info_legacy_round_trip_is_json_safe():
+def _legacy_response(populate, *, v1r):
+    """Serialize a legacy firmware.system response in the transport the parser
+    expects: v1r -> bare MessageEnvelope; basic -> Message with a tail. `populate`
+    fills in the firmware.system message (parallels _v2026_response's v1r handling)."""
+    if v1r:
+        env = tedapi_pb2.MessageEnvelope()
+        populate(env.firmware.system)
+        return env.SerializeToString()
+    msg = tedapi_pb2.Message()
+    populate(msg.message.firmware.system)
+    msg.tail.value = 1
+    return msg.SerializeToString()
+
+
+@pytest.mark.parametrize("v1r", [False, True])
+def test_get_system_info_legacy_round_trip_is_json_safe(v1r):
     """Legacy (V2024_06) details payload must be JSON-safe and emit the same field
     set as V2026, with the opaque fields surfaced under Tesla's real names
-    (`systemUpdate`/`deviceType`)."""
-    from pypowerwall.tedapi.protobuf.V2024_06 import tedapi_pb2
+    (`systemUpdate`/`deviceType`). Covers both transports (basic Message + v1r bare
+    envelope)."""
+    def populate(s):
+        s.version.text = VERSION
+        s.version.githash = GITHASH
+        s.din = DIN
+        s.gateway.partNumber = PART
+        s.gateway.serialNumber = SERIAL
+        s.systemUpdate.updateStatus = 42
+        s.deviceType = 7
+        s.installedFirmwareSignature = b"\x01\x02\x03\x04"
+        s.offlineFirmwareSignature = b"\x05\x06"
 
-    msg = tedapi_pb2.Message()
-    sysinfo = msg.message.firmware.system
-    sysinfo.version.text = VERSION
-    sysinfo.version.githash = GITHASH
-    sysinfo.din = DIN
-    sysinfo.gateway.partNumber = PART
-    sysinfo.gateway.serialNumber = SERIAL
-    sysinfo.systemUpdate.updateStatus = 42
-    sysinfo.deviceType = 7
-    sysinfo.installedFirmwareSignature = b"\x01\x02\x03\x04"
-    sysinfo.offlineFirmwareSignature = b"\x05\x06"
-    msg.tail.value = 1
-
-    api = _make_api(TEDAPIApiVersion.V2024_06, v1r=False)
-    with patch.object(api, "_post_tedapi", return_value=msg.SerializeToString()):
+    api = _make_api(TEDAPIApiVersion.V2024_06, v1r=v1r)
+    with patch.object(api, "_post_tedapi", return_value=_legacy_response(populate, v1r=v1r)):
         info = api._get_system_info()
 
     assert info.version == VERSION
@@ -144,26 +157,23 @@ def test_get_system_info_legacy_round_trip_is_json_safe():
     json.dumps(info.to_details_dict())                  # must not raise
 
 
-def test_get_system_info_legacy_recovers_full_systemupdate():
+@pytest.mark.parametrize("v1r", [False, True])
+def test_get_system_info_legacy_recovers_full_systemupdate(v1r):
     """The legacy proto now models the full SystemUpdate directly (was the truncated
     FirmwareFive{d}), so a mid-update gateway reports the complete update state, not
     just updateStatus. (Nested serverStagedVersion uses the legacy FirmwareVersion,
     whose field is `text`, vs V2026's `version`.)"""
-    from pypowerwall.tedapi.protobuf.V2024_06 import tedapi_pb2
+    def populate(s):
+        s.version.text = VERSION
+        s.din = DIN
+        su = s.systemUpdate
+        su.updateStatus = 2
+        su.totalBytes = 987654321
+        su.isSideloading = True
+        su.serverStagedVersion.text = "26.12.0"
 
-    msg = tedapi_pb2.Message()
-    sysinfo = msg.message.firmware.system
-    sysinfo.version.text = VERSION
-    sysinfo.din = DIN
-    su = sysinfo.systemUpdate
-    su.updateStatus = 2
-    su.totalBytes = 987654321
-    su.isSideloading = True
-    su.serverStagedVersion.text = "26.12.0"
-    msg.tail.value = 1
-
-    api = _make_api(TEDAPIApiVersion.V2024_06, v1r=False)
-    with patch.object(api, "_post_tedapi", return_value=msg.SerializeToString()):
+    api = _make_api(TEDAPIApiVersion.V2024_06, v1r=v1r)
+    with patch.object(api, "_post_tedapi", return_value=_legacy_response(populate, v1r=v1r)):
         info = api._get_system_info()
 
     assert info.system_update == {
