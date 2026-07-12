@@ -219,6 +219,34 @@ class TestPostV1rWarnings:
         assert "UNKNOWN_KEY_ID" in str(user_warnings[0].message)
         assert transport.key_unknown is True
 
+    def test_empty_inner_emits_warning_once(self):
+        """Empty inner payload with no fault code fires UserWarning exactly once.
+
+        This covers the unregistered-key case where the gateway returns HTTP 200
+        with 101 bytes, MESSAGEFAULT_ERROR_NONE, and no protobuf_message_as_bytes.
+        The response does not contain 'authorization not verified' text either —
+        the error is only detectable by the empty inner payload.
+        """
+        transport = self._make_transport()
+        # Response with no inner bytes and no fault — the unregistered-key 101-byte case
+        empty_resp = MagicMock()
+        empty_resp.status_code = 200
+        empty_resp.content = _make_routable_message(inner_bytes=b"")
+        transport.session.post.return_value = empty_resp
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result1 = transport.post_v1r(b"fake-payload", "TEST_DIN")
+            result2 = transport.post_v1r(b"fake-payload", "TEST_DIN")
+
+        assert result1 is None
+        assert result2 is None
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1, (
+            f"Expected exactly one UserWarning across two calls, got {len(user_warnings)}"
+        )
+        assert transport.key_unknown is True
+
     def test_valid_response_returns_inner_bytes(self):
         """A well-formed response returns the inner bytes without a warning."""
         transport = self._make_transport()

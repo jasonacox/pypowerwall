@@ -32,6 +32,17 @@ urllib3.disable_warnings(InsecureRequestWarning)
 log = logging.getLogger(__name__)
 
 
+def _decode_payload_preview(raw: bytes, max_len: int = 200) -> str:
+    """Return a human-readable preview of a raw gateway response for diagnostics."""
+    try:
+        text = raw.decode('utf-8', errors='replace').strip()
+        if text and any(32 <= ord(c) < 127 for c in text[:20]):
+            return repr(text[:max_len])
+    except Exception:
+        pass
+    return raw[:max_len].hex()
+
+
 class TEDAPIv1r:
     """RSA-signed transport for Powerwall /tedapi/v1r endpoint."""
 
@@ -203,6 +214,8 @@ class TEDAPIv1r:
                 log.error(f"v1r POST failed ({r.status_code})")
                 return None
 
+            response_size = len(r.content)
+
             # Parse response RoutableMessage
             resp_msg = combined_pb2.RoutableMessage()
             resp_msg.ParseFromString(r.content)
@@ -212,11 +225,13 @@ class TEDAPIv1r:
             if fault != combined_pb2.MESSAGEFAULT_ERROR_NONE:
                 fault_name = combined_pb2.MessageFault_E.Name(fault)
                 if fault == combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID:
+                    raw_preview = _decode_payload_preview(r.content)
                     msg = (
                         "v1r RSA key is not recognized by the gateway (UNKNOWN_KEY_ID). "
                         "The key file may not match the registered key, or no key has been "
                         "registered. Run 'python -m pypowerwall register' to register or "
-                        "verify your key. See: https://github.com/jasonacox/pypowerwall/issues/274"
+                        f"verify your key. Gateway payload ({response_size} bytes): {raw_preview} "
+                        "See: https://github.com/jasonacox/pypowerwall/issues/274"
                     )
                     log.error("v1r: %s", msg)
                     if not self.key_unknown:
@@ -230,35 +245,46 @@ class TEDAPIv1r:
 
             # Extract inner protobuf bytes
             inner = resp_msg.protobuf_message_as_bytes
-            if not inner:
-                # Empty inner payload with no fault code — unusual but should not
-                # pass silently.  Log the response size for diagnostic context.
-                log.error(
-                    "v1r response has no protobuf_message_as_bytes "
-                    "(response size: %d bytes)", len(r.content)
-                )
-                return None
+            raw_lower = r.content.lower()
 
-            # Check for plain-text authorization errors in the inner payload.
+            # Check for plain-text authorization errors in raw response or inner payload.
             # When the RSA key is registered but not yet verified, the gateway
-            # returns HTTP 200 with MESSAGEFAULT_ERROR_NONE but the inner bytes
-            # contain a plain-text error like "v1r: client authorization not verified"
-            # instead of a valid protobuf payload.
-            # Check in bytes first to avoid decoding large protobuf blobs on every call.
-            if b'authorization not verified' in inner.lower():
+            # returns HTTP 200 with MESSAGEFAULT_ERROR_NONE but the payload
+            # contains a plain-text error like "v1r: client authorization not verified"
+            # instead of a valid protobuf inner payload.
+            if b'authorization not verified' in raw_lower or (inner and b'authorization not verified' in inner.lower()):
+                raw_preview = _decode_payload_preview(r.content)
                 msg = (
                     "v1r RSA key is registered but not yet VERIFIED by the gateway "
                     "(PENDING_VERIFICATION). "
                     "Toggle ONE Powerwall circuit breaker OFF, wait 2 seconds, then back ON. "
                     "Wait 30-60 seconds, then retry. "
                     "Run 'python -m pypowerwall register' to check key state. "
+                    f"Gateway payload ({response_size} bytes): {raw_preview} "
                     "See: https://github.com/jasonacox/pypowerwall/issues/274"
                 )
                 log.error("v1r: %s", msg)
                 if not self.pending_verification:
-                    # Emit a visible warning the first time this is detected so users
-                    # see it without needing debug logging enabled.
                     self.pending_verification = True
+                    warnings.warn(msg, UserWarning, stacklevel=4)
+                return None
+
+            if not inner:
+                # Empty inner payload with no recognized fault code — the response
+                # may be a plain-text or binary auth rejection the gateway didn't
+                # encode as a fault.  Reveal the raw payload so users can troubleshoot.
+                raw_preview = _decode_payload_preview(r.content)
+                msg = (
+                    f"v1r key authentication failed — gateway returned an unexpected "
+                    f"response ({response_size} bytes) with no data. "
+                    f"Gateway payload: {raw_preview} "
+                    "The RSA key may not be registered or recognized by this gateway. "
+                    "Run 'python -m pypowerwall register' to register or verify your key. "
+                    "See: https://github.com/jasonacox/pypowerwall/issues/274"
+                )
+                log.error("v1r: %s", msg)
+                if not self.key_unknown:
+                    self.key_unknown = True
                     warnings.warn(msg, UserWarning, stacklevel=4)
                 return None
 
