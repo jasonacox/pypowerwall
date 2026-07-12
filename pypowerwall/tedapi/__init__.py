@@ -1623,7 +1623,12 @@ class TEDAPI:
         Returns:
             Raw response content bytes, or None on error.
             For WiFi: the raw HTTP response body (protobuf)
-            For v1r: the inner protobuf_message_as_bytes from the RoutableMessage response
+            For v1r: bare MessageEnvelope bytes — either the inner
+                     protobuf_message_as_bytes from the RoutableMessage response
+                     (LAN), or the envelope re-extracted from the full transport
+                     Message returned by the WiFi fallback. Callers in v1r mode
+                     can always parse the result as a MessageEnvelope regardless
+                     of which transport actually served the request.
         """
         if self.v1r:
             # ── LAN recovery probe ────────────────────────────────────────────
@@ -1646,7 +1651,31 @@ class TEDAPI:
                     log.error("v1r: LAN down and no WiFi fallback configured")
                     return None
                 log.debug("v1r: LAN down — routing primary query via WiFi TEDAPI")
-                return self._post_tedapi_wifi(pb_bytes, url_suffix)
+                raw = self._post_tedapi_wifi(pb_bytes, url_suffix)
+                if raw is None:
+                    return None
+                # Normalize to the documented v1r contract: bare MessageEnvelope
+                # bytes. WiFi TEDAPI v1 returns a full transport Message (with
+                # tail); without this re-extract, v1r callers keying their parse
+                # off self.v1r would misparse the wrapper as an envelope —
+                # protobuf decodes it leniently, yielding silently empty data.
+                # Normalizing here (at the transport boundary, where the routing
+                # decision was made) also avoids the race of callers re-checking
+                # self.lan_failed at parse time, which another thread may have
+                # flipped after this request was served over LAN.
+                if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+                    # v2 transport proto so field-16 graphql payloads survive
+                    # the re-extract (legacy proto would drop them).
+                    _tx, _ = self._import_v2026_pb2()
+                    wifi_msg = _tx.Message()
+                else:
+                    wifi_msg = tedapi_pb2.Message()
+                try:
+                    wifi_msg.ParseFromString(raw)
+                    return wifi_msg.message.SerializeToString()
+                except Exception as e:
+                    log.error(f"v1r: Error normalizing WiFi fallback response: {e}")
+                    return None
 
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message

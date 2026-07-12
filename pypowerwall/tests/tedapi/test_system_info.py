@@ -185,6 +185,67 @@ def test_get_system_info_legacy_recovers_full_systemupdate(v1r):
     json.dumps(info.to_details_dict())   # still serializes
 
 
+def _fallback_api(api_version):
+    """v1r api with LAN marked failed and a (mock) WiFi session, so _post_tedapi
+    routes through the WiFi fallback branch."""
+    api = _make_api(api_version, v1r=True)
+    api.lan_failed = True
+    api.lan_recover_after = float("inf")   # suppress the LAN recovery probe
+    api.wifi_session = object()            # truthy; _post_tedapi_wifi is patched
+    return api
+
+
+def test_post_tedapi_v1r_wifi_fallback_normalizes_to_envelope_legacy():
+    """v1r contract: _post_tedapi always returns bare MessageEnvelope bytes, even
+    when LAN has failed and the request was served by the WiFi fallback (which
+    speaks full transport Message). Without the transport-boundary re-extract,
+    v1r callers misparse the wrapper as an envelope — protobuf decodes it
+    leniently — and yield silently empty firmware/system data."""
+    def populate(s):
+        s.version.text = VERSION
+        s.version.githash = GITHASH
+        s.din = DIN
+        s.gateway.partNumber = PART
+        s.gateway.serialNumber = SERIAL
+
+    api = _fallback_api(TEDAPIApiVersion.V2024_06)
+    # WiFi returns the full transport Message (with tail), as _post_tedapi_wifi does
+    wifi_response = _legacy_response(populate, v1r=False)
+    with patch.object(api, "_post_tedapi_wifi", return_value=wifi_response):
+        info = api._get_system_info()
+    # Parsed as a bare envelope by the v1r path — must be the real data, not empty
+    assert info is not None
+    assert info.version == VERSION
+    assert info.din == DIN
+    assert info.gateway_part_number == PART and info.gateway_serial_number == SERIAL
+    # Same data as a native v1r LAN response — transports must be indistinguishable
+    with patch.object(api, "_post_tedapi", return_value=_legacy_response(populate, v1r=True)):
+        assert api._get_system_info() == info
+
+
+@v2026_only
+def test_post_tedapi_v1r_wifi_fallback_normalizes_to_envelope_v2026():
+    """Same WiFi-fallback normalization for V2026_06: the re-extract must use the
+    v2 transport proto so the common/graphql payload survives."""
+    api = _fallback_api(TEDAPIApiVersion.V2026_06)
+    wifi_response = _v2026_response(v1r=False)   # full transport Message
+    with patch.object(api, "_post_tedapi_wifi", return_value=wifi_response):
+        info = api._get_system_info()
+    assert info is not None
+    assert info.version == VERSION
+    assert info.din == DIN
+    assert info.device_type == 6
+    with patch.object(api, "_post_tedapi", return_value=_v2026_response(v1r=True)):
+        assert api._get_system_info() == info
+
+
+def test_post_tedapi_v1r_wifi_fallback_none_stays_none():
+    """WiFi fallback failure (None) must propagate as None, not raise."""
+    api = _fallback_api(TEDAPIApiVersion.V2024_06)
+    with patch.object(api, "_post_tedapi_wifi", return_value=None):
+        assert api._get_system_info() is None
+
+
 def test_to_details_dict_shape_and_json_safe():
     """SystemInfo.to_details_dict renders the stable {"system": {...}} payload,
     JSON-safe, with status enums rendered as their string names."""
