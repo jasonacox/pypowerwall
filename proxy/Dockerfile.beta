@@ -18,7 +18,7 @@ WORKDIR /app
 
 # Install system dependencies (package manager differs by base image).
 # tini is a tiny init that, as PID 1, reaps orphaned child processes (e.g. the
-# wget spawned by the container HEALTHCHECK) and forwards signals. This is
+# curl spawned by the container HEALTHCHECK) and forwards signals. This is
 # defense-in-depth alongside the SIGCHLD reaper in server.py, and also covers
 # any future child processes regardless of how the operator runs the image.
 RUN if command -v apk > /dev/null; then \
@@ -36,6 +36,12 @@ COPY web/ /app/web/
 # Copy local pypowerwall source for beta testing (placed here by upload-beta.sh)
 COPY pypowerwall/ /app/pypowerwall/
 EXPOSE 8675
+
+# Default healthcheck — uses curl (already installed) to hit the /health endpoint.
+# Compose files that set their own healthcheck will override this.
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
+    CMD curl -sf http://localhost:8675/health > /dev/null || exit 1
+
 # Run under tini as PID 1 so orphaned children are reaped and signals forwarded.
 ENTRYPOINT ["tini", "--"]
 CMD ["python3", "server.py"]

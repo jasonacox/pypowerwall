@@ -130,7 +130,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t95"
+BUILD = "t96"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -809,13 +809,12 @@ signal.signal(signal.SIGTERM, sig_term_handle)
 
 # Reap terminated child processes to prevent zombie (<defunct>) accumulation.
 #
-# In the Docker image this server runs as PID 1. The container HEALTHCHECK
-# (wget --spider ... /api/site_info, every 30s) executes inside the container,
-# so each wget is an orphaned child that the kernel reparents to PID 1. As the
-# init process, PID 1 is responsible for wait()-ing on such children; a bare
-# Python process installs no SIGCHLD handler and never reaps them, so every
-# terminated healthcheck becomes an unreaped zombie that accumulates over the
-# life of the container and can eventually exhaust the PID table.
+# When this server runs as PID 1 (e.g. without an init wrapper), the container
+# HEALTHCHECK (curl -sf ... /health, every 30s) spawns curl as a child process.
+# Without a SIGCHLD handler, terminated children accumulate as zombies and can
+# eventually exhaust the PID table. The Docker image uses tini as PID 1, which
+# handles reaping automatically; this handler is kept as a safety net for bare
+# invocations where the server itself is PID 1.
 #
 # This server currently spawns no child processes of its own. The WNOHANG flag
 # ensures only already-exited children are collected; if subprocess use is added
