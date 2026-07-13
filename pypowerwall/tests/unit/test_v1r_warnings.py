@@ -106,6 +106,24 @@ class TestConnectV1rProbe:
             for record in caplog.records
         ), "Expected UNKNOWN_KEY_ID error to be logged"
 
+    def test_connect_v1r_probe_seeds_config_cache(self):
+        """When the probe returns config data, it is stored in the config cache."""
+        ted = self._make_tedapi()
+
+        config = {"vin": "GW--123", "site_info": {}}
+        mock_transport = MagicMock()
+        mock_transport.login.return_value = True
+        mock_transport.get_din.return_value = "TEST_DIN"
+        mock_transport.get_config_v1r.return_value = config
+        mock_transport.pending_verification = False
+        ted.v1r_transport = mock_transport
+
+        result = ted._connect_v1r()
+
+        assert result == "TEST_DIN"
+        assert ted.pwcache.get("config") == config, "Probe result must seed the config cache"
+        assert "config" in ted.pwcachetime
+
     def test_connect_v1r_no_log_when_probe_none_but_not_pending(self, caplog):
         """When probe returns None but both flags are False, no error is logged."""
         ted = self._make_tedapi()
@@ -148,6 +166,7 @@ class TestPostV1rWarnings:
         transport.timeout = 5
         transport.token = "fake-token"
         transport.din = "TEST_DIN"
+        transport.key_fingerprint = "f" * 64  # fake SHA256 hex
         # Stub out RSA signing so we don't need a real key
         transport._private_key = MagicMock()
         transport._private_key.sign.return_value = b"\x00" * 64
@@ -246,6 +265,56 @@ class TestPostV1rWarnings:
             f"Expected exactly one UserWarning across two calls, got {len(user_warnings)}"
         )
         assert transport.key_unknown is True
+
+    def test_flags_reset_on_recovery(self):
+        """A successful response clears the failure flags so a later failure warns again.
+
+        This models the real-world verification flow: key is PENDING, user
+        toggles the breaker while the process is running, key becomes VERIFIED,
+        and data starts flowing. If the key later breaks again (e.g., gateway
+        factory reset), the warning must fire again rather than staying
+        suppressed for the life of the session.
+        """
+        transport = self._make_transport()
+        bad = self._mock_response(b"v1r: client authorization not verified")
+        good = self._mock_response(b"\x08\x01\x12\x03abc")
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            transport.session.post.return_value = bad
+            assert transport.post_v1r(b"fake", "TEST_DIN") is None
+            assert transport.pending_verification is True
+
+            transport.session.post.return_value = good
+            assert transport.post_v1r(b"fake", "TEST_DIN") == b"\x08\x01\x12\x03abc"
+            assert transport.pending_verification is False, "Success must clear the flag"
+            assert transport.key_unknown is False
+
+            transport.session.post.return_value = bad
+            assert transport.post_v1r(b"fake", "TEST_DIN") is None
+
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 2, (
+            f"Expected a warning per failure episode (2), got {len(user_warnings)}"
+        )
+
+    def test_unknown_key_warning_includes_fingerprint(self):
+        """UNKNOWN_KEY_ID warning must include the local key fingerprint for comparison."""
+        transport = self._make_transport()
+        bad_resp = MagicMock()
+        bad_resp.status_code = 200
+        msg = combined_pb2.RoutableMessage()
+        msg.signed_message_status.message_fault = combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID
+        bad_resp.content = msg.SerializeToString()
+        transport.session.post.return_value = bad_resp
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            transport.post_v1r(b"fake-payload", "TEST_DIN")
+
+        user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+        assert len(user_warnings) == 1
+        assert transport.key_fingerprint in str(user_warnings[0].message)
 
     def test_valid_response_returns_inner_bytes(self):
         """A well-formed response returns the inner bytes without a warning."""

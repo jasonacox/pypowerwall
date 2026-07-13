@@ -11,6 +11,7 @@ signatures embedded in RoutableMessage protobufs for authentication.
 Requires a pre-registered RSA-4096 key pair (see v1r_register.py).
 """
 
+import hashlib
 import json
 import logging
 import math
@@ -73,6 +74,12 @@ class TEDAPIv1r:
             serialization.Encoding.DER,
             serialization.PublicFormat.PKCS1
         )
+        # SHA-256 fingerprint of the public key in use. Included in key-auth
+        # failure messages so users can compare against the fingerprint printed
+        # by 'python -m pypowerwall register' — key mismatches from multiple
+        # registration attempts are a common root cause (see issue #352).
+        self.key_fingerprint = hashlib.sha256(self._public_key_der).hexdigest()
+        log.debug(f"v1r RSA public key fingerprint (SHA256): {self.key_fingerprint}")
         # HTTP session (no Basic auth — v1r uses RSA signatures)
         self.session = self._init_session()
 
@@ -166,6 +173,18 @@ class TEDAPIv1r:
 
     # ── v1r POST ─────────────────────────────────────────────────────
 
+    def _key_auth_warning(self, flag: str, msg: str) -> None:
+        """Log a key-auth failure and emit a UserWarning once per failure episode.
+
+        The flag ('pending_verification' or 'key_unknown') suppresses repeat
+        warnings while the condition persists; it is cleared by post_v1r() on
+        the next successful response so a later recurrence warns again.
+        """
+        log.error("v1r: %s", msg)
+        if not getattr(self, flag):
+            setattr(self, flag, True)
+            warnings.warn(msg, UserWarning, stacklevel=3)
+
     def post_v1r(self, envelope_bytes: bytes, din: str) -> Optional[bytes]:
         """
         Wrap envelope_bytes in a signed RoutableMessage and POST to /tedapi/v1r.
@@ -230,13 +249,11 @@ class TEDAPIv1r:
                         "v1r RSA key is not recognized by the gateway (UNKNOWN_KEY_ID). "
                         "The key file may not match the registered key, or no key has been "
                         "registered. Run 'python -m pypowerwall register' to register or "
-                        f"verify your key. Gateway payload ({response_size} bytes): {raw_preview} "
+                        f"verify your key. Key fingerprint in use (SHA256): {self.key_fingerprint} "
+                        f"Gateway payload ({response_size} bytes): {raw_preview} "
                         "See: https://github.com/jasonacox/pypowerwall/issues/274"
                     )
-                    log.error("v1r: %s", msg)
-                    if not self.key_unknown:
-                        self.key_unknown = True
-                        warnings.warn(msg, UserWarning, stacklevel=4)
+                    self._key_auth_warning('key_unknown', msg)
                 elif fault == combined_pb2.MESSAGEFAULT_ERROR_TIMEOUT:
                     log.debug(f"v1r response fault: {fault_name} (sub-device may not be routable via v1r)")
                 else:
@@ -263,10 +280,7 @@ class TEDAPIv1r:
                     f"Gateway payload ({response_size} bytes): {raw_preview} "
                     "See: https://github.com/jasonacox/pypowerwall/issues/274"
                 )
-                log.error("v1r: %s", msg)
-                if not self.pending_verification:
-                    self.pending_verification = True
-                    warnings.warn(msg, UserWarning, stacklevel=4)
+                self._key_auth_warning('pending_verification', msg)
                 return None
 
             if not inner:
@@ -279,14 +293,20 @@ class TEDAPIv1r:
                     f"response ({response_size} bytes) with no data. "
                     f"Gateway payload: {raw_preview} "
                     "The RSA key may not be registered or recognized by this gateway. "
+                    f"Key fingerprint in use (SHA256): {self.key_fingerprint} "
                     "Run 'python -m pypowerwall register' to register or verify your key. "
                     "See: https://github.com/jasonacox/pypowerwall/issues/274"
                 )
-                log.error("v1r: %s", msg)
-                if not self.key_unknown:
-                    self.key_unknown = True
-                    warnings.warn(msg, UserWarning, stacklevel=4)
+                self._key_auth_warning('key_unknown', msg)
                 return None
+
+            # Success — if a previous call flagged a key-auth failure, the key
+            # has since been verified/recognized (e.g., breaker toggle completed
+            # while running). Clear the flags so any future failure warns again.
+            if self.pending_verification or self.key_unknown:
+                log.info("v1r: key authentication recovered — gateway accepted signed request")
+                self.pending_verification = False
+                self.key_unknown = False
 
             return inner
 
