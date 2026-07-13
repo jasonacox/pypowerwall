@@ -1,5 +1,12 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t96 (12 Jul 2026)
+
+* Added built-in `HEALTHCHECK` instruction to `Dockerfile` and `Dockerfile.beta` using `curl` (already installed) instead of `wget`
+* Fixes the "unhealthy - wget missing" issue ([#346](https://github.com/jasonacox/pypowerwall/issues/346)): the switch from Alpine to Debian-slim in t94 removed `wget`, but many compose files still referenced it in their healthcheck definition
+* The image now reports its own health via `curl -sf http://localhost:8675/health`, which works out of the box without requiring compose-level healthcheck configuration
+* Compose-level healthchecks still override this if defined
+
 ### Proxy t95 (4 Jul 2026)
 
 * Upgraded to pyPowerwall v0.16.0 (code review sweep — see library release notes)
