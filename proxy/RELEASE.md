@@ -1,5 +1,17 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t97 (17 Jul 2026)
+
+* Added TEDAPI SolarOnly fallback mode tracking and auto-recovery (issue [#360](https://github.com/jasonacox/pypowerwall/issues/360))
+* Previously, when TEDAPI dropped mid-session (e.g. a gateway 403 after a firmware update or route loss), the proxy silently entered SolarOnly mode and stayed there until restarted
+* `is_fallback_mode` is now a distinct proxy state, separate from `is_degraded` (transient transport failures) — SolarOnly fallback is a semantic condition that needs recovery work, not just a health metric
+* A lightweight background thread (`tedapi-recovery`) probes TEDAPI health every `PW_TEDAPI_PROBE_INTERVAL` seconds (default 30s); after `TEDAPI_FALLBACK_THRESHOLD` (3) consecutive None results, the proxy logs a warning and enters fallback mode
+* The recovery thread then calls `pw.connect()` periodically with exponential backoff (60s → up to 300s) until TEDAPI data flows again; on success it logs recovery and resets backoff; on failure it logs the attempt and stays in SolarOnly — no restart needed and no data gap created
+* Fallback state is exposed in `/health` and `/stats` under `"fallback_mode"`: `is_fallback_mode`, `fallback_since`, `fallback_duration_seconds`, `recovery_attempts`, `last_recovery_attempt`, `recovery_enabled`
+* `/health/reset` also clears the fallback mode state
+* New environment variables: `PW_TEDAPI_RECOVERY=yes/no` (default `yes`), `PW_TEDAPI_PROBE_INTERVAL=N` (default `30`)
+* Only active when TEDAPI mode is configured — no overhead for Cloud, FleetAPI, or local-only modes
+
 ### Proxy t96 (12 Jul 2026)
 
 * Added built-in `HEALTHCHECK` instruction to `Dockerfile` and `Dockerfile.beta` using `curl` (already installed) instead of `wget`
