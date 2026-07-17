@@ -235,7 +235,10 @@ degradation_cache_ttl_seconds = int(
 tedapi_recovery_enabled = (
     os.getenv("PW_TEDAPI_RECOVERY", "yes").lower() == "yes"
 )  # Auto-recover TEDAPI connection when proxy falls back to SolarOnly mode
-TEDAPI_PROBE_INTERVAL = int(os.getenv("PW_TEDAPI_PROBE_INTERVAL", "30"))  # seconds between probes
+try:
+    TEDAPI_PROBE_INTERVAL = max(5, int(os.getenv("PW_TEDAPI_PROBE_INTERVAL", "30")))
+except (ValueError, TypeError):
+    TEDAPI_PROBE_INTERVAL = 30  # seconds between probes; default if env var is non-integer
 TEDAPI_FALLBACK_THRESHOLD = 3  # consecutive probe failures before entering fallback mode
 TEDAPI_RECOVERY_INITIAL_INTERVAL = 60   # initial recovery retry interval (seconds)
 TEDAPI_RECOVERY_MAX_INTERVAL = 300      # cap on retry interval (seconds)
@@ -497,6 +500,7 @@ def enter_fallback_mode(reason="TEDAPI data unavailable"):
             _fallback_mode["is_fallback_mode"] = True
             _fallback_mode["fallback_since"] = time.time()
             _fallback_mode["recovery_attempts"] = 0
+            _fallback_mode["last_recovery_attempt"] = None
             log.warning(
                 f"Proxy entering SolarOnly fallback mode: {reason}. "
                 "Background recovery will retry periodically."
@@ -511,6 +515,8 @@ def exit_fallback_mode():
             attempts = _fallback_mode["recovery_attempts"]
             _fallback_mode["is_fallback_mode"] = False
             _fallback_mode["fallback_since"] = None
+            _fallback_mode["recovery_attempts"] = 0
+            _fallback_mode["last_recovery_attempt"] = None
             log.info(
                 f"Proxy recovered from SolarOnly fallback mode after "
                 f"{duration:.0f}s and {attempts} recovery attempt(s)."
@@ -543,8 +549,12 @@ def _tedapi_probe_and_recover():
                 in_fallback = _fallback_mode["is_fallback_mode"]
 
             if not in_fallback:
-                # Healthy path: probe TEDAPI
-                version = pw.version()  # direct call — don't want safe_pw_call health side-effects
+                # Healthy path: probe TEDAPI (treat exceptions as probe failures)
+                try:
+                    version = pw.version()  # direct call — don't want safe_pw_call health side-effects
+                except Exception as probe_exc:
+                    log.debug(f"TEDAPI probe exception (counts as failure): {probe_exc}")
+                    version = None
                 if version is not None:
                     consecutive_failures = 0
                     recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
@@ -1631,13 +1641,18 @@ class Handler(BaseHTTPRequestHandler):
 
                 # Add SolarOnly fallback mode state
                 with _fallback_mode_lock:
-                    proxystats["fallback_mode"] = {
-                        "is_fallback_mode": _fallback_mode["is_fallback_mode"],
-                        "fallback_since": _fallback_mode["fallback_since"],
-                        "recovery_attempts": _fallback_mode["recovery_attempts"],
-                        "last_recovery_attempt": _fallback_mode["last_recovery_attempt"],
-                        "recovery_enabled": tedapi_recovery_enabled,
-                    }
+                    fm_snap = dict(_fallback_mode)
+                proxystats["fallback_mode"] = {
+                    "is_fallback_mode": fm_snap["is_fallback_mode"],
+                    "fallback_since": fm_snap["fallback_since"],
+                    "fallback_duration_seconds": (
+                        round(time.time() - fm_snap["fallback_since"], 1)
+                        if fm_snap["fallback_since"] else None
+                    ),
+                    "recovery_attempts": fm_snap["recovery_attempts"],
+                    "last_recovery_attempt": fm_snap["last_recovery_attempt"],
+                    "recovery_enabled": tedapi_recovery_enabled,
+                }
 
                 # Add cache memory usage statistics
                 proxystats["mem_cache"] = {}
