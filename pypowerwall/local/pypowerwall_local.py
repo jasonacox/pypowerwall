@@ -3,6 +3,7 @@ import logging
 import os
 import time
 from typing import Union, Tuple, Optional, Any
+from zoneinfo import ZoneInfo
 
 import requests
 from requests import Response
@@ -23,7 +24,8 @@ _NEG_CACHE = object()
 
 class PyPowerwallLocal(PyPowerwallBase):
 
-    def __init__(self, host: str, password: str, email: str, timezone: str, timeout: Union[int, Tuple[int, int]],
+    def __init__(self, host: str, password: str, email: str, timezone: Union[str, ZoneInfo],
+                 timeout: Union[int, Tuple[int, int]],
                  pwcacheexpire: int, poolmaxsize: int, authmode: str, cachefile: str, gw_pw: str = None):
         super().__init__(email)
         self.host = host
@@ -32,7 +34,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         self.cachefile = cachefile  # Stores auth session information
         self.authmode = authmode  # cookie or token
         self.timeout = timeout
-        self.timezone = timezone
+        self.timezone = ZoneInfo(str(timezone))  # accepts IANA name or ZoneInfo; .key for wire payloads
         self.session = None
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
@@ -85,7 +87,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         # to the gateway's link-local TEDAPI endpoint, so only port 443 is allowed.
         if self.gw_pw and (self.host == GW_IP or self.host == f"{GW_IP}:443"):
             # TEDAPI is requested now test
-            self.tedapi = TEDAPI(self.gw_pw)
+            self.tedapi = TEDAPI(self.gw_pw, timezone=self.timezone)
             if self.tedapi.connect():
                 log.debug('TEDAPI connected - Vitals metrics enabled')
                 self.pw3 = self.tedapi.pw3
@@ -97,7 +99,7 @@ class PyPowerwallLocal(PyPowerwallBase):
         # Login and create a new session
         url = "https://%s/api/login/Basic" % self.host
         pload = {"username": "customer", "password": self.password,
-                 "email": self.email, "clientInfo": {"timezone": self.timezone}}
+                 "email": self.email, "clientInfo": {"timezone": self.timezone.key}}
         try:
             r = self.session.post(url, data=pload, verify=False, timeout=self.timeout)
             # Do not log the response body - it contains the auth token/cookies

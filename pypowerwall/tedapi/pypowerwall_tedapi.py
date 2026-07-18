@@ -2,11 +2,13 @@ import json
 import logging
 import math
 from typing import Optional, Union
+from zoneinfo import ZoneInfo
 
 from pypowerwall import __version__
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 from pypowerwall.tedapi import GW_IP, TEDAPI, lookup
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
 from pypowerwall.tedapi.exceptions import *  # pylint: disable=unused-wildcard-import
 from pypowerwall.tedapi.mock_data import *  # pylint: disable=unused-wildcard-import
@@ -84,7 +86,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str = None, rsa_key_path: str = None,
                  wifi_host: str = None,
-                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06) -> None:
+                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06,
+                 auth_mode: AuthMode = AuthMode.BASIC, authpath: str = "",
+                 timezone: Union[str, ZoneInfo] = "America/Los_Angeles") -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout
@@ -95,6 +99,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         self.gw_pwd = gw_pwd
         self.debug = debug
         self.v1r = v1r
+        self.auth_mode = AuthMode.coerce(auth_mode)
+        self.authpath = authpath
         self.poll_api_map = self.init_poll_api_map()
         self.post_api_map = self.init_post_api_map()
         self.siteid = None
@@ -105,7 +111,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                              timeout=self.timeout, pwcacheexpire=self.pwcacheexpire,
                              pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
                              v1r=v1r, password=password, rsa_key_path=rsa_key_path,
-                             wifi_host=wifi_host, tedapi_api_version=tedapi_api_version)
+                             wifi_host=wifi_host, tedapi_api_version=tedapi_api_version,
+                             auth_mode=auth_mode, authpath=authpath, timezone=timezone)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
@@ -655,13 +662,30 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     # pylint: disable=unused-argument
     # noinspection PyUnusedLocal
-    @not_implemented_mock_data
     def api_logout(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """Logout from the Tesla Gateway, ending the bearer or presence session."""
+        if self.tedapi is not None:
+            if self.auth_mode == AuthMode.BEARER:
+                self.tedapi._bearer_logout()
+            elif self.auth_mode == AuthMode.PRESENCE:
+                self.tedapi._toggle_auth_logout()
         return {"status": "ok"}
 
     # noinspection PyUnusedLocal
-    @not_implemented_mock_data
     def api_login_basic(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """Login to the Tesla Gateway.
+
+        In bearer mode, delegates to the TEDAPI bearer login which POSTs to
+        /api/login/Basic with stored credentials. In basic mode, auth is handled
+        via HTTP Basic Auth so this is a no-op.
+        """
+        if self.auth_mode == AuthMode.BEARER and self.tedapi is not None:
+            try:
+                self.tedapi._bearer_login()
+                return {"status": "ok", "token": self.tedapi.token}
+            except Exception as e:
+                log.error(f"api_login_basic: {e}")
+                return {"status": "error", "message": str(e)}
         return {"status": "ok"}
 
     # noinspection PyUnusedLocal
