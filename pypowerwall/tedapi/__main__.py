@@ -29,8 +29,39 @@ def _build_tedapi_arg_parser(default_host):
     parser.add_argument('-tedapi_api_version', default=TEDAPIApiVersion.V2024_06.value,
                         choices=[v.value for v in TEDAPIApiVersion],
                         help='Query/protobuf version set (default: V2024_06)')
+    parser.add_argument('-firmware', action='store_true',
+                        help='Fetch and print the gateway firmware version, then exit')
+    parser.add_argument('-details', action='store_true',
+                        help='With -firmware: include full system info (part/serial, githash)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     return parser
+
+
+def _json_bytes_safe(obj):
+    """json.dumps `default=` that renders otherwise non-serializable values instead
+    of crashing the CLI: bytes (e.g. FirmwareVersion.githash) as hex, protobuf
+    messages as a dict, anything else as str."""
+    if isinstance(obj, (bytes, bytearray)):
+        return obj.hex()
+    if hasattr(obj, "DESCRIPTOR"):  # a protobuf message
+        try:
+            from google.protobuf.json_format import MessageToDict
+            return MessageToDict(obj)
+        except Exception:
+            pass
+    return str(obj)
+
+
+def _render_firmware(info, details=False):
+    """Format a get_firmware_version() result for display. Pure (no I/O) so it is
+    unit-testable. `info` is the version string (details=False), the system-info
+    dict (details=True), or None when the gateway returned nothing."""
+    import json
+    if info is None:
+        return "unavailable (no response from gateway)"
+    if details:
+        return json.dumps(info, indent=2, default=_json_bytes_safe)
+    return str(info)
 
 
 def run_tedapi_test(argv=None, debug=False):
@@ -125,6 +156,21 @@ def run_tedapi_test(argv=None, debug=False):
     if ted.din is None:
         print("\nERROR: Unable to connect to Powerwall Gateway. Check your password and try again")
         sys.exit(1)
+
+    # Focused firmware entrypoint: fetch + print the firmware/system info and exit
+    # (no config/status fetch, no files written). Handy for validating the version
+    # path -- e.g. diff -tedapi_api_version V2024_06 vs V2026_06 for the same gateway.
+    if args.firmware:
+        print()
+        info = ted.get_firmware_version(force=True, details=args.details)
+        if args.details:
+            print(" - Firmware System Info:")
+            print(_render_firmware(info, details=True))
+        else:
+            print(f" - Firmware Version: {_render_firmware(info)}")
+        print()
+        return
+
     config = ted.get_config() or {}
     status = ted.get_status() or {}
     print()
@@ -140,6 +186,7 @@ def run_tedapi_test(argv=None, debug=False):
     print(f"   - VIN: {vin}")
     number_of_powerwalls = len(config.get('battery_blocks', []))
     print(f"   - Number of Powerwalls: {number_of_powerwalls}")
+    print(f"   - Firmware Version: {_render_firmware(ted.get_firmware_version(force=True))}")
     print()
 
     # Print power data

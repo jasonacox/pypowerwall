@@ -11,8 +11,19 @@ import pytest
 from pypowerwall.tedapi import TEDAPI, tedapi_pb2
 from pypowerwall.tedapi import queries as q
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
-from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
-from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
+
+# The V2026_06 pb2 requires protobuf>=6.33.6 (guarded gencode); the default path
+# stays on the 4.25.1 floor, so import lazily and skip the build/parse tests when
+# the newer runtime isn't present (mirrors test_system_info.py).
+try:
+    from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
+    from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
+    HAVE_V2026 = True
+except Exception:
+    tx = ed = None
+    HAVE_V2026 = False
+
+v2026_only = pytest.mark.skipif(not HAVE_V2026, reason="V2026_06 protos require protobuf>=6.33.6")
 
 
 @pytest.fixture
@@ -202,6 +213,7 @@ def test_V2024_06_request_is_stable(api):
 
 # --- V2026_06 build / parse ------------------------------------------------
 
+@v2026_only
 def test_build_signed_query_request(api):
     query = q.get_query("device_controller_full", "V2026_06")
     raw = api._build_signed_query_request(query)
@@ -218,6 +230,7 @@ def test_build_signed_query_request(api):
     assert m.tail.value == 1
 
 
+@v2026_only
 def test_build_signed_query_follower_routing(api):
     query = q.get_query_by_name("PW3Query")
     raw = api._build_signed_query_request(
@@ -229,6 +242,7 @@ def test_build_signed_query_follower_routing(api):
     assert m.tail.value == 2
 
 
+@v2026_only
 def test_parse_signed_response_basic(api):
     api.v1r = False
     resp = tx.Message()
@@ -237,6 +251,7 @@ def test_parse_signed_response_basic(api):
     assert api._parse_signed_query_response(resp.SerializeToString()) == '{"control":{"x":1}}'
 
 
+@v2026_only
 def test_parse_signed_response_v1r_bare_envelope(api):
     api.v1r = True
     env = ed.MessageEnvelope()
@@ -245,10 +260,12 @@ def test_parse_signed_response_v1r_bare_envelope(api):
     assert api._parse_signed_query_response(env.SerializeToString()) == '{"v1r":true}'
 
 
+@v2026_only
 def test_parse_signed_response_empty_returns_none(api):
     assert api._parse_signed_query_response(b"") is None
 
 
+@v2026_only
 def test_parse_signed_response_v1r_wifi_follower(api):
     # The v1r WiFi-follower fallback (_post_tedapi_wifi) returns a FULL transport
     # Message with a tail, not a bare envelope. from_wifi=True must select the
@@ -261,6 +278,7 @@ def test_parse_signed_response_v1r_wifi_follower(api):
     assert api._parse_signed_query_response(raw, from_wifi=True) == '{"wifi":true}'
 
 
+@v2026_only
 def test_parse_signed_response_v1r_wifi_without_flag_drops_payload(api):
     # Regression guard: without from_wifi, the pre-fix code parsed a full Message
     # as a bare MessageEnvelope. Protobuf parses leniently, so no exception is

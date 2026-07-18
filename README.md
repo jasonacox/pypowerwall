@@ -705,7 +705,7 @@ Returns settings and live power levels. Choose a connection mode or omit for aut
 | Flag | Mode | Required credentials |
 |------|------|----------------------|
 | _(none)_ | Auto-select from available config | — |
-| `-local` | Local Gateway API (PW2/+) | `-host`, `-password` |
+| `-local` | Local Gateway API (PW2/+) | `-host`, `-password` (last 5 chars of the gateway password) |
 | `-cloud` | Tesla Cloud (Owners API) | prior `setup` |
 | `-fleetapi` | Tesla Fleet API | prior `setup -fleetapi` |
 | `-tedapi` | TEDAPI Wi-Fi | `-gw_pwd` (host defaults to `192.168.91.1`) |
@@ -717,7 +717,8 @@ python -m pypowerwall get
 python -m pypowerwall get -format json
 python -m pypowerwall get -format csv
 
-# Local gateway
+# Local gateway  (customer login: -password is the LAST 5 characters of the
+# gateway/QR-sticker password -- NOT the full gateway password or Tesla app password)
 python -m pypowerwall get -local -host 10.0.1.123 -password XXXXX
 
 # Tesla Cloud

@@ -75,6 +75,7 @@ from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
 from .queries import apply_query, get_query, QueryRole
+from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -804,80 +805,13 @@ class TEDAPI:
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
                     return None
-                # Fetch Current Status from Powerwall
                 log.debug("Get Firmware Version from Powerwall")
-                # Build Protobuf to fetch firmware
-                pb = tedapi_pb2.Message()
-                pb.message.deliveryChannel = 1
-                pb.message.sender.local = 1
-                pb.message.recipient.din = self.din  # DIN of Powerwall
-                pb.message.firmware.request = ""
-                pb.tail.value = 1
                 try:
-                    response = self._post_tedapi(pb.SerializeToString())
-                    if response is None:
+                    info = self._get_system_info()
+                    if info is None:
                         return None
-                    # Decode response
-                    if self.v1r:
-                        # v1r response is a MessageEnvelope (not full Message)
-                        envelope = tedapi_pb2.MessageEnvelope()
-                        envelope.ParseFromString(response)
-                        firmware_version = envelope.firmware.system.version.text
-                        if details:
-                            payload = {
-                                "system": {
-                                    "gateway": {
-                                        "partNumber": envelope.firmware.system.gateway.partNumber,
-                                        "serialNumber": envelope.firmware.system.gateway.serialNumber
-                                    },
-                                    "din": envelope.firmware.system.din,
-                                    "version": {
-                                        "text": envelope.firmware.system.version.text,
-                                        "githash": envelope.firmware.system.version.githash
-                                    },
-                                    "five": envelope.firmware.system.five,
-                                    "six": envelope.firmware.system.six,
-                                    "wireless": {"device": []}
-                                }
-                            }
-                        else:
-                            payload = firmware_version
-                    else:
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(response)
-                        firmware_version = tedapi.message.firmware.system.version.text
-                        if details:
-                            payload = {
-                                "system": {
-                                    "gateway": {
-                                        "partNumber": tedapi.message.firmware.system.gateway.partNumber,
-                                        "serialNumber": tedapi.message.firmware.system.gateway.serialNumber
-                                    },
-                                    "din": tedapi.message.firmware.system.din,
-                                    "version": {
-                                        "text": tedapi.message.firmware.system.version.text,
-                                        "githash": tedapi.message.firmware.system.version.githash
-                                    },
-                                    "five": tedapi.message.firmware.system.five,
-                                    "six": tedapi.message.firmware.system.six,
-                                    "wireless": {
-                                        "device": []
-                                    }
-                                }
-                            }
-                            try:
-                                for device in tedapi.message.firmware.system.wireless.device:
-                                    payload["system"]["wireless"]["device"].append({
-                                        "company": device.company.value,
-                                        "model": device.model.value,
-                                        "fcc_id": device.fcc_id.value,
-                                        "ic": device.ic.value
-                                    })
-                            except Exception as e:
-                                log.debug(f"Error parsing wireless devices: {e}")
-                            log.debug(f"Firmware Version: {payload}")
-                        else:
-                            payload = firmware_version
+                    firmware_version = info.version
+                    payload = info.to_details_dict() if details else firmware_version
                     log.debug(f"Firmware Version: {firmware_version}")
                     self.pwcachetime["firmware"] = time.time()
                     self.pwcache["firmware"] = firmware_version
@@ -890,6 +824,48 @@ class TEDAPI:
             return self.pwcache.get("firmware")
         return payload
 
+    def _get_system_info(self) -> Optional[SystemInfo]:
+        """Fetch the gateway firmware/system info and normalize it into a
+        :class:`SystemInfo`, identically across protobuf versions and transports.
+
+        V2026_06 uses the common.getSystemInfoRequest API; older versions use the
+        legacy firmware.request/firmware.system format. Returns the SystemInfo, or
+        None if nothing came back.
+        """
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            tx, ed = self._import_v2026_pb2()
+            pb = tx.Message()
+            pb.message.deliveryChannel = ed.DELIVERY_CHANNEL_LOCAL_HTTPS
+            pb.message.sender.local = ed.LOCAL_PARTICIPANT_INSTALLER
+            pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+            pb.message.common.getSystemInfoRequest.CopyFrom(
+                ed.CommonAPIGetSystemInfoRequest())
+            pb.tail.value = 1
+        else:
+            pb = tedapi_pb2.Message()
+            pb.message.deliveryChannel = 1
+            pb.message.sender.local = 1
+            pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+            pb.message.firmware.request = ""
+            pb.tail.value = 1
+        response = self._post_tedapi(pb.SerializeToString())
+        if response is None:
+            return None
+        return self._parse_system_info(response)
+
+    def _parse_system_info(self, response: bytes) -> SystemInfo:
+        """Parse a firmware/system-info response into a SystemInfo. The two api
+        versions differ only in the pb2 module and the protobuf field paths
+        (V2026_SYS_SCHEMA / V2024_SYS_SCHEMA); SystemInfo.from_proto does the rest."""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            tx, ed = self._import_v2026_pb2()
+            envelope_cls, message_cls, schema = ed.MessageEnvelope, tx.Message, V2026_SYS_SCHEMA
+        else:
+            envelope_cls, message_cls, schema = (
+                tedapi_pb2.MessageEnvelope, tedapi_pb2.Message, V2024_SYS_SCHEMA)
+        env = envelope_cls() if self.v1r else message_cls()
+        env.ParseFromString(response)
+        return SystemInfo.from_proto(env if self.v1r else env.message, schema)
 
     @uses_api_lock
     def get_components(self, self_function=None, force=False):
@@ -1674,7 +1650,12 @@ class TEDAPI:
         Returns:
             Raw response content bytes, or None on error.
             For WiFi: the raw HTTP response body (protobuf)
-            For v1r: the inner protobuf_message_as_bytes from the RoutableMessage response
+            For v1r: bare MessageEnvelope bytes — either the inner
+                     protobuf_message_as_bytes from the RoutableMessage response
+                     (LAN), or the envelope re-extracted from the full transport
+                     Message returned by the WiFi fallback. Callers in v1r mode
+                     can always parse the result as a MessageEnvelope regardless
+                     of which transport actually served the request.
         """
         if self.v1r:
             # ── LAN recovery probe ────────────────────────────────────────────
@@ -1697,7 +1678,31 @@ class TEDAPI:
                     log.error("v1r: LAN down and no WiFi fallback configured")
                     return None
                 log.debug("v1r: LAN down — routing primary query via WiFi TEDAPI")
-                return self._post_tedapi_wifi(pb_bytes, url_suffix)
+                raw = self._post_tedapi_wifi(pb_bytes, url_suffix)
+                if raw is None:
+                    return None
+                # Normalize to the documented v1r contract: bare MessageEnvelope
+                # bytes. WiFi TEDAPI v1 returns a full transport Message (with
+                # tail); without this re-extract, v1r callers keying their parse
+                # off self.v1r would misparse the wrapper as an envelope —
+                # protobuf decodes it leniently, yielding silently empty data.
+                # Normalizing here (at the transport boundary, where the routing
+                # decision was made) also avoids the race of callers re-checking
+                # self.lan_failed at parse time, which another thread may have
+                # flipped after this request was served over LAN.
+                if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+                    # v2 transport proto so field-16 graphql payloads survive
+                    # the re-extract (legacy proto would drop them).
+                    _tx, _ = self._import_v2026_pb2()
+                    wifi_msg = _tx.Message()
+                else:
+                    wifi_msg = tedapi_pb2.Message()
+                try:
+                    wifi_msg.ParseFromString(raw)
+                    return wifi_msg.message.SerializeToString()
+                except Exception as e:
+                    log.error(f"v1r: Error normalizing WiFi fallback response: {e}")
+                    return None
 
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message

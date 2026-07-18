@@ -52,12 +52,14 @@ message FirmwareType {
 message FirmwarePayload {
   EcuId gateway = 1;
   string din = 2;
-  FirmwareVersion version = 3;
-  FirmwareFive five = 5;
-  int32 six = 6;
+  FirmwareVersion version = 3;      // Tesla: firmwareVersion; kept as `version`
+  SystemUpdate systemUpdate = 5;
+  int32 deviceType = 6;
+  // Tesla: complianceInformation (ComplianceInformation{radioLegalInformation}).
+  // Kept as `wireless`/DeviceArray -- wire-identical and an established output field.
   DeviceArray wireless = 7;
-  bytes field8 = 8;
-  bytes field9 = 9;
+  bytes installedFirmwareSignature = 8;
+  bytes offlineFirmwareSignature = 9;
 }
 
 message EcuId {
@@ -70,8 +72,28 @@ message FirmwareVersion {
   bytes githash = 2;
 }
 
-message FirmwareFive {
-  int32 d = 2;
+// System firmware-update state (FirmwarePayload field 5). Field names/types are
+// from Tesla's own schema (energy_device.v1 CommonAPIGetSystemInfoResponse).
+// The original reverse-engineered proto modeled only field 2 (as FirmwareFive.d)
+// -- that is `updateStatus`; the rest of the message was skipped.
+message SystemUpdate {
+  int32 handshakeResult = 1;
+  int32 updateStatus = 2;
+  FirmwareVersion serverStagedVersion = 3;
+  uint64 totalBytes = 4;
+  uint64 bytesOffset = 5;
+  uint64 estimatedBytesPerSecond = 6;
+  uint64 lastHandshakeTimestamp = 7;
+  int32 lastUpdateResult = 8;
+  repeated ServerStagedPackage serverStagedPackages = 9;
+  bool isSideloading = 10;
+}
+
+message ServerStagedPackage {
+  string downloadUrl = 1;
+  uint64 packageId = 2;
+  bytes packageSignature = 3;
+  FirmwareVersion serverStagedVersion = 4;
 }
 
 message DeviceArray {
