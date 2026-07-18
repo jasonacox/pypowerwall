@@ -912,5 +912,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-
+    try:
+        main()
+    except KeyboardInterrupt:
+        # Clean exit on ^C - no traceback
+        print("\nInterrupted")
+        sys.exit(130)

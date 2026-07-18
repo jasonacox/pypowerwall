@@ -249,8 +249,9 @@ def scan(
         # noinspection PyBroadException
         try:
             response = input(f"{context.subbold()}\tEnter Network CIDR [{context.bold()}{network}{context.subbold()}]: {context.normal()}")
-        except Exception:
-            # Assume user aborted
+        except (KeyboardInterrupt, Exception):  # pylint: disable=broad-except
+            # KeyboardInterrupt is not an Exception subclass - catch it
+            # explicitly so ^C at the prompt exits cleanly (no traceback)
             print(f"{context.alert()}  Cancel\n\n{context.normal()}")
             sys.exit()
 
