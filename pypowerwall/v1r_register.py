@@ -23,6 +23,7 @@ Two authentication paths are supported:
     python -m pypowerwall register
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -196,6 +197,7 @@ def generate_rsa_key(authpath=""):
             serialization.Encoding.DER,
             serialization.PublicFormat.PKCS1
         )
+        print(f"  Public key fingerprint (SHA256): {hashlib.sha256(public_key_der).hexdigest()}")
         return private_key, public_key_der
 
     print("  Generating RSA-4096 key pair...")
@@ -225,6 +227,7 @@ def generate_rsa_key(authpath=""):
 
     print(f"  Private key saved: {private_key_file}")
     print(f"  Public key saved:  {public_key_file}")
+    print(f"  Public key fingerprint (SHA256): {hashlib.sha256(public_key_der).hexdigest()}")
     return private_key, public_key_der
 
 
@@ -536,17 +539,21 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, pr
         print("  It may still be pending — check again later with list_authorized_clients.")
     if private_key_file:
         print(f"\n  RSA private key: {private_key_file}")
+    print(f"  Public key fingerprint (SHA256): {hashlib.sha256(public_key_der).hexdigest()}")
+    print("  (pypowerwall logs this same fingerprint at connect time — compare them")
+    print("   if data calls return None; a mismatch means the wrong key file is in use.)")
     print()
     print("  Next steps (library usage):")
     print("    import pypowerwall")
-    print('    pw = pypowerwall.Powerwall(host="POWERWALL_IP", password="XXXXX",')
-    print('         email="you@example.com", rsa_key_path="tedapi_rsa_private.pem")')
+    print('    pw = pypowerwall.Powerwall(host="POWERWALL_IP", gw_pwd="FULL_QR_STICKER_PASSWORD",')
+    print('         rsa_key_path="tedapi_rsa_private.pem")')
     print()
     print("  Next steps (Docker / Powerwall-Dashboard):")
     print("    1. Copy the key to your Powerwall-Dashboard .auth/ directory")
     print("    2. Set PW_RSA_KEY_PATH=/app/.auth/tedapi_rsa_private.pem")
     print("    3. Set PW_HOST to your Powerwall's wired LAN IP")
-    print("    4. Set PW_PASSWORD to your customer password")
+    print("    4. Set PW_GW_PWD to the full QR sticker password")
+    print("       (or PW_PASSWORD to the last 5 characters of it)")
     print("    5. Start the container — v1r mode is auto-detected")
     print()
 

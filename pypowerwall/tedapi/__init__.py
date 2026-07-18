@@ -1470,6 +1470,33 @@ class TEDAPI:
             self.lan_failed = False
             self.lan_fail_count = 0
             self.lan_recover_after = 0
+            # Probe key verification state. Login and DIN both succeed even when the
+            # RSA key is registered but not yet verified (PENDING_VERIFICATION), or
+            # when the wrong key file is being used (UNKNOWN_KEY_ID). A test read
+            # here surfaces the warning at init time instead of silently returning
+            # None on every subsequent data call.
+            probe = self.v1r_transport.get_config_v1r(self.din)
+            if probe:
+                # Seed the config cache with the probe result so the probe is
+                # not a wasted fetch — the first get_config() after connect
+                # will be served from cache.
+                self.pwcache["config"] = probe
+                self.pwcachetime["config"] = time.time()
+            else:
+                if self.v1r_transport.pending_verification:
+                    log.error(
+                        "v1r: RSA key is PENDING_VERIFICATION — data calls will return None. "
+                        "Toggle a Powerwall circuit breaker OFF then back ON to trigger verification."
+                    )
+                elif self.v1r_transport.key_unknown:
+                    log.error(
+                        "v1r: RSA key not recognized by gateway — data calls will return None. "
+                        "Check that the key file matches the registered key "
+                        f"(fingerprint in use: {getattr(self.v1r_transport, 'key_fingerprint', 'unknown')}). "
+                        "Run 'python -m pypowerwall register' to verify."
+                    )
+                else:
+                    log.debug("v1r: key probe returned no data (possibly transient) - continuing")
             # Test WiFi fallback path if configured
             if self.wifi_session:
                 self._test_wifi_path()
