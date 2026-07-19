@@ -58,6 +58,16 @@
       returning null instead of stale data (default: 30)
     - Consider reducing PW_TIMEOUT to fail faster (e.g., PW_TIMEOUT=3)
 
+ TEDAPI SolarOnly Fallback Recovery (PW3/TEDAPI modes)
+    When TEDAPI drops mid-session (e.g. firmware 403 or route loss), the proxy
+    falls back to SolarOnly mode — solar data continues but battery/grid detail
+    is unavailable. The proxy now tracks this as a distinct `is_fallback_mode`
+    state (separate from `is_degraded`) and a background thread retries the
+    TEDAPI connection periodically with exponential backoff until data returns.
+    - PW_TEDAPI_RECOVERY=yes/no — enable/disable auto-recovery (default: yes)
+    - PW_TEDAPI_PROBE_INTERVAL=N — seconds between health probes (default: 30)
+    The fallback state is visible in /health and /stats under "fallback_mode".
+
  Monitoring & Health Endpoints
     - /health - returns connection health status and feature configuration
     - /health/reset - resets health counters and clears cache
@@ -130,7 +140,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t96"
+BUILD = "t97"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -222,6 +232,16 @@ health_check_enabled = (
 degradation_cache_ttl_seconds = int(
     os.getenv("PW_CACHE_TTL", "30")
 )  # Maximum age for cached data before returning None
+tedapi_recovery_enabled = (
+    os.getenv("PW_TEDAPI_RECOVERY", "yes").lower() == "yes"
+)  # Auto-recover TEDAPI connection when proxy falls back to SolarOnly mode
+try:
+    TEDAPI_PROBE_INTERVAL = max(5, int(os.getenv("PW_TEDAPI_PROBE_INTERVAL", "30")))
+except (ValueError, TypeError):
+    TEDAPI_PROBE_INTERVAL = 30  # seconds between probes; default if env var is non-integer
+TEDAPI_FALLBACK_THRESHOLD = 3  # consecutive probe failures before entering fallback mode
+TEDAPI_RECOVERY_INITIAL_INTERVAL = 60   # initial recovery retry interval (seconds)
+TEDAPI_RECOVERY_MAX_INTERVAL = 300      # cap on retry interval (seconds)
 
 # Global Stats
 proxystats = {
@@ -277,6 +297,8 @@ proxystats = {
         "PW_GRACEFUL_DEGRADATION": graceful_degradation,
         "PW_HEALTH_CHECK": health_check_enabled,
         "PW_CACHE_TTL": degradation_cache_ttl_seconds,
+        "PW_TEDAPI_RECOVERY": tedapi_recovery_enabled,
+        "PW_TEDAPI_PROBE_INTERVAL": TEDAPI_PROBE_INTERVAL,
     },
 }
 proxystats_lock = threading.RLock()
@@ -407,6 +429,17 @@ _connection_health = {
 }
 _connection_health_lock = threading.RLock()
 
+# SolarOnly fallback mode tracking (distinct from connection_health degradation)
+# is_degraded = transient transport failures; is_fallback_mode = TEDAPI fell back to SolarOnly
+_fallback_mode = {
+    "is_fallback_mode": False,
+    "fallback_since": None,       # timestamp when fallback was entered
+    "recovery_attempts": 0,
+    "last_recovery_attempt": None,
+}
+_fallback_mode_lock = threading.RLock()
+_fallback_recovery_lock = threading.Lock()  # serializes pw.connect() calls from recovery thread
+
 # Cache for last known good responses (graceful degradation)
 _last_good_responses = {}
 _last_good_responses_lock = threading.RLock()
@@ -458,6 +491,140 @@ def update_connection_health(success=True):
                         log.warning(
                             f"Connection health degraded after {HEALTH_FAILURE_THRESHOLD} consecutive failures - entering graceful degradation mode"
                         )
+
+
+def enter_fallback_mode(reason="TEDAPI data unavailable"):
+    """Signal that proxy has entered SolarOnly fallback mode (distinct from is_degraded)."""
+    with _fallback_mode_lock:
+        if not _fallback_mode["is_fallback_mode"]:
+            _fallback_mode["is_fallback_mode"] = True
+            _fallback_mode["fallback_since"] = time.time()
+            _fallback_mode["recovery_attempts"] = 0
+            _fallback_mode["last_recovery_attempt"] = None
+            log.warning(
+                f"Proxy entering SolarOnly fallback mode: {reason}. "
+                "Background recovery will retry periodically."
+            )
+
+
+def exit_fallback_mode():
+    """Signal that proxy has recovered from SolarOnly fallback mode."""
+    with _fallback_mode_lock:
+        if _fallback_mode["is_fallback_mode"]:
+            duration = time.time() - (_fallback_mode["fallback_since"] or time.time())
+            attempts = _fallback_mode["recovery_attempts"]
+            _fallback_mode["is_fallback_mode"] = False
+            _fallback_mode["fallback_since"] = None
+            _fallback_mode["recovery_attempts"] = 0
+            _fallback_mode["last_recovery_attempt"] = None
+            log.info(
+                f"Proxy recovered from SolarOnly fallback mode after "
+                f"{duration:.0f}s and {attempts} recovery attempt(s)."
+            )
+
+
+def _tedapi_probe_and_recover():
+    """
+    Background thread: probe TEDAPI health and recover from SolarOnly fallback.
+
+    Runs only when TEDAPI mode is active. Polls pw.version() every TEDAPI_PROBE_INTERVAL
+    seconds to detect SolarOnly entry. After TEDAPI_FALLBACK_THRESHOLD consecutive None
+    results, enters fallback mode and starts attempting reconnect via pw.connect(retry=False).
+    On successful recovery, exits fallback mode and resets exponential backoff.
+    Stays in SolarOnly if recovery fails — proxy keeps serving available data.
+
+    Runtime-reconnect trade-off: pw.connect() swaps pw.client and transiently mutates
+    pw.mode/cloudmode/fleetapi while handler threads may be live. In practice this is
+    bounded — requests were already failing when recovery fires, the attribute swap is
+    atomic, and worst case a few in-flight requests hit a transient wrong-mode branch.
+
+    Hybrid-mode note: the gate is pw.tedapi, which includes hybrid mode (v1r + WiFi
+    fallback). In that topology pw.version() is served by the local API, so a WiFi
+    TEDAPI outage may not be detected by this probe. Monitoring is best-effort for
+    hybrid; pure TEDAPI mode (WiFi-only or v1r-only) gets full coverage.
+
+    429-cooldown interaction: during a gateway rate-limit cooldown (~5 min), pw.version()
+    returns None, which drives the probe into fallback mode and triggers reconnect
+    attempts. The 60→300s backoff bounds reconnect to roughly one attempt per cooldown
+    window, which is tolerable but does cut slightly against the "don't hammer a
+    rate-limited gateway" convention. A cooldown-aware probe is a follow-up item.
+    """
+    consecutive_failures = 0
+    recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
+
+    while True:
+        try:
+            time.sleep(TEDAPI_PROBE_INTERVAL)
+
+            # Only probe when in TEDAPI mode
+            if not getattr(pw, 'tedapi', None):
+                consecutive_failures = 0
+                continue
+
+            with _fallback_mode_lock:
+                in_fallback = _fallback_mode["is_fallback_mode"]
+
+            if not in_fallback:
+                # Healthy path: probe TEDAPI (treat exceptions as probe failures)
+                try:
+                    version = pw.version()  # direct call — don't want safe_pw_call health side-effects
+                except Exception as probe_exc:
+                    log.debug(f"TEDAPI probe exception (counts as failure): {probe_exc}")
+                    version = None
+                if version is not None:
+                    consecutive_failures = 0
+                    recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
+                else:
+                    consecutive_failures += 1
+                    if consecutive_failures >= TEDAPI_FALLBACK_THRESHOLD:
+                        enter_fallback_mode(
+                            f"TEDAPI returned no data for {consecutive_failures} consecutive probes"
+                        )
+            else:
+                # Fallback path: wait the backoff interval then attempt reconnect
+                extra_wait = recovery_interval - TEDAPI_PROBE_INTERVAL
+                if extra_wait > 0:
+                    time.sleep(extra_wait)
+
+                # Re-check after the long backoff sleep: /health/reset may have cleared state.
+                with _fallback_mode_lock:
+                    if not _fallback_mode["is_fallback_mode"]:
+                        consecutive_failures = 0
+                        recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
+                        continue
+                    _fallback_mode["recovery_attempts"] += 1
+                    _fallback_mode["last_recovery_attempt"] = time.time()
+                    attempt_num = _fallback_mode["recovery_attempts"]
+
+                log.info(f"TEDAPI recovery attempt #{attempt_num} (interval={recovery_interval}s)...")
+
+                recovered = False
+                with _fallback_recovery_lock:
+                    try:
+                        if pw.connect(retry=False):
+                            # Verify data flows after reconnect
+                            version = pw.version()
+                            if version is not None:
+                                recovered = True
+                    except Exception as exc:
+                        log.warning(f"TEDAPI recovery attempt #{attempt_num} exception: {exc}")
+
+                if recovered:
+                    exit_fallback_mode()
+                    consecutive_failures = 0
+                    recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
+                else:
+                    next_interval = min(recovery_interval * 2, TEDAPI_RECOVERY_MAX_INTERVAL)
+                    log.warning(
+                        f"TEDAPI recovery attempt #{attempt_num} failed — "
+                        f"staying in SolarOnly, next retry in {next_interval}s"
+                    )
+                    recovery_interval = next_interval
+
+        except (KeyboardInterrupt, SystemExit):
+            break
+        except Exception as exc:
+            log.debug(f"TEDAPI probe/recovery thread unexpected error: {exc}")
 
 
 def get_cached_response(endpoint):
@@ -955,6 +1122,18 @@ if control_secret:
     else:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")
         control_secret = None
+
+
+# Start background TEDAPI probe/recovery thread (TEDAPI modes only)
+if tedapi_recovery_enabled and pw.tedapi:
+    _recovery_thread = threading.Thread(
+        target=_tedapi_probe_and_recover, name="tedapi-recovery", daemon=True
+    )
+    _recovery_thread.start()
+    log.info(
+        "TEDAPI probe/recovery thread started (interval=%ds, threshold=%d)",
+        TEDAPI_PROBE_INTERVAL, TEDAPI_FALLBACK_THRESHOLD
+    )
 
 
 def get_transport_health():
@@ -1481,6 +1660,21 @@ class Handler(BaseHTTPRequestHandler):
                             else 0,
                         }
 
+                # Add SolarOnly fallback mode state
+                with _fallback_mode_lock:
+                    fm_snap = dict(_fallback_mode)
+                proxystats["fallback_mode"] = {
+                    "is_fallback_mode": fm_snap["is_fallback_mode"],
+                    "fallback_since": fm_snap["fallback_since"],
+                    "fallback_duration_seconds": (
+                        round(time.time() - fm_snap["fallback_since"], 1)
+                        if fm_snap["fallback_since"] else None
+                    ),
+                    "recovery_attempts": fm_snap["recovery_attempts"],
+                    "last_recovery_attempt": fm_snap["last_recovery_attempt"],
+                    "recovery_enabled": tedapi_recovery_enabled,
+                }
+
                 # Add cache memory usage statistics
                 proxystats["mem_cache"] = {}
 
@@ -1591,6 +1785,21 @@ class Handler(BaseHTTPRequestHandler):
                         - _connection_health["last_success_time"],
                     }
 
+            # SolarOnly fallback mode state (separate from connection_health degradation)
+            with _fallback_mode_lock:
+                fm = dict(_fallback_mode)
+            health_info["fallback_mode"] = {
+                "is_fallback_mode": fm["is_fallback_mode"],
+                "fallback_since": fm["fallback_since"],
+                "fallback_duration_seconds": (
+                    round(time.time() - fm["fallback_since"], 1)
+                    if fm["fallback_since"] else None
+                ),
+                "recovery_attempts": fm["recovery_attempts"],
+                "last_recovery_attempt": fm["last_recovery_attempt"],
+                "recovery_enabled": tedapi_recovery_enabled,
+            }
+
             if graceful_degradation:
                 with _last_good_responses_lock:
                     cached_endpoints = {}
@@ -1649,6 +1858,13 @@ class Handler(BaseHTTPRequestHandler):
                     _connection_health["total_successes"] = 0
                     _connection_health["is_degraded"] = False
                     _connection_health["last_success_time"] = time.time()
+
+            # Reset SolarOnly fallback mode state
+            with _fallback_mode_lock:
+                _fallback_mode["is_fallback_mode"] = False
+                _fallback_mode["fallback_since"] = None
+                _fallback_mode["recovery_attempts"] = 0
+                _fallback_mode["last_recovery_attempt"] = None
 
             if graceful_degradation:
                 with _last_good_responses_lock:

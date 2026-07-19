@@ -260,6 +260,8 @@ Network Robustness Settings
 * PW_GRACEFUL_DEGRADATION - Return cached data when fresh data unavailable ("yes") - Improves reliability for monitoring tools
 * PW_HEALTH_CHECK - Enable connection health monitoring and degraded mode detection ("yes")
 * PW_CACHE_TTL - Maximum age in seconds for cached data before returning null ("30") - Ensures data freshness over availability
+* PW_TEDAPI_RECOVERY - Enable automatic TEDAPI recovery when proxy enters SolarOnly fallback mode ("yes") - Only active in TEDAPI modes; no overhead for Cloud/FleetAPI/local
+* PW_TEDAPI_PROBE_INTERVAL - Seconds between TEDAPI health probes ("30") - After 3 consecutive None results the proxy enters SolarOnly fallback; recovery uses exponential backoff (60s → 300s max); minimum value is 5
 
 UI and Advanced Settings
 * PW_STYLE - Background color style for iframe [animation](http://localhost:8675/example.html) ("clear") - options:
