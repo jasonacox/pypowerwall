@@ -1,11 +1,5 @@
 # RELEASE NOTES
 
-## Unreleased - TEDAPI V2026_06 Query Set (Signed GraphQL / Bearer Mode)
-
-* feat(tedapi): add date-labeled TEDAPI query/protobuf sets selectable via `tedapi_api_version` (`"V2024_06"` default, `"V2026_06"`). `V2026_06` sends Tesla-signed `SignedGraphQLQuery` payloads over the energy_device GraphQL path; `V2024_06` keeps the original hand-rolled captures. Selectable in code (`TEDAPI(..., tedapi_api_version=...)`), env/CLI (`-tedapi_api_version=V2026_06`), and coerced from plain strings.
-* note(tedapi): the default `V2024_06` path and its protobufs are unchanged — the library floor stays at `protobuf>=4.25.1` (the `local`/`V2024_06` `*_pb2.py` are still generated with the protobuf 4.25.x toolchain and are byte-identical to prior releases). Only the opt-in `V2026_06` query set is built with the latest protoc, so its `*_pb2.py` embed a `runtime_version.ValidateProtobufRuntimeVersion()` guard and require `protobuf>=6.33.6`. Those modules are imported lazily only when `tedapi_api_version="V2026_06"` is selected, so an older runtime raises a clear, actionable error (`tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — pip install -U protobuf`) at opt-in time — everyone on the default path is unaffected.
-* robustness(tedapi): when the gateway rejects a `V2026_06` signed query, pyPowerwall now logs a warning suggesting a fallback to `tedapi_api_version="V2024_06"` — a total `V2026_06` failure after a firmware update most likely means Tesla rotated the query signing keys, so the bundled signatures no longer validate.
-
 ## v0.16.2 - TEDAPI Fallback, v1r Diagnostics, and Firmware Version Improvements
 
 * feat(proxy): TEDAPI SolarOnly fallback mode — when TEDAPI connectivity is lost, the proxy automatically continues serving solar data without interruption. Enabled via `PW_TEDAPI_RECOVERY=yes`. (#361)
