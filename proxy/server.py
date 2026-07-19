@@ -532,6 +532,22 @@ def _tedapi_probe_and_recover():
     results, enters fallback mode and starts attempting reconnect via pw.connect(retry=False).
     On successful recovery, exits fallback mode and resets exponential backoff.
     Stays in SolarOnly if recovery fails — proxy keeps serving available data.
+
+    Runtime-reconnect trade-off: pw.connect() swaps pw.client and transiently mutates
+    pw.mode/cloudmode/fleetapi while handler threads may be live. In practice this is
+    bounded — requests were already failing when recovery fires, the attribute swap is
+    atomic, and worst case a few in-flight requests hit a transient wrong-mode branch.
+
+    Hybrid-mode note: the gate is pw.tedapi, which includes hybrid mode (v1r + WiFi
+    fallback). In that topology pw.version() is served by the local API, so a WiFi
+    TEDAPI outage may not be detected by this probe. Monitoring is best-effort for
+    hybrid; pure TEDAPI mode (WiFi-only or v1r-only) gets full coverage.
+
+    429-cooldown interaction: during a gateway rate-limit cooldown (~5 min), pw.version()
+    returns None, which drives the probe into fallback mode and triggers reconnect
+    attempts. The 60→300s backoff bounds reconnect to roughly one attempt per cooldown
+    window, which is tolerable but does cut slightly against the "don't hammer a
+    rate-limited gateway" convention. A cooldown-aware probe is a follow-up item.
     """
     consecutive_failures = 0
     recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
@@ -570,7 +586,12 @@ def _tedapi_probe_and_recover():
                 if extra_wait > 0:
                     time.sleep(extra_wait)
 
+                # Re-check after the long backoff sleep: /health/reset may have cleared state.
                 with _fallback_mode_lock:
+                    if not _fallback_mode["is_fallback_mode"]:
+                        consecutive_failures = 0
+                        recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
+                        continue
                     _fallback_mode["recovery_attempts"] += 1
                     _fallback_mode["last_recovery_attempt"] = time.time()
                     attempt_num = _fallback_mode["recovery_attempts"]

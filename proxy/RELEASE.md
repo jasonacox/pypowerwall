@@ -1,6 +1,6 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t97 (17 Jul 2026)
+### Proxy t97 (18 Jul 2026)
 
 * Added TEDAPI SolarOnly fallback mode tracking and auto-recovery (issue [#360](https://github.com/jasonacox/pypowerwall/issues/360))
 * Previously, when TEDAPI dropped mid-session (e.g. a gateway 403 after a firmware update or route loss), the proxy silently entered SolarOnly mode and stayed there until restarted
@@ -11,6 +11,10 @@
 * `/health/reset` also clears the fallback mode state
 * New environment variables: `PW_TEDAPI_RECOVERY=yes/no` (default `yes`), `PW_TEDAPI_PROBE_INTERVAL=N` (default `30`)
 * Only active when TEDAPI mode is configured — no overhead for Cloud, FleetAPI, or local-only modes
+* Runtime-reconnect trade-off: `pw.connect()` swaps `pw.client` and transiently mutates `pw.mode`/`cloudmode`/`fleetapi` while handler threads may be live. In practice this is bounded — requests were already failing when recovery fires, the swap is atomic, and worst case a few in-flight requests see a transient wrong-mode branch before recovery completes
+* Hybrid-mode note: the probe gate is `pw.tedapi` which includes hybrid mode (v1r + WiFi fallback). In hybrid, `pw.version()` may be served by the local API, so a WiFi TEDAPI outage might not be detected by the probe; monitoring is best-effort for hybrid, with full coverage for pure TEDAPI modes
+* 429-cooldown interaction: a rate-limited gateway causes `pw.version()` to return None, driving the probe into fallback — the 60→300s recovery backoff bounds reconnect attempts to roughly once per cooldown window
+* Fixed edge case: `/health/reset` fired during a recovery backoff sleep could cause one stale `recovery_attempts` write after state was cleared; the recovery thread now re-checks `is_fallback_mode` after the backoff sleep before writing state or calling `pw.connect()`
 
 ### Proxy t96 (12 Jul 2026)
 
