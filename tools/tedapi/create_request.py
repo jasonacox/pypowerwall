@@ -17,7 +17,7 @@ Usage:
     # Follow prompts for DIN and output file name
 
 Example:
-   curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1
+   curl -v -k -H 'Content-type: application/octet-stream' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1
 
 """
 
