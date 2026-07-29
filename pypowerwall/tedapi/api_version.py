@@ -26,7 +26,7 @@ LABEL_RE = re.compile(r"^V(\d{4})_(\d{2})(?:_(\d{2}))?$")
 _NO_DAY = 0
 
 
-def _parse_label(label: str, owner: str = "TEDAPIApiVersion") -> tuple:
+def _parse_label(label: object, owner: str = "TEDAPIApiVersion") -> tuple:
     """Parse a VYYYY_MM[_DD] label into a sortable (year, month, day) triple.
 
     The day is optional; when absent it is reported as 0 (see _NO_DAY), which

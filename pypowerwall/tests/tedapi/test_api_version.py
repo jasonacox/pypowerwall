@@ -293,8 +293,9 @@ def test_parse_signed_response_v1r_wifi_without_flag_drops_payload(api):
 
 
 # --- TEDAPIApiVersion ordering ----------------------------------------------
-# Ordering is by declaration order, not by comparing the string labels, so a
-# future version whose label does not sort lexically still ranks correctly.
+# Ordering is by the date parsed from each member's label, not by comparing the
+# string labels lexically, so a future version whose label does not sort
+# lexically still ranks correctly.
 
 V24, V26 = TEDAPIApiVersion.V2024_06, TEDAPIApiVersion.V2026_06
 
