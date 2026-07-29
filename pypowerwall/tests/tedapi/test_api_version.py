@@ -493,7 +493,7 @@ def test_dated_labels_order_within_a_month():
 ])
 def test_parse_label_rejects_non_conforming_values(bad):
     with pytest.raises(ValueError):
-        _parse_label(bad)
+        _parse_label(bad)  # type: ignore[arg-type]
 
 
 def test_ordering_rejects_non_version_operand():
