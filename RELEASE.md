@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): correct Content-type request header typo `application/octet-string` → `application/octet-stream` (RFC 2046); gateway does not validate the header (#364)
+
 ## v0.16.2 - TEDAPI Fallback, v1r Diagnostics, and Firmware Version Improvements
 
 * feat(proxy): TEDAPI SolarOnly fallback mode — when TEDAPI connectivity is lost, the proxy automatically continues serving solar data without interruption. Enabled via `PW_TEDAPI_RECOVERY=yes`. (#361)
