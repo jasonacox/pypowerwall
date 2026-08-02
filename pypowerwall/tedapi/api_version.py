@@ -121,6 +121,11 @@ class TEDAPIApiVersion(str, Enum):
         """Accept a TEDAPIApiVersion or a string (e.g. from an env var / CLI);
         unknown values fall back to V2024_06 with a warning.
 
+        Unlike the CLI (protected by argparse ``choices=``), the env-var path
+        (PW_TEDAPI_API_VERSION) has no such guard, so a typo would silently run
+        the legacy path — the warning names the bad value and the valid choices
+        so the fallback is diagnosable instead of invisible.
+
         NOTE: This leniency is deliberate and intentionally OPPOSITE to the
         ordering operators above, which raise TypeError on unknown versions.
         coerce() sits at the config boundary (env vars, CLI, Docker PW_* vars)
