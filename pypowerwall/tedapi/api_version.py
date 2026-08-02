@@ -73,6 +73,8 @@ class TEDAPIApiVersion(str, Enum):
     # means a member inserted out of sequence still sorts correctly, and it makes
     # the VYYYY_MM[_DD] format an enforced contract rather than a convention:
     # anything that does not match it is rejected.
+    # (Contrast with coerce() below: unknown versions there fall back with a
+    # warning by design — see its docstring before changing either behavior.)
 
     def _rank(self) -> tuple:
         """(year, month, day) parsed from this member's VYYYY_MM[_DD] label."""
@@ -117,12 +119,16 @@ class TEDAPIApiVersion(str, Enum):
     @classmethod
     def coerce(cls, value) -> "TEDAPIApiVersion":
         """Accept a TEDAPIApiVersion or a string (e.g. from an env var / CLI);
-        fall back to V2024_06 on anything unrecognized.
+        unknown values fall back to V2024_06 with a warning.
 
-        Unlike the CLI (protected by argparse ``choices=``), the env-var path
-        (PW_TEDAPI_API_VERSION) has no such guard, so a typo would silently run
-        the legacy path. Log a warning naming the bad value and the valid choices
-        so the fallback is diagnosable instead of invisible."""
+        NOTE: This leniency is deliberate and intentionally OPPOSITE to the
+        ordering operators above, which raise TypeError on unknown versions.
+        coerce() sits at the config boundary (env vars, CLI, Docker PW_* vars)
+        where a typo must degrade to the safe legacy query set rather than
+        crash a 24/7 proxy; ordering sits in protocol-dispatch code where
+        there is no safe True/False guess. Do not "harmonize" one to match
+        the other — both are load-bearing.
+        """
         if isinstance(value, cls):
             return value
         try:

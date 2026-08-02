@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* feat(tedapi): `TEDAPIApiVersion` members are now ordered by the date their label encodes; comparing against anything that is not a known version now raises `TypeError` (previously fell back to silent lexical string comparison). (#363)
+
 ## v0.16.2 - TEDAPI Fallback, v1r Diagnostics, and Firmware Version Improvements
 
 * feat(proxy): TEDAPI SolarOnly fallback mode — when TEDAPI connectivity is lost, the proxy automatically continues serving solar data without interruption. Enabled via `PW_TEDAPI_RECOVERY=yes`. (#361)
