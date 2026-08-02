@@ -59,7 +59,7 @@ pb.message.config.send.file = "config.json"
 pb.tail.value = 1
 url = f'https://{GW_IP}/tedapi/v1'
 r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
-    headers={'Content-type': 'application/octet-string'},
+    headers={'Content-type': 'application/octet-stream'},
     data=pb.SerializeToString(), timeout=5)
 #print(f"Response Code: {r.status_code}")
 # Decode response
@@ -91,7 +91,7 @@ pb.message.firmware.request = ""
 pb.tail.value = 1
 url = f'https://{GW_IP}/tedapi/v1'
 r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
-    headers={'Content-type': 'application/octet-string'},
+    headers={'Content-type': 'application/octet-stream'},
     data=pb.SerializeToString(), timeout=5)
 print(f"Response Code: {r.status_code}")
 # write raw response to file
@@ -119,7 +119,7 @@ pb.message.payload.send.b.value = "{\"pwsComponentsFilter\":{\"types\":[\"PW3SAF
 pb.tail.value = 1
 url = f'https://{GW_IP}/tedapi/v1'
 r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
-    headers={'Content-type': 'application/octet-string'},
+    headers={'Content-type': 'application/octet-stream'},
     data=pb.SerializeToString(), timeout=5)
 print(f"Response Code: {r.status_code}")
 # Decode response
@@ -192,7 +192,7 @@ def get_pw3_vitals(components=None, config=None, din=None, gw_pwd=None):
         pb.tail.value = 1
         url = f'https://{GW_IP}/tedapi/v1'
         r = requests.post(url, auth=('Tesla_Energy_Device', gw_pwd), verify=False,
-                        headers={'Content-type': 'application/octet-string'},
+                        headers={'Content-type': 'application/octet-stream'},
                         data=pb.SerializeToString(), timeout=10)
         if r.status_code == 200:
             # Decode response

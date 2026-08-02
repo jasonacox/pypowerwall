@@ -149,7 +149,7 @@ This appears to be the workhorse function. It uses basic auth that appears to be
 python create_request.py
 
 # Request config
-curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1
+curl -v -k -H 'Content-type: application/octet-stream' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1
 ```
 
 Payloads are binary Protocol Buffers (protobufs). 
@@ -166,7 +166,7 @@ There appear to be different types of request sent. One is for `config` which ge
 python create_request.py
 
 # Request Config Data from Powerwall
-curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1 > response.bin
+curl -v -k -H 'Content-type: application/octet-stream' -u "Tesla_Energy_Device:GW_PWD" --data-binary @request.bin https://192.168.91.1/tedapi/v1 > response.bin
 
 # Decode Config Data
 python3 decode.py response.bin
@@ -225,7 +225,7 @@ tail {
 
 ```bash
 # Request Status Data from Powerwall
-curl -v -k -H 'Content-type: application/octet-string' -u "Tesla_Energy_Device:GW_PWD" --data-binary @query.bin https://192.168.91.1/tedapi/v1 > response.bin
+curl -v -k -H 'Content-type: application/octet-stream' -u "Tesla_Energy_Device:GW_PWD" --data-binary @query.bin https://192.168.91.1/tedapi/v1 > response.bin
 
 # Decode Config Data
 python3 decode.py response.bin

@@ -3,6 +3,7 @@
 ## Unreleased
 
 * feat(tedapi): `TEDAPIApiVersion` members are now ordered by the date their label encodes; comparing against anything that is not a known version now raises `TypeError` (previously fell back to silent lexical string comparison). (#363)
+* fix(tedapi): correct Content-type request header typo `application/octet-string` → `application/octet-stream` (RFC 2046); gateway does not validate the header (#364)
 
 ## v0.16.2 - TEDAPI Fallback, v1r Diagnostics, and Firmware Version Improvements
 
