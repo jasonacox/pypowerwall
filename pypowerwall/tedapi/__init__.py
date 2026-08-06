@@ -175,13 +175,12 @@ class TEDAPI:
         self.token = None  # Bearer token (only used in bearer mode)
         if self.auth_mode == AuthMode.BEARER and v1r:
             raise ValueError(f"auth_mode='{self.auth_mode}' is incompatible with v1r mode")
-        # Bearer is the AuthEnvelope transport the newer gateways use, and it needs
-        # the Tesla-signed GraphQL query set introduced in V2026_06 (or anything
-        # newer — this is a minimum, not an exact match). Pairing it with the older
-        # V2024_06 QueryType queries wraps those legacy queries in the AuthEnvelope
-        # transport — a combination those gateways may reject or answer only
-        # partially. Warn (don't fail) so existing legacy+bearer setups keep working
-        # while surfacing the likely misconfiguration.
+        # Bearer is the AuthEnvelope transport modality that needs the Tesla-signed
+        # GraphQL query set introduced in V2026_06 (or anything newer — this is a minimum,
+        # not an exact match). Pairing it with the older V2024_06 QueryType queries
+        # wraps those legacy queries in the AuthEnvelope transport — a combination
+        # those gateways may reject or answer only partially. Warn (don't fail) so
+        # existing legacy+bearer setups keep working while surfacing the likely misconfiguration.
         if (self.auth_mode == AuthMode.BEARER
                 and self.tedapi_api_version < TEDAPIApiVersion.V2026_06):
             log.warning(
@@ -228,6 +227,7 @@ class TEDAPI:
         # Connect to Powerwall Gateway
         if not self.connect():
             log.error("Failed to connect to Powerwall Gateway")
+
 
     # TEDAPI Functions
     def set_debug(self, toggle=True, color=True):
@@ -343,12 +343,12 @@ class TEDAPI:
                 return self.pwcache["config"]
             else:
                 log.debug(f"Cache expired for config (age: {age:.2f}s, expire: {self.pwconfigexpire}s)")
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         # Only acquire lock if we need to make an API call
         data = None
         try:
@@ -358,7 +358,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
                         log.debug("Using Cached Payload (double-check)")
                         return self.pwcache["config"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -674,12 +674,12 @@ class TEDAPI:
                 return self.pwcache["status"]
             else:
                 log.debug(f"Cache expired for status (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         # Only acquire lock if we need to make an API call
         data = None
         try:
@@ -689,7 +689,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
                         log.debug("Using Cached Payload (double-check)")
                         return self.pwcache["status"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -753,12 +753,12 @@ class TEDAPI:
                 return self.pwcache["controller"]
             else:
                 log.debug(f"Cache expired for controller (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         # Only acquire lock if we need to make an API call
         data = None
         try:
@@ -768,7 +768,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
                         log.debug("Using Cached Payload (double-check)")
                         return self.pwcache["controller"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -828,12 +828,12 @@ class TEDAPI:
             if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
                 log.debug("Using Cached Firmware")
                 return self.pwcache["firmware"]
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         payload = None
         try:
             with acquire_lock_with_backoff(self_function, self.timeout):
@@ -842,7 +842,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
                         log.debug("Using Cached Firmware (double-check)")
                         return self.pwcache["firmware"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -899,15 +899,21 @@ class TEDAPI:
         """Parse a firmware/system-info response into a SystemInfo. The two api
         versions differ only in the pb2 module and the protobuf field paths
         (V2026_SYS_SCHEMA / V2024_SYS_SCHEMA); SystemInfo.from_proto does the rest."""
-        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
-            tx, ed = self._import_v2026_pb2()
-            envelope_cls, message_cls, schema = ed.MessageEnvelope, tx.Message, V2026_SYS_SCHEMA
-        else:
+
+        if self.tedapi_api_version < TEDAPIApiVersion.V2026_06:
             envelope_cls, message_cls, schema = (
                 tedapi_pb2.MessageEnvelope, tedapi_pb2.Message, V2024_SYS_SCHEMA)
-        env = envelope_cls() if (self.v1r or self.auth_mode == AuthMode.BEARER) else message_cls()
+        else:
+            tx, ed = self._import_v2026_pb2()
+            envelope_cls, message_cls, schema = ed.MessageEnvelope, tx.Message, V2026_SYS_SCHEMA
+
+        # v1r and bearer transports hand back a bare MessageEnvelope (no outer
+        # Message/Tail); basic returns the full Message. Both the class choice and
+        # the unwrap must follow the same test — see _parse_response.
+        bare = self.v1r or self.auth_mode == AuthMode.BEARER
+        env = envelope_cls() if bare else message_cls()
         env.ParseFromString(response)
-        return SystemInfo.from_proto(env if self.v1r else env.message, schema)
+        return SystemInfo.from_proto(env if bare else env.message, schema)
 
     @uses_api_lock
     def get_components(self, self_function=None, force=False):
@@ -928,12 +934,12 @@ class TEDAPI:
             if cache_age < self.pwconfigexpire:
                 log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s)")
                 return self.pwcache["components"]
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         components = None
         try:
             with acquire_lock_with_backoff(self_function, self.timeout):
@@ -943,7 +949,7 @@ class TEDAPI:
                     if cache_age < self.pwconfigexpire:
                         log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s) (double-check)")
                         return self.pwcache["components"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -1240,12 +1246,12 @@ class TEDAPI:
             if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
                 log.debug("Using Cached Battery Block")
                 return self.pwcache[din]
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         data = None
         try:
             with acquire_lock_with_backoff(self_function, self.timeout):
@@ -1254,7 +1260,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
                         log.debug("Using Cached Battery Block (double-check)")
                         return self.pwcache[din]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -2013,7 +2019,7 @@ class TEDAPI:
 
         fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
 
-        # List to store the valid fan speed values  
+        # List to store the valid fan speed values
         result = {}
 
         # Iterate over each component in the "msa" list
@@ -2036,7 +2042,7 @@ class TEDAPI:
     def get_fan_speeds(self, force=False):
         """Get the fan speeds for the Powerwall or inverter."""
         return self.extract_fan_speeds(self.get_device_controller(force=force))
-      
+
 
     def derive_meter_config(self, config) -> dict:
         """Build a lookup dictionary for Neurio meter configuration from config."""
@@ -2592,8 +2598,8 @@ class TEDAPI:
     def get_blocks(self, force=False):
         """
         Get the list of battery blocks from the Powerwall Gateway.
-        
-        This includes both regular Powerwall units (with inverters) and battery 
+
+        This includes both regular Powerwall units (with inverters) and battery
         expansion packs (battery-only units without inverters).
         """
         vitals = self.vitals(force=force)

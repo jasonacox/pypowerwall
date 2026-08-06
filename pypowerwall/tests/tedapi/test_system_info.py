@@ -12,6 +12,7 @@ import pytest
 
 from pypowerwall.tedapi import TEDAPI
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.protobuf.V2024_06 import tedapi_pb2
 from pypowerwall.tedapi.system_info import SystemInfo, RadioDevice
 
@@ -31,12 +32,13 @@ PART = "1538000-45-D"
 SERIAL = "GF225311003KW7"
 
 
-def _make_api(api_version, v1r):
+def _make_api(api_version, v1r, auth_mode=AuthMode.BASIC):
     # Patch connect() so construction doesn't reach the network (mirrors test_init).
     with patch("pypowerwall.tedapi.TEDAPI.connect", return_value="TEST_DIN"):
         api = TEDAPI("test_password", pwcacheexpire=50)
     api.din = DIN
     api.v1r = v1r
+    api.auth_mode = auth_mode
     api.tedapi_api_version = api_version
     return api
 
@@ -183,6 +185,45 @@ def test_get_system_info_legacy_recovers_full_systemupdate(v1r):
         "serverStagedVersion": {"text": "26.12.0"},
     }
     json.dumps(info.to_details_dict())   # still serializes
+
+
+@v2026_only
+def test_get_system_info_v2026_bearer_parses_bare_envelope():
+    """Bearer is the third transport: _authenv_post unwraps the AuthEnvelope and
+    returns a bare MessageEnvelope, exactly like v1r LAN — even though `v1r` is
+    False. The parser must key the unwrap on the transport, not on `v1r` alone,
+    or it reaches for the (absent) `.message` field and raises
+    'MessageEnvelope object has no attribute message'."""
+    api = _make_api(TEDAPIApiVersion.V2026_06, v1r=False, auth_mode=AuthMode.BEARER)
+    with patch.object(api, "_post_tedapi", return_value=_v2026_response(v1r=True)):
+        info = api._get_system_info()
+    assert info is not None
+    assert info.version == VERSION
+    assert info.din == DIN
+    assert info.gateway_part_number == PART and info.gateway_serial_number == SERIAL
+    assert info.device_type == 6
+    # bearer and v1r see the same bytes, so they must produce the same result
+    v1r_api = _make_api(TEDAPIApiVersion.V2026_06, v1r=True)
+    with patch.object(v1r_api, "_post_tedapi", return_value=_v2026_response(v1r=True)):
+        assert v1r_api._get_system_info() == info
+
+
+def test_get_system_info_legacy_bearer_parses_bare_envelope():
+    """Same bearer bare-envelope contract on the legacy (V2024_06) firmware path."""
+    def populate(s):
+        s.version.text = VERSION
+        s.version.githash = GITHASH
+        s.din = DIN
+        s.gateway.partNumber = PART
+        s.gateway.serialNumber = SERIAL
+
+    api = _make_api(TEDAPIApiVersion.V2024_06, v1r=False, auth_mode=AuthMode.BEARER)
+    with patch.object(api, "_post_tedapi", return_value=_legacy_response(populate, v1r=True)):
+        info = api._get_system_info()
+    assert info is not None
+    assert info.version == VERSION
+    assert info.din == DIN
+    assert info.gateway_part_number == PART and info.gateway_serial_number == SERIAL
 
 
 def _fallback_api(api_version):
