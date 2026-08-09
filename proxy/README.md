@@ -2,6 +2,8 @@
 
 ![Docker Pulls](https://img.shields.io/docker/pulls/jasonacox/pypowerwall)
 
+> **⚠️ Maintenance Mode Notice:** This proxy is entering maintenance mode. New feature development has moved to **[pypowerwall-server](https://github.com/jasonacox/pypowerwall-server)** — a full rewrite with multi-gateway support, orchestrated polling, a management console, and graceful degradation built in from the start. This proxy will keep receiving critical/security fixes and stay a drop-in replacement for existing deployments, but new features (multi-inverter naming, MQTT, etc.) are being built in pypowerwall-server going forward. If you're starting a new deployment, or need multi-gateway support, start there instead. See [jasonacox/pypowerwall#254](https://github.com/jasonacox/pypowerwall/issues/254) for the migration tracking issue.
+
 This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway and will proxy API calls to /api/meters/aggregates (power metrics), /api/system_status/soe (battery level), and many others (see [API](https://github.com/jasonacox/pypowerwall/blob/main/proxy/API.md) for full list). With the instructions below, you can containerize this proxy and run it as an endpoint for tools like telegraf to pull metrics without needing to authenticate.
 
 **Cache**: Because pyPowerwall is designed to cache the auth and high frequency API calls and use HTTP persistent connections. This will help reduce the load on the Gateway and prevent crash/restart issues that can happen if too many session are created on the Gateway. Logic in pypowerwall will also activate cooldown modes if the Gateway responds with errors indicating overload.

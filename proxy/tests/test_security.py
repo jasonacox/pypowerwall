@@ -128,6 +128,28 @@ class TestHelpEscaping(BaseDoGetTest):
         self.assertNotIn("<img src=x onerror=alert(2)>", written)
 
 
+class TestHelpMaintenanceModeBanner(BaseDoGetTest):
+    """/help surfaces the pypowerwall-server maintenance-mode notice (#254/#359)."""
+
+    @patch('proxy.server.api_base_url', '')
+    @patch('proxy.server.proxystats', {
+        'gets': 0, 'posts': 0, 'errors': 0, 'timeout': 0, 'start': 1000,
+        'clear': 0, 'uri': {}, 'config': {},
+    })
+    @patch('proxy.server.proxystats_lock')
+    @patch('proxy.server.pw')
+    @patch('proxy.server.safe_pw_call', return_value=None)
+    def test_help_includes_maintenance_notice(self, _mock_safe, mock_pw, _lock):
+        mock_pw.cloudmode = False
+        mock_pw.fleetapi = False
+        mock_pw.authmode = "cookie"
+        self.handler.path = "/help"
+        self.handler.do_GET()
+        written = self.get_written_text()
+        self.assertIn("Maintenance Mode", written)
+        self.assertIn("pypowerwall-server", written)
+
+
 class BaseDoPostTest(unittest.TestCase):
     def setUp(self):
         self.handler = UnittestHandler()
