@@ -163,10 +163,13 @@ class Powerwall(object):
                            and auto-derived (last 5 chars) for v1r login (mode 5)
             rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
             tedapi_auth_mode = TEDAPI authentication mode: "basic" (default) HTTP
-                           Basic Auth (needs a route to 192.168.91.1); or "bearer"
-                           to log in via /api/login/Basic and wrap queries in an
-                           AuthEnvelope (works from the home network without a
-                           static route, and is what Powerwall 3 requires)
+                           Basic Auth to 192.168.91.1, which is only reachable
+                           over the Gateway's Wi-Fi; or "bearer" to log in via
+                           /api/login/Basic and wrap queries in an AuthEnvelope,
+                           which also works over the wired LAN IP. Bearer works
+                           on Powerwall 2 and solar-only gateways but NOT
+                           Powerwall 3 — for PW3 wired access use v1r mode
+                           (rsa_key_path)
         """
 
         # Attributes

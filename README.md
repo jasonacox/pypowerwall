@@ -590,10 +590,13 @@ print("System Status: %r\n" % pw.system_status())
                                 #   legacy QueryType path) or "V2026_06" (Tesla-signed
                                 #   GraphQL / bearer path)
     tedapi_auth_mode = "basic"  # How TEDAPI authenticates: "basic" (default) HTTP Basic
-                                #   Auth, needs a route to 192.168.91.1; or "bearer" to
-                                #   log in via /api/login/Basic and wrap queries in an
-                                #   AuthEnvelope (no static route needed; required by
-                                #   Powerwall 3). Pair "bearer" with V2026_06.
+                                #   Auth to 192.168.91.1, which is only reachable over the
+                                #   Gateway's Wi-Fi; or "bearer" to log in via
+                                #   /api/login/Basic and wrap queries in an AuthEnvelope,
+                                #   which also works over the wired LAN IP. Pair "bearer"
+                                #   with V2026_06. Bearer works on Powerwall 2 and
+                                #   solar-only gateways but NOT Powerwall 3 — for PW3
+                                #   wired access use v1r mode (rsa_key_path).
 
  Functions
     connect(retry)            # Connect to Powerwall and select mode (retry=True to keep retrying)

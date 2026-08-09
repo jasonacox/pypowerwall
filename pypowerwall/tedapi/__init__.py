@@ -146,11 +146,13 @@ class TEDAPI:
         """Initialize the TEDAPI client for Powerwall Gateway communication.
 
         auth_mode selects how HTTP requests to the gateway are authenticated:
-        "basic" (default) uses HTTP Basic Auth and requires a route to
-        192.168.91.1; "bearer" logs in via /api/login/Basic for a Bearer token
-        and wraps each query in an AuthEnvelope, which works from the home
-        network without a static route and is what Powerwall 3 gateways
-        require. Bearer is mutually exclusive with v1r (its own RSA transport).
+        "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
+        only reachable over the gateway's Wi-Fi; "bearer" logs in via
+        /api/login/Basic for a Bearer token and wraps each query in an
+        AuthEnvelope, which also works over the wired LAN IP. Bearer works on
+        Powerwall 2 and solar-only gateways but NOT Powerwall 3 — PW3 wired
+        access is v1r's job. Bearer is mutually exclusive with v1r (its own
+        RSA transport).
         """
         self.debug = debug
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or

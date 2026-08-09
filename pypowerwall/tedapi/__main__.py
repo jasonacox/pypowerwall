@@ -36,9 +36,9 @@ def _build_tedapi_arg_parser(default_host):
                         help='With -firmware: include full system info (part/serial, githash)')
     parser.add_argument('--auth-mode', default=AuthMode.BASIC.value,
                         choices=[m.value for m in AuthMode],
-                        help='Authentication mode: basic (default, requires a route to '
-                             '192.168.91.1) or bearer (installer login, works from the '
-                             'home network; required by Powerwall 3)')
+                        help='Authentication mode: basic (default, Gateway Wi-Fi only via '
+                             '192.168.91.1) or bearer (installer login, also works over '
+                             'the wired LAN IP; PW2/solar-only — not Powerwall 3)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     return parser
 
