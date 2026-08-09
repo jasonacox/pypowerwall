@@ -117,6 +117,23 @@ class TestAuthMode:
         with pytest.raises(ValueError, match="Invalid auth_mode"):
             AuthMode.coerce(value)
 
+    @pytest.mark.parametrize("value", ["", "bear", "presence", "  bearer", None, 0])
+    def test_coerce_default_falls_back(self, value):
+        """With default= (env-var callers), an unknown value must warn and fall
+        back instead of raising — a container env typo must not be fatal."""
+        assert AuthMode.coerce(value, default=AuthMode.BASIC) is AuthMode.BASIC
+
+    def test_coerce_default_does_not_mask_valid_values(self):
+        assert AuthMode.coerce("bearer", default=AuthMode.BASIC) is AuthMode.BEARER
+
+    def test_coerce_default_warns_with_value_and_choices(self, caplog):
+        """The warning must name the offending value and the valid choices."""
+        with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi.auth_mode"):
+            AuthMode.coerce("bear", default=AuthMode.BASIC)
+        assert "'bear'" in caplog.text
+        assert "'basic'" in caplog.text
+        assert "'bearer'" in caplog.text
+
     def test_presence_mode_is_gone(self):
         """'presence' was a Gateway 1 switch-flip flow (api/auth/toggle/*) that
         PW3 gateways answer with 404. It was removed, so it must now be rejected

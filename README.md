@@ -589,6 +589,11 @@ print("System Status: %r\n" % pw.system_status())
     tedapi_api_version = "V2024_06"  # TEDAPI query/protobuf set: "V2024_06" (default,
                                 #   legacy QueryType path) or "V2026_06" (Tesla-signed
                                 #   GraphQL / bearer path)
+    tedapi_auth_mode = "basic"  # How TEDAPI authenticates: "basic" (default) HTTP Basic
+                                #   Auth, needs a route to 192.168.91.1; or "bearer" to
+                                #   log in via /api/login/Basic and wrap queries in an
+                                #   AuthEnvelope (no static route needed; required by
+                                #   Powerwall 3). Pair "bearer" with V2026_06.
 
  Functions
     connect(retry)            # Connect to Powerwall and select mode (retry=True to keep retrying)

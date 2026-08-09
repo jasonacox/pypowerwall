@@ -37,6 +37,17 @@
     /strings data.
     Set: PW_EMAIL and leave PW_HOST blank to use this mode.
 
+ TEDAPI Mode
+    Full TEDAPI mode (PW_GW_PWD set, PW_PASSWORD blank) reads extended metrics
+    straight from the gateway. Two settings shape that connection:
+    - PW_TEDAPI_API_VERSION=V2024_06|V2026_06 — query/protobuf set (default
+      V2024_06; V2026_06 is the Tesla-signed GraphQL set)
+    - PW_TEDAPI_AUTH_MODE=basic|bearer — how to authenticate (default basic).
+      basic needs a route to 192.168.91.1; bearer logs in via /api/login/Basic
+      and works from the home network without one (required by Powerwall 3).
+      Use bearer together with PW_TEDAPI_API_VERSION=V2026_06.
+    The active values are reported in /stats and /health.
+
  Control Mode
     An optional mode is to enable control commands to set backup reserve
     percentage and mode of the Powerwall.  This requires that you set
@@ -136,6 +147,7 @@ from pypowerwall.exceptions import (
     PyPowerwallInvalidConfigurationParameter,
     InvalidBatteryReserveLevelException,
 )
+from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.exceptions import (
     PyPowerwallTEDAPINoTeslaAuthFile,
     PyPowerwallTEDAPITeslaNotConnected,
@@ -149,7 +161,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t99"
+BUILD = "t100"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -212,6 +224,10 @@ gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
 tedapi_api_version = os.getenv("PW_TEDAPI_API_VERSION", "V2024_06")
+# default= makes a typo in the env var a logged warning + basic fallback
+# instead of a fatal "Powerwall Connection Error" and a restart loop.
+tedapi_auth_mode = AuthMode.coerce(os.getenv("PW_TEDAPI_AUTH_MODE", "basic"),
+                                   default=AuthMode.BASIC)
 neg_solar = os.getenv("PW_NEG_SOLAR", "yes").lower() == "yes"
 try:
     site_zero_threshold = int(os.getenv("PW_SITE_ZERO_THRESHOLD", "0"))
@@ -273,6 +289,7 @@ proxystats = {
     "pw3": False,
     "tedapi_mode": "off",
     "tedapi_api_version": "V2024_06",
+    "tedapi_auth_mode": str(AuthMode.BASIC),
     "siteid": None,
     "counter": 0,
     "cf": cachefile,
@@ -298,6 +315,8 @@ proxystats = {
         "PW_GW_PWD": "*" * len(gw_pwd) if gw_pwd else None,
         "PW_RSA_KEY_PATH": rsa_key_path,
         "PW_WIFI_HOST": wifi_host,
+        "PW_TEDAPI_API_VERSION": tedapi_api_version,
+        "PW_TEDAPI_AUTH_MODE": str(tedapi_auth_mode),
         "PW_NEG_SOLAR": neg_solar,
         "PW_SITE_ZERO_THRESHOLD": site_zero_threshold,
         "PW_SUPPRESS_NETWORK_ERRORS": suppress_network_errors,
@@ -1073,6 +1092,7 @@ try:
         rsa_key_path=rsa_key_path,
         wifi_host=wifi_host,
         tedapi_api_version=tedapi_api_version,
+        tedapi_auth_mode=tedapi_auth_mode,
     )
 except Exception as e:
     log.error(f"Powerwall Connection Error: {str(e)}")
@@ -1108,8 +1128,17 @@ else:
         proxystats["tedapi"] = True
         proxystats["tedapi_mode"] = pw.tedapi_mode
         proxystats["tedapi_api_version"] = pw.tedapi_api_version
+        # Report the auth mode the live TEDAPI client actually uses, not the
+        # requested one: hybrid mode builds its own TEDAPI and always speaks
+        # basic, so echoing the env var here would misreport that setup.
+        active_auth_mode = str(getattr(pw.tedapi, "auth_mode", AuthMode.BASIC))
+        proxystats["tedapi_auth_mode"] = active_auth_mode
         proxystats["pw3"] = pw.tedapi.pw3
-        log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode}, queries={pw.tedapi_api_version})")
+        log.info(f"TEDAPI Mode Enabled for Device Vitals ({pw.tedapi_mode}, "
+                 f"queries={pw.tedapi_api_version}, auth={active_auth_mode})")
+        if str(tedapi_auth_mode) != active_auth_mode:
+            log.warning(f"PW_TEDAPI_AUTH_MODE={tedapi_auth_mode} was requested but "
+                        f"{pw.tedapi_mode} mode connected with auth={active_auth_mode}")
     # Set mode string with transport detail
     def build_mode_string(control=False):
         """Build mode display string from active transports."""
@@ -1212,6 +1241,9 @@ def get_transport_health():
             "active": True,
             "status": "ok" if tedapi.din else "unavailable",
             "host": tedapi.gw_ip,
+            # basic needs a route to 192.168.91.1; bearer does not — the first
+            # thing to check when a gateway answers 403 or nothing at all
+            "auth_mode": str(getattr(tedapi, "auth_mode", AuthMode.BASIC)),
         }
     # Control transport
     if pw_control:

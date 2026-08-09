@@ -1,5 +1,13 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t100 (9 Aug 2026)
+
+* Upgraded to pyPowerwall v0.16.5 (TEDAPI bearer authentication mode — see library release notes)
+* New `PW_TEDAPI_AUTH_MODE=basic|bearer` environment variable (default `basic`): `basic` uses HTTP Basic Auth and needs a route to `192.168.91.1`; `bearer` logs in via `/api/login/Basic` and wraps queries in an AuthEnvelope, which works from the home network without a static route and is what Powerwall 3 requires. Pair `bearer` with `PW_TEDAPI_API_VERSION=V2026_06` — the bearer transport expects the Tesla-signed GraphQL query set.
+* Applies to full TEDAPI mode (`PW_GW_PWD` set, `PW_PASSWORD` blank); hybrid and v1r modes always use their own transport. An unrecognized value warns at startup and falls back to `basic` instead of failing into a restart loop.
+* The active auth mode is reported in `/stats` and `/health`, taken from the live TEDAPI client rather than the env var, and a warning is logged when the requested mode differs from the active one (e.g. hybrid mode always speaks basic). `PW_TEDAPI_API_VERSION` and `PW_TEDAPI_AUTH_MODE` now appear in the `/stats` config dump.
+* New `proxy/tests/test_tedapi_auth_mode.py` (7 tests — env wiring and `/stats`/`/health` reporting; the lenient-coercion behavior itself lives in the library as `AuthMode.coerce(..., default=)` and is tested there)
+
 ### Proxy t99 (8 Aug 2026)
 
 * **Maintenance mode notice.** New feature development on the proxy has moved to [pypowerwall-server](https://github.com/jasonacox/pypowerwall-server) — a from-scratch rewrite with multi-gateway support, orchestrated polling, a management console, and graceful degradation built in from the start (tracked in [#254](https://github.com/jasonacox/pypowerwall/issues/254); raised as a concern by [@Nexarian](https://github.com/Nexarian) in [#359](https://github.com/jasonacox/pypowerwall/pull/359#issuecomment-5205063644))

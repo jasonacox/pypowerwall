@@ -280,6 +280,7 @@ UI and Advanced Settings
 * PW_RSA_KEY_PATH - Path to RSA-4096 private key PEM for v1r LAN mode ("")
 * PW_WIFI_HOST - Optional WiFi TEDAPI host used as fallback transport for v1r follower queries ("")
 * PW_TEDAPI_API_VERSION - TEDAPI query/protobuf set: "V2024_06" (default, legacy QueryType path) or "V2026_06" (Tesla-signed GraphQL / bearer path) ("V2024_06")
+* PW_TEDAPI_AUTH_MODE - How TEDAPI authenticates to the gateway: "basic" (default) HTTP Basic Auth, which needs a route to 192.168.91.1; or "bearer" to log in via `/api/login/Basic` and wrap queries in an AuthEnvelope, which works from the home network without a static route and is what Powerwall 3 requires ("basic"). Pair `bearer` with `PW_TEDAPI_API_VERSION=V2026_06` — the bearer transport expects the signed GraphQL query set. Applies to full TEDAPI mode (`PW_GW_PWD` without `PW_PASSWORD`); hybrid and v1r modes always use their own transport. An unrecognized value warns and falls back to "basic"; the active mode is reported in `/stats` and `/health`.
 * PW_NEG_SOLAR - Allow negative solar values ("yes") - set to "no" to clamp negative solar to 0 and shift it to load
 * PW_SITE_ZERO_THRESHOLD - Zero out site power readings below this absolute wattage to suppress phantom grid noise ("0" = disabled)
 * PROXY_BASE_URL - If you are using a reverse proxy to put pypowerwall in a subdirectory, set it here to adjust the URLs for the flow animation (`/` by default)

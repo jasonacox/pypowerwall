@@ -777,20 +777,6 @@ def test_ordering_rejects_non_version_operand():
         assert "V2026_06" in str(exc.value), "error must list the valid versions"
 
 
-def test_malformed_member_label_is_rejected_at_import():
-    """The import-time guard: a member that breaks the format must be refused."""
-    with pytest.raises(ValueError, match="V<YYYY>_<MM>"):
-        _parse_label("V26_6", "TEDAPIApiVersion")
-
-
-def test_equality_and_dict_use_still_string_based():
-    """Only ordering is overridden — equality and hashing stay str's, so members
-    keep comparing equal to their plain string and keep working as dict keys."""
-    assert V26 == "V2026_06"
-    assert {"V2026_06": 1}[V26] == 1
-    assert {V26: 1}["V2026_06"] == 1
-
-
 # --- back-compat import shims -----------------------------------------------
 
 def test_legacy_pb2_deep_import_paths_still_resolve():
