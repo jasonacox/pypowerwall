@@ -502,7 +502,12 @@ def enter_fallback_mode(reason="TEDAPI data unavailable"):
             _fallback_mode["fallback_since"] = time.time()
             _fallback_mode["recovery_attempts"] = 0
             _fallback_mode["last_recovery_attempt"] = None
-            _fallback_mode["next_attempt_at"] = time.time() + TEDAPI_RECOVERY_INITIAL_INTERVAL
+            # The recovery loop always sleeps TEDAPI_PROBE_INTERVAL before it can
+            # attempt, so the real due time is floored by the probe interval -
+            # without the max() this field under-reports whenever
+            # PW_TEDAPI_PROBE_INTERVAL is set above the 60s initial interval.
+            _fallback_mode["next_attempt_at"] = time.time() + max(
+                TEDAPI_RECOVERY_INITIAL_INTERVAL, TEDAPI_PROBE_INTERVAL)
             log.warning(
                 f"Proxy entering SolarOnly fallback mode: {reason}. "
                 "Background recovery will retry periodically."
@@ -625,11 +630,16 @@ def _tedapi_probe_and_recover():
                     recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
                 else:
                     next_interval = min(recovery_interval * 2, TEDAPI_RECOVERY_MAX_INTERVAL)
+                    # Elapsed time to the next attempt is probe_sleep +
+                    # max(next_interval - probe_sleep, 0) = max(next_interval,
+                    # TEDAPI_PROBE_INTERVAL) - clamp so next_attempt_at and the
+                    # log line don't under-report with a large probe interval.
+                    next_due = max(next_interval, TEDAPI_PROBE_INTERVAL)
                     with _fallback_mode_lock:
-                        _fallback_mode["next_attempt_at"] = time.time() + next_interval
+                        _fallback_mode["next_attempt_at"] = time.time() + next_due
                     log.warning(
                         f"TEDAPI recovery attempt #{attempt_num} failed — "
-                        f"staying in SolarOnly, next retry in {next_interval}s"
+                        f"staying in SolarOnly, next retry in {next_due}s"
                     )
                     recovery_interval = next_interval
 
