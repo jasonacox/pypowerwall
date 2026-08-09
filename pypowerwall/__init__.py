@@ -258,8 +258,14 @@ class Powerwall(object):
             log.error("Unable to determine mode to connect.")
             return False
         # Snapshot the configured mode - fallback mutates self.mode/cloudmode/
-        # fleetapi, and a total failure must not leave that mutation behind
-        configured_mode = (self.mode, self.cloudmode, self.fleetapi)
+        # fleetapi/tedapi/tedapi_mode, and a total failure must not leave that
+        # mutation behind. tedapi/tedapi_mode matter as much as mode: the local-
+        # mode exception handler zeroes them, and a stale tedapi=False after a
+        # fully-failed connect(retry=False) wedged the proxy's TEDAPI recovery
+        # thread forever - its loop gate (`if not pw.tedapi: continue`) never
+        # reached the reconnect call again (#366).
+        configured_mode = (self.mode, self.cloudmode, self.fleetapi,
+                           self.tedapi, self.tedapi_mode)
         total_wait = 0
         count = 0
         while count < 3:
@@ -350,7 +356,8 @@ class Powerwall(object):
                     continue
         # Total failure - restore the configured mode so a subsequent
         # connect() retries in the configured order, not where fallback left off
-        self.mode, self.cloudmode, self.fleetapi = configured_mode
+        (self.mode, self.cloudmode, self.fleetapi,
+         self.tedapi, self.tedapi_mode) = configured_mode
         return False
 
     def _no_client(self) -> bool:

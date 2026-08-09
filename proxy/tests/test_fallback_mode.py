@@ -31,6 +31,7 @@ def _reset_fallback_state():
         _fallback_mode["fallback_since"] = None
         _fallback_mode["recovery_attempts"] = 0
         _fallback_mode["last_recovery_attempt"] = None
+        _fallback_mode["next_attempt_at"] = None
 
 
 class TestFallbackModeLifecycle(unittest.TestCase):
@@ -91,6 +92,19 @@ class TestFallbackModeLifecycle(unittest.TestCase):
             self.assertIsNone(_fallback_mode["fallback_since"])
             self.assertEqual(_fallback_mode["recovery_attempts"], 0)
             self.assertIsNone(_fallback_mode["last_recovery_attempt"])
+            self.assertIsNone(_fallback_mode["next_attempt_at"])
+
+    def test_enter_seeds_next_attempt_at(self):
+        """enter_fallback_mode() schedules the first recovery attempt (#366 observability)."""
+        before = time.time()
+        enter_fallback_mode("test")
+
+        with _fallback_mode_lock:
+            self.assertIsNotNone(_fallback_mode["next_attempt_at"])
+            self.assertGreaterEqual(
+                _fallback_mode["next_attempt_at"],
+                before + server.TEDAPI_RECOVERY_INITIAL_INTERVAL,
+            )
 
     def test_exit_is_idempotent(self):
         """Double exit_fallback_mode() is a no-op — no error when called outside fallback."""
@@ -174,6 +188,20 @@ class TestHealthEndpointFallbackMode(BaseDoGetTest):
         self.assertIsNotNone(fm["fallback_duration_seconds"])
         self.assertGreaterEqual(fm["fallback_duration_seconds"], 0)
         self.assertEqual(fm["recovery_attempts"], 2)
+
+    def test_health_includes_recovery_observability_fields(self):
+        """/health surfaces next_attempt_at and recovery_thread_alive so a wedged
+        recovery thread is visible without inferring it from a frozen counter (#366)."""
+        enter_fallback_mode("test probe failure")
+
+        self._do_health()
+
+        fm = self.get_written_json()["fallback_mode"]
+        self.assertIn("next_attempt_at", fm)
+        self.assertIsNotNone(fm["next_attempt_at"])
+        self.assertIn("recovery_thread_alive", fm)
+        # In tests no recovery thread is started -> None (n/a), never a crash
+        self.assertIsNone(fm["recovery_thread_alive"])
 
 
 class TestHealthResetClearsFallback(BaseDoGetTest):
@@ -328,6 +356,74 @@ class TestProbeIntervalEnvParsing(unittest.TestCase):
     def test_module_constant_is_at_least_5(self):
         """TEDAPI_PROBE_INTERVAL loaded by the running process must respect the clamp."""
         self.assertGreaterEqual(server.TEDAPI_PROBE_INTERVAL, 5)
+
+
+class TestRecoveryLoopGate(unittest.TestCase):
+    """Regression tests for the #366 recovery wedge: the pw.tedapi gate in
+    _tedapi_probe_and_recover() must never short-circuit the recovery branch
+    once the proxy is in fallback mode."""
+
+    def setUp(self):
+        _reset_fallback_state()
+
+    def tearDown(self):
+        _reset_fallback_state()
+
+    def _run_loop(self, mock_pw, max_sleeps=6):
+        """Run the recovery loop with sleeps mocked out, terminating via
+        SystemExit (which the loop's shutdown handler turns into a break)."""
+        sleep_count = [0]
+
+        def fake_sleep(_seconds):
+            sleep_count[0] += 1
+            if sleep_count[0] >= max_sleeps:
+                raise SystemExit
+
+        with patch.object(server, 'pw', mock_pw), \
+             patch.object(server.time, 'sleep', side_effect=fake_sleep):
+            server._tedapi_probe_and_recover()
+
+    def test_falsy_tedapi_does_not_block_recovery_in_fallback(self):
+        """#366 wedge: with pw.tedapi falsy (as a fully-failed connect used to
+        leave it) and fallback active, the loop must still reach pw.connect()
+        and recover — not spin on the gate forever."""
+        enter_fallback_mode("wedge regression")
+        mock_pw = Mock()
+        mock_pw.tedapi = False          # corrupted state from failed reconnect
+        mock_pw.connect.return_value = True
+        mock_pw.version.return_value = "25.10.1"
+
+        self._run_loop(mock_pw)
+
+        mock_pw.connect.assert_called()
+        with _fallback_mode_lock:
+            self.assertFalse(_fallback_mode["is_fallback_mode"])
+
+    def test_failed_attempt_updates_next_attempt_at(self):
+        """A failed recovery attempt schedules next_attempt_at in the future."""
+        enter_fallback_mode("backoff scheduling")
+        mock_pw = Mock()
+        mock_pw.tedapi = False
+        mock_pw.connect.return_value = False   # recovery keeps failing
+
+        self._run_loop(mock_pw)
+
+        with _fallback_mode_lock:
+            self.assertTrue(_fallback_mode["is_fallback_mode"])
+            self.assertGreater(_fallback_mode["recovery_attempts"], 0)
+            self.assertIsNotNone(_fallback_mode["next_attempt_at"])
+            self.assertGreater(_fallback_mode["next_attempt_at"], time.time())
+
+    def test_gate_still_skips_probe_when_healthy_and_no_tedapi(self):
+        """Outside fallback the gate keeps its original behavior: a falsy
+        pw.tedapi skips probing entirely (non-TEDAPI modes must not be probed)."""
+        mock_pw = Mock()
+        mock_pw.tedapi = None
+
+        self._run_loop(mock_pw)
+
+        mock_pw.version.assert_not_called()
+        mock_pw.connect.assert_not_called()
 
 
 if __name__ == "__main__":

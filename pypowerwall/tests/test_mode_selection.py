@@ -254,3 +254,33 @@ class TestConnectFailureRestoresMode:
             mock_cls.return_value.authenticate.side_effect = None
         assert pw.connect() is True
         assert pw.mode == "local"
+
+    def test_failed_reconnect_preserves_tedapi_state(self, mock_clients):
+        """A fully-failed reconnect must not leave pw.tedapi=False behind (#366).
+
+        The local-mode exception handler zeroes tedapi/tedapi_mode while walking
+        the fallback chain; on total failure both must be restored along with
+        mode/cloudmode/fleetapi. A stale tedapi=False wedged the proxy's TEDAPI
+        recovery thread forever - its loop gate never reached the reconnect call."""
+        import pypowerwall
+        # Connect successfully in full TEDAPI mode first
+        pw = pypowerwall.Powerwall(host="192.168.91.1", password="", gw_pwd="ABCDELNDYT")
+        assert pw.tedapi
+        assert pw.tedapi_mode == "full"
+        saved_tedapi = pw.tedapi
+        # Now the gateway goes away and a reconnect fails across all modes
+        self._fail_all(mock_clients)
+        assert pw.connect(retry=False) is False
+        assert pw.tedapi is saved_tedapi
+        assert pw.tedapi_mode == "full"
+        assert pw.mode == "local"
+
+    def test_failed_initial_connect_leaves_tedapi_off(self, mock_clients):
+        """Total failure on the very first connect restores the initial
+        (tedapi=False, tedapi_mode="off") state, not a partial mutation."""
+        import pypowerwall
+        self._fail_all(mock_clients)
+        pw = pypowerwall.Powerwall(host="192.168.91.1", password="", gw_pwd="ABCDELNDYT")
+        assert pw.tedapi is False
+        assert pw.tedapi_mode == "off"
+        assert pw.mode == "local"

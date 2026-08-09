@@ -140,7 +140,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t97"
+BUILD = "t98"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -436,6 +436,7 @@ _fallback_mode = {
     "fallback_since": None,       # timestamp when fallback was entered
     "recovery_attempts": 0,
     "last_recovery_attempt": None,
+    "next_attempt_at": None,      # timestamp the next recovery attempt is due
 }
 _fallback_mode_lock = threading.RLock()
 _fallback_recovery_lock = threading.Lock()  # serializes pw.connect() calls from recovery thread
@@ -501,6 +502,7 @@ def enter_fallback_mode(reason="TEDAPI data unavailable"):
             _fallback_mode["fallback_since"] = time.time()
             _fallback_mode["recovery_attempts"] = 0
             _fallback_mode["last_recovery_attempt"] = None
+            _fallback_mode["next_attempt_at"] = time.time() + TEDAPI_RECOVERY_INITIAL_INTERVAL
             log.warning(
                 f"Proxy entering SolarOnly fallback mode: {reason}. "
                 "Background recovery will retry periodically."
@@ -517,6 +519,7 @@ def exit_fallback_mode():
             _fallback_mode["fallback_since"] = None
             _fallback_mode["recovery_attempts"] = 0
             _fallback_mode["last_recovery_attempt"] = None
+            _fallback_mode["next_attempt_at"] = None
             log.info(
                 f"Proxy recovered from SolarOnly fallback mode after "
                 f"{duration:.0f}s and {attempts} recovery attempt(s)."
@@ -556,13 +559,20 @@ def _tedapi_probe_and_recover():
         try:
             time.sleep(TEDAPI_PROBE_INTERVAL)
 
-            # Only probe when in TEDAPI mode
-            if not getattr(pw, 'tedapi', None):
-                consecutive_failures = 0
-                continue
-
             with _fallback_mode_lock:
                 in_fallback = _fallback_mode["is_fallback_mode"]
+
+            # Only probe when in TEDAPI mode — but never let this gate block
+            # recovery once in fallback. A fully-failed pw.connect(retry=False)
+            # used to leave pw.tedapi=False (fixed in Powerwall.connect(), #366),
+            # and with the gate checked first the loop short-circuited here on
+            # every iteration: no further recovery attempt, no log line at any
+            # level, is_fallback_mode stuck True until restart. Checking
+            # in_fallback first makes that wedge structurally impossible even if
+            # some future path corrupts pw.tedapi again.
+            if not in_fallback and not getattr(pw, 'tedapi', None):
+                consecutive_failures = 0
+                continue
 
             if not in_fallback:
                 # Healthy path: probe TEDAPI (treat exceptions as probe failures)
@@ -615,6 +625,8 @@ def _tedapi_probe_and_recover():
                     recovery_interval = TEDAPI_RECOVERY_INITIAL_INTERVAL
                 else:
                     next_interval = min(recovery_interval * 2, TEDAPI_RECOVERY_MAX_INTERVAL)
+                    with _fallback_mode_lock:
+                        _fallback_mode["next_attempt_at"] = time.time() + next_interval
                     log.warning(
                         f"TEDAPI recovery attempt #{attempt_num} failed — "
                         f"staying in SolarOnly, next retry in {next_interval}s"
@@ -1125,6 +1137,7 @@ if control_secret:
 
 
 # Start background TEDAPI probe/recovery thread (TEDAPI modes only)
+_recovery_thread = None
 if tedapi_recovery_enabled and pw.tedapi:
     _recovery_thread = threading.Thread(
         target=_tedapi_probe_and_recover, name="tedapi-recovery", daemon=True
@@ -1672,7 +1685,11 @@ class Handler(BaseHTTPRequestHandler):
                     ),
                     "recovery_attempts": fm_snap["recovery_attempts"],
                     "last_recovery_attempt": fm_snap["last_recovery_attempt"],
+                    "next_attempt_at": fm_snap["next_attempt_at"],
                     "recovery_enabled": tedapi_recovery_enabled,
+                    "recovery_thread_alive": (
+                        _recovery_thread.is_alive() if _recovery_thread else None
+                    ),
                 }
 
                 # Add cache memory usage statistics
@@ -1797,7 +1814,11 @@ class Handler(BaseHTTPRequestHandler):
                 ),
                 "recovery_attempts": fm["recovery_attempts"],
                 "last_recovery_attempt": fm["last_recovery_attempt"],
+                "next_attempt_at": fm["next_attempt_at"],
                 "recovery_enabled": tedapi_recovery_enabled,
+                "recovery_thread_alive": (
+                    _recovery_thread.is_alive() if _recovery_thread else None
+                ),
             }
 
             if graceful_degradation:
@@ -1865,6 +1886,7 @@ class Handler(BaseHTTPRequestHandler):
                 _fallback_mode["fallback_since"] = None
                 _fallback_mode["recovery_attempts"] = 0
                 _fallback_mode["last_recovery_attempt"] = None
+                _fallback_mode["next_attempt_at"] = None
 
             if graceful_degradation:
                 with _last_good_responses_lock:

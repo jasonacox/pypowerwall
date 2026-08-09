@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t98 (8 Aug 2026)
+
+* Fixed TEDAPI auto-recovery sometimes stopping after a failed attempt, leaving the proxy wedged in SolarOnly fallback until restart (issue [#366](https://github.com/jasonacox/pypowerwall/issues/366))
+* Root cause was in the library: a fully-failed `pw.connect(retry=False)` left `pw.tedapi=False` behind, and the recovery loop's `pw.tedapi` gate then short-circuited every iteration — no further attempt, no log line at any level, `last_recovery_attempt` frozen at attempt #1. Fixed in `Powerwall.connect()` (tedapi state is now part of the snapshot/restore) and hardened in the proxy: the gate no longer applies while in fallback mode, so this class of wedge is structurally impossible even if `pw.tedapi` is corrupted again
+* New observability fields in `/health` and `/stats` under `"fallback_mode"`: `next_attempt_at` (timestamp the next recovery attempt is due) and `recovery_thread_alive` — operators can now spot a stalled recovery directly instead of inferring it from a frozen `recovery_attempts` counter
+
 ### Proxy t97 (18 Jul 2026)
 
 * Added TEDAPI SolarOnly fallback mode tracking and auto-recovery (issue [#360](https://github.com/jasonacox/pypowerwall/issues/360))
