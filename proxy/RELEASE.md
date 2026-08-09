@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t99 (8 Aug 2026)
+
+* **Maintenance mode notice.** New feature development on the proxy has moved to [pypowerwall-server](https://github.com/jasonacox/pypowerwall-server) — a from-scratch rewrite with multi-gateway support, orchestrated polling, a management console, and graceful degradation built in from the start (tracked in [#254](https://github.com/jasonacox/pypowerwall/issues/254); raised as a concern by [@Nexarian](https://github.com/Nexarian) in [#359](https://github.com/jasonacox/pypowerwall/pull/359#issuecomment-5205063644))
+* This proxy is **not** being removed and will keep receiving critical and security fixes — it remains a drop-in replacement for existing deployments (same environment variables, same API surface). New features (multi-inverter/multi-gateway metric naming, MQTT publishing, etc.) are being built in pypowerwall-server instead, not backported here
+* Added a maintenance-mode banner to `proxy/README.md`, the module docstring, the proxy startup log line, and the `/help` status page — no functional/API changes
+
 ### Proxy t98 (8 Aug 2026)
 
 * Fixed TEDAPI auto-recovery sometimes stopping after a failed attempt, leaving the proxy wedged in SolarOnly fallback until restart (issue [#366](https://github.com/jasonacox/pypowerwall/issues/366))

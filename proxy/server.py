@@ -7,6 +7,15 @@
  Author: Jason A. Cox
  For more information see https://github.com/jasonacox/pypowerwall
 
+ Project Status: Maintenance Mode
+    This proxy continues to receive critical/security fixes and remains a
+    drop-in replacement for existing deployments, but new feature development
+    has moved to pypowerwall-server (https://github.com/jasonacox/pypowerwall-server),
+    a full rewrite with multi-gateway support, orchestrated polling, and a
+    management console. New deployments, and anyone needing multi-gateway
+    support, should start there instead. See proxy/README.md and
+    https://github.com/jasonacox/pypowerwall/issues/254 for details.
+
  Proxy Server Tool
     This tool will proxy API calls to /api/meters/aggregates and
     /api/system_status/soe - You can containerize it and run it as
@@ -140,7 +149,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t98"
+BUILD = "t99"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -338,6 +347,11 @@ else:
         % (pypowerwall.version, BUILD, httptype, port)
     )
 log.info("pyPowerwall Proxy Started")
+log.info(
+    "NOTICE: This proxy is in maintenance mode - new features are being built in "
+    "pypowerwall-server (https://github.com/jasonacox/pypowerwall-server). "
+    "See proxy/README.md for details."
+)
 
 # Log network error handling configuration
 if suppress_network_errors:
@@ -2204,6 +2218,12 @@ class Handler(BaseHTTPRequestHandler):
             <style>p, td, th { font-family: Helvetica, Arial, sans-serif; font-size: 10px;}</style>\n
             <style>h1 { font-family: Helvetica, Arial, sans-serif; font-size: 20px;}</style>\n
             </head>\n<body>\n<h1>pyPowerwall [%VER%] Proxy [%BUILD%] </h1>\n\n
+            <p style="background-color:#fff3cd;border:1px solid #ffe69c;padding:8px;max-width:640px;">
+            &#9888;&#65039; <b>Maintenance Mode:</b> new feature development has moved to
+            <a href="https://github.com/jasonacox/pypowerwall-server">pypowerwall-server</a>.
+            This proxy keeps receiving critical/security fixes and remains a drop-in
+            replacement. See <a href="https://github.com/jasonacox/pypowerwall/blob/main/proxy/README.md">
+            proxy/README.md</a> for details.</p>\n\n
             <p><a href="https://github.com/jasonacox/pypowerwall/blob/main/proxy/HELP.md">
             Click here for API help.</a></p>\n\n
             <table>\n<tr><th align ="left">Stat</th><th align ="left">Value</th></tr>
