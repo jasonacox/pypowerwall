@@ -106,6 +106,18 @@ class TestFallbackModeLifecycle(unittest.TestCase):
                 before + server.TEDAPI_RECOVERY_INITIAL_INTERVAL,
             )
 
+    def test_enter_next_attempt_at_floored_by_probe_interval(self):
+        """With PW_TEDAPI_PROBE_INTERVAL above the 60s initial recovery interval,
+        next_attempt_at must reflect the probe-interval floor - the loop cannot
+        attempt sooner than one probe sleep (Copilot review on #367)."""
+        before = time.time()
+        with patch.object(server, 'TEDAPI_PROBE_INTERVAL', 120):
+            enter_fallback_mode("large probe interval")
+
+        with _fallback_mode_lock:
+            self.assertGreaterEqual(
+                _fallback_mode["next_attempt_at"], before + 120)
+
     def test_exit_is_idempotent(self):
         """Double exit_fallback_mode() is a no-op — no error when called outside fallback."""
         # Call from non-fallback state — must not raise

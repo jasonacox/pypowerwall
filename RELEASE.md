@@ -1,9 +1,5 @@
 # RELEASE NOTES
 
-## Unreleased
-
-* docs: the bundled `proxy/` is entering maintenance mode — new feature development has moved to [pypowerwall-server](https://github.com/jasonacox/pypowerwall-server). The proxy continues to receive critical/security fixes and remains a drop-in replacement for existing deployments. See `proxy/README.md` and [#254](https://github.com/jasonacox/pypowerwall/issues/254). No code behavior changes in the library itself.
-
 ## v0.16.4 - TEDAPI Auto-Recovery Wedge Fix
 
 * fix: `Powerwall.connect()` now restores `tedapi`/`tedapi_mode` along with `mode`/`cloudmode`/`fleetapi` when all connection modes fail. Previously a fully-failed `connect(retry=False)` left `tedapi=False` behind (the local-mode fallback handler zeroes it), which permanently wedged the proxy's TEDAPI auto-recovery thread — its `pw.tedapi` gate short-circuited every iteration, so no further recovery attempt was ever made until restart. (#366)
