@@ -1,6 +1,6 @@
 # RELEASE NOTES
 
-## v0.16.5 - TEDAPI Bearer Authentication Mode
+## v0.17.0 - TEDAPI Bearer Authentication Mode
 
 * feat(tedapi): new `bearer` authentication mode — logs in via `POST /api/login/Basic` with the installer credentials (full gateway password from the QR sticker) to obtain a Bearer token, then wraps every TEDAPI query in a protobuf `AuthEnvelope` with `externalAuth.type = PRESENCE`. Unlike `basic` (HTTP Basic Auth to `192.168.91.1`, which is only reachable over the Gateway's Wi-Fi), bearer also works over the Gateway's wired LAN IP. Hardware-verified on PW2 and solar-only inverters over both a WiFi static route and the hardwired LAN IP. **Not supported on Powerwall 3** — for PW3 wired access use v1r mode (`rsa_key_path`).
   * `Powerwall(..., tedapi_auth_mode="basic")` — new constructor parameter; `"basic"` (default) keeps existing HTTP Basic behavior, `"bearer"` selects the new transport. Forwarded through `PyPowerwallTEDAPI` to `TEDAPI(auth_mode=...)`.
@@ -11,8 +11,19 @@
 * fix(tedapi): `get_firmware_version()`/`_get_system_info()` now parse correctly under `V2026_06` + bearer — the bearer transport (like v1r) hands back a bare `MessageEnvelope`, not the full `Message` wrapper, and the envelope-class choice and the unwrap now follow the same bare/full test. The version gate also uses ordered comparison (`< V2026_06`) so future query sets inherit the V2026 path.
 * feat(proxy): new `PW_TEDAPI_AUTH_MODE=basic|bearer` env var (default `basic`); applies to full TEDAPI mode (`PW_GW_PWD` set, `PW_PASSWORD` blank). An unrecognized env value warns and falls back to `basic` (via `AuthMode.coerce(..., default=AuthMode.BASIC)`) — a typo in a container env var shouldn't surface later as a fatal connection error and a restart loop. The active auth mode is reported in `/stats` and `/health`, and the proxy warns when the requested mode differs from the one the live client actually uses (hybrid mode builds its own TEDAPI and always speaks basic). `PW_TEDAPI_API_VERSION` and `PW_TEDAPI_AUTH_MODE` now appear in the `/stats` config dump.
 * tests: new `test_bearer_auth.py` (55 tests — `AuthMode.coerce` strict and `default=` fallback paths, login/logout, AuthEnvelope wrap/unwrap, re-login on token expiry, V2026_06 coupling warning, v1r incompatibility) and `test_bearer_wiring.py` (22 tests — parameter plumbing `Powerwall` → `PyPowerwallTEDAPI` → `TEDAPI` and the CLI flag); `test_api_version.py` extended (+21 tests); new proxy `test_tedapi_auth_mode.py` (7 tests — env wiring and `/stats`/`/health` reporting)
+* fix(tests): `Powerwall` fixtures in `test_powerwall_core.py` / `test_cloud_regressions.py` now patch the cloud backend by name — previously a cached `.pypowerwall.auth` in the working directory caused them to attempt real network access (masked in CI, which never has one)
 * docs: README (`tedapi_auth_mode` parameter), proxy README (`PW_TEDAPI_AUTH_MODE`), and the `server.py` header gain a TEDAPI Mode section covering both settings
-* Proxy BUILD bumped to `t100`; library version bumped to `0.16.5`
+* Proxy BUILD bumped to `t100`; library version bumped to `0.17.0` (minor bump — new user-facing authentication transport)
+
+## v0.16.5 - PW3 Lifetime Energy Accumulators via Gateway Local API
+
+* feat(tedapi): lifetime `energy_imported` / `energy_exported` accumulators are now merged into the synthesized `/api/meters/aggregates` response for Powerwall 3 systems — resolving dashboards showing zero cumulative energy. (#221, #372)
+  * PW3 firmware still serves the classic `/api/meters/aggregates` endpoint behind the customer login (`POST /api/login/Basic` → Bearer token); the TEDAPI adapter now fetches that native payload and overlays the energy fields (site/battery/load/solar) that the TEDAPI payloads do not carry
+  * Works in both v1r wired-LAN mode and WiFi full-tedapi mode; password auto-derived the same way the library already does it
+  * Merged sections carry a provenance note in their `disclaimer` (`…; energy from gateway local API`)
+  * Gateways without the endpoint degrade gracefully — values stay `0` exactly as before, with a 5-minute retry backoff so unsupported firmware isn't hammered; successful fetches are cached on the normal poll cadence
+  * Thread-safety hardening for the proxy's multi-threaded use: bounded lock acquisition with stale-cache fallback on contention (no unbounded queuing behind a slow fetch), double-checked cache inside the lock (no thundering-herd refetch on cache expiry), and last-good-host/`lan_failed`-aware host ordering so a dead wired LAN doesn't add a full timeout to every poll
+  * Verified against a live Powerwall 3 (firmware 26.x): values cross-check against solar/grid/battery/load power flows and tick upward between polls
 
 ## v0.16.4 - TEDAPI Auto-Recovery Wedge Fix
 
