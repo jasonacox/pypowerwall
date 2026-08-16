@@ -104,6 +104,7 @@ Create `pypowerwall/<mode>/pypowerwall_<mode>.py` with `class PyPowerwall<Mode>(
 
 - `pytest -m "not live"` must pass before any change is complete. Live tests require real hardware and self-skip.
 - **`Powerwall` construction must never require network in tests** — unit tests patch backend classes by name (`patch('pypowerwall.PyPowerwallTEDAPI')`). Don't restructure imports in `pypowerwall/__init__.py` in a way that breaks patch-by-name.
+- **Real sockets are blocked.** An autouse fixture in `pypowerwall/tests/conftest.py` raises `NetworkAccessAttempted` on any real connection from a non-live test. This matters because TEDAPI defaults to `GW_IP = 192.168.91.1` — a real gateway — behind a 5-attempt urllib3 Retry, so an unmocked test would spend ~60s talking to live hardware and then pass anyway. Mock at the transport boundary (`TEDAPI.session`, or `TEDAPI._init_session` when `connect()` runs); mark genuinely hardware-dependent tests `@pytest.mark.live`. The exception derives from `BaseException` on purpose, so the library's broad `except Exception` handlers can't swallow it.
 - Coverage is thin outside the tested paths (~12% overall). When you touch a code path, add a test for it — especially failure paths (`None` payloads, missing dict keys, gateway timeouts), which is where most latent bugs in this codebase live.
 - Proxy tests mock at the `proxy.server.pw` boundary; don't make real HTTP calls in tests.
 - End-to-end verification without hardware: run the `pwsimulator` Docker image and point `example.py` (or the proxy) at it.

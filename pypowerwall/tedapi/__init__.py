@@ -76,6 +76,7 @@ from pypowerwall.helpers import lookup
 from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
+from .auth_mode import AuthMode
 from .queries import apply_query, get_query, QueryRole
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
@@ -147,8 +148,20 @@ class TEDAPI:
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str | None = None, rsa_key_path: str | None = None,
                  wifi_host: str | None = None,
-                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06) -> None:
-        """Initialize the TEDAPI client for Powerwall Gateway communication."""
+                 tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06,
+                 auth_mode: AuthMode | str = AuthMode.BASIC,
+                 timezone: str = "America/Los_Angeles") -> None:
+        """Initialize the TEDAPI client for Powerwall Gateway communication.
+
+        auth_mode selects how HTTP requests to the gateway are authenticated:
+        "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
+        only reachable over the gateway's Wi-Fi; "bearer" logs in via
+        /api/login/Basic for a Bearer token and wraps each query in an
+        AuthEnvelope, which also works over the wired LAN IP. Bearer works on
+        Powerwall 2 and solar-only gateways but NOT Powerwall 3 — PW3 wired
+        access is v1r's job. Bearer is mutually exclusive with v1r (its own
+        RSA transport).
+        """
         self.debug = debug
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
         # V2026_06 (Tesla-signed pairs sent via the energy_device graphql path).
@@ -160,12 +173,32 @@ class TEDAPI:
         self.poolmaxsize = poolmaxsize # maximum size of the connection
         self.pwcache = {}  # holds the cached data for api
         self.timeout = timeout
+        self.timezone = timezone  # tz string for login clientInfo payloads
         self.pwcooldown = 0
         self.gw_ip = host
         self.din = None
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
         self.v1r = v1r
         self.v1r_transport = None
+        # Bearer auth support.
+        self.auth_mode = AuthMode.coerce(auth_mode)  # raises on unknown values
+        self.token = None  # Bearer token (only used in bearer mode)
+        if self.auth_mode == AuthMode.BEARER and v1r:
+            raise ValueError(f"auth_mode='{self.auth_mode}' is incompatible with v1r mode")
+        # Bearer is the AuthEnvelope transport modality that needs the Tesla-signed
+        # GraphQL query set introduced in V2026_06 (or anything newer — this is a minimum,
+        # not an exact match). Pairing it with the older V2024_06 QueryType queries
+        # wraps those legacy queries in the AuthEnvelope transport — a combination
+        # those gateways may reject or answer only partially. Warn (don't fail) so
+        # existing legacy+bearer setups keep working while surfacing the likely misconfiguration.
+        if (self.auth_mode == AuthMode.BEARER
+                and self.tedapi_api_version < TEDAPIApiVersion.V2026_06):
+            log.warning(
+                "auth_mode='%s' needs the signed-GraphQL query set introduced in "
+                "V2026_06, but tedapi_api_version='%s' is selected; legacy queries "
+                "sent over the bearer AuthEnvelope transport may be rejected or "
+                "return partial data. Set tedapi_api_version='V2026_06' or newer.",
+                self.auth_mode, self.tedapi_api_version)
         # WiFi fallback for v1r mode.
         # - Follower queries always use wifi_host when set.
         # - Primary queries fall back to wifi_host when the wired LAN (v1r) is down.
@@ -210,10 +243,11 @@ class TEDAPI:
             self.gw_pwd = gw_pwd
         if self.debug:
             self.set_debug(True)
-        log.debug(f"TEDAPI initialized with pwcacheexpire={self.pwcacheexpire}s, pwconfigexpire={self.pwconfigexpire}s, v1r={self.v1r}")
+        log.debug(f"TEDAPI initialized with auth_mode={self.auth_mode}, pwcacheexpire={self.pwcacheexpire}s, pwconfigexpire={self.pwconfigexpire}s, v1r={self.v1r}")
         # Connect to Powerwall Gateway
         if not self.connect():
             log.error("Failed to connect to Powerwall Gateway")
+
 
     # TEDAPI Functions
     def set_debug(self, toggle=True, color=True):
@@ -329,12 +363,12 @@ class TEDAPI:
                 return self.pwcache["config"]
             else:
                 log.debug(f"Cache expired for config (age: {age:.2f}s, expire: {self.pwconfigexpire}s)")
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         # Only acquire lock if we need to make an API call
         data = None
         try:
@@ -344,7 +378,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
                         log.debug("Using Cached Payload (double-check)")
                         return self.pwcache["config"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -406,20 +440,30 @@ class TEDAPI:
                     pb.tail.value = 1
                     url = f'https://{self.gw_ip}/tedapi/v1'
                     try:
-                        r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                        log.debug(f"Response Code: {r.status_code}")
-                        if r.status_code in BUSY_CODES:
-                            # Rate limited - Switch to cooldown mode for 5 minutes
-                            self.pwcooldown = time.perf_counter() + 300
-                            log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                            return None
-                        if r.status_code != HTTPStatus.OK:
-                            log.error(f"Error fetching config: {r.status_code}")
-                            return None
-                        # Decode response
-                        tedapi = tedapi_pb2.Message()
-                        tedapi.ParseFromString(decompress_response(r.content))
-                        payload = tedapi.message.config.recv.file.text
+                        if self.auth_mode == AuthMode.BEARER:
+                            # Bearer transport wraps/unwraps the AuthEnvelope and
+                            # returns a bare MessageEnvelope (legacy config format).
+                            raw = self._authenv_post(pb.SerializeToString())
+                            if raw is None:
+                                return None
+                            env = tedapi_pb2.MessageEnvelope()
+                            env.ParseFromString(raw)
+                            payload = env.config.recv.file.text
+                        else:
+                            r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
+                            log.debug(f"Response Code: {r.status_code}")
+                            if r.status_code in BUSY_CODES:
+                                # Rate limited - Switch to cooldown mode for 5 minutes
+                                self.pwcooldown = time.perf_counter() + 300
+                                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                                return None
+                            if r.status_code != HTTPStatus.OK:
+                                log.error(f"Error fetching config: {r.status_code}")
+                                return None
+                            # Decode response
+                            tedapi = tedapi_pb2.Message()
+                            tedapi.ParseFromString(decompress_response(r.content))
+                            payload = tedapi.message.config.recv.file.text
                         try:
                             data = json.loads(payload)
                         except json.JSONDecodeError as e:
@@ -650,12 +694,12 @@ class TEDAPI:
                 return self.pwcache["status"]
             else:
                 log.debug(f"Cache expired for status (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         # Only acquire lock if we need to make an API call
         data = None
         try:
@@ -665,7 +709,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
                         log.debug("Using Cached Payload (double-check)")
                         return self.pwcache["status"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -729,12 +773,12 @@ class TEDAPI:
                 return self.pwcache["controller"]
             else:
                 log.debug(f"Cache expired for controller (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         # Only acquire lock if we need to make an API call
         data = None
         try:
@@ -744,7 +788,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
                         log.debug("Using Cached Payload (double-check)")
                         return self.pwcache["controller"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -804,12 +848,12 @@ class TEDAPI:
             if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
                 log.debug("Using Cached Firmware")
                 return self.pwcache["firmware"]
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         payload = None
         try:
             with acquire_lock_with_backoff(self_function, self.timeout):
@@ -818,7 +862,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
                         log.debug("Using Cached Firmware (double-check)")
                         return self.pwcache["firmware"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -875,15 +919,21 @@ class TEDAPI:
         """Parse a firmware/system-info response into a SystemInfo. The two api
         versions differ only in the pb2 module and the protobuf field paths
         (V2026_SYS_SCHEMA / V2024_SYS_SCHEMA); SystemInfo.from_proto does the rest."""
-        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
-            tx, ed = self._import_v2026_pb2()
-            envelope_cls, message_cls, schema = ed.MessageEnvelope, tx.Message, V2026_SYS_SCHEMA
-        else:
+
+        if self.tedapi_api_version < TEDAPIApiVersion.V2026_06:
             envelope_cls, message_cls, schema = (
                 tedapi_pb2.MessageEnvelope, tedapi_pb2.Message, V2024_SYS_SCHEMA)
-        env = envelope_cls() if self.v1r else message_cls()
+        else:
+            tx, ed = self._import_v2026_pb2()
+            envelope_cls, message_cls, schema = ed.MessageEnvelope, tx.Message, V2026_SYS_SCHEMA
+
+        # v1r and bearer transports hand back a bare MessageEnvelope (no outer
+        # Message/Tail); basic returns the full Message. Both the class choice and
+        # the unwrap must follow the same test — see _parse_response.
+        bare = self.v1r or self.auth_mode == AuthMode.BEARER
+        env = envelope_cls() if bare else message_cls()
         env.ParseFromString(response)
-        return SystemInfo.from_proto(env if self.v1r else env.message, schema)
+        return SystemInfo.from_proto(env if bare else env.message, schema)
 
     @uses_api_lock
     def get_components(self, self_function=None, force=False):
@@ -904,12 +954,12 @@ class TEDAPI:
             if cache_age < self.pwconfigexpire:
                 log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s)")
                 return self.pwcache["components"]
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         components = None
         try:
             with acquire_lock_with_backoff(self_function, self.timeout):
@@ -919,7 +969,7 @@ class TEDAPI:
                     if cache_age < self.pwconfigexpire:
                         log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s) (double-check)")
                         return self.pwcache["components"]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -1216,12 +1266,12 @@ class TEDAPI:
             if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
                 log.debug("Using Cached Battery Block")
                 return self.pwcache[din]
-        
+
         # Check cooldown BEFORE acquiring lock
         if not force and self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
             return None
-        
+
         data = None
         try:
             with acquire_lock_with_backoff(self_function, self.timeout):
@@ -1230,7 +1280,7 @@ class TEDAPI:
                     if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
                         log.debug("Using Cached Battery Block (double-check)")
                         return self.pwcache[din]
-            
+
                 # Re-check cooldown after acquiring lock
                 if not force and self.pwcooldown > time.perf_counter():
                     log.debug('Rate limit cooldown period - Pausing API calls')
@@ -1286,7 +1336,11 @@ class TEDAPI:
         else:
             session.headers.update({'Connection': 'close'})  # This disables keep-alive
         session.verify = False
-        session.auth = ('Tesla_Energy_Device', self.gw_pwd)
+        if self.auth_mode != AuthMode.BEARER:
+            # Bearer uses an Authorization header (set at login) plus the
+            # protobuf-layer AuthEnvelope(PRESENCE) added in _authenv_post.
+            # Only basic uses HTTP auth.
+            session.auth = ('Tesla_Energy_Device', self.gw_pwd)
         session.headers.update({'Content-type': 'application/octet-stream'})
         return session
 
@@ -1397,6 +1451,91 @@ class TEDAPI:
             self.wifi_available = False
             return None
 
+    def _bearer_login(self):
+        """Authenticate via /api/login/Basic and store a Bearer token on the session."""
+        url = f'https://{self.gw_ip}/api/login/Basic'
+        payload = {
+            "username": "installer",
+            "password": self.gw_pwd,
+            "email": "installer@tesla.com",
+            "clientInfo": {"timezone": self.timezone},
+        }
+        log.debug(f"Bearer login to {url}")
+        r = self.session.post(url, json=payload, timeout=self.timeout)
+        r.raise_for_status()
+        data = r.json()
+        if "token" not in data:
+            raise ValueError("Login response missing 'token' field")
+        self.token = data["token"]
+        self.session.headers["Authorization"] = f"Bearer {self.token}"
+        log.debug(f"Bearer token acquired ({len(self.token)} chars)")
+
+    def _bearer_logout(self):
+        """Invalidate the Bearer token session (best-effort)."""
+        if not self.token:
+            return
+        try:
+            self.session.get(
+                f'https://{self.gw_ip}/api/logout',
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=self.timeout,
+            )
+        except Exception:
+            pass
+        self.token = None
+        self.session.headers.pop("Authorization", None)
+
+    def _authenv_post(self, pb_bytes: bytes, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
+        """Bearer transport: wrap the inner MessageEnvelope in an AuthEnvelope,
+        POST it (the Bearer header rides on the session), and unwrap the
+        AuthEnvelope response back to the bare MessageEnvelope bytes.
+
+        The inner envelope is field 1 of the serialized Message regardless of
+        protobuf version, so it (and the response payload) are extracted with
+        the version-independent AuthEnvelope shape rather than a versioned
+        Message class. Returns bare MessageEnvelope bytes, or None on error.
+        """
+        # Extract inner MessageEnvelope bytes: field 1 of the Message reads back
+        # as AuthEnvelope.payload (bytes); the trailing Tail (field 2) is ignored.
+        try:
+            src = combined_pb2.AuthEnvelope()
+            src.ParseFromString(pb_bytes)
+            envelope_bytes = src.payload or pb_bytes
+        except Exception:
+            envelope_bytes = pb_bytes
+        auth = combined_pb2.AuthEnvelope()
+        auth.payload = envelope_bytes
+        auth.externalAuth.type = combined_pb2.EXTERNAL_AUTH_TYPE_PRESENCE
+        data = auth.SerializeToString()
+
+        url = f'https://{self.gw_ip}{url_suffix}'
+        r = self.session.post(url, data=data, timeout=self.timeout)
+        if r.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
+            # Bearer token expired/rejected -> silently re-login once and retry.
+            log.debug("Bearer token expired or rejected, re-authenticating...")
+            try:
+                self._bearer_login()
+                r = self.session.post(url, data=data, timeout=self.timeout)
+            except Exception as e:
+                log.error(f"Bearer re-authentication failed: {e}")
+                return None
+        if r.status_code in BUSY_CODES:
+            self.pwcooldown = time.perf_counter() + 300
+            log.error('Possible Rate limited by Powerwall - Activating 5 minute cooldown')
+            return None
+        if r.status_code != HTTPStatus.OK:
+            log.error(f"Error posting to {url_suffix}: {r.status_code}")
+            return None
+        content = decompress_response(r.content)
+        # Unwrap AuthEnvelope -> bare MessageEnvelope bytes (field 1 = payload).
+        try:
+            auth_resp = combined_pb2.AuthEnvelope()
+            auth_resp.ParseFromString(content)
+            return auth_resp.payload
+        except Exception as e:
+            log.error(f"Error unwrapping auth-envelope response: {e}")
+            return None
+
     def connect(self, force=False):
         """Connect to the Powerwall Gateway and retrieve the DIN.
 
@@ -1425,24 +1564,32 @@ class TEDAPI:
                 log.debug(f"Error closing previous session: {e}")
         self.session = self._init_session()
         try:
-            resp = self.session.get(url, timeout=self.timeout)
-            if resp.status_code != HTTPStatus.OK:
-                # PW2/+ gateways serve their web portal on GET / (HTTP 200);
-                # Powerwall 3 has no local web portal and responds with an
-                # error (403/404 depending on firmware) - any non-200 means
-                # PW3, EXCEPT transient/retryable codes (429/5xx), which must
-                # not flip PW3 detection (a busy PW2 is still a PW2), so the
-                # prior value is kept for those.
-                if resp.status_code in BUSY_CODES or resp.status_code in RETRY_FORCE_CODES:
-                    log.debug(f"Transient response {resp.status_code} from gateway - "
-                              f"keeping PW3 detection as {self.pw3}")
-                else:
-                    log.debug("Detected Powerwall 3 Gateway")
-                    self.pw3 = True
+            if self.auth_mode == AuthMode.BEARER:
+                # Bearer mode: log in for a token first (no anonymous web portal
+                # probe — the Authorization header gates every subsequent call).
+                self._bearer_login()
+            else:
+                resp = self.session.get(url, timeout=self.timeout)
+                if resp.status_code != HTTPStatus.OK:
+                    # PW2/+ gateways serve their web portal on GET / (HTTP 200);
+                    # Powerwall 3 has no local web portal and responds with an
+                    # error (403/404 depending on firmware) - any non-200 means
+                    # PW3, EXCEPT transient/retryable codes (429/5xx), which must
+                    # not flip PW3 detection (a busy PW2 is still a PW2), so the
+                    # prior value is kept for those.
+                    if resp.status_code in BUSY_CODES or resp.status_code in RETRY_FORCE_CODES:
+                        log.debug(f"Transient response {resp.status_code} from gateway - "
+                                  f"keeping PW3 detection as {self.pw3}")
+                    else:
+                        log.debug("Detected Powerwall 3 Gateway")
+                        self.pw3 = True
             self.din = self.get_din()
         except Exception as e:
             log.error(f"Unable to connect to Powerwall Gateway {self.gw_ip}")
-            log.error("Please verify your your host has a route to the Gateway.")
+            if self.auth_mode == AuthMode.BEARER:
+                log.error("Please verify the gateway password and that the host is reachable.")
+            else:
+                log.error("Please verify your host has a route to the Gateway.")
             log.error(f"Error Details: {e}")
         return self.din
 
@@ -1579,7 +1726,9 @@ class TEDAPI:
             return None
         tx, ed = self._import_v2026_pb2()
         try:
-            if self.v1r and not from_wifi:
+            # Bearer transport (and v1r LAN) hands back a bare MessageEnvelope;
+            # basic and the v1r WiFi-follower fallback return a full Message.
+            if (self.v1r and not from_wifi) or self.auth_mode == AuthMode.BEARER:
                 env = ed.MessageEnvelope()
                 env.ParseFromString(response)
             else:
@@ -1646,6 +1795,14 @@ class TEDAPI:
             return self._parse_signed_query_response(response, from_wifi=from_wifi)
         if self.v1r and not from_wifi:
             return self._parse_v1r_query_response(response)
+        if self.auth_mode == AuthMode.BEARER:
+            # Bearer transport already unwrapped the AuthEnvelope to a bare
+            # MessageEnvelope (no outer Message/Tail wrapper).
+            env = tedapi_pb2.MessageEnvelope()
+            env.ParseFromString(response)
+            if config:
+                return env.config.recv.file.text
+            return env.payload.recv.text
         tedapi = tedapi_pb2.Message()
         tedapi.ParseFromString(response)
         if config:
@@ -1762,6 +1919,11 @@ class TEDAPI:
                 self.lan_fail_count = 0
                 self.lan_last_success = time.time()
             return inner
+        elif self.auth_mode == AuthMode.BEARER:
+            # Bearer transport wraps the envelope in an AuthEnvelope and returns
+            # the unwrapped bare MessageEnvelope bytes (parsed by
+            # _parse_response's bearer branch, like the v1r bare case).
+            return self._authenv_post(pb_bytes, url_suffix=url_suffix)
         else:
             url = f'https://{self.gw_ip}{url_suffix}'
             r = self.session.post(url, data=pb_bytes, timeout=self.timeout)
@@ -1877,7 +2039,7 @@ class TEDAPI:
 
         fan_speed_signal_names = {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"}
 
-        # List to store the valid fan speed values  
+        # List to store the valid fan speed values
         result = {}
 
         # Iterate over each component in the "msa" list
@@ -1900,7 +2062,7 @@ class TEDAPI:
     def get_fan_speeds(self, force=False):
         """Get the fan speeds for the Powerwall or inverter."""
         return self.extract_fan_speeds(self.get_device_controller(force=force))
-      
+
 
     def derive_meter_config(self, config) -> dict:
         """Build a lookup dictionary for Neurio meter configuration from config."""
@@ -2456,8 +2618,8 @@ class TEDAPI:
     def get_blocks(self, force=False):
         """
         Get the list of battery blocks from the Powerwall Gateway.
-        
-        This includes both regular Powerwall units (with inverters) and battery 
+
+        This includes both regular Powerwall units (with inverters) and battery
         expansion packs (battery-only units without inverters).
         """
         vitals = self.vitals(force=force)

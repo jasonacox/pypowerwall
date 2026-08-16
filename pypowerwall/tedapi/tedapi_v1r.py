@@ -15,7 +15,6 @@ import hashlib
 import json
 import logging
 import math
-import ssl
 import struct
 import time
 import uuid
@@ -163,8 +162,8 @@ class TEDAPIv1r:
 
     def _sign(self, tlv_payload: bytes) -> bytes:
         """RSA PKCS1v15 + SHA-512 sign the TLV payload."""
-        from cryptography.hazmat.primitives.asymmetric import padding
         from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
         return self._private_key.sign(
             data=tlv_payload,
             padding=padding.PKCS1v15(),

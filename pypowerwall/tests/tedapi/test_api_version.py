@@ -7,17 +7,21 @@ import logging
 from unittest.mock import patch
 
 import pytest
-
-from pypowerwall.tedapi import TEDAPI, tedapi_pb2
+from pypowerwall.tedapi import TEDAPI
 from pypowerwall.tedapi import queries as q
-from pypowerwall.tedapi.api_version import LABEL_RE, TEDAPIApiVersion, _parse_label
+from pypowerwall.tedapi import tedapi_pb2
+from pypowerwall.tedapi.api_version import (LABEL_RE, TEDAPIApiVersion,
+                                            _parse_label)
+from pypowerwall.tedapi.auth_mode import AuthMode
 
 # The V2026_06 pb2 requires protobuf>=6.33.6 (guarded gencode); the default path
 # stays on the 4.25.1 floor, so import lazily and skip the build/parse tests when
 # the newer runtime isn't present (mirrors test_system_info.py).
 try:
-    from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
-    from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
+    from pypowerwall.tedapi.protobuf.V2026_06 import \
+        tedapi_v2_energy_device_pb2 as ed
+    from pypowerwall.tedapi.protobuf.V2026_06 import \
+        tedapi_v2_transport_pb2 as tx
     HAVE_V2026 = True
 except Exception:
     tx = ed = None
@@ -158,6 +162,7 @@ def test_V2026_06_call_site_roles_are_all_mapped():
     ``get_query(role, V2026_06)``). Scans the real source so a new call site
     (or a renamed role) can't silently regress this."""
     import ast
+
     import pypowerwall.tedapi as tedapi_mod
 
     src = open(tedapi_mod.__file__, encoding="utf-8").read()
@@ -519,6 +524,44 @@ def test_equality_and_dict_use_still_string_based():
     assert V26 == "V2026_06"
     assert {"V2026_06": 1}[V26] == 1
     assert {V26: 1}["V2026_06"] == 1
+
+# --- auth_mode <-> version coupling warning ---------------------------------
+# Bearer is the AuthEnvelope transport the newer gateways use and needs the
+# signed-GraphQL query set introduced in V2026_06 (a MINIMUM, not an exact
+# match). Selecting it with the older V2024_06 default is a likely
+# misconfiguration, so __init__ warns (non-fatal).
+#
+# All three tests key off one marker: the positive test asserts it is present
+# and the negative tests assert it is absent. Reword the warning and the
+# positive test fails loudly, instead of the negative tests silently passing
+# because they now search for a string that no longer exists anywhere.
+COUPLING_WARNING_MARKER = "signed-GraphQL query set"
+
+
+@pytest.mark.parametrize("mode", [AuthMode.BEARER, "bearer"])
+def test_bearer_with_legacy_version_warns(mode, caplog):
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi"), \
+            patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
+        TEDAPI("pw", auth_mode=mode)  # tedapi_api_version defaults to V2024_06
+    assert COUPLING_WARNING_MARKER in caplog.text
+    assert "V2026_06" in caplog.text
+    assert "V2024_06" in caplog.text
+
+
+@pytest.mark.parametrize("mode", [AuthMode.BEARER, "bearer"])
+def test_bearer_with_V2026_06_is_silent(mode, caplog):
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi"), \
+            patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
+        TEDAPI("pw", auth_mode=mode, tedapi_api_version="V2026_06")
+    assert COUPLING_WARNING_MARKER not in caplog.text
+
+
+def test_basic_mode_with_legacy_version_is_silent(caplog):
+    # the default transport must never emit the bearer coupling warning
+    with caplog.at_level(logging.WARNING, logger="pypowerwall.tedapi"), \
+            patch('pypowerwall.tedapi.TEDAPI.connect', return_value="X"):
+        TEDAPI("pw")  # auth_mode=basic, version=V2024_06 (both defaults)
+    assert COUPLING_WARNING_MARKER not in caplog.text
 
 
 # --- back-compat import shims -----------------------------------------------

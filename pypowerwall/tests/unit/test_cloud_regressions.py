@@ -152,8 +152,10 @@ class TestSimulatedVitalsAlerts:
         from unittest.mock import MagicMock as MM
         import pypowerwall
         vitals = self._vitals(cloud, island_status='mystery_state')
-        pw = pypowerwall.Powerwall(host='', password='', email='test@example.com',
-                                   cloudmode=True)
+        # Patch by name so a cached .pypowerwall.auth in CWD can't reach the network
+        with patch('pypowerwall.PyPowerwallCloud'):
+            pw = pypowerwall.Powerwall(host='', password='', email='test@example.com',
+                                       cloudmode=True)
         pw.client = MM()
         pw.client.vitals.return_value = vitals
         pw.client.poll.return_value = None  # no grid_status augmentation
