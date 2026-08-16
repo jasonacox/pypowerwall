@@ -408,6 +408,28 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         for section in (data['site'], data['load'], data['solar'], data['battery']):
             section['last_communication_time'] = timestamp
 
+        # Merge lifetime energy accumulators from the gateway's local API when
+        # available. PW3 firmware still serves /api/meters/aggregates behind the
+        # customer login and it carries energy_imported/energy_exported values
+        # that the TEDAPI payloads do not (see issue #221).
+        native = self.tedapi.get_native_meters_aggregates(force=force)
+        if isinstance(native, dict):
+            for section in ("site", "battery", "load", "solar"):
+                native_section = native.get(section)
+                if not isinstance(native_section, dict):
+                    continue
+                merged = False
+                for field in ("energy_exported", "energy_imported"):
+                    value = native_section.get(field)
+                    # bool is an int subclass - exclude it
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                        data[section][field] = value
+                        merged = True
+                if merged:
+                    note = "energy from gateway local API"
+                    existing = data[section].get("disclaimer")
+                    data[section]["disclaimer"] = f"{existing}; {note}" if existing else note
+
         return data
 
     def _extract_site_section(self, status, config, force):
