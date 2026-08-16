@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.16.5 - PW3 Lifetime Energy Accumulators via Gateway Local API
+
+* feat(tedapi): lifetime `energy_imported` / `energy_exported` accumulators are now merged into the synthesized `/api/meters/aggregates` response for Powerwall 3 systems — resolving dashboards showing zero cumulative energy. (#221, #372)
+  * PW3 firmware still serves the classic `/api/meters/aggregates` endpoint behind the customer login (`POST /api/login/Basic` → Bearer token); the TEDAPI adapter now fetches that native payload and overlays the energy fields (site/battery/load/solar) that the TEDAPI payloads do not carry
+  * Works in both v1r wired-LAN mode and WiFi full-tedapi mode; password auto-derived the same way the library already does it
+  * Merged sections carry a provenance note in their `disclaimer` (`…; energy from gateway local API`)
+  * Gateways without the endpoint degrade gracefully — values stay `0` exactly as before, with a 5-minute retry backoff so unsupported firmware isn't hammered; successful fetches are cached on the normal poll cadence
+  * Verified against a live Powerwall 3 (firmware 26.x): values cross-check against solar/grid/battery/load power flows and tick upward between polls
+
 ## v0.16.4 - TEDAPI Auto-Recovery Wedge Fix
 
 * fix: `Powerwall.connect()` now restores `tedapi`/`tedapi_mode` along with `mode`/`cloudmode`/`fleetapi` when all connection modes fail. Previously a fully-failed `connect(retry=False)` left `tedapi=False` behind (the local-mode fallback handler zeroes it), which permanently wedged the proxy's TEDAPI auto-recovery thread — its `pw.tedapi` gate short-circuited every iteration, so no further recovery attempt was ever made until restart. (#366)
