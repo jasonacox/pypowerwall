@@ -82,6 +82,12 @@ urllib3.disable_warnings(InsecureRequestWarning)
 # TEDAPI Fixed Gateway IP Address
 GW_IP = "192.168.91.1"
 
+# Gateway local API (customer login) constants - see issue #221
+# Bearer tokens from /api/login/Basic live ~1h; refresh well before that
+CUSTOMER_TOKEN_EXPIRE: Final[float] = 3000.0
+# Backoff before retrying an unavailable local API endpoint
+NATIVE_FAIL_RETRY: Final[float] = 300.0
+
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
 RETRY_FORCE_CODES: Final[List[int]] = [int(i) for i in [
@@ -174,6 +180,15 @@ class TEDAPI:
         self.lan_fail_count = 0     # consecutive LAN failures
         self.lan_recover_after = 0  # timestamp after which to retry LAN
         self.lan_last_success = 0   # timestamp of last successful LAN call
+        # Gateway local API (classic /api/* endpoints) customer-login state.
+        # PW3 firmware still serves /api/meters/aggregates and friends behind a
+        # customer Bearer token from POST /api/login/Basic - see issue #221.
+        self.customer_token: Optional[str] = None
+        self.customer_token_time: float = 0.0
+        self.customer_host: Optional[str] = None
+        self.api_session: Optional[requests.Session] = None
+        self._customer_lock = threading.Lock()
+        self._native_fail_until: float = 0.0  # backoff when endpoint unavailable
         if v1r:
             if not password or not rsa_key_path:
                 raise ValueError("v1r mode requires password and rsa_key_path")
@@ -2549,5 +2564,145 @@ class TEDAPI:
                         }
 
         return block
+
+    # ------------------------------------------------------------------
+    # Gateway Local API (classic /api/* endpoints via customer login)
+    # ------------------------------------------------------------------
+
+    def _customer_password(self) -> Optional[str]:
+        """
+        Customer password for the gateway local API.
+        Tesla derives it from the last 5 characters of the gateway password.
+        """
+        if self.v1r and self.v1r_transport is not None and self.v1r_transport.password:
+            return self.v1r_transport.password
+        if self.gw_pwd and len(self.gw_pwd) >= 5:
+            return self.gw_pwd[-5:]
+        return None
+
+    def _customer_login(self, host: str) -> bool:
+        """Login via POST /api/login/Basic and cache the Bearer token."""
+        password = self._customer_password()
+        if not password:
+            log.debug("No customer password available for gateway local API login")
+            return False
+        if self.api_session is None:
+            self.api_session = requests.Session()
+            self.api_session.verify = False
+        payload = {
+            "username": "customer",
+            "password": password,
+            "email": "nobody@nowhere.com",
+            "clientInfo": {"timezone": "UTC"},
+        }
+        try:
+            r = self.api_session.post(
+                f"https://{host}/api/login/Basic",
+                data=payload,
+                timeout=self.timeout,
+            )
+        except Exception as e:
+            log.debug(f"Gateway local API login error on {host}: {e}")
+            return False
+        if r.status_code != HTTPStatus.OK:
+            log.debug(f"Gateway local API login failed ({r.status_code}) on {host}")
+            return False
+        try:
+            token = r.json().get("token")
+        except ValueError:
+            token = None
+        if not token:
+            return False
+        self.customer_token = token
+        self.customer_token_time = time.time()
+        self.customer_host = host
+        log.debug(f"Gateway local API login ok on {host}")
+        return True
+
+    def _native_get(self, host: str, path: str) -> Optional[Dict[Any, Any]]:
+        """GET a local API path with the cached customer Bearer token."""
+        for attempt in (1, 2):  # one retry with a fresh token on auth failure
+            if (
+                not self.customer_token
+                or self.customer_host != host
+                or time.time() - self.customer_token_time > CUSTOMER_TOKEN_EXPIRE
+            ):
+                if not self._customer_login(host):
+                    return None
+            if self.api_session is None:
+                self.api_session = requests.Session()
+                self.api_session.verify = False
+            try:
+                r = self.api_session.get(
+                    f"https://{host}{path}",
+                    headers={"Authorization": f"Bearer {self.customer_token}"},
+                    timeout=self.timeout,
+                )
+            except Exception as e:
+                log.debug(f"Gateway local API GET {path} on {host} error: {e}")
+                return None
+            if r.status_code == HTTPStatus.OK:
+                try:
+                    return r.json()
+                except ValueError:
+                    log.debug(f"Gateway local API GET {path} on {host} - non-JSON payload")
+                    return None
+            if r.status_code in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN) and attempt == 1:
+                # Token may be stale or issued for a different host - retry once
+                self.customer_token = None
+                continue
+            log.debug(f"Gateway local API GET {path} on {host} -> {r.status_code} - not available")
+            return None
+        return None
+
+    def get_native_api(self, path: str) -> Optional[Dict[Any, Any]]:
+        """
+        Fetch a classic gateway local API endpoint (e.g. /api/meters/aggregates)
+        using the customer login (Bearer token). Tries the primary gateway and,
+        when configured, the WiFi fallback host. Returns a dict or None when the
+        endpoint is not available on this firmware.
+        """
+        if not self._customer_password():
+            return None
+        hosts = [self.gw_ip]
+        if self.wifi_host and self.wifi_host != self.gw_ip:
+            hosts.append(self.wifi_host)
+        for host in hosts:
+            try:
+                with self._customer_lock:
+                    data = self._native_get(host, path)
+            except Exception as e:
+                log.debug(f"Gateway local API {path} on {host} failed: {e}")
+                data = None
+            if data is not None:
+                return data
+        return None
+
+    def get_native_meters_aggregates(self, force: bool = False) -> Optional[Dict[Any, Any]]:
+        """
+        Fetch the gateway's native /api/meters/aggregates payload.
+
+        PW3 firmware (25.x+) still serves this endpoint behind the customer
+        Bearer token - including the lifetime energy_imported / energy_exported
+        accumulators that the TEDAPI payloads do not carry (issue #221).
+        Returns None when the endpoint is unavailable, with a retry backoff so
+        unsupported gateways are not hammered on every poll.
+        """
+        key = "native_meters_aggregates"
+        if not force:
+            if key in self.pwcachetime and time.time() - self.pwcachetime[key] < self.pwcacheexpire:
+                return self.pwcache.get(key)
+            if self._native_fail_until > time.time():
+                return self.pwcache.get(key)
+        data = self.get_native_api("/api/meters/aggregates")
+        if isinstance(data, dict) and all(
+            isinstance(data.get(s), dict) for s in ("site", "battery", "load", "solar")
+        ):
+            self.pwcachetime[key] = time.time()
+            self.pwcache[key] = data
+            return data
+        # Endpoint missing/blocked - backoff before trying again
+        self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
+        return None
 
     # End of TEDAPI Class
