@@ -1,5 +1,6 @@
 import json
 import pytest
+from unittest.mock import patch
 from pypowerwall import Powerwall
 from pypowerwall.pypowerwall_base import PyPowerwallBase
 from pypowerwall.exceptions import PyPowerwallInvalidConfigurationParameter
@@ -72,8 +73,11 @@ class StubClientWithIslanding(StubClient):
 
 @pytest.fixture(name="pw")
 def fixture_powerwall():
-    # Instantiate Powerwall but replace its client with our stub
-    inst = Powerwall(host='', password='', email='test@example.com', cloudmode=True, siteid=None)
+    # Instantiate Powerwall but replace its client with our stub.
+    # Patch the cloud backend by name - a cached .pypowerwall.auth in CWD would
+    # otherwise let connect() reach the real Tesla auth endpoint.
+    with patch('pypowerwall.PyPowerwallCloud'):
+        inst = Powerwall(host='', password='', email='test@example.com', cloudmode=True, siteid=None)
     inst.client = StubClient()
     return inst
 
@@ -169,7 +173,9 @@ def test_go_off_grid_with_confirm_delegates(pw):
 def fixture_pw_validator():
     """Powerwall created in cloud mode (no local connection) used as a harness
     to invoke _validate_init_configuration() with arbitrary host values."""
-    inst = Powerwall(host='', password='', email='test@example.com', cloudmode=True)
+    # Patch by name so a cached .pypowerwall.auth in CWD can't reach the network
+    with patch('pypowerwall.PyPowerwallCloud'):
+        inst = Powerwall(host='', password='', email='test@example.com', cloudmode=True)
     # Switch to local-like state so only the host block runs during re-validation
     inst.cloudmode = False
     inst.fleetapi = False
