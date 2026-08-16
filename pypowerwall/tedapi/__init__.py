@@ -37,6 +37,8 @@
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
     get_fan_speed() - Get the fan speeds in RPM
+    get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
+    get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -187,7 +189,8 @@ class TEDAPI:
         self.customer_token_time: float = 0.0
         self.customer_host: Optional[str] = None
         self.api_session: Optional[requests.Session] = None
-        self._customer_lock = threading.Lock()
+        # Reentrant so get_native_meters_aggregates can hold it across get_native_api
+        self._customer_lock = threading.RLock()
         self._native_fail_until: float = 0.0  # backoff when endpoint unavailable
         if v1r:
             if not password or not rsa_key_path:
@@ -2667,16 +2670,29 @@ class TEDAPI:
         hosts = [self.gw_ip]
         if self.wifi_host and self.wifi_host != self.gw_ip:
             hosts.append(self.wifi_host)
-        for host in hosts:
-            try:
-                with self._customer_lock:
+        if len(hosts) > 1:
+            if self.customer_host in hosts:
+                # Last host that served us goes first - a dead primary would
+                # otherwise cost a full timeout on every fetch
+                hosts.sort(key=lambda h: h != self.customer_host)
+            elif self.lan_failed:
+                hosts.reverse()
+        # Bounded acquisition - don't pile threads up behind a slow fetch
+        if not self._customer_lock.acquire(timeout=self.timeout):
+            log.debug(f"Gateway local API busy - skipping {path}")
+            return None
+        try:
+            for host in hosts:
+                try:
                     data = self._native_get(host, path)
-            except Exception as e:
-                log.debug(f"Gateway local API {path} on {host} failed: {e}")
-                data = None
-            if data is not None:
-                return data
-        return None
+                except Exception as e:
+                    log.debug(f"Gateway local API {path} on {host} failed: {e}")
+                    data = None
+                if data is not None:
+                    return data
+            return None
+        finally:
+            self._customer_lock.release()
 
     def get_native_meters_aggregates(self, force: bool = False) -> Optional[Dict[Any, Any]]:
         """
@@ -2694,15 +2710,29 @@ class TEDAPI:
                 return self.pwcache.get(key)
             if self._native_fail_until > time.time():
                 return self.pwcache.get(key)
-        data = self.get_native_api("/api/meters/aggregates")
-        if isinstance(data, dict) and all(
-            isinstance(data.get(s), dict) for s in ("site", "battery", "load", "solar")
-        ):
-            self.pwcachetime[key] = time.time()
-            self.pwcache[key] = data
-            return data
-        # Endpoint missing/blocked - backoff before trying again
-        self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
-        return None
+        # Bounded acquisition - on contention serve cached data instead of queuing
+        if not self._customer_lock.acquire(timeout=self.timeout):
+            log.debug("Gateway local API busy - returning cached aggregates")
+            return self.pwcache.get(key)
+        try:
+            # Double-check after acquiring - another thread may have refreshed
+            if not force:
+                if key in self.pwcachetime and \
+                        time.time() - self.pwcachetime[key] < self.pwcacheexpire:
+                    return self.pwcache.get(key)
+                if self._native_fail_until > time.time():
+                    return self.pwcache.get(key)
+            data = self.get_native_api("/api/meters/aggregates")
+            if isinstance(data, dict) and all(
+                isinstance(data.get(s), dict) for s in ("site", "battery", "load", "solar")
+            ):
+                self.pwcachetime[key] = time.time()
+                self.pwcache[key] = data
+                return data
+            # Endpoint missing/blocked - backoff before trying again
+            self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
+            return None
+        finally:
+            self._customer_lock.release()
 
     # End of TEDAPI Class

@@ -7,6 +7,7 @@
   * Works in both v1r wired-LAN mode and WiFi full-tedapi mode; password auto-derived the same way the library already does it
   * Merged sections carry a provenance note in their `disclaimer` (`…; energy from gateway local API`)
   * Gateways without the endpoint degrade gracefully — values stay `0` exactly as before, with a 5-minute retry backoff so unsupported firmware isn't hammered; successful fetches are cached on the normal poll cadence
+  * Thread-safety hardening for the proxy's multi-threaded use: bounded lock acquisition with stale-cache fallback on contention (no unbounded queuing behind a slow fetch), double-checked cache inside the lock (no thundering-herd refetch on cache expiry), and last-good-host/`lan_failed`-aware host ordering so a dead wired LAN doesn't add a full timeout to every poll
   * Verified against a live Powerwall 3 (firmware 26.x): values cross-check against solar/grid/battery/load power flows and tick upward between polls
 
 ## v0.16.4 - TEDAPI Auto-Recovery Wedge Fix

@@ -421,7 +421,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 merged = False
                 for field in ("energy_exported", "energy_imported"):
                     value = native_section.get(field)
-                    if isinstance(value, (int, float)):
+                    # bool is an int subclass - exclude it
+                    if isinstance(value, (int, float)) and not isinstance(value, bool):
                         data[section][field] = value
                         merged = True
                 if merged:
