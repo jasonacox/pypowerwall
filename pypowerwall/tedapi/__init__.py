@@ -344,25 +344,27 @@ class TEDAPI:
             return self.pwcache.get(key)
 
     @staticmethod
-    def _decode_json(payload: Optional[str]) -> dict:
-        """json.loads for a query payload: a missing (None) or malformed payload
-        is logged and degrades to {} rather than aborting the fetch."""
+    def _decode_json(payload: Optional[str]) -> Optional[dict]:
+        """Decode a query payload, preserving an explicitly empty JSON object."""
+        if payload is None:
+            return None
         try:
             return json.loads(payload)
         except (json.JSONDecodeError, TypeError) as e:
             log.error(f"Error Decoding JSON: {e}")
-            return {}
+            return None
 
-    def _fetch_query(self, role: QueryRole, *, recipient_din: str = None,
-                     sender_din: str = None, tail: int = 1, din: str = None,
+    def _fetch_query(self, role: QueryRole, *, recipient_din: Optional[str] = None,
+                     sender_din: Optional[str] = None, tail: int = 1,
+                     din: Optional[str] = None,
                      url_suffix: str = '/tedapi/v1', use_wifi: bool = False,
                      config: bool = False) -> Optional[dict]:
         """One TEDAPI query end to end: build the request for ``role``
         (_build_request), post it (_post_tedapi, or _post_tedapi_wifi for a v1r
         follower), decode the answer (_parse_response + JSON). Returns the
-        payload dict — {} when the payload is empty or malformed, so a bad
-        answer degrades to empty data — or None when the transport produced no
-        response, so the caller leaves its cache alone."""
+        payload dict, including {} for a well-formed empty JSON object. A
+        missing or malformed payload returns None so the caller leaves its
+        cache alone."""
         request_bytes = self._build_request(
             role, recipient_din=recipient_din, sender_din=sender_din, tail=tail)
         if use_wifi:
@@ -1437,8 +1439,8 @@ class TEDAPI:
                 'pip install -U protobuf'
             ) from e
 
-    def _build_signed_query_request(self, query, *, recipient_din: str = None,
-                                    sender_din: str = None, tail: int = 1) -> bytes:
+    def _build_signed_query_request(self, query, *, recipient_din: Optional[str] = None,
+                                    sender_din: Optional[str] = None, tail: int = 1) -> bytes:
         """Build a V2026_06 SIGNED GraphQL request: the energy_device
         MessageEnvelope (graphql.queryRequest, format=SIGNED) wrapped in the
         v2 transport Message + Tail. `query` is a V2026_06 TEDAPIQuery whose
@@ -1511,8 +1513,8 @@ class TEDAPI:
             )
         return resp.data or None
 
-    def _build_request(self, role: QueryRole, *, recipient_din: str = None,
-                       sender_din: str = None, tail: int = 1) -> bytes:
+    def _build_request(self, role: QueryRole, *, recipient_din: Optional[str] = None,
+                       sender_din: Optional[str] = None, tail: int = 1) -> bytes:
         """Build a TEDAPI request for ``role``, dispatching on tedapi_api_version.
 
         V2026_06 emits a Tesla-signed GraphQL request; every other version emits
