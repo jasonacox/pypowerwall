@@ -256,11 +256,12 @@ class TestFetchQuery:
         with patch.object(api, "_post_tedapi", return_value=None):
             assert api._fetch_query("device_controller_basic") is None
 
-    def test_malformed_payload_degrades_to_empty_dict(self, caplog):
+    def test_malformed_payload_is_none(self, caplog):
+        """A malformed payload decodes to None so the caller leaves its cache alone."""
         api = make_tedapi()
         with patch.object(api, "_post_tedapi", return_value=make_message(text="{not json")), \
                 caplog.at_level(logging.ERROR):
-            assert api._fetch_query("device_controller_basic") == {}
+            assert api._fetch_query("device_controller_basic") is None
         assert "Error Decoding JSON" in caplog.text
 
     def test_routes_din_and_url_suffix_to_transport(self):
@@ -291,11 +292,20 @@ class TestFetchQuery:
 
 class TestDecodeJson:
 
-    @pytest.mark.parametrize("payload", [None, "", "{bad", "[1,"])
-    def test_bad_payloads_degrade_to_empty_dict(self, payload, caplog):
+    @pytest.mark.parametrize("payload", ["", "{bad", "[1,"])
+    def test_malformed_payloads_log_and_return_none(self, payload, caplog):
         with caplog.at_level(logging.ERROR):
-            assert TEDAPI._decode_json(payload) == {}
+            assert TEDAPI._decode_json(payload) is None
         assert "Error Decoding JSON" in caplog.text
+
+    def test_missing_payload_is_none_without_logging(self, caplog):
+        with caplog.at_level(logging.ERROR):
+            assert TEDAPI._decode_json(None) is None
+        assert caplog.text == ""
+
+    def test_empty_object_is_preserved(self):
+        """A well-formed empty JSON object stays {} — distinct from None."""
+        assert TEDAPI._decode_json("{}") == {}
 
     def test_good_payload(self):
         assert TEDAPI._decode_json('{"a": [1, 2]}') == {"a": [1, 2]}
@@ -327,10 +337,11 @@ class TestConfigFetch:
         with patch.object(api, "_post_tedapi", return_value=make_message(config_text='{"vin": "GW"}')):
             assert api.get_config() == {"vin": "GW", "battery_blocks": []}
 
-    def test_malformed_json_yields_empty_config(self):
+    def test_malformed_json_is_none(self):
+        """A malformed config payload returns None so the cache is left alone."""
         api = make_tedapi()
         with patch.object(api, "_post_tedapi", return_value=make_message(config_text="{nope")):
-            assert api.get_config() == {"battery_blocks": []}
+            assert api.get_config() is None
 
     def test_v1r_lan_reads_filestore(self):
         api = make_tedapi()

@@ -742,14 +742,14 @@ class TestConfigFetchBranch:
 
         assert api.get_config(force=True)["vin"] == "GW--GZ"
 
-    def test_basic_config_bad_json_yields_empty_config(self):
-        """Malformed JSON degrades to {} + battery_blocks, never an exception."""
+    def test_basic_config_bad_json_is_none(self):
+        """Malformed JSON returns None (cache left alone), never an exception."""
         api = make_tedapi("basic")
         self._prime(api)
         api.session.post.return_value = mock_response(
             make_message(config_text="{not json"))
 
-        assert api.get_config(force=True) == {"battery_blocks": []}
+        assert api.get_config(force=True) is None
 
 
 class TestDefensivePaths:
