@@ -344,27 +344,35 @@ class TEDAPI:
             return self.pwcache.get(key)
 
     @staticmethod
-    def _decode_json(payload: Optional[str]) -> Optional[dict]:
-        """Decode a query payload, preserving an explicitly empty JSON object."""
-        if payload is None:
+    def _decode_json(payload: Optional[str], *, strict: bool = False) -> Optional[dict]:
+        """json.loads for a query payload. A missing (None) or malformed payload
+        is logged and degrades to {} — the long-standing contract of get_status,
+        get_device_controller, get_battery_block and get_config, whose callers
+        see an empty answer for the cache window. With ``strict`` it returns
+        None instead, so the caller leaves its cache alone and the next poll
+        retries (get_components: a cached {} would also starve get_pw3_vitals);
+        a missing payload then skips the decode entirely, with no 'NoneType'
+        decode error logged. A well-formed "{}" is {} either way."""
+        if strict and payload is None:
             return None
         try:
             return json.loads(payload)
         except (json.JSONDecodeError, TypeError) as e:
             log.error(f"Error Decoding JSON: {e}")
-            return None
+            return None if strict else {}
 
     def _fetch_query(self, role: QueryRole, *, recipient_din: Optional[str] = None,
                      sender_din: Optional[str] = None, tail: int = 1,
                      din: Optional[str] = None,
                      url_suffix: str = '/tedapi/v1', use_wifi: bool = False,
-                     config: bool = False) -> Optional[dict]:
+                     config: bool = False, strict: bool = False) -> Optional[dict]:
         """One TEDAPI query end to end: build the request for ``role``
         (_build_request), post it (_post_tedapi, or _post_tedapi_wifi for a v1r
         follower), decode the answer (_parse_response + JSON). Returns the
-        payload dict, including {} for a well-formed empty JSON object. A
-        missing or malformed payload returns None so the caller leaves its
-        cache alone."""
+        payload dict, or None when the transport produced no response so the
+        caller leaves its cache alone. A response whose payload is missing or
+        malformed decodes to {} (logged) by default, or to None with
+        ``strict`` — see _decode_json."""
         request_bytes = self._build_request(
             role, recipient_din=recipient_din, sender_din=sender_din, tail=tail)
         if use_wifi:
@@ -374,7 +382,7 @@ class TEDAPI:
         if response is None:
             return None
         payload = self._parse_response(response, from_wifi=use_wifi, config=config)
-        return self._decode_json(payload)
+        return self._decode_json(payload, strict=strict)
 
     def get_din(self, force=False):
         """Get the Device Identification Number (DIN) from the Powerwall Gateway.
@@ -814,10 +822,15 @@ class TEDAPI:
                     ...
                 }
             }
+        An empty or malformed payload is an uncached None (``strict``), not the
+        {} the other queries degrade to: get_pw3_vitals treats None as "no
+        components" and a cached {} would suppress retries for the config-expiry
+        window (and the proxy's /tedapi/components would serve "{}" for "null").
         """
         return self._cached_fetch("components", expire=self.pwconfigexpire, force=force,
                                   self_function=self_function, name="components",
-                                  fetch=lambda: self._fetch_query(QueryRole.COMPONENTS))
+                                  fetch=lambda: self._fetch_query(QueryRole.COMPONENTS,
+                                                                  strict=True))
 
 
     def get_pw3_vitals(self, force=False):

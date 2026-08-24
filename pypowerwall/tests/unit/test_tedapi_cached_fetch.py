@@ -65,7 +65,7 @@ def mock_response(content=b"", status_code=HTTPStatus.OK):
 # honors, and a transport patch that makes the fetch succeed with a known value.
 class Getter:
     def __init__(self, name, key, expire_attr, call, patch_target, ok_response, ok_value,
-                 seed=None, seed_result=None):
+                 seed=None, seed_result=None, bad_response=None, bad_value=None):
         self.name = name
         self.key = key
         self.expire_attr = expire_attr
@@ -76,6 +76,11 @@ class Getter:
         # a value planted in the cache, and what the getter hands back for it
         self.seed = {"seeded": True} if seed is None else seed
         self.seed_result = self.seed if seed_result is None else seed_result
+        # a transport answer whose payload is malformed (None: n/a, the fetch is
+        # mocked past the decoder), and what the getter returns for it — a dict
+        # is cached for the expiry window, None leaves the cache alone
+        self.bad_response = bad_response
+        self.bad_value = bad_value
 
     def __repr__(self):
         return self.name
@@ -83,23 +88,33 @@ class Getter:
 
 SYSINFO = SystemInfo(version="25.10.1 abcd1234", din=DIN)
 
+# bad_response/bad_value pin each query's answer to a malformed payload: every
+# query degrades to {} for the cache window (the pre-refactor contract) except
+# get_components, whose empty/malformed payload has always been an uncached None
+# — get_pw3_vitals reads None as "no components", and a cached {} would suppress
+# retries for the config-expiry window.
 GETTERS = [
     Getter("get_status", "status", "pwcacheexpire",
            lambda api, **kw: api.get_status(**kw),
-           "_post_tedapi", make_message(text='{"control": {"x": 1}}'), {"control": {"x": 1}}),
+           "_post_tedapi", make_message(text='{"control": {"x": 1}}'), {"control": {"x": 1}},
+           bad_response=make_message(text="{bad"), bad_value={}),
     Getter("get_device_controller", "controller", "pwcacheexpire",
            lambda api, **kw: api.get_device_controller(**kw),
-           "_post_tedapi", make_message(text='{"components": {}}'), {"components": {}}),
+           "_post_tedapi", make_message(text='{"components": {}}'), {"components": {}},
+           bad_response=make_message(text="{bad"), bad_value={}),
     Getter("get_components", "components", "pwconfigexpire",
            lambda api, **kw: api.get_components(**kw),
-           "_post_tedapi", make_message(text='{"components": {"pch": []}}'), {"components": {"pch": []}}),
+           "_post_tedapi", make_message(text='{"components": {"pch": []}}'), {"components": {"pch": []}},
+           bad_response=make_message(text="{bad"), bad_value=None),
     Getter("get_config", "config", "pwconfigexpire",
            lambda api, **kw: api.get_config(**kw),
            "_post_tedapi", make_message(config_text='{"vin": "GW--1", "battery_blocks": []}'),
-           {"vin": "GW--1", "battery_blocks": []}),
+           {"vin": "GW--1", "battery_blocks": []},
+           bad_response=make_message(config_text="{bad"), bad_value={"battery_blocks": []}),
     Getter("get_battery_block", DIN, "pwcacheexpire",
            lambda api, **kw: api.get_battery_block(din=DIN, **kw),
-           "_post_tedapi", make_message(config_text='{"block": 1}'), {"block": 1}),
+           "_post_tedapi", make_message(config_text='{"block": 1}'), {"block": 1},
+           bad_response=make_message(config_text="{bad"), bad_value={}),
     # the firmware cache holds the SystemInfo; the getter derives the version
     Getter("get_firmware_version", "firmware", "pwcacheexpire",
            lambda api, **kw: api.get_firmware_version(**kw),
@@ -110,6 +125,14 @@ GETTERS = [
 
 @pytest.fixture(params=GETTERS, ids=repr)
 def getter(request):
+    return request.param
+
+
+QUERY_GETTERS = [g for g in GETTERS if g.bad_response is not None]
+
+
+@pytest.fixture(params=QUERY_GETTERS, ids=repr)
+def query_getter(request):
     return request.param
 
 
@@ -224,6 +247,58 @@ class TestCachedFetchSkeleton:
 
 
 # ---------------------------------------------------------------------------
+# Bad-payload contract — the one place the query getters deliberately differ
+# ---------------------------------------------------------------------------
+
+class TestBadPayloadContract:
+    """The asymmetry is deliberate, so it's pinned from both sides: get_status /
+    get_device_controller (and get_config / get_battery_block) answer a bad
+    payload with {} and cache it; get_components answers None and leaves the
+    cache alone. A "consistency" pass that makes them agree changes a contract
+    either way — see the GETTERS rows."""
+
+    @pytest.mark.parametrize("kind", ["malformed", "empty"])
+    def test_bad_payload_value_and_cache(self, query_getter, kind, caplog):
+        api = make_tedapi()
+        response = query_getter.bad_response if kind == "malformed" else make_message()
+        with patch.object(api, query_getter.patch_target, return_value=response), \
+                caplog.at_level(logging.ERROR):
+            assert query_getter.call(api) == query_getter.bad_value
+        assert "Error Decoding JSON" in caplog.text
+        cached = query_getter.bad_value is not None
+        assert (query_getter.key in api.pwcache) == cached
+        assert (query_getter.key in api.pwcachetime) == cached
+
+    def test_bad_payload_and_expired_cache_entry(self, query_getter):
+        """With a stale entry in the cache: the {} getters overwrite it, the
+        uncached-None getter (get_components) leaves it untouched — stale data
+        is still served on a lock timeout and the next poll retries."""
+        api = make_tedapi()
+        api.pwcache[query_getter.key] = query_getter.seed
+        api.pwcachetime[query_getter.key] = stamp = 1.0
+        with patch.object(api, query_getter.patch_target, return_value=query_getter.bad_response):
+            assert query_getter.call(api) == query_getter.bad_value
+        if query_getter.bad_value is None:
+            assert api.pwcache[query_getter.key] is query_getter.seed
+            assert api.pwcachetime[query_getter.key] == stamp
+        else:
+            assert api.pwcache[query_getter.key] == query_getter.bad_value
+            assert api.pwcachetime[query_getter.key] > stamp
+
+    def test_components_bad_payload_retries_next_poll(self):
+        """Regression: an uncached None must not suppress the next poll — with a
+        cached {} the transport wouldn't be asked again until pwconfigexpire."""
+        api = make_tedapi()
+        good = make_message(text='{"components": {"pch": []}}')
+        with patch.object(api, "_post_tedapi",
+                          side_effect=[make_message(text="{bad"), good]) as post:
+            assert api.get_components() is None
+            assert api.get_components() == {"components": {"pch": []}}
+        assert post.call_count == 2
+        assert api.pwcache["components"] == {"components": {"pch": []}}
+
+
+# ---------------------------------------------------------------------------
 # _cache_get / _fetch_query / _decode_json
 # ---------------------------------------------------------------------------
 
@@ -256,13 +331,38 @@ class TestFetchQuery:
         with patch.object(api, "_post_tedapi", return_value=None):
             assert api._fetch_query("device_controller_basic") is None
 
-    def test_malformed_payload_is_none(self, caplog):
-        """A malformed payload decodes to None so the caller leaves its cache alone."""
+    def test_malformed_payload_degrades_to_empty_dict(self, caplog):
         api = make_tedapi()
         with patch.object(api, "_post_tedapi", return_value=make_message(text="{not json")), \
                 caplog.at_level(logging.ERROR):
-            assert api._fetch_query("device_controller_basic") is None
+            assert api._fetch_query("device_controller_basic") == {}
         assert "Error Decoding JSON" in caplog.text
+
+    @pytest.mark.parametrize("response", [make_message(text="{not json"), make_message()],
+                             ids=["malformed", "empty"])
+    def test_strict_bad_payload_is_none(self, response, caplog):
+        """``strict`` (get_components) turns a bad payload into None so the
+        caller leaves its cache alone."""
+        api = make_tedapi()
+        with patch.object(api, "_post_tedapi", return_value=response), \
+                caplog.at_level(logging.ERROR):
+            assert api._fetch_query("components", strict=True) is None
+        assert "Error Decoding JSON" in caplog.text
+
+    def test_strict_missing_payload_skips_decode(self, caplog):
+        """A parser that hands back no payload at all (None) is None without a
+        'NoneType' decode error in the log."""
+        api = make_tedapi()
+        with patch.object(api, "_post_tedapi", return_value=b"x"), \
+                patch.object(api, "_parse_response", return_value=None), \
+                caplog.at_level(logging.ERROR):
+            assert api._fetch_query("components", strict=True) is None
+        assert caplog.text == ""
+
+    def test_strict_keeps_empty_object(self):
+        api = make_tedapi()
+        with patch.object(api, "_post_tedapi", return_value=make_message(text="{}")):
+            assert api._fetch_query("components", strict=True) == {}
 
     def test_routes_din_and_url_suffix_to_transport(self):
         api = make_tedapi()
@@ -292,20 +392,30 @@ class TestFetchQuery:
 
 class TestDecodeJson:
 
-    @pytest.mark.parametrize("payload", ["", "{bad", "[1,"])
-    def test_malformed_payloads_log_and_return_none(self, payload, caplog):
+    BAD = [None, "", "{bad", "[1,"]
+
+    @pytest.mark.parametrize("payload", BAD)
+    def test_bad_payloads_degrade_to_empty_dict(self, payload, caplog):
         with caplog.at_level(logging.ERROR):
-            assert TEDAPI._decode_json(payload) is None
+            assert TEDAPI._decode_json(payload) == {}
         assert "Error Decoding JSON" in caplog.text
 
-    def test_missing_payload_is_none_without_logging(self, caplog):
+    @pytest.mark.parametrize("payload", ["", "{bad", "[1,"])
+    def test_strict_malformed_payloads_log_and_return_none(self, payload, caplog):
         with caplog.at_level(logging.ERROR):
-            assert TEDAPI._decode_json(None) is None
+            assert TEDAPI._decode_json(payload, strict=True) is None
+        assert "Error Decoding JSON" in caplog.text
+
+    def test_strict_missing_payload_is_none_without_logging(self, caplog):
+        with caplog.at_level(logging.ERROR):
+            assert TEDAPI._decode_json(None, strict=True) is None
         assert caplog.text == ""
 
-    def test_empty_object_is_preserved(self):
-        """A well-formed empty JSON object stays {} — distinct from None."""
-        assert TEDAPI._decode_json("{}") == {}
+    @pytest.mark.parametrize("strict", [False, True])
+    def test_empty_object_is_preserved(self, strict):
+        """A well-formed empty JSON object is {} in both modes — distinct from a
+        missing or malformed payload."""
+        assert TEDAPI._decode_json("{}", strict=strict) == {}
 
     def test_good_payload(self):
         assert TEDAPI._decode_json('{"a": [1, 2]}') == {"a": [1, 2]}
@@ -337,11 +447,10 @@ class TestConfigFetch:
         with patch.object(api, "_post_tedapi", return_value=make_message(config_text='{"vin": "GW"}')):
             assert api.get_config() == {"vin": "GW", "battery_blocks": []}
 
-    def test_malformed_json_is_none(self):
-        """A malformed config payload returns None so the cache is left alone."""
+    def test_malformed_json_yields_empty_config(self):
         api = make_tedapi()
         with patch.object(api, "_post_tedapi", return_value=make_message(config_text="{nope")):
-            assert api.get_config() is None
+            assert api.get_config() == {"battery_blocks": []}
 
     def test_v1r_lan_reads_filestore(self):
         api = make_tedapi()
