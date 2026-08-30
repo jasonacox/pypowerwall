@@ -750,7 +750,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
 
         if payload.get('backup_reserve_percent') is None and payload.get('real_mode') is None:
             raise PyPowerwallFleetAPIInvalidPayload("/api/operation payload missing required parameters. Either "
-                                                 "'backup_reserve_percent or 'real_mode', or both must present.")
+                                                 "'backup_reserve_percent' or 'real_mode', or both, must be present.")
 
         if din:
             log.debug("FleetAPI mode operates on entire site, not din. Ignoring din parameter.")

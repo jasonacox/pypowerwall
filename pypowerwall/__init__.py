@@ -89,7 +89,7 @@ import sys
 import time
 from typing import Optional, Union
 
-version_tuple = (0, 17, 0)
+version_tuple = (0, 17, 1)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -850,6 +850,13 @@ class Powerwall(object):
             mode = self.get_mode()
             if mode:
                 payload['real_mode'] = mode
+
+        if not payload and not full_overwrite:
+            # Partial-payload backends raise on an empty body; without a
+            # caller-set field there is nothing to write, so fail soft like
+            # the other invalid-input paths instead of raising.
+            log.error("No operation to set - pass level and/or mode.")
+            return None
 
         log.debug(f"Setting operation: {payload}")
 

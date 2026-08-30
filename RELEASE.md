@@ -1,5 +1,14 @@
 # RELEASE NOTES
 
+## v0.17.1 - set_operation Partial Payload Fix (PW3 Mode-Persistence Race)
+
+* fix(core): `set_operation()` no longer back-fills `/api/operation` payloads for partial-payload backends (cloud, fleetapi, tedapi) — only the fields the caller actually set are written. Tesla applies BACKUP_RESERVE and OPERATION_MODE as two asynchronous commands, so a back-filled reserve write raced a mode-only change and the mode command could be silently dropped on Powerwall 3 (most reproducible when the current reserve is 0). Local gateway writes keep the full-overwrite back-fill behavior, as before.
+* fix(core): an explicit `level=0` is no longer coerced to boolean `False` — numeric `0` is preserved through payload construction, and the cloud/fleetapi "missing parameters" guards now treat `0` as present (`is None` checks)
+* fix(core): calling `set_operation()` with neither `level` nor `mode` on a non-local backend now logs an error and returns `None` instead of posting an empty payload that would raise
+* chore: corrected the cloud/fleetapi invalid-payload error message quoting and grammar
+* tests: payload-construction regression tests across local vs non-local semantics, reserve-0 acceptance (cloud + new FleetAPI suite), and empty-payload soft-fail
+* Library version bumped to `0.17.1`
+
 ## v0.17.0 - TEDAPI Bearer Authentication Mode
 
 * feat(tedapi): new `bearer` authentication mode — logs in via `POST /api/login/Basic` with the installer credentials (full gateway password from the QR sticker) to obtain a Bearer token, then wraps every TEDAPI query in a protobuf `AuthEnvelope` with `externalAuth.type = PRESENCE`. Unlike `basic` (HTTP Basic Auth to `192.168.91.1`, which is only reachable over the Gateway's Wi-Fi), bearer also works over the Gateway's wired LAN IP. Hardware-verified on PW2 and solar-only inverters over both a WiFi static route and the hardwired LAN IP. **Not supported on Powerwall 3** — for PW3 wired access use v1r mode (`rsa_key_path`).

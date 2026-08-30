@@ -326,6 +326,17 @@ class TestSetOperationPayload:
         payload = pw.client.calls[-1][2]
         assert payload == {'backup_reserve_percent': 0}
 
+    def test_empty_payload_non_local_returns_none(self, pw):
+        # Regression (Copilot review): with neither level nor mode set on a
+        # partial-payload backend, set_operation() must not post an empty
+        # body (backends reject it by raising). Fail soft like the other
+        # invalid-input paths.
+        calls_before = len(pw.client.calls)
+        assert pw.set_operation() is None
+        assert len(pw.client.calls) == calls_before
+        assert pw.set_operation(mode='') is None
+        assert len(pw.client.calls) == calls_before
+
     def test_backfill_uses_raw_scale_for_local(self, pw):
         from unittest.mock import patch
         # Local backend passes the payload verbatim to the gateway's raw-scale API
