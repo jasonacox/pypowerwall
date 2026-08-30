@@ -47,9 +47,9 @@ class StubClient(PyPowerwallBase):
 
     def post(self, api: str, payload, din: str, recursive: bool = False, raw: bool = False):
         self.calls.append(('post', api, payload))
-        # Simulate modifying backup_reserve_percent
+        # Simulate modifying backup_reserve_percent (partial payloads honored)
         if api == '/api/operation' and payload:
-            if payload.get('backup_reserve_percent') is not False:
+            if 'backup_reserve_percent' in payload:
                 self._poll_map['/api/operation']['backup_reserve_percent'] = payload['backup_reserve_percent']
             if payload.get('real_mode'):
                 self._poll_map['/api/operation']['real_mode'] = payload['real_mode']
@@ -282,35 +282,77 @@ class TestTEDAPIv1rReserveScaling:
 
 
 # ---------------------------------------------------------------------------
-# set_operation() reserve back-fill regression tests
+# set_operation() payload construction tests
 # ---------------------------------------------------------------------------
 
-class TestSetOperationBackfill:
-    """Verify set_operation() back-fills the reserve in the scale the backend expects."""
+class TestSetOperationPayload:
+    """Partial-payload semantics per backend (PW3 mode-persistence race fix).
 
-    def test_backfill_uses_app_scale_for_non_local(self, pw):
-        # Non-local backends (cloud/fleetapi/tedapi) expect Tesla-app scale on write.
-        # Raw 20% -> app scale (20/0.95) - (5/0.95) = 15.789...
+    Tesla applies BACKUP_RESERVE and OPERATION_MODE as two async commands, so a
+    back-filled reserve write raced a mode-only change and the mode command could
+    be silently dropped. Non-local backends now write only the requested fields.
+    """
+
+    def test_mode_only_non_local_omits_reserve(self, pw):
+        # Non-local backends accept partial payloads: a mode-only write must not
+        # back-fill (and therefore not race) the reserve.
         resp = pw.set_operation(mode='backup')
         assert resp['ok'] is True
         payload = pw.client.calls[-1][2]
-        assert payload['real_mode'] == 'backup'
-        assert payload['backup_reserve_percent'] == pytest.approx((20 / 0.95) - (5 / 0.95))
+        assert payload == {'real_mode': 'backup'}
+        assert 'backup_reserve_percent' not in payload
+
+    def test_reserve_only_non_local_omits_mode(self, pw):
+        resp = pw.set_reserve(40)
+        assert resp['ok'] is True
+        payload = pw.client.calls[-1][2]
+        assert payload == {'backup_reserve_percent': 40}
+        assert 'real_mode' not in payload
+
+    def test_explicit_zero_level_stays_numeric(self, pw):
+        # Regression (nesys, pypowerwall-server PR #85): an explicit reserve of 0
+        # was coerced to boolean False, which the cloud path split into two
+        # racing Owner API commands and could drop the mode change.
+        resp = pw.set_operation(level=0, mode='autonomous')
+        assert resp['ok'] is True
+        payload = pw.client.calls[-1][2]
+        assert payload['backup_reserve_percent'] == 0
+        assert payload['backup_reserve_percent'] is not False
+        assert payload['real_mode'] == 'autonomous'
+
+    def test_explicit_zero_reserve_only(self, pw):
+        resp = pw.set_reserve(0)
+        assert resp['ok'] is True
+        payload = pw.client.calls[-1][2]
+        assert payload == {'backup_reserve_percent': 0}
 
     def test_backfill_uses_raw_scale_for_local(self, pw):
         from unittest.mock import patch
-        # Local backend passes the payload verbatim to the gateway's raw-scale API,
-        # so the back-fill must not apply the Tesla-app scale conversion.
+        # Local backend passes the payload verbatim to the gateway's raw-scale API
+        # and is a full overwrite, so mode-only writes still back-fill both fields.
         with patch('pypowerwall.PyPowerwallLocal', StubClient):
             resp = pw.set_operation(mode='backup')
         assert resp['ok'] is True
         payload = pw.client.calls[-1][2]
         assert payload['backup_reserve_percent'] == 20
+        assert payload['real_mode'] == 'backup'
 
-    def test_backfill_none_returns_none(self, pw):
+    def test_backfill_local_explicit_zero_writes_zero(self, pw):
+        # On the local path, 0 used to become False (= "leave unchanged" marker)
+        # which silently no-opped set_reserve(0). It now writes a real 0.
+        from unittest.mock import patch
+        with patch('pypowerwall.PyPowerwallLocal', StubClient):
+            resp = pw.set_operation(level=0, mode='backup')
+        assert resp['ok'] is True
+        payload = pw.client.calls[-1][2]
+        assert payload['backup_reserve_percent'] == 0
+
+    def test_backfill_none_returns_none_local(self, pw):
         # Gateway unreachable: get_reserve() returns None - must not raise TypeError
-        del pw.client._poll_map['/api/operation']
-        resp = pw.set_operation(mode='backup')
+        from unittest.mock import patch
+        with patch('pypowerwall.PyPowerwallLocal', StubClient):
+            del pw.client._poll_map['/api/operation']
+            resp = pw.set_operation(mode='backup')
         assert resp is None
 
 
