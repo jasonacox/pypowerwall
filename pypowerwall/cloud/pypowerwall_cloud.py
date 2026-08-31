@@ -1198,9 +1198,9 @@ class PyPowerwallCloud(PyPowerwallBase):
         payload = kwargs.get('payload', {})
         din = kwargs.get('din')
 
-        if not payload.get('backup_reserve_percent') and not payload.get('real_mode'):
+        if payload.get('backup_reserve_percent') is None and payload.get('real_mode') is None:
             raise PyPowerwallCloudInvalidPayload("/api/operation payload missing required parameters. Either "
-                                                 "'backup_reserve_percent or 'real_mode', or both must present.")
+                                                 "'backup_reserve_percent' or 'real_mode', or both, must be present.")
 
         if not din:
             log.warning("No valid DIN provided, will adjust the first battery on site.")
