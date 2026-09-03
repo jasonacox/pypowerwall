@@ -90,6 +90,12 @@
     - PW_TEDAPI_PROBE_INTERVAL=N — seconds between health probes (default: 30)
     The fallback state is visible in /health and /stats under "fallback_mode".
 
+ Firmware Change Tracking
+    A background thread polls the gateway firmware version and logs it once
+    at startup plus a dated line whenever it changes, giving `docker logs`
+    a timestamped record of firmware updates (Powerwall-Dashboard#854).
+    - PW_FIRMWARE_CHECK_INTERVAL=N — seconds between firmware polls (default: 300)
+
  Monitoring & Health Endpoints
     - /health - returns connection health status and feature configuration
     - /health/reset - resets health counters and clears cache
@@ -269,6 +275,12 @@ except (ValueError, TypeError):
 TEDAPI_FALLBACK_THRESHOLD = 3  # consecutive probe failures before entering fallback mode
 TEDAPI_RECOVERY_INITIAL_INTERVAL = 60   # initial recovery retry interval (seconds)
 TEDAPI_RECOVERY_MAX_INTERVAL = 300      # cap on retry interval (seconds)
+try:
+    FIRMWARE_CHECK_INTERVAL = max(
+        30, int(os.getenv("PW_FIRMWARE_CHECK_INTERVAL", "300"))
+    )
+except (ValueError, TypeError):
+    FIRMWARE_CHECK_INTERVAL = 300  # seconds between firmware polls (Powerwall-Dashboard#854)
 
 # Global Stats
 proxystats = {
@@ -564,6 +576,53 @@ def exit_fallback_mode():
                 f"Proxy recovered from SolarOnly fallback mode after "
                 f"{duration:.0f}s and {attempts} recovery attempt(s)."
             )
+
+
+# Firmware change tracking (Powerwall-Dashboard#854): keep a timestamped
+# record of gateway firmware in the proxy logs — log it once at startup and
+# again whenever it changes, so "when did my Powerwall update?" is answerable
+# from `docker logs pypowerwall` without guesswork.
+_firmware_lock = threading.Lock()
+_firmware_state = {"version": None}
+
+
+def track_firmware_version(version):
+    """Record gateway firmware version; log first sighting and any change."""
+    if not version or not isinstance(version, str):
+        return
+    # Sanitize external input — strip CR/LF and control chars (log forging)
+    version = " ".join(version.split())
+    if not version:
+        return
+    with _firmware_lock:
+        previous = _firmware_state["version"]
+        if previous is None:
+            _firmware_state["version"] = version
+            log.info(f"Gateway firmware: {version}")
+        elif version != previous:
+            _firmware_state["version"] = version
+            log.info(f"Gateway firmware changed: {previous} -> {version}")
+
+
+def _firmware_watchdog():
+    """Background thread: poll gateway firmware and log changes (issue #854).
+
+    Polls immediately at startup, then every FIRMWARE_CHECK_INTERVAL seconds
+    (default 300s; pypowerwall caches responses so this is cheap). A None
+    return (gateway unreachable, cooldown) is skipped silently — no log noise.
+    Works in every mode: local, cloud, FleetAPI and TEDAPI.
+    """
+    first = True
+    while True:
+        if not first:
+            time.sleep(FIRMWARE_CHECK_INTERVAL)
+        first = False
+        try:
+            # direct call — mirrors the TEDAPI probe; avoids safe_pw_call
+            # health side-effects from a background poller
+            track_firmware_version(pw.version())
+        except Exception as exc:
+            log.debug(f"Firmware poll failed: {exc}")
 
 
 def _tedapi_probe_and_recover():
@@ -1202,6 +1261,15 @@ if tedapi_recovery_enabled and pw.tedapi:
         "TEDAPI probe/recovery thread started (interval=%ds, threshold=%d)",
         TEDAPI_PROBE_INTERVAL, TEDAPI_FALLBACK_THRESHOLD
     )
+
+# Start background firmware change tracking thread (all modes) — issue #854
+_firmware_thread = threading.Thread(
+    target=_firmware_watchdog, name="firmware-watchdog", daemon=True
+)
+_firmware_thread.start()
+log.info(
+    "Firmware tracking thread started (interval=%ds)", FIRMWARE_CHECK_INTERVAL
+)
 
 
 def get_transport_health():
