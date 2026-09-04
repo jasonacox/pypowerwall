@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t101 (4 Sep 2026)
+
+* New firmware change tracking in logs (#854): a `firmware-watchdog` daemon thread polls `pw.version()` every `PW_FIRMWARE_CHECK_INTERVAL` seconds (default 300, minimum 30) and logs a line whenever the gateway firmware version changes — handy for correlating behavior shifts after Tesla OTA updates. Covers all modes (Cloud/FleetAPI/local/TEDAPI/v1r); `None` responses (e.g. during 429/503 cooldown) are skipped silently. Firmware version strings are sanitized before logging to match the proxy's log-forging posture. The current version and check interval are reported in `/stats`
+* New `proxy/tests/test_firmware_tracking.py` (9 tests — tracking logic, sanitization, interval wiring, and `/stats` reporting)
+
 ### Proxy t100 (9 Aug 2026)
 
 * Upgraded to pyPowerwall v0.16.5 (TEDAPI bearer authentication mode — see library release notes)
