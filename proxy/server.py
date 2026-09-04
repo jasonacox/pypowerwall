@@ -341,6 +341,7 @@ proxystats = {
         "PW_CACHE_TTL": degradation_cache_ttl_seconds,
         "PW_TEDAPI_RECOVERY": tedapi_recovery_enabled,
         "PW_TEDAPI_PROBE_INTERVAL": TEDAPI_PROBE_INTERVAL,
+        "PW_FIRMWARE_CHECK_INTERVAL": FIRMWARE_CHECK_INTERVAL,
     },
 }
 proxystats_lock = threading.RLock()
@@ -588,9 +589,13 @@ _firmware_state = {"version": None}
 
 def track_firmware_version(version):
     """Record gateway firmware version; log first sighting and any change."""
-    if not version or not isinstance(version, str):
+    if version is None:
         return
-    # Sanitize external input — strip CR/LF and control chars (log forging)
+    # Coerce non-str (int/bytes) so versions aren't silently ignored
+    version = str(version)
+    # Sanitize external input — strip ASCII control chars and DEL (log
+    # forging), then collapse whitespace
+    version = "".join(ch for ch in version if ch >= " " and ch != "\x7f")
     version = " ".join(version.split())
     if not version:
         return
