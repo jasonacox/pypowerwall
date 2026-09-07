@@ -19,7 +19,7 @@ import struct
 import time
 import uuid
 import warnings
-from typing import Optional
+from typing import Optional, Tuple
 
 import requests
 import urllib3
@@ -41,6 +41,91 @@ def _decode_payload_preview(raw: bytes, max_len: int = 200) -> str:
     except Exception:
         pass
     return raw[:max_len].hex()
+
+
+def _encode_varint(value: int) -> bytes:
+    """Encode a non-negative protobuf varint."""
+    if value < 0:
+        raise ValueError("protobuf varint must be non-negative")
+    encoded = bytearray()
+    while value > 0x7F:
+        encoded.append((value & 0x7F) | 0x80)
+        value >>= 7
+    encoded.append(value)
+    return bytes(encoded)
+
+
+def _read_varint(payload: bytes, offset: int) -> Tuple[int, int]:
+    """Read one protobuf varint and return its value and next offset."""
+    value = 0
+    shift = 0
+    while offset < len(payload):
+        current = payload[offset]
+        offset += 1
+        value |= (current & 0x7F) << shift
+        if not current & 0x80:
+            return value, offset
+        shift += 7
+        if shift >= 64:
+            break
+    raise ValueError("invalid protobuf varint")
+
+
+def _length_delimited_field(payload: bytes, wanted_field: int) -> Optional[bytes]:
+    """Return the first length-delimited protobuf field with the given number."""
+    offset = 0
+    while offset < len(payload):
+        key, offset = _read_varint(payload, offset)
+        field_number, wire_type = key >> 3, key & 0x07
+        if wire_type == 0:
+            _, offset = _read_varint(payload, offset)
+            continue
+        if wire_type == 2:
+            length, offset = _read_varint(payload, offset)
+            end = offset + length
+            if end > len(payload):
+                raise ValueError("truncated protobuf length-delimited field")
+            if field_number == wanted_field:
+                return payload[offset:end]
+            offset = end
+            continue
+        if wire_type == 1:
+            offset += 8
+        elif wire_type == 5:
+            offset += 4
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wire_type}")
+        if offset > len(payload):
+            raise ValueError("truncated protobuf fixed-width field")
+    return None
+
+
+def _island_mode_response_result(teg_payload: bytes) -> Optional[int]:
+    """Return setIslandModeResponse.result (TEG oneof field 4), if present."""
+    response_payload = _length_delimited_field(teg_payload, wanted_field=4)
+    if response_payload is None:
+        return None
+    offset = 0
+    while offset < len(response_payload):
+        key, offset = _read_varint(response_payload, offset)
+        field_number, wire_type = key >> 3, key & 0x07
+        if wire_type == 0:
+            value, offset = _read_varint(response_payload, offset)
+            if field_number == 1:
+                return value
+            continue
+        if wire_type == 2:
+            length, offset = _read_varint(response_payload, offset)
+            offset += length
+        elif wire_type == 1:
+            offset += 8
+        elif wire_type == 5:
+            offset += 4
+        else:
+            raise ValueError(f"unsupported protobuf wire type {wire_type}")
+        if offset > len(response_payload):
+            raise ValueError("truncated setIslandModeResponse field")
+    return None
 
 
 class TEDAPIv1r:
@@ -481,6 +566,50 @@ class TEDAPIv1r:
             return resp
         except Exception as e:
             log.error(f"send_teg_message: failed to parse response: {e}")
+            return None
+
+    def send_island_mode(self, din: str, mode: int, force: bool = False) -> Optional[dict]:
+        """Send Tesla's legacy TEGAPISetIslandModeRequest via signed v1r.
+
+        The current V2024_06 generated protobuf set begins its TEG command
+        fields at 45, while Tesla's islanding command is defined in the older
+        TEG schema as oneof field 3. Build that wire encoding directly inside a
+        MessageEnvelope so it can still use the normal signed /tedapi/v1r path.
+        """
+        if mode not in (1, 6):
+            raise ValueError("island mode must be 1 (reconnect) or 6 (off-grid)")
+
+        # TEGAPISetIslandModeRequest: int32 mode = 1; bool force = 2.
+        request = b"\x08" + _encode_varint(mode)
+        if force:
+            request += b"\x10\x01"
+        # TEGMessages.setIslandModeRequest is legacy oneof field 3.
+        teg_payload = b"\x1a" + _encode_varint(len(request)) + request
+
+        try:
+            envelope = combined_pb2.MessageEnvelope()
+            envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
+            envelope.sender.authorizedClient = 1  # CUSTOMER_MOBILE_APP
+            envelope.recipient.din = din
+            # MessageEnvelope.teg is field 5. Appending preserves the legacy
+            # field 3 within TEGMessages, which the generated class omits.
+            envelope_bytes = envelope.SerializeToString()
+            envelope_bytes += b"\x2a" + _encode_varint(len(teg_payload)) + teg_payload
+            response_bytes = self.post_v1r(envelope_bytes, din)
+            if not response_bytes:
+                log.error("send_island_mode: no v1r response")
+                return None
+
+            response_teg = _length_delimited_field(response_bytes, wanted_field=5)
+            result = (
+                _island_mode_response_result(response_teg)
+                if response_teg is not None else None
+            )
+            if result is None:
+                log.warning("send_island_mode: response omitted setIslandModeResponse.result")
+            return {"mode": mode, "force": force, "result": result}
+        except Exception as e:
+            log.error(f"send_island_mode error: {e}")
             return None
 
     # ── Standard API (Bearer token) ──────────────────────────────────
