@@ -156,10 +156,11 @@ def test_get_query_missing_role_raises():
 
 
 def test_V2026_06_call_site_roles_are_all_mapped():
-    """Guard: every role passed to ``self._build_request(<role>, ...)`` in
-    tedapi/__init__.py must be present in V2026_06_ROLES — otherwise it
-    KeyErrors at runtime under V2026_06 (``_build_request`` dispatches to
-    ``get_query(role, V2026_06)``). Scans the real source so a new call site
+    """Guard: every role passed to ``self._fetch_query(<role>, ...)`` or
+    ``self._build_request(<role>, ...)`` in tedapi/__init__.py must be present
+    in V2026_06_ROLES — otherwise it KeyErrors at runtime under V2026_06
+    (``_build_request`` dispatches to ``get_query(role, V2026_06)``; the getters
+    reach it through ``_fetch_query``). Scans the real source so a new call site
     (or a renamed role) can't silently regress this."""
     import ast
 
@@ -169,7 +170,7 @@ def test_V2026_06_call_site_roles_are_all_mapped():
     used = set()
     for node in ast.walk(ast.parse(src)):
         if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr == "_build_request" and node.args):
+                and node.func.attr in ("_fetch_query", "_build_request") and node.args):
             role = node.args[0]
             if isinstance(role, ast.Attribute):        # QueryRole.DEVICE_CONTROLLER_BASIC
                 used.add(q.QueryRole[role.attr].value)

@@ -142,6 +142,8 @@ def decompress_response(content: bytes) -> bytes:
             log.debug(f"Gzip decompression failed: {e}")
     return content
 
+_CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values are never None)
+
 # TEDAPI Class
 class TEDAPI:
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
@@ -262,64 +264,182 @@ class TEDAPI:
         else:
             log.setLevel(logging.NOTSET)
 
-    def get_din(self, force=False):
-        """Get the Device Identification Number (DIN) from the Powerwall Gateway."""
-        # Check Cache
-        if not force and "din" in self.pwcachetime:
-            if time.time() - self.pwcachetime["din"] < self.pwcacheexpire:
-                log.debug("Using Cached DIN")
-                return self.pwcache["din"]
-        if not force and self.pwcooldown > time.perf_counter():
-            # Rate limited - return None
+    # ── Cached gateway fetches ────────────────────────────────────────────
+    #
+    # Every data getter (get_din, get_config, get_status, get_device_controller,
+    # get_firmware_version, get_components, get_battery_block) is the same
+    # skeleton around a different fetch: serve a fresh cache entry, honor the
+    # rate-limit cooldown, take the per-method lock, fetch, cache. _cached_fetch
+    # is that skeleton; a getter contributes only its cache key, expiry and
+    # fetch. Results live in self.pwcache / self.pwcachetime (keyed by name, or
+    # by DIN for battery blocks) so callers and tests can seed or inspect them.
+
+    def _cache_get(self, key: str, expire: float, force: bool = False):
+        """The cached value for ``key`` if it is younger than ``expire`` seconds
+        and ``force`` is not set, else _CACHE_MISS."""
+        if force or key not in self.pwcachetime or key not in self.pwcache:
+            return _CACHE_MISS
+        age = time.time() - self.pwcachetime[key]
+        if age < expire:
+            log.debug(f"Using Cached {key} (age: {age:.2f}s, expire: {expire}s)")
+            return self.pwcache[key]
+        log.debug(f"Cache expired for {key} (age: {age:.2f}s, expire: {expire}s)")
+        return _CACHE_MISS
+
+    def _cache_put(self, key: str, value) -> None:
+        self.pwcachetime[key] = time.time()
+        self.pwcache[key] = value
+
+    def _in_cooldown(self) -> bool:
+        """True while the 5-minute rate-limit cooldown (set on 429/503) runs."""
+        if self.pwcooldown > time.perf_counter():
             log.debug('Rate limit cooldown period - Pausing API calls')
+            return True
+        return False
+
+    def _cached_fetch(self, key: str, *, expire: float, force: bool, self_function,
+                      fetch, name: str):
+        """Skeleton shared by the locked, cached getters.
+
+        1. Serve a fresh cache entry, else bail out during a rate-limit cooldown
+           — both checked before taking the lock, so pollers don't queue behind
+           a fetch they don't need (``force`` skips both).
+        2. Take the per-method lock (``self_function.api_lock``, installed by
+           @uses_api_lock; bounded wait). On timeout serve the stale cache entry
+           if there is one, else None — never raise into a poller.
+        3. Under the lock re-check cache and cooldown (another thread may have
+           refreshed while we waited), and reconnect if the DIN is unknown.
+        4. ``fetch()`` returns the value to cache and return, or None to leave
+           the cache alone (the transport produced nothing); an exception is
+           logged as ``Error fetching {name}`` and also yields None."""
+        cached = self._cache_get(key, expire, force)
+        if cached is not _CACHE_MISS:
+            return cached
+        if not force and self._in_cooldown():
             return None
-        # Fetch DIN from Powerwall
-        log.debug("Fetching DIN from Powerwall...")
-        if self.v1r:
-            # When LAN is down, fetch DIN from wifi_host instead
-            if self.lan_failed:
-                if not self.wifi_session:
-                    return None
-                try:
-                    url = f'https://{self.wifi_host}/tedapi/din'
-                    r = self.wifi_session.get(url, timeout=self.timeout)
-                    if r.status_code == HTTPStatus.OK:
-                        content = decompress_response(r.content)
-                        din = content.decode('utf-8').strip()
-                        self.pwcachetime["din"] = time.time()
-                        self.pwcache["din"] = din
-                        return din
-                except Exception as e:
-                    log.error("get_din WiFi fallback failed: %s", e)
-                return None
-            din = self.v1r_transport.get_din()
-            if din:
-                self.pwcachetime["din"] = time.time()
-                self.pwcache["din"] = din
-            return din
-        url = f'https://{self.gw_ip}/tedapi/din'
-        r = self.session.get(url, timeout=self.timeout)
-        if r.status_code in BUSY_CODES:
-            # Rate limited - Switch to cooldown mode for 5 minutes
-            self.pwcooldown = time.perf_counter() + 300
-            log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-            return None
-        if r.status_code == HTTPStatus.FORBIDDEN:
-            log.error("Access Denied: Check your Gateway Password")
-            return None
-        if r.status_code != HTTPStatus.OK:
-            log.error(f"Error fetching DIN: {r.status_code}")
-            return None
-        # Firmware 25.42.2+ returns gzip-compressed DIN response
-        content = decompress_response(r.content)
         try:
-            din = content.decode('utf-8').strip()
-        except UnicodeDecodeError as e:
-            log.error(f"Error decoding DIN response: {e}")
+            with acquire_lock_with_backoff(self_function, self.timeout):
+                cached = self._cache_get(key, expire, force)
+                if cached is not _CACHE_MISS:
+                    return cached
+                if not force and self._in_cooldown():
+                    return None
+                if not self.din and not self.connect():
+                    log.error(f"Not Connected - Unable to get {name}")
+                    return None
+                log.debug(f"Get {name} from Powerwall")
+                try:
+                    data = fetch()
+                except Exception as e:
+                    log.error(f"Error fetching {name}: {e}")
+                    return None
+                if data is None:
+                    return None
+                log.debug(f"{name}: {data}")
+                self._cache_put(key, data)
+                return data
+        except TimeoutError:
+            log.error(f'Timeout waiting for API lock - unable to fetch {name} - '
+                      'returning cached data if available')
+            return self.pwcache.get(key)
+
+    @staticmethod
+    def _decode_json(payload: Optional[str], *, strict: bool = False) -> Optional[dict]:
+        """json.loads for a query payload. A missing (None) or malformed payload
+        is logged and degrades to {} — the long-standing contract of get_status,
+        get_device_controller, get_battery_block and get_config, whose callers
+        see an empty answer for the cache window. With ``strict`` it returns
+        None instead, so the caller leaves its cache alone and the next poll
+        retries (get_components: a cached {} would also starve get_pw3_vitals);
+        a missing payload then skips the decode entirely, with no 'NoneType'
+        decode error logged. A well-formed "{}" is {} either way."""
+        if strict and payload is None:
             return None
-        log.debug(f"Connected: Powerwall Gateway DIN: {din}")
-        self.pwcachetime["din"] = time.time()
-        self.pwcache["din"] = din
+        try:
+            return json.loads(payload)
+        except (json.JSONDecodeError, TypeError) as e:
+            log.error(f"Error Decoding JSON: {e}")
+            return None if strict else {}
+
+    def _fetch_query(self, role: QueryRole, *, recipient_din: Optional[str] = None,
+                     sender_din: Optional[str] = None, tail: int = 1,
+                     din: Optional[str] = None,
+                     url_suffix: str = '/tedapi/v1', use_wifi: bool = False,
+                     config: bool = False, strict: bool = False) -> Optional[dict]:
+        """One TEDAPI query end to end: build the request for ``role``
+        (_build_request), post it (_post_tedapi, or _post_tedapi_wifi for a v1r
+        follower), decode the answer (_parse_response + JSON). Returns the
+        payload dict, or None when the transport produced no response so the
+        caller leaves its cache alone. A response whose payload is missing or
+        malformed decodes to {} (logged) by default, or to None with
+        ``strict`` — see _decode_json."""
+        request_bytes = self._build_request(
+            role, recipient_din=recipient_din, sender_din=sender_din, tail=tail)
+        if use_wifi:
+            response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
+        else:
+            response = self._post_tedapi(request_bytes, din=din, url_suffix=url_suffix)
+        if response is None:
+            return None
+        payload = self._parse_response(response, from_wifi=use_wifi, config=config)
+        return self._decode_json(payload, strict=strict)
+
+    def get_din(self, force=False):
+        """Get the Device Identification Number (DIN) from the Powerwall Gateway.
+
+        Unlike the other getters this takes no lock and never reconnects —
+        connect() calls it to establish the connection — and it lets a
+        transport exception propagate so connect() can log its routing advice."""
+        cached = self._cache_get("din", self.pwcacheexpire, force)
+        if cached is not _CACHE_MISS:
+            return cached
+        if not force and self._in_cooldown():
+            return None
+
+        def fetch_http():
+            """GET /tedapi/din on the primary session (basic and bearer modes)."""
+            r = self.session.get(f'https://{self.gw_ip}/tedapi/din', timeout=self.timeout)
+            if r.status_code in BUSY_CODES:
+                # Rate limited - Switch to cooldown mode for 5 minutes
+                self.pwcooldown = time.perf_counter() + 300
+                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
+                return None
+            if r.status_code == HTTPStatus.FORBIDDEN:
+                log.error("Access Denied: Check your Gateway Password")
+                return None
+            if r.status_code != HTTPStatus.OK:
+                log.error(f"Error fetching DIN: {r.status_code}")
+                return None
+            try:
+                # Firmware 25.42.2+ returns gzip-compressed DIN response
+                din = decompress_response(r.content).decode('utf-8').strip()
+            except UnicodeDecodeError as e:
+                log.error(f"Error decoding DIN response: {e}")
+                return None
+            log.debug(f"Connected: Powerwall Gateway DIN: {din}")
+            return din
+
+        def fetch_wifi():
+            """v1r with the LAN down: read the DIN from the WiFi fallback host."""
+            if not self.wifi_session:
+                return None
+            try:
+                r = self.wifi_session.get(f'https://{self.wifi_host}/tedapi/din', timeout=self.timeout)
+                if r.status_code == HTTPStatus.OK:
+                    return decompress_response(r.content).decode('utf-8').strip()
+            except Exception as e:
+                log.error("get_din WiFi fallback failed: %s", e)
+            return None
+
+        log.debug("Fetching DIN from Powerwall...")
+        if not self.v1r:
+            din = fetch_http()
+        elif self.lan_failed:
+            din = fetch_wifi()
+        else:
+            din = self.v1r_transport.get_din()
+        if din:
+            self._cache_put("din", din)
         return din
 
 
@@ -355,133 +475,36 @@ class TEDAPI:
             "vin": "1232100-00-E--TG11234567890"
         }
         """
-        # Check Cache BEFORE acquiring lock
-        if not force and "config" in self.pwcachetime:
-            age = time.time() - self.pwcachetime["config"]
-            if age < self.pwconfigexpire:
-                log.debug(f"Using Cached Config (age: {age:.2f}s, expire: {self.pwconfigexpire}s)")
-                return self.pwcache["config"]
+        def fetch_config():
+            """One config.json fetch on whichever transport is live. v1r reads
+            it through the FileStore API over the LAN; basic and bearer send the
+            legacy config.send protobuf through the shared transport, as does
+            v1r while its LAN is down and a WiFi fallback session exists
+            (straight to _post_tedapi_wifi — that request must not take
+            _post_tedapi's LAN route). ``battery_blocks`` is normalized to a
+            list, which callers rely on. Returns the config dict, or None when
+            nothing came back."""
+            wifi_fallback = self.v1r and self.lan_failed and bool(self.wifi_session)
+            if self.v1r and not wifi_fallback:
+                data = self.v1r_transport.get_config_v1r(self.din)
             else:
-                log.debug(f"Cache expired for config (age: {age:.2f}s, expire: {self.pwconfigexpire}s)")
-
-        # Check cooldown BEFORE acquiring lock
-        if not force and self.pwcooldown > time.perf_counter():
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-
-        # Only acquire lock if we need to make an API call
-        data = None
-        try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
-                # Double-check cache after acquiring lock (another thread might have updated it)
-                if not force and "config" in self.pwcachetime:
-                    if time.time() - self.pwcachetime["config"] < self.pwconfigexpire:
-                        log.debug("Using Cached Payload (double-check)")
-                        return self.pwcache["config"]
-
-                # Re-check cooldown after acquiring lock
-                if not force and self.pwcooldown > time.perf_counter():
-                    log.debug('Rate limit cooldown period - Pausing API calls')
-                    return None
-                # Check Connection
-                if not self.din:
-                    if not self.connect():
-                        log.error("Not Connected - Unable to get configuration")
-                        return None
-                # Fetch Configuration from Powerwall
-                log.debug("Get Configuration from Powerwall")
-                if self.v1r:
-                    # v1r uses FileStore protobuf format for config
-                    # When LAN is down, fall back to WiFi TEDAPI v1 config path
-                    if self.lan_failed and self.wifi_session:
-                        log.debug("get_config: LAN down, falling back to WiFi TEDAPI")
-                        pb = tedapi_pb2.Message()
-                        pb.message.deliveryChannel = 1
-                        pb.message.sender.local = 1
-                        pb.message.recipient.din = self.din
-                        pb.message.config.send.num = 1
-                        pb.message.config.send.file = "config.json"
-                        pb.tail.value = 1
-                        try:
-                            raw = self._post_tedapi_wifi(pb.SerializeToString())
-                            if raw:
-                                tedapi = tedapi_pb2.Message()
-                                tedapi.ParseFromString(raw)
-                                payload = tedapi.message.config.recv.file.text
-                                try:
-                                    data = json.loads(payload)
-                                except json.JSONDecodeError:
-                                    data = {}
-                                if 'battery_blocks' not in data:
-                                    data["battery_blocks"] = []
-                                self.pwcachetime["config"] = time.time()
-                                self.pwcache["config"] = data
-                        except Exception as e:
-                            log.error(f"get_config WiFi fallback error: {e}")
-                            data = None
-                    else:
-                        try:
-                            data = self.v1r_transport.get_config_v1r(self.din)
-                            if data:
-                                log.debug(f"Configuration (v1r): {data}")
-                                self.pwcachetime["config"] = time.time()
-                                self.pwcache["config"] = data
-                        except Exception as e:
-                            log.error(f"Error fetching config via v1r: {e}")
-                            data = None
+                request_bytes = self._build_config_request()
+                if wifi_fallback:
+                    log.debug("get_config: LAN down, falling back to WiFi TEDAPI")
+                    response = self._post_tedapi_wifi(request_bytes)
                 else:
-                    # Build Protobuf to fetch config (WiFi v1 format)
-                    pb = tedapi_pb2.Message()
-                    pb.message.deliveryChannel = 1
-                    pb.message.sender.local = 1
-                    pb.message.recipient.din = self.din  # DIN of Powerwall
-                    pb.message.config.send.num = 1
-                    pb.message.config.send.file = "config.json"
-                    pb.tail.value = 1
-                    url = f'https://{self.gw_ip}/tedapi/v1'
-                    try:
-                        if self.auth_mode == AuthMode.BEARER:
-                            # Bearer transport wraps/unwraps the AuthEnvelope and
-                            # returns a bare MessageEnvelope (legacy config format).
-                            raw = self._authenv_post(pb.SerializeToString())
-                            if raw is None:
-                                return None
-                            env = tedapi_pb2.MessageEnvelope()
-                            env.ParseFromString(raw)
-                            payload = env.config.recv.file.text
-                        else:
-                            r = self.session.post(url, data=pb.SerializeToString(), timeout=self.timeout)
-                            log.debug(f"Response Code: {r.status_code}")
-                            if r.status_code in BUSY_CODES:
-                                # Rate limited - Switch to cooldown mode for 5 minutes
-                                self.pwcooldown = time.perf_counter() + 300
-                                log.error('Possible Rate limited by Powerwall at - Activating 5 minute cooldown')
-                                return None
-                            if r.status_code != HTTPStatus.OK:
-                                log.error(f"Error fetching config: {r.status_code}")
-                                return None
-                            # Decode response
-                            tedapi = tedapi_pb2.Message()
-                            tedapi.ParseFromString(decompress_response(r.content))
-                            payload = tedapi.message.config.recv.file.text
-                        try:
-                            data = json.loads(payload)
-                        except json.JSONDecodeError as e:
-                            log.error(f"Error Decoding JSON: {e}")
-                            data = {}
-                        if 'battery_blocks' not in data:
-                            data["battery_blocks"] = []
-                        log.debug(f"Configuration: {data}")
-                        self.pwcachetime["config"] = time.time()
-                        self.pwcache["config"] = data
-                    except Exception as e:
-                        log.error(f"Error fetching config: {e}")
-                        data = None
-        except TimeoutError:
-            log.error('Timeout waiting for API lock - unable to fetch config - '
-                      'returning cached data if available')
-            return self.pwcache.get("config")
-        return data
+                    response = self._post_tedapi(request_bytes)
+                if response is None:
+                    return None
+                data = self._decode_json(
+                    self._parse_legacy_response(response, from_wifi=wifi_fallback, config=True))
+            if data is not None:
+                data.setdefault("battery_blocks", [])
+            return data
+
+        return self._cached_fetch("config", expire=self.pwconfigexpire, force=force,
+                                  self_function=self_function, name="config",
+                                  fetch=fetch_config)
 
     def _write_config(self, updates: dict) -> bool:
         """
@@ -686,65 +709,9 @@ class TEDAPI:
             "system": {}
         }
         """
-        # Check Cache BEFORE acquiring lock
-        if not force and "status" in self.pwcachetime:
-            age = time.time() - self.pwcachetime["status"]
-            if age < self.pwcacheexpire:
-                log.debug(f"Using Cached Payload (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-                return self.pwcache["status"]
-            else:
-                log.debug(f"Cache expired for status (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-
-        # Check cooldown BEFORE acquiring lock
-        if not force and self.pwcooldown > time.perf_counter():
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-
-        # Only acquire lock if we need to make an API call
-        data = None
-        try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
-                # Double-check cache after acquiring lock (another thread might have updated it)
-                if not force and "status" in self.pwcachetime:
-                    if time.time() - self.pwcachetime["status"] < self.pwcacheexpire:
-                        log.debug("Using Cached Payload (double-check)")
-                        return self.pwcache["status"]
-
-                # Re-check cooldown after acquiring lock
-                if not force and self.pwcooldown > time.perf_counter():
-                    log.debug('Rate limit cooldown period - Pausing API calls')
-                    return None
-                # Check Connection
-                if not self.din:
-                    if not self.connect():
-                        log.error("Not Connected - Unable to get status")
-                        return None
-                # Fetch Current Status from Powerwall
-                log.debug("Get Status from Powerwall")
-
-                # Build Protobuf to fetch status
-                request_bytes = self._build_request(QueryRole.DEVICE_CONTROLLER_BASIC)
-                try:
-                    response = self._post_tedapi(request_bytes)
-                    if response is None:
-                        return None
-                    payload = self._parse_response(response)
-                    try:
-                        data = json.loads(payload)
-                    except (json.JSONDecodeError, TypeError) as e:
-                        log.error(f"Error Decoding JSON: {e}")
-                        data = {}
-                    log.debug(f"Status: {data}")
-                    self.pwcachetime["status"] = time.time()
-                    self.pwcache["status"] = data
-                except Exception as e:
-                    log.error(f"Error fetching status: {e}")
-                    data = None
-        except TimeoutError:
-            log.error('Timeout waiting for API lock - unable to fetch status - '
-                      'returning cached data if available')
-            return self.pwcache.get("status")
-        return data
+        return self._cached_fetch("status", expire=self.pwcacheexpire, force=force,
+                                  self_function=self_function, name="status",
+                                  fetch=lambda: self._fetch_query(QueryRole.DEVICE_CONTROLLER_BASIC))
 
 
     @uses_api_lock
@@ -765,66 +732,9 @@ class TEDAPI:
 
         TODO: Refactor to combine tedapi queries
         """
-        # Check Cache BEFORE acquiring lock
-        if not force and "controller" in self.pwcachetime:
-            age = time.time() - self.pwcachetime["controller"]
-            if age < self.pwcacheexpire:
-                log.debug(f"Using Cached Controller (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-                return self.pwcache["controller"]
-            else:
-                log.debug(f"Cache expired for controller (age: {age:.2f}s, expire: {self.pwcacheexpire}s)")
-
-        # Check cooldown BEFORE acquiring lock
-        if not force and self.pwcooldown > time.perf_counter():
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-
-        # Only acquire lock if we need to make an API call
-        data = None
-        try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
-                # Double-check cache after acquiring lock (another thread might have updated it)
-                if not force and "controller" in self.pwcachetime:
-                    if time.time() - self.pwcachetime["controller"] < self.pwcacheexpire:
-                        log.debug("Using Cached Payload (double-check)")
-                        return self.pwcache["controller"]
-
-                # Re-check cooldown after acquiring lock
-                if not force and self.pwcooldown > time.perf_counter():
-                    log.debug('Rate limit cooldown period - Pausing API calls')
-                    return None
-                # Check Connection
-                if not self.din:
-                    if not self.connect():
-                        log.error("Not Connected - Unable to get controller data")
-                        return None
-                # Fetch Current Status from Powerwall
-                log.debug("Get controller data from Powerwall")
-
-                # Build Protobuf to fetch controller data
-                request_bytes = self._build_request(QueryRole.DEVICE_CONTROLLER_FULL)
-                try:
-                    response = self._post_tedapi(request_bytes)
-                    if response is None:
-                        return None
-                    payload = self._parse_response(response)
-                    log.debug(f"Payload: {payload}")
-                    try:
-                        data = json.loads(payload)
-                    except (json.JSONDecodeError, TypeError) as e:
-                        log.error(f"Error Decoding JSON: {e}")
-                        data = {}
-                    log.debug(f"Status: {data}")
-                    self.pwcachetime["controller"] = time.time()
-                    self.pwcache["controller"] = data
-                except Exception as e:
-                    log.error(f"Error fetching controller data: {e}")
-                    data = None
-        except TimeoutError:
-            log.error('Timeout waiting for API lock - unable to fetch controller data - '
-                      'returning cached data if available')
-            return self.pwcache.get("controller")
-        return data
+        return self._cached_fetch("controller", expire=self.pwcacheexpire, force=force,
+                                  self_function=self_function, name="controller data",
+                                  fetch=lambda: self._fetch_query(QueryRole.DEVICE_CONTROLLER_FULL))
 
 
     @uses_api_lock
@@ -843,48 +753,13 @@ class TEDAPI:
                 }
             }
         """
-        # Check Cache BEFORE acquiring lock
-        if not force and "firmware" in self.pwcachetime:
-            if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
-                log.debug("Using Cached Firmware")
-                return self.pwcache["firmware"]
-
-        # Check cooldown BEFORE acquiring lock
-        if not force and self.pwcooldown > time.perf_counter():
-            log.debug('Rate limit cooldown period - Pausing API calls')
+        # The cache holds the SystemInfo, so a cache hit can answer either shape.
+        info = self._cached_fetch("firmware", expire=self.pwcacheexpire, force=force,
+                                  self_function=self_function, name="firmware version",
+                                  fetch=self._get_system_info)
+        if info is None:
             return None
-
-        payload = None
-        try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
-                # Double-check cache after acquiring lock (another thread might have updated it)
-                if not force and "firmware" in self.pwcachetime:
-                    if time.time() - self.pwcachetime["firmware"] < self.pwcacheexpire:
-                        log.debug("Using Cached Firmware (double-check)")
-                        return self.pwcache["firmware"]
-
-                # Re-check cooldown after acquiring lock
-                if not force and self.pwcooldown > time.perf_counter():
-                    log.debug('Rate limit cooldown period - Pausing API calls')
-                    return None
-                log.debug("Get Firmware Version from Powerwall")
-                try:
-                    info = self._get_system_info()
-                    if info is None:
-                        return None
-                    firmware_version = info.version
-                    payload = info.to_details_dict() if details else firmware_version
-                    log.debug(f"Firmware Version: {firmware_version}")
-                    self.pwcachetime["firmware"] = time.time()
-                    self.pwcache["firmware"] = firmware_version
-                except Exception as e:
-                    log.error(f"Error fetching firmware version: {e}")
-                    payload = None
-        except TimeoutError:
-            log.error('Timeout waiting for API lock - unable to fetch firmware version - '
-                      'returning cached data if available')
-            return self.pwcache.get("firmware")
-        return payload
+        return info.to_details_dict() if details else info.version
 
     def _get_system_info(self) -> Optional[SystemInfo]:
         """Fetch the gateway firmware/system info and normalize it into a
@@ -894,7 +769,14 @@ class TEDAPI:
         legacy firmware.request/firmware.system format. Returns the SystemInfo, or
         None if nothing came back.
         """
-        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+        if self.tedapi_api_version < TEDAPIApiVersion.V2026_06:
+            pb = tedapi_pb2.Message()
+            pb.message.deliveryChannel = 1
+            pb.message.sender.local = 1
+            pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+            pb.message.firmware.request = ""
+            pb.tail.value = 1
+        else:
             tx, ed = self._import_v2026_pb2()
             pb = tx.Message()
             pb.message.deliveryChannel = ed.DELIVERY_CHANNEL_LOCAL_HTTPS
@@ -902,13 +784,6 @@ class TEDAPI:
             pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
             pb.message.common.getSystemInfoRequest.CopyFrom(
                 ed.CommonAPIGetSystemInfoRequest())
-            pb.tail.value = 1
-        else:
-            pb = tedapi_pb2.Message()
-            pb.message.deliveryChannel = 1
-            pb.message.sender.local = 1
-            pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
-            pb.message.firmware.request = ""
             pb.tail.value = 1
         response = self._post_tedapi(pb.SerializeToString())
         if response is None:
@@ -947,56 +822,15 @@ class TEDAPI:
                     ...
                 }
             }
+        An empty or malformed payload is an uncached None (``strict``), not the
+        {} the other queries degrade to: get_pw3_vitals treats None as "no
+        components" and a cached {} would suppress retries for the config-expiry
+        window (and the proxy's /tedapi/components would serve "{}" for "null").
         """
-        # Check Cache BEFORE acquiring lock
-        if not force and "components" in self.pwcachetime:
-            cache_age = time.time() - self.pwcachetime["components"]
-            if cache_age < self.pwconfigexpire:
-                log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s)")
-                return self.pwcache["components"]
-
-        # Check cooldown BEFORE acquiring lock
-        if not force and self.pwcooldown > time.perf_counter():
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-
-        components = None
-        try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
-                # Double-check cache after acquiring lock (another thread might have updated it)
-                if not force and "components" in self.pwcachetime:
-                    cache_age = time.time() - self.pwcachetime["components"]
-                    if cache_age < self.pwconfigexpire:
-                        log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s) (double-check)")
-                        return self.pwcache["components"]
-
-                # Re-check cooldown after acquiring lock
-                if not force and self.pwcooldown > time.perf_counter():
-                    log.debug('Rate limit cooldown period - Pausing API calls')
-                    return None
-                # Fetch Configuration from Powerwall
-                log.debug("Get PW3 Components from Powerwall")
-
-                # Build Protobuf to fetch config
-                request_bytes = self._build_request(QueryRole.COMPONENTS)
-                try:
-                    response = self._post_tedapi(request_bytes)
-                    if response is None:
-                        return None
-                    payload = self._parse_response(response)
-                    log.debug(f"Payload (len={len(payload) if payload else 0}): {payload}")
-                    components = json.loads(payload)
-                    log.debug(f"Components: {components}")
-                    self.pwcachetime["components"] = time.time()
-                    self.pwcache["components"] = components
-                except Exception as e:
-                    log.error(f"Error fetching components: {e}")
-                    components = None
-        except TimeoutError:
-            log.error('Timeout waiting for API lock - unable to fetch components - '
-                      'returning cached data if available')
-            return self.pwcache.get("components")
-        return components
+        return self._cached_fetch("components", expire=self.pwconfigexpire, force=force,
+                                  self_function=self_function, name="components",
+                                  fetch=lambda: self._fetch_query(QueryRole.COMPONENTS,
+                                                                  strict=True))
 
 
     def get_pw3_vitals(self, force=False):
@@ -1040,14 +874,10 @@ class TEDAPI:
                 log.error("Not Connected - Unable to get configuration")
                 return None
         # Check Cache
-        if not force and "pw3_vitals" in self.pwcachetime:
-            cache_age = time.time() - self.pwcachetime["pw3_vitals"]
-            if cache_age < self.pwconfigexpire:
-                log.debug(f"Using Cached Components (age: {cache_age:.2f}s, expire: {self.pwconfigexpire}s)")
-                return self.pwcache["pw3_vitals"]
-        if not force and self.pwcooldown > time.perf_counter():
-            # Rate limited - return None
-            log.debug('Rate limit cooldown period - Pausing API calls')
+        cached = self._cache_get("pw3_vitals", self.pwconfigexpire, force)
+        if cached is not _CACHE_MISS:
+            return cached
+        if not force and self._in_cooldown():
             return None
         components = self.get_components(force=force)
         din = self.din
@@ -1260,66 +1090,15 @@ class TEDAPI:
                 return None
             use_wifi = True
             log.debug("v1r: Querying follower battery block %s via WiFi", din)
-
-        # Check Cache BEFORE acquiring lock
-        if not force and din in self.pwcachetime:
-            if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
-                log.debug("Using Cached Battery Block")
-                return self.pwcache[din]
-
-        # Check cooldown BEFORE acquiring lock
-        if not force and self.pwcooldown > time.perf_counter():
-            log.debug('Rate limit cooldown period - Pausing API calls')
-            return None
-
-        data = None
-        try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
-                # Double-check cache after acquiring lock (another thread might have updated it)
-                if not force and din in self.pwcachetime:
-                    if time.time() - self.pwcachetime[din] < self.pwcacheexpire:
-                        log.debug("Using Cached Battery Block (double-check)")
-                        return self.pwcache[din]
-
-                # Re-check cooldown after acquiring lock
-                if not force and self.pwcooldown > time.perf_counter():
-                    log.debug('Rate limit cooldown period - Pausing API calls')
-                    return None
-                # Fetch Battery Block from Powerwall
-                log.debug(f"Get Battery Block from Powerwall ({din})")
-
-                # Build Protobuf to fetch config (follower routed via primary DIN)
-                request_bytes = self._build_request(
-                    QueryRole.COMPONENTS, recipient_din=din, sender_din=self.din, tail=2)
-                try:
-                    url_suffix = f'/tedapi/device/{din}/v1'
-                    if use_wifi:
-                        response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
-                    else:
-                        response = self._post_tedapi(request_bytes, din=din,
-                                                     url_suffix=url_suffix)
-                    if response is None:
-                        return None
-                    # battery block is a config fetch (legacy text lives in
-                    # config.recv.file.text); a malformed payload -> {} rather
-                    # than aborting the whole call
-                    payload_text = self._parse_response(response, from_wifi=use_wifi, config=True)
-                    try:
-                        data = json.loads(payload_text) if payload_text else {}
-                    except json.JSONDecodeError as e:
-                        log.error(f"Error Decoding JSON: {e}")
-                        data = {}
-                    log.debug(f"Configuration: {data}")
-                    self.pwcachetime[din] = time.time()
-                    self.pwcache[din] = data
-                except Exception as e:
-                    log.error(f"Error fetching device: {e}")
-                    data = None
-        except TimeoutError:
-            log.error('Timeout waiting for API lock - unable to fetch battery block - '
-                      'returning cached data if available')
-            return self.pwcache.get(din)
-        return data
+        # Follower routed via the primary DIN (sender), tail 2, per-device URL;
+        # a config-shaped fetch — the legacy answer lives in config.recv.file.text
+        return self._cached_fetch(
+            din, expire=self.pwcacheexpire, force=force, self_function=self_function,
+            name=f"battery block {din}",
+            fetch=lambda: self._fetch_query(
+                QueryRole.COMPONENTS, recipient_din=din, sender_din=self.din, tail=2,
+                din=din, url_suffix=f'/tedapi/device/{din}/v1', use_wifi=use_wifi,
+                config=True))
 
     def _init_session(self):
         """Initialize and return a requests.Session for TEDAPI communication."""
@@ -1485,24 +1264,16 @@ class TEDAPI:
         self.token = None
         self.session.headers.pop("Authorization", None)
 
-    def _authenv_post(self, pb_bytes: bytes, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
-        """Bearer transport: wrap the inner MessageEnvelope in an AuthEnvelope,
+    def _authenv_post(self, envelope_bytes: bytes, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
+        """Bearer transport: wrap bare MessageEnvelope bytes in an AuthEnvelope,
         POST it (the Bearer header rides on the session), and unwrap the
-        AuthEnvelope response back to the bare MessageEnvelope bytes.
+        AuthEnvelope response back to bare MessageEnvelope bytes.
 
-        The inner envelope is field 1 of the serialized Message regardless of
-        protobuf version, so it (and the response payload) are extracted with
-        the version-independent AuthEnvelope shape rather than a versioned
-        Message class. Returns bare MessageEnvelope bytes, or None on error.
+        Takes envelope bytes, not a full transport Message: _post_tedapi strips
+        the Message/Tail wrapper (_envelope_bytes) before calling, exactly as it
+        does for v1r, so nothing here re-parses the request. Returns bare
+        MessageEnvelope bytes, or None on error.
         """
-        # Extract inner MessageEnvelope bytes: field 1 of the Message reads back
-        # as AuthEnvelope.payload (bytes); the trailing Tail (field 2) is ignored.
-        try:
-            src = combined_pb2.AuthEnvelope()
-            src.ParseFromString(pb_bytes)
-            envelope_bytes = src.payload or pb_bytes
-        except Exception:
-            envelope_bytes = pb_bytes
         auth = combined_pb2.AuthEnvelope()
         auth.payload = envelope_bytes
         auth.externalAuth.type = combined_pb2.EXTERNAL_AUTH_TYPE_PRESENCE
@@ -1681,8 +1452,8 @@ class TEDAPI:
                 'pip install -U protobuf'
             ) from e
 
-    def _build_signed_query_request(self, query, *, recipient_din: str = None,
-                                    sender_din: str = None, tail: int = 1) -> bytes:
+    def _build_signed_query_request(self, query, *, recipient_din: Optional[str] = None,
+                                    sender_din: Optional[str] = None, tail: int = 1) -> bytes:
         """Build a V2026_06 SIGNED GraphQL request: the energy_device
         MessageEnvelope (graphql.queryRequest, format=SIGNED) wrapped in the
         v2 transport Message + Tail. `query` is a V2026_06 TEDAPIQuery whose
@@ -1755,8 +1526,8 @@ class TEDAPI:
             )
         return resp.data or None
 
-    def _build_request(self, role: QueryRole, *, recipient_din: str = None,
-                       sender_din: str = None, tail: int = 1) -> bytes:
+    def _build_request(self, role: QueryRole, *, recipient_din: Optional[str] = None,
+                       sender_din: Optional[str] = None, tail: int = 1) -> bytes:
         """Build a TEDAPI request for ``role``, dispatching on tedapi_api_version.
 
         V2026_06 emits a Tesla-signed GraphQL request; every other version emits
@@ -1781,18 +1552,51 @@ class TEDAPI:
         pb.tail.value = tail
         return pb.SerializeToString()
 
+    def _build_config_request(self) -> bytes:
+        """Build the config.json fetch: the legacy ``config.send`` protobuf, on
+        every tedapi_api_version — there is no signed-GraphQL config query (under
+        V2026_06 the same envelope field parses as filestore.readFileRequest).
+        Returns full Message bytes like _build_request; _post_tedapi strips the
+        wrapper for the v1r and bearer transports. Parse the answer with
+        _parse_legacy_response(config=True), not _parse_response."""
+        pb = tedapi_pb2.Message()
+        pb.message.deliveryChannel = 1
+        pb.message.sender.local = 1
+        pb.message.recipient.din = self.din  # DIN of Powerwall
+        pb.message.config.send.num = 1
+        pb.message.config.send.file = "config.json"
+        pb.tail.value = 1
+        return pb.SerializeToString()
+
     def _parse_response(self, response: bytes, *, from_wifi: bool = False,
                         config: bool = False) -> Optional[str]:
-        """Decode a TEDAPI response to its JSON payload text, dispatching on
-        tedapi_api_version and transport. V2026_06 -> signed GraphQL; v1r LAN ->
-        v1r query response; otherwise the legacy WiFi/basic protobuf. Config
-        fetches carry the text in ``config.recv.file.text``, queries in
-        ``payload.recv.text``. Single place the version+transport split lives for
-        the response side, so the WiFi-fallback context (``from_wifi``) can't be
+        """Decode a TEDAPI query response to its JSON payload text, dispatching on
+        tedapi_api_version and transport. V2026_06 -> signed GraphQL; otherwise
+        the legacy protobuf (_parse_legacy_response, which takes ``from_wifi``
+        and ``config``). Single place the version+transport split lives for the
+        response side, so the WiFi-fallback context (``from_wifi``) can't be
         forgotten at a call site (see the transport note on
         _parse_signed_query_response)."""
         if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
             return self._parse_signed_query_response(response, from_wifi=from_wifi)
+        return self._parse_legacy_response(response, from_wifi=from_wifi, config=config)
+
+    def _parse_legacy_response(self, response: bytes, *, from_wifi: bool = False,
+                               config: bool = False) -> Optional[str]:
+        """Decode a legacy-protobuf (V2024_06 wire) response to its text payload,
+        dispatching on transport only: v1r LAN -> v1r query response (a bare
+        envelope; _post_tedapi normalizes its WiFi fallback to the same shape);
+        bearer -> bare MessageEnvelope; basic, and requests sent straight through
+        _post_tedapi_wifi (``from_wifi``) -> full Message with tail. ``config``
+        selects ``config.recv.file.text`` (config-file fetches, and the battery
+        block query whose legacy answer lives there) over ``payload.recv.text``.
+
+        Queries reach this through _parse_response's version dispatch. The
+        config.json fetch (get_config) calls it directly: config.send is the same
+        legacy protobuf on every tedapi_api_version, so it must bypass that
+        dispatch — routed through _parse_response, bearer mode (which requires
+        V2026_06) would hand the config response to the signed-GraphQL parser
+        and read back nothing."""
         if self.v1r and not from_wifi:
             return self._parse_v1r_query_response(response)
         if self.auth_mode == AuthMode.BEARER:
@@ -1800,31 +1604,70 @@ class TEDAPI:
             # MessageEnvelope (no outer Message/Tail wrapper).
             env = tedapi_pb2.MessageEnvelope()
             env.ParseFromString(response)
-            if config:
-                return env.config.recv.file.text
-            return env.payload.recv.text
-        tedapi = tedapi_pb2.Message()
-        tedapi.ParseFromString(response)
+        else:
+            tedapi = tedapi_pb2.Message()
+            tedapi.ParseFromString(response)
+            env = tedapi.message
         if config:
-            return tedapi.message.config.recv.file.text
-        return tedapi.message.payload.recv.text
+            return env.config.recv.file.text
+        return env.payload.recv.text
+
+    def _transport_message(self):
+        """Empty transport ``Message`` (envelope + tail) from the proto set that
+        matches tedapi_api_version. A V2026_06 request carries its graphql
+        payload in envelope field 16, which the legacy proto reinterprets as a
+        QueryType and corrupts on a parse/re-serialize round trip — so every
+        unwrap or re-wrap of a transport Message goes through this, never
+        tedapi_pb2.Message directly. (The legacy config.send fetch survives the
+        V2026_06 proto unchanged: its field 15 parses as filestore.readFileRequest,
+        the same wire shape.)"""
+        if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
+            _tx, _ = self._import_v2026_pb2()
+            return _tx.Message()
+        return tedapi_pb2.Message()
+
+    def _envelope_bytes(self, pb_bytes: bytes) -> bytes:
+        """Reduce full transport Message bytes (envelope + tail) to the bare
+        MessageEnvelope bytes the v1r and bearer transports send.
+
+        Input that is already a bare envelope is returned unchanged: it has no
+        field-1 Message, and protobuf parses the mismatched wire types leniently
+        into an *empty* ``message`` rather than raising, so an unguarded
+        ``msg.message.SerializeToString()`` would send b"". Unparseable input is
+        passed through too, for the gateway to reject."""
+        # Resolve the proto outside the try so an old-protobuf ImportError is not
+        # masked by the parse fallback (unreachable in practice: a V2026_06
+        # request was already built via the guarded _build_signed_query_request).
+        msg = self._transport_message()
+        try:
+            msg.ParseFromString(pb_bytes)
+        except Exception:
+            return pb_bytes
+        if not msg.HasField('message'):
+            return pb_bytes
+        return msg.message.SerializeToString()
 
     def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
         """
         Transport abstraction: POST protobuf bytes to the appropriate TEDAPI endpoint.
 
-        WiFi mode: POST to /tedapi/v1 with HTTP Basic auth session.
-        v1r mode:  Wrap in RSA-signed RoutableMessage and POST to /tedapi/v1r.
+        WiFi mode:   POST to /tedapi/v1 with HTTP Basic auth session.
+        Bearer mode: Wrap the bare envelope in an AuthEnvelope and POST it with
+                     the Bearer session (see _authenv_post).
+        v1r mode:    Wrap in RSA-signed RoutableMessage and POST to /tedapi/v1r.
 
         Args:
-            pb_bytes: Serialized protobuf payload. For WiFi: full tedapi_pb2.Message.
-                      For v1r: can be either full Message or just MessageEnvelope bytes.
+            pb_bytes: Serialized protobuf payload: a full tedapi_pb2.Message
+                      (envelope + tail), as every builder emits. v1r and bearer
+                      strip the wrapper here (_envelope_bytes) and also accept
+                      bare MessageEnvelope bytes.
             din: DIN for v1r envelope (ignored in WiFi mode)
             url_suffix: URL suffix for WiFi mode (e.g., '/tedapi/v1' or '/tedapi/device/{din}/v1')
 
         Returns:
             Raw response content bytes, or None on error.
             For WiFi: the raw HTTP response body (protobuf)
+            For bearer: bare MessageEnvelope bytes (the AuthEnvelope is unwrapped)
             For v1r: bare MessageEnvelope bytes — either the inner
                      protobuf_message_as_bytes from the RoutableMessage response
                      (LAN), or the envelope re-extracted from the full transport
@@ -1865,13 +1708,7 @@ class TEDAPI:
                 # decision was made) also avoids the race of callers re-checking
                 # self.lan_failed at parse time, which another thread may have
                 # flipped after this request was served over LAN.
-                if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
-                    # v2 transport proto so field-16 graphql payloads survive
-                    # the re-extract (legacy proto would drop them).
-                    _tx, _ = self._import_v2026_pb2()
-                    wifi_msg = _tx.Message()
-                else:
-                    wifi_msg = tedapi_pb2.Message()
+                wifi_msg = self._transport_message()
                 try:
                     wifi_msg.ParseFromString(raw)
                     return wifi_msg.message.SerializeToString()
@@ -1882,22 +1719,7 @@ class TEDAPI:
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message
             # wrapper with tail). Extract the envelope from the full Message.
-            if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
-                # Parse with the v2 transport proto so the field-16 graphql
-                # payload survives the re-extract (legacy proto would drop it).
-                # Import outside the try so an old-protobuf error isn't masked by
-                # the parse-fallback below (unreachable in practice — the request
-                # was already built via the guarded _build_signed_query_request).
-                _tx, _ = self._import_v2026_pb2()
-                msg = _tx.Message()
-            else:
-                msg = tedapi_pb2.Message()
-            try:
-                msg.ParseFromString(pb_bytes)
-                envelope_bytes = msg.message.SerializeToString()
-            except Exception:
-                # If parsing fails, assume pb_bytes is already envelope bytes
-                envelope_bytes = pb_bytes
+            envelope_bytes = self._envelope_bytes(pb_bytes)
             # Always sign with leader DIN (self.din) — the RSA key is registered
             # on the leader only. The follower DIN is in the envelope's recipient
             # field for routing, but TLV personalization must match the leader.
@@ -1920,10 +1742,12 @@ class TEDAPI:
                 self.lan_last_success = time.time()
             return inner
         elif self.auth_mode == AuthMode.BEARER:
-            # Bearer transport wraps the envelope in an AuthEnvelope and returns
-            # the unwrapped bare MessageEnvelope bytes (parsed by
-            # _parse_response's bearer branch, like the v1r bare case).
-            return self._authenv_post(pb_bytes, url_suffix=url_suffix)
+            # Bearer, like v1r, sends just the MessageEnvelope: strip the
+            # Message/Tail wrapper here and let _authenv_post wrap the bare
+            # envelope in an AuthEnvelope. It returns the unwrapped bare
+            # MessageEnvelope bytes (parsed by _parse_legacy_response's bearer
+            # branch, like the v1r bare case).
+            return self._authenv_post(self._envelope_bytes(pb_bytes), url_suffix=url_suffix)
         else:
             url = f'https://{self.gw_ip}{url_suffix}'
             r = self.session.post(url, data=pb_bytes, timeout=self.timeout)
