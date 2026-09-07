@@ -72,6 +72,19 @@ class TestPostApiOperation:
         battery.set_backup_reserve_percent.assert_called_once_with(30)
         battery.set_operation.assert_not_called()
 
+    def test_reserve_zero_only_not_rejected_as_empty(self, cloud):
+        # Regression (PW3 mode-persistence race): {'backup_reserve_percent': 0}
+        # alone used to fail the truthiness-based "missing parameters" guard.
+        battery = self._make_battery()
+        cloud.tesla = MagicMock()
+        cloud.tesla.battery_list.return_value = [battery]
+
+        resp = cloud.post_api_operation(payload={'backup_reserve_percent': 0})
+        assert 'error' not in resp
+        assert resp['set_backup_reserve_percent']['backup_reserve_percent'] == 0
+        battery.set_backup_reserve_percent.assert_called_once_with(0)
+        battery.set_operation.assert_not_called()
+
     def test_false_reserve_normalized_to_zero(self, cloud):
         battery = self._make_battery()
         cloud.tesla = MagicMock()

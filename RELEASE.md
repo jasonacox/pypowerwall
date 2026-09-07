@@ -1,6 +1,6 @@
 # RELEASE NOTES
 
-## v0.17.1 - TEDAPI Getter and Bearer Transport Consolidation
+## v0.17.2 - TEDAPI Getter and Bearer Transport Consolidation
 
 * refactor(tedapi): the cached getters — `get_config()`, `get_status()`, `get_device_controller()`, `get_firmware_version()`, `get_components()`, `get_battery_block()` — were six hand-copied ~60-line variants of the same skeleton (cache check → cooldown → lock → re-check → connect → fetch → cache; lock timeout → stale cache). They now share one `_cached_fetch()` and contribute only their cache key, expiry and fetch; the query getters share one `_fetch_query()` (build → post, LAN or WiFi → parse → JSON). `get_din()` keeps its deliberately different contract (no lock, never reconnects, lets a transport exception reach `connect()` for its routing advice) but uses the same cache/cooldown helpers, with its three transports split out. `pwcache`/`pwcachetime` are unchanged as the storage. Behavior deltas, all deliberate:
   * `get_firmware_version(details=True)` on a warm cache now returns the details dict — the cache holds the `SystemInfo`, where it used to hold the version string and hand that back regardless of `details`
@@ -11,6 +11,16 @@
 * refactor(tedapi): the bearer transport no longer re-parses the request `Message` as an `AuthEnvelope` to find the inner envelope (a wire-shape pun on field 1). `_post_tedapi()` strips the `Message`/`Tail` wrapper to bare `MessageEnvelope` bytes with one shared `_envelope_bytes()` — the same strip the v1r LAN route uses, with the transport proto matched to `tedapi_api_version` so a V2026_06 signed-GraphQL request survives the round trip — and `_authenv_post()` now takes envelope bytes and wraps them verbatim. Bare-envelope input is passed through explicitly (protobuf parses it as an *empty* `Message` without raising, so an unguarded strip would send `b""`); the same guard now backs the v1r route's documented "full Message or bare envelope" contract.
 * refactor(tedapi): `_parse_response()`'s legacy tier is split out as `_parse_legacy_response()`. config.json is the same legacy `config.send` protobuf on every api version (under V2026_06 the field parses as `filestore.readFileRequest`), so `get_config()` parses through it directly — routing a config fetch through `_parse_response()`'s version dispatch would hand it to the signed-GraphQL parser under V2026_06 (which bearer mode requires) and read back nothing. Query call sites are unchanged.
 * tests: new `test_tedapi_cached_fetch.py` (106 tests — the shared skeleton parametrized over all six getters: cache hit/expiry/force, cooldown, lock timeout → stale cache, transport `None` → uncached, fetch exception → logged `None`, reconnect; plus per-getter transports, `get_din`'s contract, `_fetch_query`/`_decode_json`); `test_api_version.py`'s role-map guard also scans `_fetch_query(<role>)` call sites; `test_bearer_auth.py` reworked for the new contracts (+6 net) — `_authenv_post()` is handed envelope bytes; the wrapper-strip, bare-envelope passthrough, junk passthrough and V2026_06 strip tests live under `_post_tedapi()`; `get_config()` gains bearer + V2026_06 parse and end-to-end round-trip guards, a v1r WiFi-fallback config test, and an assertion that the fetch reaches `_authenv_post()` with the bare `config.send` envelope
+* Library version bumped to `0.17.2`
+
+## v0.17.1 - set_operation Partial Payload Fix (PW3 Mode-Persistence Race)
+
+* fix(core): `set_operation()` no longer back-fills `/api/operation` payloads for partial-payload backends (cloud, fleetapi, tedapi) — only the fields the caller actually set are written. Tesla applies BACKUP_RESERVE and OPERATION_MODE as two asynchronous commands, so a back-filled reserve write raced a mode-only change and the mode command could be silently dropped on Powerwall 3 (most reproducible when the current reserve is 0). Local gateway writes keep the full-overwrite back-fill behavior, as before.
+* fix(core): an explicit `level=0` is no longer coerced to boolean `False` — numeric `0` is preserved through payload construction, and the cloud/fleetapi "missing parameters" guards now treat `0` as present (`is None` checks)
+* fix(core): calling `set_operation()` with neither `level` nor `mode` on a non-local backend now logs an error and returns `None` instead of posting an empty payload that would raise
+* chore: corrected the cloud/fleetapi invalid-payload error message quoting and grammar
+* tests: payload-construction regression tests across local vs non-local semantics, reserve-0 acceptance (cloud + new FleetAPI suite), and empty-payload soft-fail
+* Library version bumped to `0.17.1`
 
 ## v0.17.0 - TEDAPI Bearer Authentication Mode
 

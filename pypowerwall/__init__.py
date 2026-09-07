@@ -89,7 +89,7 @@ import sys
 import time
 from typing import Optional, Union
 
-version_tuple = (0, 17, 1)
+version_tuple = (0, 17, 2)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -816,23 +816,48 @@ class Powerwall(object):
             log.error("Level can be in range of 0 to 100 only.")
             return None
 
-        if level is None:
-            # Back-fill the current reserve so the write does not change it. The scale must
-            # match the write path: the local backend passes the payload verbatim to the
-            # gateway's raw-scale /api/operation, while cloud/fleetapi/tedapi writes expect
-            # the Tesla-app scale (tedapi converts app->raw internally on write).
-            level = self.get_reserve(scale=not isinstance(self.client, PyPowerwallLocal))
+        # The local gateway /api/operation is a full overwrite: an omitted field
+        # would clobber the current setting, so back-fill from the live values.
+        # Cloud/fleetapi/tedapi accept partial payloads, and back-filling there is
+        # actively harmful: Tesla applies BACKUP_RESERVE and OPERATION_MODE as two
+        # asynchronous commands, so a back-filled reserve write races the mode
+        # change and the mode command can be silently dropped (observed on PW3
+        # whenever the current reserve is 0). Partial-payload backends therefore
+        # write only the fields the caller actually set.
+        full_overwrite = isinstance(self.client, PyPowerwallLocal)
+
+        payload = {}
+        if level is not None:
+            # Explicit reserve: keep the numeric value. In particular 0 must stay
+            # 0 - the legacy coercion of 0 to boolean False (a v1-local-API-era
+            # "leave unchanged" marker) made the cloud path treat every
+            # reserve-0 write as a real BACKUP_RESERVE=0 command racing any mode
+            # change in the same call.
+            payload['backup_reserve_percent'] = level
+        elif full_overwrite:
+            # Back-fill the current reserve so the write does not change it. The
+            # local backend passes the payload verbatim to the gateway's raw-scale
+            # /api/operation, so read it back raw.
+            level = self.get_reserve(scale=False)
             if level is None:
                 log.error("Unable to determine current reserve level - unable to set operation.")
                 return None
+            payload['backup_reserve_percent'] = level
 
-        if not mode:
+        if mode:
+            payload['real_mode'] = mode
+        elif full_overwrite:
             mode = self.get_mode()
+            if mode:
+                payload['real_mode'] = mode
 
-        payload = {
-            'backup_reserve_percent': level if level > 0 else False,
-            'real_mode': mode
-        }
+        if not payload and not full_overwrite:
+            # Partial-payload backends raise on an empty body; without a
+            # caller-set field there is nothing to write, so fail soft like
+            # the other invalid-input paths instead of raising.
+            log.error("No operation to set - pass level and/or mode.")
+            return None
+
         log.debug(f"Setting operation: {payload}")
 
         result = self.post(api='/api/operation', payload=payload, din=self.din(), jsonformat=jsonformat)
