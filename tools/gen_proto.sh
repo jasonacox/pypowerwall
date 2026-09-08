@@ -82,6 +82,8 @@ PROTO_V2_DIR=pypowerwall/tedapi/protobuf/V2026_06
 # protoc emits bare cross-imports (`import tedapi_v2_x_pb2`); rewrite to package-
 # relative (`from . import tedapi_v2_x_pb2`) so the dir works as a Python package.
 # Deterministic, so committed output == script output (CI git-diff stays clean).
-sed -i -E 's/^import (tedapi_v2_[a-z_]+_pb2) as /from . import \1 as /' "$PROTO_V2_DIR"/tedapi_v2_*_pb2.py
+# (perl, not sed -i: BSD/macOS sed treats -i's argument as a backup suffix, so
+# `sed -i -E` silently misparses there — perl -pi -e is portable GNU/BSD.)
+perl -pi -e 's/^import (tedapi_v2_[a-z_]+_pb2) as /from . import $1 as /' "$PROTO_V2_DIR"/tedapi_v2_*_pb2.py
 # Ensure the package marker exists.
 [ -f "$PROTO_V2_DIR/__init__.py" ] || printf '"""TEDAPI v2 energy_device protobufs (Tesla One, June 2026 query set)."""\n' > "$PROTO_V2_DIR/__init__.py"

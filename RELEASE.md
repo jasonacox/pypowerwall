@@ -1,8 +1,11 @@
 # RELEASE NOTES
 
-## Unreleased
+## v0.17.3 - PW3 v1r Islanding Commands
 
-* fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport.
+* fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).
+* feat(tedapi): `TEGAPISetIslandModeRequest`/`TEGAPISetIslandModeResponse` added to the vendored `tedapi_combined.proto` (legacy TEG oneof fields 3/4) and the pb2 regenerated, so the islanding command flows through the existing `send_teg_message()` path — the generated encoder produces byte-identical wire output to the hardware-validated encoding, pinned by unit tests. The vendored `.proto` files are the single source of truth for the TEDAPI wire schema (see AGENTS.md).
+* fix(tools): `gen_proto.sh` — replace GNU-only `sed -i -E` with portable `perl -pi -e` (BSD/macOS sed misparses `-i -E` as a backup suffix, corrupting the V2026_06 pb2 import rewrite on Mac)
+* Library version bumped to `0.17.3`
 
 ## v0.17.2 - TEDAPI Getter and Bearer Transport Consolidation
 

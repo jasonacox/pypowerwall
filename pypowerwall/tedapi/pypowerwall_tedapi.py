@@ -894,16 +894,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     def go_off_grid(self) -> Optional[dict]:
         """Request intentional islanding using Tesla's signed v1r command."""
-        if not self.tedapi.v1r:
-            log.error("go_off_grid requires v1r transport")
-            return None
         return self.tedapi.go_off_grid()
 
     def reconnect_grid(self) -> Optional[dict]:
         """Request grid reconnection using Tesla's signed v1r command."""
-        if not self.tedapi.v1r:
-            log.error("reconnect_grid requires v1r transport")
-            return None
         return self.tedapi.reconnect_grid()
 
     def schedule_max_backup(self, duration_seconds=7200):

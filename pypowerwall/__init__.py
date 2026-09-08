@@ -89,7 +89,7 @@ import sys
 import time
 from typing import Optional, Union
 
-version_tuple = (0, 17, 2)
+version_tuple = (0, 17, 3)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -1112,8 +1112,11 @@ class Powerwall(object):
             confirm=True to send the command.
 
             On both Powerwall 2 and Powerwall 3, this requires a signed
-            RoutableMessage via the cloud device_command endpoint's
-            routable_message field. The unsigned grpc_command path is
+            command: either a signed RoutableMessage via the cloud
+            device_command endpoint's routable_message field, or — when a
+            v1r RSA key is paired — Tesla's signed setIslandMode command
+            sent locally over the TEDAPI v1r transport. The unsigned
+            grpc_command path is
             accepted by the gateway but does not physically operate the
             contactor. The local REST endpoint /api/v2/islanding/mode
             requires installer-level auth and is not usable with the

@@ -226,6 +226,20 @@ message ControlEventSchedulingInfo {
   uint64 priority                      = 3;
 }
 
+// Intentional islanding (open/close the grid contactor). These are legacy
+// TEG fields (3/4) from Tesla's older TEG schema — the field numbers and
+// types are hardware-validated on PW3 (see PR #379): mode 6 + force=true
+// opens the contactor (off-grid), mode 1 closes it (reconnect). result=1
+// was the observed success value; other values are undocumented.
+message TEGAPISetIslandModeRequest {
+  int32 mode = 1;
+  bool force = 2;
+}
+
+message TEGAPISetIslandModeResponse {
+  int32 result = 1;
+}
+
 message TEGAPIScheduleManualBackupEventRequest {
   ControlEventSchedulingInfo scheduling_info = 1;
 }
@@ -255,6 +269,8 @@ message BackupEvent {
 
 message TEGMessages {
   oneof message {
+    TEGAPISetIslandModeRequest setIslandModeRequest                               = 3;
+    TEGAPISetIslandModeResponse setIslandModeResponse                             = 4;
     TEGAPIScheduleManualBackupEventRequest schedule_manual_backup_event_request   = 45;
     TEGAPIScheduleManualBackupEventResponse schedule_manual_backup_event_response = 46;
     TEGAPICancelManualBackupEventRequest cancel_manual_backup_event_request       = 47;

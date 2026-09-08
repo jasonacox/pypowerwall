@@ -1,4 +1,11 @@
-"""Non-actuating wire-format tests for the signed v1r islanding command."""
+"""Non-actuating wire-format tests for the signed v1r islanding command.
+
+The payload byte-string assertions pin the generated protobuf encoder to the
+exact wire bytes that were hardware-validated on a live PW3 (contactor
+physically opened/closed) — see the TEGAPISetIslandMode* messages in
+tedapi_combined.proto. If a proto regeneration ever changes these bytes,
+that is a regression, not a test to update.
+"""
 
 from unittest.mock import MagicMock, call
 
