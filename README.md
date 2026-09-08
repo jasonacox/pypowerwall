@@ -639,9 +639,11 @@ print("System Status: %r\n" % pw.system_status())
     schedule_max_backup(duration_seconds) # Schedule manual backup event (max backup / storm watch) - v1r mode only
     cancel_max_backup()       # Cancel the current manual backup event - v1r mode only
     get_backup_events()       # Get current backup events - v1r mode only
-    go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True
-    reconnect_grid()          # Reconnect to the grid (close contactor)
+    go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode
+    reconnect_grid()          # Reconnect to the grid (close contactor) - cloud/FleetAPI or v1r mode
 ```
+
+> ⚠️ **WARNING — Grid island control (`go_off_grid` / `reconnect_grid`) physically operates your home's grid contactor. Use with extreme care.** Going off-grid causes a brief transition (~30s solar dropout) and leaves your home running on battery + solar alone until you reconnect — if the battery depletes while islanded, your home loses power. Do not automate these commands without understanding the failure modes; test only when someone is present, and verify grid status after each command rather than assuming success. As of v0.17.3 these also work locally in v1r mode (PW3 wired LAN with RSA key) with no cloud dependency.
 
 ## Tools
 

@@ -77,6 +77,8 @@
     set_grid_export(mode)     # Set grid export mode (mode = battery_ok, pv_only, never)
     get_grid_charging()       # Get the current grid charging mode
     get_grid_export()         # Get the current grid export mode
+    go_off_grid(confirm)      # USE WITH EXTREME CARE: open the grid contactor (island the home) - requires confirm=True
+    reconnect_grid()          # USE WITH EXTREME CARE: close the grid contactor (reconnect to grid)
 
  Requirements
     This module requires the following modules: requests, protobuf, teslapy
@@ -1102,6 +1104,12 @@ class Powerwall(object):
         """
         Physically disconnect the Powerwall from the grid (open contactor).
 
+        USE WITH EXTREME CARE: this operates the physical grid contactor.
+        While islanded, the home runs on battery + solar alone — a depleted
+        battery means the home loses power until reconnect_grid() succeeds.
+        Do not automate without handling those failure modes; verify grid
+        status after the command rather than assuming success.
+
         Sends setIslandModeRequest(mode=6, force=True) which physically
         opens the grid contactor, islanding the home. Solar continues
         producing and the battery serves home load. Causes ~30s solar
@@ -1139,6 +1147,9 @@ class Powerwall(object):
     def reconnect_grid(self) -> Optional[dict]:
         """
         Reconnect the Powerwall to the grid (close contactor).
+
+        USE WITH EXTREME CARE: this operates the physical grid contactor.
+        Verify grid status after the command rather than assuming success.
 
         Sends setIslandModeRequest(mode=1) which physically closes the
         grid contactor, reconnecting the home to the utility grid.
