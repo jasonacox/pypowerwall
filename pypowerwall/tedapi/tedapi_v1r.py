@@ -483,6 +483,42 @@ class TEDAPIv1r:
             log.error(f"send_teg_message: failed to parse response: {e}")
             return None
 
+    def send_island_mode(self, din: str, mode: int, force: bool = False) -> Optional[dict]:
+        """Send Tesla's TEGAPISetIslandModeRequest via the signed v1r path.
+
+        mode 6 + force=True physically opens the grid contactor (intentional
+        islanding); mode 1 closes it (grid reconnect). setIslandModeRequest /
+        setIslandModeResponse are legacy TEG oneof fields 3/4, carried in the
+        vendored tedapi_combined.proto and hardware-validated on PW3. A
+        result of 1 was the observed success value; the semantics of other
+        values are undocumented, so a non-1 or absent result is logged for
+        diagnosis of a non-actuating gateway.
+        """
+        if mode not in (1, 6):
+            raise ValueError("island mode must be 1 (reconnect) or 6 (off-grid)")
+
+        teg = combined_pb2.TEGMessages()
+        teg.setIslandModeRequest.mode = mode
+        teg.setIslandModeRequest.force = force
+        try:
+            resp = self.send_teg_message(din, teg)
+        except Exception as e:
+            log.error(f"send_island_mode error: {e}")
+            return None
+        if resp is None:
+            log.error("send_island_mode: no v1r response")
+            return None
+
+        result = None
+        if resp.teg.HasField("setIslandModeResponse"):
+            result = resp.teg.setIslandModeResponse.result
+        if result is None:
+            log.warning("send_island_mode: response omitted setIslandModeResponse.result")
+        elif result != 1:
+            log.warning(f"send_island_mode: gateway returned result={result} "
+                        "(1 is the observed success value)")
+        return {"mode": mode, "force": force, "result": result}
+
     # ── Standard API (Bearer token) ──────────────────────────────────
 
     def api_get(self, path: str) -> Optional[dict]:

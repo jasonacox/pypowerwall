@@ -207,13 +207,19 @@ pw = pypowerwall.Powerwall(
 
 ### Grid Island Control
 
+> ⚠️ **WARNING — USE WITH EXTREME CARE.** These commands physically operate your home's grid contactor. `go_off_grid()` disconnects your home from the utility grid: expect a brief transition (including a ~30s solar dropout), and your home then runs solely on battery + solar until you reconnect. If the battery is depleted while islanded, **your home loses power**. Do not automate these commands without understanding the failure modes (script crashes while off-grid, depleted battery, gateway unreachable for the reconnect). Test only when someone is present, never during critical loads (medical equipment, etc.), and always verify grid status after issuing a command rather than assuming it succeeded.
+
 - `go_off_grid(confirm=False)` → dict/None
   Physically disconnect the Powerwall from the grid (open contactor), islanding the home. Requires explicit confirmation — pass `confirm=True` to send the command.
 
 - `reconnect_grid()` → dict/None
   Reconnect the Powerwall to the grid (close contactor).
 
-> **v1r LAN Control:** In v1r mode (Powerwall 3 wired LAN with RSA key), all control methods work directly over the local network via config file writes — no cloud API or Tesla account needed. In other modes (WiFi TEDAPI, local), control requires FleetAPI or Cloud API access.
+Both return `{"mode": ..., "force": ..., "result": ...}` on send, or `None` on failure/unsupported backend. A `result` of `1` is the observed success value; treat anything else (or a missing result) as suspect and verify actual grid status (e.g. `grid_status()`).
+
+Supported paths: **Tesla Cloud / FleetAPI** (signed RoutableMessage via the device_command endpoint), and — as of v0.17.3 — **locally in v1r mode** (Powerwall 3 wired LAN with a registered RSA key), which sends Tesla's signed `setIslandMode` command over TEDAPI with no cloud dependency. Hardware-validated on PW3. Not available in basic/bearer TEDAPI or plain local mode.
+
+> **v1r LAN Control:** In v1r mode (Powerwall 3 wired LAN with RSA key), all control methods work directly over the local network — reserve/mode settings via config file writes, backup events and grid island control via Tesla's signed TEG commands — no cloud API or Tesla account needed. In other modes (WiFi TEDAPI, local), control requires FleetAPI or Cloud API access.
 
 ---
 

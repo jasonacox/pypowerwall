@@ -1,5 +1,12 @@
 # RELEASE NOTES
 
+## v0.17.3 - PW3 v1r Islanding Commands
+
+* fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).
+* feat(tedapi): `TEGAPISetIslandModeRequest`/`TEGAPISetIslandModeResponse` added to the vendored `tedapi_combined.proto` (legacy TEG oneof fields 3/4) and the pb2 regenerated, so the islanding command flows through the existing `send_teg_message()` path — the generated encoder produces byte-identical wire output to the hardware-validated encoding, pinned by unit tests. The vendored `.proto` files are the single source of truth for the TEDAPI wire schema (see AGENTS.md).
+* fix(tools): `gen_proto.sh` — replace GNU-only `sed -i -E` with portable `perl -pi -e` (BSD/macOS sed misparses `-i -E` as a backup suffix, corrupting the V2026_06 pb2 import rewrite on Mac)
+* Library version bumped to `0.17.3`
+
 ## v0.17.2 - TEDAPI Getter and Bearer Transport Consolidation
 
 * refactor(tedapi): the cached getters — `get_config()`, `get_status()`, `get_device_controller()`, `get_firmware_version()`, `get_components()`, `get_battery_block()` — were six hand-copied ~60-line variants of the same skeleton (cache check → cooldown → lock → re-check → connect → fetch → cache; lock timeout → stale cache). They now share one `_cached_fetch()` and contribute only their cache key, expiry and fetch; the query getters share one `_fetch_query()` (build → post, LAN or WiFi → parse → JSON). `get_din()` keeps its deliberately different contract (no lock, never reconnects, lets a transport exception reach `connect()` for its routing advice) but uses the same cache/cooldown helpers, with its three transports split out. `pwcache`/`pwcachetime` are unchanged as the storage. Behavior deltas, all deliberate:

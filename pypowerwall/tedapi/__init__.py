@@ -534,6 +534,26 @@ class TEDAPI:
             log.error(f"Error writing config: {e}")
             return False
 
+    def go_off_grid(self) -> Optional[dict]:
+        """Request intentional islanding through the signed v1r transport."""
+        if not self.v1r or not self.v1r_transport:
+            log.error("go_off_grid requires v1r transport")
+            return None
+        if not self.din and not self.connect():
+            log.error("Not connected - unable to go off grid")
+            return None
+        return self.v1r_transport.send_island_mode(self.din, mode=6, force=True)
+
+    def reconnect_grid(self) -> Optional[dict]:
+        """Request grid reconnection through the signed v1r transport."""
+        if not self.v1r or not self.v1r_transport:
+            log.error("reconnect_grid requires v1r transport")
+            return None
+        if not self.din and not self.connect():
+            log.error("Not connected - unable to reconnect grid")
+            return None
+        return self.v1r_transport.send_island_mode(self.din, mode=1)
+
     # ── Max Backup (TEGMessages) ─────────────────────────────────────
 
     def schedule_max_backup(self, duration_seconds=7200):

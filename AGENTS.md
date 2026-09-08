@@ -100,6 +100,23 @@ Local mode passes any `/api/...` URI through automatically. The other three back
 
 Create `pypowerwall/<mode>/pypowerwall_<mode>.py` with `class PyPowerwall<Mode>(PyPowerwallBase)` implementing the six abstract methods, plus the standard sibling files (`exceptions.py`, `mock_data.py`, `stubs.py`, `decorators.py` — copy from `cloud/`). Wire it into `Powerwall.connect()`, `auto_select`, and `_validate_init_configuration()` in `pypowerwall/__init__.py`; patch the new class in the autouse fixture in `pypowerwall/tests/test_mode_selection.py`; add its exception types to `safe_pw_call` in `proxy/server.py`.
 
+### A new TEDAPI protobuf message or TEG command
+
+The vendored `.proto` files under `pypowerwall/tedapi/protobuf/` are the **single source of truth for the TEDAPI wire schema** (see also the README.md in that directory). When a command or field is missing from the generated classes (Tesla's schema has fields our vendored set omits):
+
+1. **Never hand-roll protobuf wire bytes** (varint encoders, field walkers, raw byte appends after `SerializeToString()`). A hand codec is a shadow implementation only its author can debug, and it hides schema knowledge in byte strings instead of the `.proto` where the next contributor will look. PR #379's review established this pattern: the proto-based rewrite produced byte-identical wire output to the hand-rolled version, so "the generated code omits the field" is a reason to extend the proto, not to bypass it.
+2. Add the message/field to the relevant `.proto` (e.g. `V2024_06/tedapi_combined.proto`) with a comment giving the field's provenance (legacy Tesla schema, observed field number) and its hardware-validation status.
+3. Regenerate the pb2 files with **`bash tools/gen_proto.sh`** — never with bare `protoc`, and never by editing `*_pb2.py` by hand. The script uses a dual toolchain (see its header comments): the V2024_06/legacy set is generated with protobuf 4.25.x gencode so it runs on the library's `protobuf>=4.25.1` runtime floor, while the V2026_06 set uses the latest toolchain and is imported lazily, opt-in only. The pre-commit hook runs the script automatically when a `.proto` is staged, and CI (`check-protobuf.yml`) fails if committed pb2 files don't match their sources — so a bare-protoc regeneration will be caught, but don't rely on that. Do not raise the protobuf floor in `requirements.txt`/`setup.py`.
+4. Route the command through the existing helpers (`send_teg_message()` for TEG commands).
+5. Pin the exact serialized bytes of any hardware-validated command in a unit test (see `pypowerwall/tests/unit/test_v1r_islanding.py`) — if a future regeneration changes those bytes, that's a regression, not a test to update. Additive field changes keep existing messages' wire format unchanged (field numbers are the contract, not the generated code), but always re-run `pytest -m "not live"`.
+
+**Which proto set does a change belong in?** `tedapi_api_version` selects a date-labeled query+protobuf set (`pypowerwall/tedapi/api_version.py`): `V2024_06` (default — the legacy QueryType path, hand-rolled protocol captures; `tedapi.proto` + `tedapi_combined.proto`) or `V2026_06` (the Tesla-signed GraphQL query set paired with bearer auth; `tedapi_v2_*.proto`, one file per Tesla protobuf package, extracted from a Tesla app bundle via `tools/tedapi_v2_extractor/regen.sh`). Rules of thumb:
+
+- A message carried over the **legacy transport** (TEG commands, config.send, firmware.request) belongs in `V2024_06/tedapi_combined.proto` — it is version-independent on the wire; even V2026_06 sessions send config/TEG through the legacy parser.
+- A change to the **signed-GraphQL query surface** belongs in the V2026_06 set — and since those `.proto` files are extracted from Tesla's bundle, prefer re-extracting from a newer bundle over hand-editing them.
+- Version-dependent behavior in code is gated by comparing `self.tedapi_api_version < TEDAPIApiVersion.V2026_06` (ordering derives from the date label — a minimum check, not equality, so future sets inherit the newer path).
+- A new Tesla query set gets a new date-labeled member/directory (`V<YYYY>_<MM>[_<DD>]`), never an in-place mutation of an existing set: existing users' pinned `tedapi_api_version` values must keep meaning what they meant.
+
 ## Testing
 
 - `pytest -m "not live"` must pass before any change is complete. Live tests require real hardware and self-skip.
