@@ -159,10 +159,11 @@ class TEDAPI:
         "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
         only reachable over the gateway's Wi-Fi; "bearer" logs in via
         /api/login/Basic for a Bearer token and wraps each query in an
-        AuthEnvelope, which also works over the wired LAN IP. Bearer works on
-        Powerwall 2 and solar-only gateways but NOT Powerwall 3 — PW3 wired
-        access is v1r's job. Bearer is mutually exclusive with v1r (its own
-        RSA transport).
+        AuthEnvelope, which also works over the wired LAN IP. Bearer has been
+        verified on solar-only/inverter gateways; Powerwall 2 (Gateway 2) is
+        NOT supported — installer login returns 401 on wired LAN (see
+        jasonacox/pypowerwall-server#105). PW3 wired access is v1r's job.
+        Bearer is mutually exclusive with v1r (its own RSA transport).
         """
         self.debug = debug
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
