@@ -2172,7 +2172,18 @@ class TEDAPI:
 
     # Helper Function
     def extract_fan_speeds(self, data) -> Dict[str, Dict[str, str]]:
-        """Extract fan speed signals from device controller data."""
+        """Extract fan speed signals from device controller data.
+
+        Two payload shapes carry the PVAC fan RPMs, depending on the query set:
+
+        * ``esCan.bus.PVAC[].PVAC_Logging`` — where the Tesla-signed V2026_06
+          DeviceControllerQuery asks for them (its TEMSA ``signals`` filter no
+          longer lists the fan names). Entries flagged ``isMIA`` are skipped.
+        * ``components.msa[].signals[]`` — the V2024_06 ``msaSignals`` request.
+
+        Both are read; a device reported in both keeps the PVAC_Logging values.
+        Keys are ``PVAC--{part}--{serial}`` in either case.
+        """
         if not isinstance(data, dict):
             return {}
 
@@ -2181,21 +2192,43 @@ class TEDAPI:
         # List to store the valid fan speed values
         result = {}
 
-        # Iterate over each component in the "msa" list
+        # esCan.bus.PVAC[].PVAC_Logging (V2026_06 signed query)
+        for pvac in lookup(data, ['esCan', 'bus', 'PVAC']) or []:
+            if not isinstance(pvac, dict):
+                continue
+            logging_data = pvac.get("PVAC_Logging") or {}
+            if not isinstance(logging_data, dict) or logging_data.get("isMIA"):
+                continue
+            fan_speeds = {
+                name: logging_data[name]
+                for name in fan_speed_signal_names
+                if logging_data.get(name) is not None
+            }
+            if not fan_speeds:
+                continue
+            part = pvac.get("packagePartNumber")
+            serial = pvac.get("packageSerialNumber")
+            result[f"PVAC--{part}--{serial}"] = fan_speeds
+
+        # components.msa[].signals[] (V2024_06 msaSignals request)
         components = data.get("components", {})
         if isinstance(components, dict):
-            for component in components.get("msa", []):
-                signals = component.get("signals", [])
+            for component in components.get("msa", []) or []:
+                if not isinstance(component, dict):
+                    continue
+                signals = component.get("signals", []) or []
                 fan_speeds = {
                     signal["name"]: signal["value"]
                     for signal in signals
-                    if signal.get("name") in fan_speed_signal_names and signal.get("value") is not None
+                    if isinstance(signal, dict)
+                    and signal.get("name") in fan_speed_signal_names
+                    and signal.get("value") is not None
                 }
                 if not fan_speeds:
                     continue
                 componentPartNumber = component.get("partNumber")
                 componentSerialNumber = component.get("serialNumber")
-                result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
+                result.setdefault(f"PVAC--{componentPartNumber}--{componentSerialNumber}", fan_speeds)
         return result
 
     # Helper Function

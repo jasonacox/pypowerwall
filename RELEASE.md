@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): `extract_fan_speeds()` / `get_fan_speeds()` now also read the PVAC fan RPMs from `esCan.bus.PVAC[].PVAC_Logging`, which is where the Tesla-signed V2026_06 DeviceControllerQuery requests them — its TEMSA `signals` filter no longer names `PVAC_Fan_Speed_*`, so reading only `components.msa[].signals[]` returned nothing (empty `/fans` in the proxy and pypowerwall-server) on that query set. The `msa` path is kept for V2024_06; both are merged, a device reported in both keeps the `PVAC_Logging` values, and entries flagged `isMIA` are skipped. Output shape (`PVAC--{part}--{serial}` → `{PVAC_Fan_Speed_Actual_RPM, PVAC_Fan_Speed_Target_RPM}`) is unchanged.
+* tests: new `test_tedapi_fan_speeds.py` (msa-only, PVAC_Logging-only, merged precedence, MIA/None/malformed payloads, `get_fan_speeds()` delegation)
+
 ## v0.18.2 - Powerwall 3 Fan Speeds and Battery Block Fix
 
 * feat(tedapi): Powerwall 3 fan speeds. Each PW3 inverter's two fans are requested as extra ComponentsQuery signals and passed through on its `TEPINV--<din>` vitals block as `PCH_FanSpeed_A`/`PCH_FanSpeed_B` (measured RPM) and `PCH_FanDuty_A`/`PCH_FanDuty_B` (drive duty cycle, %), `None` when unavailable. `TEDAPI.get_fan_speeds()` now reports them on PW3 (it returned `{}` there: the PW2 `PVAC_Fan_Speed_*` signals are always `None` on PW3), keyed `TEPINV--<din>` in `get_pw3_vitals()` order; new helper `extract_pw3_fan_speeds()`. Powerwall 2/+ output is unchanged. Hardware-validated on two PW3s (firmware 26.18.1). PW3 has no target-RPM signal, so the PW2 `PVAC_Fan_Speed_Target_RPM` name isn't reused. Like the PW3 temperatures (#390), PW3 fans need the default `tedapi_api_version="V2024_06"`: the V2026_06 signed `PW3Query` has its signal names inline in the signed text and doesn't include the fans, so under V2026_06 PW3 fan output stays `{}` as before. (#398)
