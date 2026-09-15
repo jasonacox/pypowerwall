@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## UNRELEASED - Per-Instance TEDAPI API Locks
+
+* fix(tedapi): the `@uses_api_lock` getter locks (`get_config()`, `get_status()`, `get_device_controller()`, `get_firmware_version()`, `get_components()`, `get_battery_block()`) were stored on the function object, i.e. one lock per method shared by every `TEDAPI` instance in the process. A server polling several gateways (one `TEDAPI` each) therefore serialized all of them behind whichever gateway's fetch was in flight, and a slow or unreachable gateway starved the others into lock timeouts and stale-cache fallbacks. The locks now live on the instance, keyed by method name (`TEDAPI._api_lock()`), so gateways never wait on each other; per-method serialization within one gateway is unchanged. `acquire_lock_with_backoff()` accepts the lock itself in addition to the legacy `api_lock`-holder convention; `None` remains a no-op.
+* tests: `test_tedapi_cached_fetch.py` gains `TestPerInstanceLocks` (a held lock on one instance no longer blocks another, per-method/per-instance identity, thread-safe lazy creation, no shared function attribute) and `TestAcquireLockWithBackoff`
+
 ## v0.17.3 - PW3 v1r Islanding Commands
 
 * fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).

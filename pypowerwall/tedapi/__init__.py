@@ -111,9 +111,15 @@ log.debug('Python %s on %s', sys.version, sys.platform)
 # shared None-safe implementation used by all backends
 
 def uses_api_lock(func):
-    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
-    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
-        func.api_lock = threading.Lock()
+    """Mark a getter as serialized by a per-instance, per-method API lock.
+
+    The wrapper injects the undecorated function as ``self_function`` so the
+    getter can hand it to ``_cached_fetch()``, which resolves the lock through
+    ``TEDAPI._api_lock()``. The lock lives on the *instance* (keyed by method
+    name), not on the function object: a process that polls several gateways
+    holds one TEDAPI per gateway, and a lock on the function would serialize
+    every gateway behind every other gateway's fetch.
+    """
     @wraps(func)
     def wrapper(*args, **kwargs):
         # Inject the function object itself into kwargs.
@@ -212,6 +218,12 @@ class TEDAPI:
         self.wifi_last_success = 0  # timestamp of last successful WiFi call
         self.wifi_fail_count = 0    # consecutive follower WiFi failures (exponential backoff)
         self._wifi_lock = threading.Lock()  # protects wifi_fail_count and wifi_cooldown
+        # Per-method API locks for the @uses_api_lock getters, created lazily
+        # by _api_lock(). Per instance so multiple gateways (one TEDAPI each)
+        # never serialize on each other; per method so e.g. a slow
+        # get_device_controller() doesn't block get_config() on the same gateway.
+        self._api_locks: Dict[str, threading.Lock] = {}
+        self._api_locks_guard = threading.Lock()
         # LAN (v1r) failure tracking — triggers full fallback to WiFi TEDAPI v1
         self.lan_failed = False     # True when wired LAN is unreachable
         self.lan_fail_count = 0     # consecutive LAN failures
@@ -297,6 +309,23 @@ class TEDAPI:
             return True
         return False
 
+    def _api_lock(self, self_function) -> Optional[threading.Lock]:
+        """The lock serializing ``self_function`` on *this* instance.
+
+        Created on first use and keyed by the getter's name, so each TEDAPI
+        instance (gateway) has its own set of per-method locks. ``None`` in
+        (a getter called without the decorator, e.g. directly in tests) is
+        ``None`` out, which ``acquire_lock_with_backoff`` treats as "no lock".
+        """
+        if self_function is None:
+            return None
+        name = getattr(self_function, '__name__', None) or str(self_function)
+        with self._api_locks_guard:
+            lock = self._api_locks.get(name)
+            if lock is None:
+                lock = self._api_locks[name] = threading.Lock()
+            return lock
+
     def _cached_fetch(self, key: str, *, expire: float, force: bool, self_function,
                       fetch, name: str):
         """Skeleton shared by the locked, cached getters.
@@ -304,9 +333,10 @@ class TEDAPI:
         1. Serve a fresh cache entry, else bail out during a rate-limit cooldown
            — both checked before taking the lock, so pollers don't queue behind
            a fetch they don't need (``force`` skips both).
-        2. Take the per-method lock (``self_function.api_lock``, installed by
-           @uses_api_lock; bounded wait). On timeout serve the stale cache entry
-           if there is one, else None — never raise into a poller.
+        2. Take the per-instance, per-method lock (``_api_lock(self_function)``,
+           keyed by the @uses_api_lock getter's name; bounded wait). On timeout
+           serve the stale cache entry if there is one, else None — never raise
+           into a poller.
         3. Under the lock re-check cache and cooldown (another thread may have
            refreshed while we waited), and reconnect if the DIN is unknown.
         4. ``fetch()`` returns the value to cache and return, or None to leave
@@ -318,7 +348,7 @@ class TEDAPI:
         if not force and self._in_cooldown():
             return None
         try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
+            with acquire_lock_with_backoff(self._api_lock(self_function), self.timeout):
                 cached = self._cache_get(key, expire, force)
                 if cached is not _CACHE_MISS:
                     return cached
