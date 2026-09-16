@@ -80,6 +80,7 @@ class PyPowerwallCloud(PyPowerwallBase):
     def init_post_api_map(self) -> dict:
         return {
             "/api/operation": self.post_api_operation,
+            "/api/tesla/time_of_use_settings": self.set_time_of_use_settings,
         }
 
     def init_poll_api_map(self) -> dict:
@@ -91,6 +92,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             "/api/operation": self.get_api_operation,
             "/api/site_info": self.get_api_site_info,
             "/api/site_info/site_name": self.get_api_site_info_site_name,
+            "/api/tesla/tariff_rate": self.get_api_tariff_rate,
             "/api/status": self.get_api_status,
             "/api/system_status": self.get_api_system_status,
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
@@ -668,6 +670,51 @@ class PyPowerwallCloud(PyPowerwallBase):
                 # true when participating in VPP event
             }
         return data
+
+    def get_api_tariff_rate(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """Retrieve the current Tesla tariff from Owner API."""
+        force = kwargs.get("force", False)
+
+        response, _ = self._site_api(
+            "SITE_TARIFF",
+            ttl=self.pwcacheexpire,
+            force=force,
+        )
+
+        if response is None:
+            return None
+
+        if isinstance(response, dict):
+            return response.get("response", response)
+
+        return response
+
+    def set_time_of_use_settings(
+        self,
+        payload: Optional[dict],
+        din: Optional[str] = None,
+        **kwargs,
+    ) -> Optional[Union[dict, list, str, bytes]]:
+        """Update Tesla Time-of-Use tariff settings via Owner API."""
+        if self.site is None:
+            log.error("Unable to update TIME_OF_USE_SETTINGS - no Tesla site selected")
+            return None
+
+        if not isinstance(payload, dict):
+            log.error("Unable to update TIME_OF_USE_SETTINGS - payload must be a dict")
+            return None
+
+        try:
+            response = self.site.api(
+                "TIME_OF_USE_SETTINGS",
+                **payload,
+            )
+            self.pwcache.pop("SITE_TARIFF", None)
+            self.pwcachetime.pop("SITE_TARIFF", None)
+            return response
+        except Exception as err:
+            log.error(f"Failed to update TIME_OF_USE_SETTINGS - {repr(err)}")
+            return None
 
     def get_api_site_info_site_name(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
