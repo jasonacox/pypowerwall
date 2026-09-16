@@ -387,6 +387,77 @@ class PyPowerwallCloud(PyPowerwallBase):
 
     # Functions to get data from Tesla Cloud
 
+    @staticmethod
+    def _http_status_from_error(err):
+        """Extract an HTTP status code from an API exception when available."""
+        response = getattr(err, "response", None)
+        if response is not None:
+            status = getattr(response, "status_code", None)
+            if status is not None:
+                return status
+
+        # Fallback for exceptions whose response object is unavailable.
+        message = str(err)
+        for status in (400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504):
+            if str(status) in message:
+                return status
+        return None
+
+    def _recover_stale_site(self) -> bool:
+        """Refresh the site list and switch away from a site ID Tesla no longer exposes."""
+        if self.tesla is None:
+            return False
+
+        try:
+            sites = self.tesla.battery_list() + self.tesla.solar_list()
+        except Exception as err:
+            log.error("Unable to refresh Tesla site list after 404 - %s", repr(err))
+            return False
+
+        if not sites:
+            log.error("Unable to recover stale Tesla site - no sites found for %s", self.email)
+            return False
+
+        # A 404 may be endpoint-specific. Only change sites when the current
+        # energy_site_id has actually disappeared from the fresh site list.
+        current_siteid = self.siteid
+        for idx, site in enumerate(sites):
+            if site.get("energy_site_id") == current_siteid:
+                log.debug("Tesla site %s is still present; not treating 404 as stale site", current_siteid)
+                return False
+
+        replacement = sites[0]
+        replacement_id = replacement.get("energy_site_id")
+        if replacement_id is None:
+            log.error("Unable to recover stale Tesla site - replacement has no energy_site_id")
+            return False
+
+        log.warning(
+            "Tesla site %s is no longer available; switching to site %s (%s)",
+            current_siteid,
+            replacement_id,
+            replacement.get("site_name") or "Unknown",
+        )
+
+        self.siteid = replacement_id
+        self.siteindex = 0
+        self.site = replacement
+
+        # Cached site-scoped data belongs to the previous site.
+        self.pwcache.clear()
+        self.pwcachetime.clear()
+        return True
+
+    def _call_site_api(self, name: str, **kwargs):
+        """Call a Tesla site API, recovering once if the selected site became stale."""
+        try:
+            return self.site.api(name, **kwargs)
+        except Exception as err:
+            if self._http_status_from_error(err) == 404 and self._recover_stale_site():
+                log.warning("Retrying %s once after Tesla site recovery", name)
+                return self.site.api(name, **kwargs)
+            raise
+
     def _site_api(self, name: str, ttl: int, force: bool, **kwargs):
         """
         Private function to get site data from Tesla Cloud using
@@ -433,7 +504,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             try:
                 # Set legacy flag (kept for compat - not used for locking)
                 self.apilock[name] = True
-                response = self.site.api(name, **kwargs)
+                response = self._call_site_api(name, **kwargs)
             except Exception as err:
                 log.error(f"Failed to retrieve {name} - {repr(err)}")
             else:
@@ -705,7 +776,7 @@ class PyPowerwallCloud(PyPowerwallBase):
             return None
 
         try:
-            response = self.site.api(
+            response = self._call_site_api(
                 "TIME_OF_USE_SETTINGS",
                 **payload,
             )
