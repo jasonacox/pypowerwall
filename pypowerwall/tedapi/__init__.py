@@ -1418,7 +1418,10 @@ class TEDAPI:
                 if self.v1r_transport.pending_verification:
                     log.error(
                         "v1r: RSA key is PENDING_VERIFICATION — data calls will return None. "
-                        "Toggle a Powerwall circuit breaker OFF then back ON to trigger verification."
+                        "Within about 10 minutes of registering, switch the Powerwall 3 On/Off "
+                        "switch OFF for about 15 seconds then ON (or toggle a breaker). "
+                        "A key at state 2 has timed out: re-register it with "
+                        "'python -m pypowerwall register'."
                     )
                 elif self.v1r_transport.key_unknown:
                     log.error(

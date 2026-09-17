@@ -364,11 +364,40 @@ def step3_get_site_id(token, fleet_api_base):
     return selected["energy_site_id"], selected["gateway_din"]
 
 
+# Authorized-client key states reported by the gateway. The values match
+# tesla_fleet_api.const.AuthorizedClientState. State 2 is a timeout, not a
+# stage of verification: the key's window (about 10 minutes from registration)
+# has closed and the key can never reach 3. Re-registering the same public
+# key reopens the window. See https://github.com/jasonacox/pypowerwall/issues/354
+KEY_STATES = {
+    1: "PENDING_VERIFICATION",
+    2: "PENDING_VERIFICATION_TIMEOUT",
+    3: "VERIFIED",
+    4: "REMOVED",
+}
+
+# How to give the physical proof once a key is registered (state 1).
+PHYSICAL_PROOF_HINT = (
+    "  Within about 10 minutes of registering, switch the Powerwall 3 On/Off\n"
+    "  switch (left side of the unit, under the red rapid-shutdown flap) OFF\n"
+    "  for about 15 seconds, then back ON. Do not leave it off until the unit\n"
+    "  powers down: the gateway then drops off the network for minutes and the\n"
+    "  window closes before it can report. A 2 second flick is debounced and\n"
+    "  does nothing. On some units toggling one AC breaker also works."
+)
+
+
+def key_state_name(state):
+    """Human-readable name for a gateway key state integer."""
+    return KEY_STATES.get(state, "UNKNOWN")
+
+
 def _check_key_state(resp, pubkey_der=None):
     """Extract client state from Fleet API registration/list response.
 
     Returns the state integer if found, None otherwise.
-    State values: 1=PENDING, 2=PENDING_VERIFICATION, 3=VERIFIED
+    State values: 1=PENDING_VERIFICATION, 2=PENDING_VERIFICATION_TIMEOUT,
+    3=VERIFIED, 4=REMOVED (see KEY_STATES).
 
     If pubkey_der is provided and the response is a ListAuthorizedClientsResponse,
     only returns the state for the client whose public key matches pubkey_der.
@@ -448,8 +477,12 @@ def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5, 
         print(f"  Poll attempt {attempt + 1}/{attempts}: ({code})")
         state = _check_key_state(resp, pubkey_der=pubkey_der)
         if state is not None:
-            print(f"  Key state: {state} ({'VERIFIED' if state == 3 else 'PENDING' if state < 3 else 'UNKNOWN'})")
+            print(f"  Key state: {state} ({key_state_name(state)})")
             if state == 3:
+                return state
+            if state == 2:
+                # The window closed. Further polling cannot change this state.
+                print("  The verification window has closed. Re-register the same key to reopen it.")
                 return state
         else:
             # Show raw response for debugging if state couldn't be parsed
@@ -518,10 +551,10 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, pr
             print("=" * 70)
             print()
             print("  Cloud auto-verification did not complete.")
-            print("  Toggle ONE Powerwall breaker OFF, wait 2 seconds, then back ON.")
+            print(PHYSICAL_PROOF_HINT)
             print("  This confirms the key registration on the device.")
             print()
-            input("  Press Enter after toggling the breaker...")
+            input("  Press Enter after switching the Powerwall OFF and back ON...")
             print("\n  Verifying key registration...")
             state = _poll_key_state(token, energy_site_id, fleet_api_base, attempts=6, pubkey_der=public_key_der)
 
@@ -536,7 +569,12 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, pr
         print("  Key is VERIFIED and ready for use.")
     else:
         print("  Key state could not be confirmed as verified.")
-        print("  It may still be pending — check again later with list_authorized_clients.")
+        if state == 2:
+            print("  State 2 means the verification window closed (PENDING_VERIFICATION_TIMEOUT).")
+            print("  Run this tool again to re-register the same key, then give the physical")
+            print("  proof within about 10 minutes.")
+        else:
+            print("  It may still be pending — check again later with list_authorized_clients.")
     if private_key_file:
         print(f"\n  RSA private key: {private_key_file}")
     print(f"  Public key fingerprint (SHA256): {hashlib.sha256(public_key_der).hexdigest()}")

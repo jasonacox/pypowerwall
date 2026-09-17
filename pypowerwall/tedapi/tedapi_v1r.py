@@ -273,9 +273,11 @@ class TEDAPIv1r:
                 msg = (
                     "v1r RSA key is registered but not yet VERIFIED by the gateway "
                     "(PENDING_VERIFICATION). "
-                    "Toggle ONE Powerwall circuit breaker OFF, wait 2 seconds, then back ON. "
-                    "Wait 30-60 seconds, then retry. "
-                    "Run 'python -m pypowerwall register' to check key state. "
+                    "Within about 10 minutes of registering, switch the Powerwall 3 "
+                    "On/Off switch OFF for about 15 seconds, then back ON (or toggle "
+                    "one AC breaker). If the key reads state 2 the window has closed: "
+                    "run 'python -m pypowerwall register' to re-register the same key, "
+                    "then repeat the switch. "
                     f"Gateway payload ({response_size} bytes): {raw_preview} "
                     "See: https://github.com/jasonacox/pypowerwall/issues/274"
                 )
