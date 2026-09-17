@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## Upcoming
+
+* feat(cloud): add Tesla Owner API tariff read (`SITE_TARIFF`) and Time-of-Use tariff write (`TIME_OF_USE_SETTINGS`) support, with cache invalidation after successful TOU updates. (#382)
+* fix(cloud): recover stale Tesla `energy_site_id` values after 404 responses using guarded site matching, a 60-second cooldown, non-blocking locking, persistent `.pypowerwall.site` updates, and a single retry. (#382)
+* 
 ## v0.17.3 - PW3 v1r Islanding Commands
 
 * fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).
