@@ -6,7 +6,8 @@ log = logging.getLogger(__name__)
 
 # Define which write API calls should invalidate which read API cache keys
 WRITE_OP_READ_OP_CACHE_MAP = {
-    '/api/operation': ['/api/operation', 'SITE_CONFIG']  # local and cloud mode respectively
+    '/api/operation': ['/api/operation', 'SITE_CONFIG'],  # local and cloud mode respectively
+    '/api/tesla/time_of_use_settings': ['SITE_TARIFF'],
 }
 
 
