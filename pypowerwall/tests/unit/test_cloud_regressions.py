@@ -1,8 +1,9 @@
-"""Regression tests for cloud backend bugs:
+"""Regression tests for cloud backend bugs and Tesla tariff/site recovery:
 - set_grid_charging()/set_grid_export() returned the (response, cached) tuple
   from _site_api() instead of the response
 - post_api_operation() raised KeyError on partial payloads and did not
   normalize a False reserve to 0
+- Tesla tariff read/write cache invalidation and stale-site recovery behavior
 """
 from unittest.mock import MagicMock, patch
 
@@ -28,8 +29,11 @@ class FakeHttpError(Exception):
 class FakeSite(dict):
     """Dict-like Tesla site with a controllable api() result."""
 
-    def __init__(self, site_id, site_name='Test Site', api_result=None, api_error=None):
+    def __init__(self, site_id, site_name='Test Site', gateway_id=None,
+                 api_result=None, api_error=None):
         super().__init__(energy_site_id=site_id, site_name=site_name)
+        if gateway_id is not None:
+            self['gateway_id'] = gateway_id
         self.api_result = api_result
         self.api_error = api_error
         self.api_calls = []
@@ -160,21 +164,21 @@ class TestTeslaTariffApi:
         with patch.object(cloud, '_site_api', return_value=(None, False)):
             assert cloud.get_api_tariff_rate() is None
 
-    def test_set_time_of_use_settings_posts_payload_and_invalidates_tariff_cache(self, cloud):
+    def test_tou_post_invalidates_tariff_cache_through_base_map(self, cloud):
         response = {'response': '{"Message":"Updated","Code":201}\n'}
         site = FakeSite(123, api_result=response)
         cloud.site = site
         cloud.siteid = 123
+        cloud.tesla = MagicMock()
         cloud.pwcache['SITE_TARIFF'] = {'response': {'code': 'OLD'}}
         cloud.pwcachetime['SITE_TARIFF'] = 1.0
         payload = {'tou_settings': {'optimization_strategy': 'economics'}}
 
-        result = cloud.set_time_of_use_settings(payload)
+        result = cloud.post('/api/tesla/time_of_use_settings', payload, None)
 
         assert result == response
         assert site.api_calls == [('TIME_OF_USE_SETTINGS', payload)]
-        assert 'SITE_TARIFF' not in cloud.pwcache
-        assert 'SITE_TARIFF' not in cloud.pwcachetime
+        assert cloud.pwcache['SITE_TARIFF'] is None
 
     def test_set_time_of_use_settings_rejects_invalid_payload(self, cloud):
         cloud.site = FakeSite(123)
@@ -198,10 +202,11 @@ class TestStaleSiteRecovery:
     def test_http_status_fallback_from_exception_text(self, cloud):
         assert cloud._http_status_from_error(RuntimeError('404 Client Error: not_found')) == 404
 
-    def test_stale_site_404_switches_site_clears_cache_and_retries(self, cloud):
-        old_site = FakeSite(111, api_error=FakeHttpError(404))
+    def test_stale_site_404_switches_site_persists_clears_cache_and_retries(self, cloud):
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW1',
+                            api_error=FakeHttpError(404))
         new_response = {'response': {'code': 'NEW'}}
-        new_site = FakeSite(222, site_name='Replacement', api_result=new_response)
+        new_site = FakeSite(222, site_name='Home', gateway_id='GW1', api_result=new_response)
         cloud.site = old_site
         cloud.siteid = 111
         cloud.siteindex = 0
@@ -217,8 +222,35 @@ class TestStaleSiteRecovery:
         assert cloud.siteindex == 0
         assert cloud.pwcache == {}
         assert cloud.pwcachetime == {}
+        with open(cloud.sitefile, encoding='utf-8') as site_file:
+            assert site_file.read() == '222'
         assert old_site.api_calls == [('SITE_TARIFF', {})]
         assert new_site.api_calls == [('SITE_TARIFF', {})]
+
+    def test_recovery_prefers_gateway_match_over_first_site(self, cloud):
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW-HOME')
+        wrong_site = FakeSite(222, site_name='Cabin', gateway_id='GW-CABIN')
+        replacement = FakeSite(333, site_name='Home Renamed', gateway_id='GW-HOME')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [wrong_site, replacement])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.site is replacement
+        assert cloud.siteid == 333
+        assert cloud.siteindex == 1
+
+    def test_recovery_uses_site_name_when_gateway_id_missing(self, cloud):
+        old_site = FakeSite(111, site_name='Home')
+        wrong_site = FakeSite(222, site_name='Cabin')
+        replacement = FakeSite(333, site_name='Home')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [wrong_site, replacement])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.site is replacement
+        assert cloud.siteindex == 1
 
     def test_404_does_not_switch_when_current_site_still_exists(self, cloud):
         current_site = FakeSite(111, api_error=FakeHttpError(404))
@@ -232,6 +264,31 @@ class TestStaleSiteRecovery:
         assert cloud.site is current_site
         assert cloud.siteid == 111
         assert current_site.api_calls == [('SITE_TARIFF', {})]
+
+    def test_recovery_cooldown_avoids_repeated_product_list_calls(self, cloud):
+        current_site = FakeSite(111)
+        cloud.site = current_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [current_site])
+
+        assert cloud._recover_stale_site() is False
+        assert cloud._recover_stale_site() is False
+
+        cloud.tesla.battery_list.assert_called_once()
+        cloud.tesla.solar_list.assert_called_once()
+
+    def test_recovery_lock_is_non_blocking(self, cloud):
+        cloud.site = FakeSite(111)
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [FakeSite(222)])
+        assert cloud._site_recovery_lock.acquire(blocking=False)
+        try:
+            assert cloud._recover_stale_site() is False
+        finally:
+            cloud._site_recovery_lock.release()
+
+        cloud.tesla.battery_list.assert_not_called()
+        cloud.tesla.solar_list.assert_not_called()
 
     def test_non_404_does_not_attempt_site_recovery(self, cloud):
         current_site = FakeSite(111, api_error=FakeHttpError(403))
