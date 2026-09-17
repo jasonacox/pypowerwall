@@ -107,6 +107,31 @@ pw = pypowerwall.Powerwall(
 - `post(api, payload, din=None, jsonformat=False, raw=False, recursive=False)` → dict/str/None  
   Sends a POST payload (dict) to the specified Powerwall API endpoint. Returns a dict by default, or a JSON string if `jsonformat=True`.
 
+#### Tesla Cloud tariff and Time-of-Use settings
+
+The following raw endpoints are available when the **Tesla Cloud** backend is active:
+
+- `GET /api/tesla/tariff_rate` via `pw.poll("/api/tesla/tariff_rate")`  
+  Returns the current Tesla Owner API tariff (`SITE_TARIFF`). The result is cached using the normal cloud cache TTL unless `force=True` is supplied.
+
+- `POST /api/tesla/time_of_use_settings` via `pw.post("/api/tesla/time_of_use_settings", payload)`  
+  Updates the Tesla Time-of-Use tariff (`TIME_OF_USE_SETTINGS`). The payload must contain a `tou_settings` object, for example:
+
+```python
+payload = {
+    "tou_settings": {
+        "optimization_strategy": "economics",
+        "tariff_content_v2": {
+            # Tesla tariff content
+        },
+    }
+}
+
+result = pw.post("/api/tesla/time_of_use_settings", payload)
+```
+
+A successful TOU write invalidates the cached `SITE_TARIFF`, so the next tariff read is refreshed. Cloud site-scoped calls also recover from a stale `energy_site_id` when Tesla replaces/re-provisions a site: recovery is rate-limited, serialized, persists the replacement ID to `.pypowerwall.site`, and prefers matching the previous `gateway_id`/`site_name` before falling back to the first returned site.
+
 ### Power and Energy
 
 - `level(scale=False)` → float/None  
