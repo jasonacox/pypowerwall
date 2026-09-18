@@ -38,7 +38,7 @@ def _build_tedapi_arg_parser(default_host):
                         choices=[m.value for m in AuthMode],
                         help='Authentication mode: basic (default, Gateway Wi-Fi only via '
                              '192.168.91.1) or bearer (installer login, also works over '
-                             'the wired LAN IP; PW2/solar-only — not Powerwall 3)')
+                             'the wired LAN IP; solar-only — not Powerwall 2 or 3)')
     parser.add_argument('--debug', action='store_true', help='Enable Debug Output')
     return parser
 

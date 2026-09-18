@@ -166,7 +166,7 @@ class TEDAPI:
         only reachable over the gateway's Wi-Fi; "bearer" logs in via
         /api/login/Basic for a Bearer token and wraps each query in an
         AuthEnvelope, which also works over the wired LAN IP. Bearer works on
-        Powerwall 2 and solar-only gateways but NOT Powerwall 3 — PW3 wired
+        solar-only gateways but NOT Powerwall 2 or 3 — PW3 wired
         access is v1r's job. Bearer is mutually exclusive with v1r (its own
         RSA transport).
         """

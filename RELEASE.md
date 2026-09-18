@@ -4,6 +4,7 @@
 
 * fix(tedapi): the `@uses_api_lock` getter locks (`get_config()`, `get_status()`, `get_device_controller()`, `get_firmware_version()`, `get_components()`, `get_battery_block()`) were stored on the function object, i.e. one lock per method shared by every `TEDAPI` instance in the process. A server polling several gateways (one `TEDAPI` each) therefore serialized all of them behind whichever gateway's fetch was in flight, and a slow or unreachable gateway starved the others into lock timeouts and stale-cache fallbacks. The locks now live on the instance, keyed by method name (`TEDAPI._api_lock()`), so gateways never wait on each other; per-method serialization within one gateway is unchanged. `acquire_lock_with_backoff()` accepts the lock itself in addition to the legacy `api_lock`-holder convention; `None` remains a no-op.
 * tests: `test_tedapi_cached_fetch.py` gains `TestPerInstanceLocks` (a held lock on one instance no longer blocks another, per-method/per-instance identity, thread-safe lazy creation, no shared function attribute) and `TestAcquireLockWithBackoff`
+* docs: bearer auth mode is documented as solar-only gateways only — it does not work on Powerwall 2 (hardware-tested) or Powerwall 3. Docstrings, CLI help, README and proxy docs corrected.
 
 ## v0.17.3 - PW3 v1r Islanding Commands
 
@@ -36,7 +37,7 @@
 
 ## v0.17.0 - TEDAPI Bearer Authentication Mode
 
-* feat(tedapi): new `bearer` authentication mode — logs in via `POST /api/login/Basic` with the installer credentials (full gateway password from the QR sticker) to obtain a Bearer token, then wraps every TEDAPI query in a protobuf `AuthEnvelope` with `externalAuth.type = PRESENCE`. Unlike `basic` (HTTP Basic Auth to `192.168.91.1`, which is only reachable over the Gateway's Wi-Fi), bearer also works over the Gateway's wired LAN IP. Hardware-verified on PW2 and solar-only inverters over both a WiFi static route and the hardwired LAN IP. **Not supported on Powerwall 3** — for PW3 wired access use v1r mode (`rsa_key_path`).
+* feat(tedapi): new `bearer` authentication mode — logs in via `POST /api/login/Basic` with the installer credentials (full gateway password from the QR sticker) to obtain a Bearer token, then wraps every TEDAPI query in a protobuf `AuthEnvelope` with `externalAuth.type = PRESENCE`. Unlike `basic` (HTTP Basic Auth to `192.168.91.1`, which is only reachable over the Gateway's Wi-Fi), bearer also works over the Gateway's wired LAN IP. Hardware-verified on solar-only inverters over both a WiFi static route and the hardwired LAN IP. **Not supported on Powerwall 2 or Powerwall 3** — for PW3 wired access use v1r mode (`rsa_key_path`).
   * `Powerwall(..., tedapi_auth_mode="basic")` — new constructor parameter; `"basic"` (default) keeps existing HTTP Basic behavior, `"bearer"` selects the new transport. Forwarded through `PyPowerwallTEDAPI` to `TEDAPI(auth_mode=...)`.
   * New `AuthMode` str-enum (`pypowerwall/tedapi/auth_mode.py`) with `coerce(value, default=None)` — an unrecognized mode raises `ValueError` (never silently selects a different transport); callers that must not fail on a bad value (env vars) pass `default=` to get a logged warning and a fallback instead
   * TEDAPI CLI: new `--auth-mode basic|bearer` flag (`python -m pypowerwall.tedapi <gw_pwd> --auth-mode bearer`)
