@@ -1,5 +1,17 @@
 # RELEASE NOTES
 
+## Upcoming
+
+* feat(tedapi): surface Tesla Remote Meter (wireless CT meter, config.json meter type `trm_mb`) data. `get_device_controller()`'s Device Controller Full query already requested `teslaRemoteMeter` and its docstring documented the field, but nothing read it - it was fetched and discarded on every poll.
+  * `derive_meter_config()` gained a `types` filter parameter (default `("neurio_w2_tcp",)`, unchanged for existing callers) so the same config-driven CT/location/scale-factor lookup used for Neurio also works for remote meters (`types=("trm_mb",)`).
+  * New `aggregate_remote_meter_data()` mirrors `aggregate_neurio_data()` but reads `teslaRemoteMeter.meters[].reading.ctReadings`, also carries the `energyImportedWs`/`energyExportedWs` lifetime accumulators, and keys its hierarchy by `"{din}:{ct index}"` (not just the CT slot) so a second remote meter can't overwrite the first; each entry keeps its own `Index` so consumers map CTs to phases by slot rather than iteration order.
+  * New `get_remote_meter_readings()` fetches the Device Controller Full query (remote meter data isn't in the Basic query `get_status()` uses) and returns the aggregated CT hierarchy - but only when config.json declares a `trm_mb` meter, so installs without one never pay for the extra fetch.
+  * `vitals()` now includes a `TRM--<din>` block per remote meter, alongside the existing `NEURIO--<serial>` blocks.
+  * `/api/meters/aggregates` site section: extended the existing Meter X -> Meter Z -> Neurio fallback chain with a Remote Meter tier, reached whenever nothing produced a `site` CT (not only when Neurio is entirely absent - a Neurio assigned solely to solar/load no longer blocks the fallback).
+  * `/api/meters/aggregates` solar section: voltage (PVAC) and current (Meter Y) sources are now independent, each falling back to a Remote Meter configured for the `solar` location on its own. A remote-metered solar circuit has no Meter Y at all, so `i_a_current`/`i_b_current`/`i_c_current` used to stay 0 even when PVAC reported voltage and a remote CT was actively reporting current.
+  * `get_api_meters_aggregates()` fetches the remote-meter hierarchy once and shares it between the site and solar extractors instead of each fetching independently.
+* tests: new `test_tedapi_remote_meter.py` (37 tests) covering the meter-type filter, CT scaling/location/multi-meter hierarchy keys, skipped-CT-slot phase mapping, the config-aware fetch skip, both fallback chains, the shared single-fetch, and the `vitals()` merge.
+
 ## v0.17.3 - PW3 v1r Islanding Commands
 
 * fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).
