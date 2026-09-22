@@ -2,16 +2,16 @@ import setuptools
 import os
 import re
 
-# Read version_tuple from pypowerwall/__init__.py and construct __version__
-version_file = os.path.join(os.path.dirname(__file__), 'pypowerwall', '__init__.py')
-with open(version_file, 'r') as f:
-    version_content = f.read()
-match = re.search(r"^version_tuple\s*=\s*\(([^)]*)\)", version_content, re.MULTILINE)
-if match:
-    version_tuple = tuple(int(x.strip()) for x in match.group(1).split(','))
-    __version__ = '%d.%d.%d' % version_tuple
-else:
-    raise RuntimeError('Unable to find version_tuple string in pypowerwall/__init__.py')
+# Read version from pypowerwall/VERSION - single source of truth
+# (pypowerwall/__init__.py reads the same file at runtime)
+version_file = os.path.join(os.path.dirname(__file__), 'pypowerwall', 'VERSION')
+try:
+    with open(version_file, 'r') as f:
+        __version__ = f.read().strip()
+except OSError:
+    raise RuntimeError('Unable to read version from pypowerwall/VERSION')
+if not re.match(r'^\d+\.\d+\.\d+$', __version__):
+    raise RuntimeError('Invalid version %r in pypowerwall/VERSION' % __version__)
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -39,6 +39,7 @@ setuptools.setup(
         'cryptography',
     ],
     package_data={
+        'pypowerwall': ['VERSION'],
         'pypowerwall.cloud.teslapy': ['endpoints.json', 'option_codes.json'],
         # TEDAPI query sets are loaded from JSON at runtime — must ship in the wheel.
         'pypowerwall.tedapi.queries': ['*.json'],

@@ -91,8 +91,18 @@ import sys
 import time
 from typing import Optional, Union
 
-version_tuple = (0, 17, 3)
-version = __version__ = '%d.%d.%d' % version_tuple
+# Single source of truth for the package version is pypowerwall/VERSION.
+# Read it here so installed distributions report the same version that was
+# shipped, and derive the convenience tuple from it.
+_version_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+try:
+    with open(_version_file, "r") as _vf:
+        version = __version__ = _vf.read().strip()
+    version_tuple = tuple(int(_p) for _p in __version__.split("."))
+except (OSError, ValueError) as _verr:
+    raise RuntimeError(
+        f"Unable to read version from {_version_file}: {_verr}"
+    ) from _verr
 __author__ = 'jasonacox'
 
 # noinspection PyPackageRequirements
