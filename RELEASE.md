@@ -1,6 +1,6 @@
 # RELEASE NOTES
 
-## Upcoming
+## v0.17.4 - Tesla Remote Meter (teslaRemoteMeter) Support
 
 * feat(tedapi): surface Tesla Remote Meter (wireless CT meter, config.json meter type `trm_mb`) data. `get_device_controller()`'s Device Controller Full query already requested `teslaRemoteMeter` and its docstring documented the field, but nothing read it - it was fetched and discarded on every poll.
   * `derive_meter_config()` gained a `types` filter parameter (default `("neurio_w2_tcp",)`, unchanged for existing callers) so the same config-driven CT/location/scale-factor lookup used for Neurio also works for remote meters (`types=("trm_mb",)`).
@@ -11,6 +11,8 @@
   * `/api/meters/aggregates` solar section: voltage (PVAC) and current (Meter Y) sources are now independent, each falling back to a Remote Meter configured for the `solar` location on its own. A remote-metered solar circuit has no Meter Y at all, so `i_a_current`/`i_b_current`/`i_c_current` used to stay 0 even when PVAC reported voltage and a remote CT was actively reporting current.
   * `get_api_meters_aggregates()` fetches the remote-meter hierarchy once and shares it between the site and solar extractors instead of each fetching independently.
 * tests: new `test_tedapi_remote_meter.py` (37 tests) covering the meter-type filter, CT scaling/location/multi-meter hierarchy keys, skipped-CT-slot phase mapping, the config-aware fetch skip, both fallback chains, the shared single-fetch, and the `vitals()` merge.
+* Hardware-validated by the contributor against a Powerwall 3 with a wireless remote CT meter monitoring a solar circuit (#386).
+* Library version bumped to `0.17.4`
 
 ## v0.17.3 - PW3 v1r Islanding Commands
 
