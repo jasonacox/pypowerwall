@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+import re
 import threading
 import time
 from typing import Optional, Union, List
@@ -52,7 +53,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         self._api_locks = {}  # per-API-name threading.Lock for _site_api
         self._api_locks_guard = threading.Lock()  # guards creation of per-name locks
         self._site_recovery_lock = threading.Lock()
-        self._site_recovery_last_attempt = 0.0
+        self._site_recovery_last_attempt = float("-inf")
         self.pwcachetime = {}  # holds the cached data timestamps for api
         self.pwcacheexpire = pwcacheexpire  # seconds to expire cache
         self.siteindex = 0  # site index to use
@@ -145,8 +146,10 @@ class PyPowerwallCloud(PyPowerwallBase):
                 return status
 
         message = str(err)
-        for status in (400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504):
-            if str(status) in message:
+        match = re.match(r"^(\d{3}) (?:Client|Server) Error", message)
+        if match:
+            status = int(match.group(1))
+            if status in (400, 401, 403, 404, 409, 422, 429, 500, 502, 503, 504):
                 return status
         return None
 
@@ -807,10 +810,7 @@ class PyPowerwallCloud(PyPowerwallBase):
         if response is None:
             return None
 
-        if isinstance(response, dict):
-            return response.get("response", response)
-
-        return response
+        return self._unwrap_tesla_response(response)
 
     # pylint: disable=unused-argument
     def set_time_of_use_settings(
@@ -829,10 +829,11 @@ class PyPowerwallCloud(PyPowerwallBase):
             return None
 
         try:
-            return self._call_site_api(
+            response = self._call_site_api(
                 "TIME_OF_USE_SETTINGS",
                 **payload,
             )
+            return self._unwrap_tesla_response(response)
         except Exception as err:
             log.error(f"Failed to update TIME_OF_USE_SETTINGS - {repr(err)}")
             return None
