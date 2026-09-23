@@ -77,6 +77,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
     def init_post_api_map(self) -> dict:
         return {
             "/api/operation": self.post_api_operation,
+            "/api/tesla/time_of_use_settings": self.set_time_of_use_settings,
         }
 
     def init_poll_api_map(self) -> dict:
@@ -88,6 +89,7 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
             "/api/operation": self.get_api_operation,
             "/api/site_info": self.get_api_site_info,
             "/api/site_info/site_name": self.get_api_site_info_site_name,
+            "/api/tesla/tariff_rate": self.get_api_tariff_rate,
             "/api/status": self.get_api_status,
             "/api/system_status": self.get_api_system_status,
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
@@ -379,6 +381,26 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         if response.get('time_remaining_hours'):
             return response['time_remaining_hours']
         return 0.0
+
+    def get_api_tariff_rate(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """Return the tariff embedded in Fleet API site_info."""
+        force = kwargs.get('force', False)
+        tariff = self.fleet.get_tariff(force=force)
+        return self._unwrap_tesla_response(tariff)
+
+    # pylint: disable=unused-argument
+    def set_time_of_use_settings(
+        self,
+        payload: Optional[dict],
+        din: Optional[str] = None,
+        **kwargs,
+    ) -> Optional[Union[dict, list, str, bytes]]:
+        """Update Tesla Time-of-Use tariff settings through Fleet API."""
+        if not isinstance(payload, dict):
+            log.error("Unable to update time_of_use_settings - payload must be a dict")
+            return None
+        response = self.fleet.set_time_of_use_settings(payload)
+        return self._unwrap_tesla_response(response)
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
