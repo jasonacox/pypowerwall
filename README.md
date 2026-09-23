@@ -602,6 +602,8 @@ print("System Status: %r\n" % pw.system_status())
     connect(retry)            # Connect to Powerwall and select mode (retry=True to keep retrying)
     poll(api, jsonformat, raw, force)   # Return data from Powerwall API (dict by default, JSON string if jsonformat=True, bypass cache force=True)
     post(api, payload, din, jsonformat) # Send payload to Powerwall API (dict by default, JSON string if jsonformat=True)
+    get_tariff(force)         # Return the current utility tariff (Cloud/FleetAPI; TEDAPI returns mock data)
+    set_tariff(tou_settings)  # Update Time-of-Use tariff settings (Cloud/FleetAPI)
     level(scale)              # Return battery power level percentage (scale=False: actual level, scale=True: Tesla app level)
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
