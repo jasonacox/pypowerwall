@@ -128,7 +128,7 @@ The vendored `.proto` files under `pypowerwall/tedapi/protobuf/` are the **singl
 
 ## Versioning & Release Checklist
 
-- Library version: bump `version_tuple` in `pypowerwall/__init__.py` (the only place).
+- Library version: bump `pypowerwall/VERSION` (the single source of truth; `__init__.py` and `setup.py` derive from it).
 - Add a `## vX.Y.Z - Title` entry at the top of `RELEASE.md` (conventional-ish `feat(scope):`/`fix(scope):` bullets, PR refs like `(#345)`).
 - Proxy changes: bump `BUILD = "tNN"` in `proxy/server.py` + entry in `proxy/RELEASE.md`. After a library release, update the pin in `proxy/requirements.txt`.
 - Do not run `upload.sh` / `proxy/upload.sh` — publishing is the maintainer's job.
