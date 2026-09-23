@@ -17,6 +17,7 @@
     ... Get 
     get_live_status() - get the current power information for the site
     get_site_info() - get site info
+    get_tariff() - get utility tariff from site info
     get_battery_reserve() - get battery reserve level
     get_operating_mode() - get operating mode
     get_history() - get energy history
@@ -38,6 +39,7 @@
     set_operating_mode(mode) - set operating mode (self_consumption or autonomous)
     set_grid_charging(mode) - set grid charging mode (on or off)
     set_grid_export(mode) - set grid export mode (battery_ok, pv_only, or never)
+    set_time_of_use_settings(payload) - update site time-of-use tariff settings
 
  Author: Jason A. Cox
  Date: 18 Feb 2024
@@ -568,6 +570,26 @@ class FleetAPI:
         payload = self.poll(f"api/1/energy_sites/{self.site_id}/site_info", force=force)
         log.debug(f"get_site_info: {payload}")
         return self.keyval(payload, "response")
+
+    def get_tariff(self, force=False):
+        """Return the site's configured utility tariff."""
+        site_info = self.get_site_info(force=force)
+        if not isinstance(site_info, dict):
+            return None
+        return site_info.get("tariff_content")
+
+    def set_time_of_use_settings(self, payload):
+        """Update the site's Time-of-Use tariff through Tesla Fleet API."""
+        if not isinstance(payload, dict):
+            log.error("Invalid time_of_use_settings payload: expected dict")
+            return None
+        result = self.poll(
+            f"api/1/energy_sites/{self.site_id}/time_of_use_settings",
+            "POST",
+            payload,
+        )
+        self.pwcachetime.pop(f"api/1/energy_sites/{self.site_id}/site_info", None)
+        return result
 
     def get_site_status(self, force=False):
         # Get site status
