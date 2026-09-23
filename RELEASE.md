@@ -2,7 +2,7 @@
 
 ## Upcoming
 
-* feat(cloud): add Tesla Owner API tariff read (`SITE_TARIFF`) and Time-of-Use tariff write (`TIME_OF_USE_SETTINGS`) support, with cache invalidation after successful TOU updates. (#382)
+* feat(tariff): add tariff read and Time-of-Use write support across Tesla Cloud and FleetAPI, facade helpers, TEDAPI mock parity, and cache invalidation after successful TOU updates. (#382)
 * fix(cloud): recover stale Tesla `energy_site_id` values after 404 responses using guarded site matching, a 60-second cooldown, non-blocking locking, persistent `.pypowerwall.site` updates, and a single retry. (#382)
   
 ## v0.17.3 - PW3 v1r Islanding Commands
