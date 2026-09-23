@@ -164,6 +164,11 @@ class TestTeslaTariffApi:
         with patch.object(cloud, '_site_api', return_value=(None, False)):
             assert cloud.get_api_tariff_rate() is None
 
+    def test_get_api_tariff_rate_parses_json_string_envelope(self, cloud):
+        response = {'response': '{"code":"TEST","currency":"EUR"}\n'}
+        with patch.object(cloud, '_site_api', return_value=(response, False)):
+            assert cloud.get_api_tariff_rate() == {'code': 'TEST', 'currency': 'EUR'}
+
     def test_tou_post_invalidates_tariff_cache_through_base_map(self, cloud):
         response = {'response': '{"Message":"Updated","Code":201}\n'}
         site = FakeSite(123, api_result=response)
@@ -176,7 +181,7 @@ class TestTeslaTariffApi:
 
         result = cloud.post('/api/tesla/time_of_use_settings', payload, None)
 
-        assert result == response
+        assert result == {'Message': 'Updated', 'Code': 201}
         assert site.api_calls == [('TIME_OF_USE_SETTINGS', payload)]
         assert cloud.pwcache['SITE_TARIFF'] is None
 
@@ -201,6 +206,22 @@ class TestStaleSiteRecovery:
 
     def test_http_status_fallback_from_exception_text(self, cloud):
         assert cloud._http_status_from_error(RuntimeError('404 Client Error: not_found')) == 404
+
+    def test_http_status_fallback_does_not_match_site_id_digits(self, cloud):
+        error = RuntimeError('500 Server Error for url /energy_sites/8404123/tariff')
+        assert cloud._http_status_from_error(error) == 500
+
+    def test_first_recovery_is_not_suppressed_on_low_uptime(self, cloud):
+        current_site = FakeSite(111)
+        cloud.site = current_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [current_site])
+
+        with patch('pypowerwall.cloud.pypowerwall_cloud.time.monotonic', return_value=30.0):
+            assert cloud._recover_stale_site() is False
+
+        cloud.tesla.battery_list.assert_called_once()
+        cloud.tesla.solar_list.assert_called_once()
 
     def test_stale_site_404_switches_site_persists_clears_cache_and_retries(self, cloud):
         old_site = FakeSite(111, site_name='Home', gateway_id='GW1',
