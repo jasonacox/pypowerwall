@@ -321,10 +321,7 @@ class TEDAPI:
             return None
         name = getattr(self_function, '__name__', None) or str(self_function)
         with self._api_locks_guard:
-            lock = self._api_locks.get(name)
-            if lock is None:
-                lock = self._api_locks[name] = threading.Lock()
-            return lock
+            return self._api_locks.setdefault(name, threading.Lock())
 
     def _cached_fetch(self, key: str, *, expire: float, force: bool, self_function,
                       fetch, name: str):

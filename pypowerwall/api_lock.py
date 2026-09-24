@@ -57,7 +57,7 @@ def acquire_lock_with_backoff(lock_holder, timeout, **backoff_kwargs):
         yield
         return
     if hasattr(lock_holder, "acquire") and hasattr(lock_holder, "release"):
-        lock: threading.Lock = lock_holder
+        lock = lock_holder
     elif hasattr(lock_holder, "api_lock"):
         lock = lock_holder.api_lock
     else:
