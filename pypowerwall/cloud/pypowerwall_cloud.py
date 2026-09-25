@@ -466,9 +466,17 @@ class PyPowerwallCloud(PyPowerwallBase):
                 if len(name_matches) == 1:
                     replacement_index = name_matches[0]
 
-            # Preserve historical single-site behavior as a final fallback,
-            # but only after attempting stable site identity matches above.
+            # Fall back to the only site on a single-site account (historical
+            # behavior). With several sites and no identity match, don't guess: a
+            # wrong switch would send later calls - including TOU writes - to a
+            # different installation.
             if replacement_index is None:
+                if len(sites) != 1:
+                    log.error(
+                        "Tesla site %s is no longer available and none of the %d sites matches "
+                        "its gateway or name - set the site ID explicitly (siteid=...)",
+                        current_siteid, len(sites))
+                    return False
                 replacement_index = 0
 
             replacement = sites[replacement_index]
@@ -491,9 +499,12 @@ class PyPowerwallCloud(PyPowerwallBase):
             self.siteindex = replacement_index
             self.site = replacement
 
-            # Cached site-scoped data belongs to the previous site.
-            self.pwcache.clear()
-            self.pwcachetime.clear()
+            # Cached site-scoped data belongs to the previous site. Invalidate like
+            # _invalidate_cache (value -> None, timestamps kept) rather than
+            # clearing: a concurrent _site_api fast path reads pwcachetime[name]
+            # after seeing a cached value, and must not hit a missing key.
+            for key in list(self.pwcache):
+                self.pwcache[key] = None
             return True
         finally:
             self._site_recovery_lock.release()

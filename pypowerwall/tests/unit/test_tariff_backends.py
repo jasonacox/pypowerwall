@@ -40,15 +40,15 @@ def test_fleetapi_tou_write_is_normalized():
     backend.fleet.set_time_of_use_settings.assert_called_once_with(payload)
 
 
-def test_tedapi_tariff_endpoints_return_mock_shapes():
+def test_tedapi_tariff_read_is_mock_and_write_fails():
+    # Read: documented mock data. Write: None like other unsupported writes -
+    # a success-shaped mock would read as a completed write
     backend = _bare_backend(PyPowerwallTEDAPI)
+    backend.pwcache['SITE_TARIFF'] = {'code': 'CACHED'}
 
     assert backend.poll('/api/tesla/tariff_rate') == {}
-    assert backend.post(
-        '/api/tesla/time_of_use_settings',
-        {'tou_settings': {}},
-        None,
-    ) == {'Message': 'Not implemented', 'Code': 501}
+    assert backend.post('/api/tesla/time_of_use_settings', {'tou_settings': {}}, None) is None
+    assert backend.pwcache['SITE_TARIFF'] == {'code': 'CACHED'}   # no success-driven invalidation
 
 
 def test_powerwall_tariff_facade_wraps_tou_settings():

@@ -1,5 +1,4 @@
 TESLA_TARIFF_RATE = '{}'
-TESLA_TIME_OF_USE_SETTINGS = '{"Message":"Not implemented","Code":501}'
 
 POWERWALLS = ('{"enumerating": false, "updating": false, "checking_if_offgrid": false, "running_phase_detection": '
               'false, "phase_detection_last_error": "no phase information", "bubble_shedding": false, '

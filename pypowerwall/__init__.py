@@ -461,11 +461,26 @@ class Powerwall(object):
             return response
 
     def get_tariff(self, force=False) -> Optional[Union[dict, list, str, bytes]]:
-        """Return the current utility tariff."""
+        """
+        Utility tariff of the site (Cloud and FleetAPI modes)
+
+        Returns the tariff object (code, name, utility, seasons, energy_charges, ...),
+        or None when unavailable (local mode; TEDAPI returns an empty mock dict).
+        """
         return self.poll('/api/tesla/tariff_rate', force=force)
 
     def set_tariff(self, tou_settings: dict, jsonformat=False) -> Optional[Union[dict, str]]:
-        """Update the Time-of-Use utility tariff settings."""
+        """
+        Update the Time-of-Use tariff (Cloud and FleetAPI modes)
+
+        Args:
+          tou_settings = Tesla time_of_use_settings contract, e.g.
+                         {"optimization_strategy": "economics", "tariff_content_v2": {...}}
+          jsonformat   = If True, return JSON format otherwise return Python Dictionary
+
+        Returns the normalized Tesla response, e.g. {"Message": "Updated", "Code": 201},
+        or None on failure (including TEDAPI and local modes, which can't write tariffs).
+        """
         if not isinstance(tou_settings, dict):
             log.error("tou_settings must be a dictionary")
             return None

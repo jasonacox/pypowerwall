@@ -5,6 +5,7 @@
   normalize a False reserve to 0
 - Tesla tariff read/write cache invalidation and stale-site recovery behavior
 """
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -241,8 +242,9 @@ class TestStaleSiteRecovery:
         assert cloud.site is new_site
         assert cloud.siteid == 222
         assert cloud.siteindex == 0
-        assert cloud.pwcache == {}
-        assert cloud.pwcachetime == {}
+        # Invalidated like _invalidate_cache: value dropped, timestamp kept
+        assert cloud.pwcache['SITE_TARIFF'] is None
+        assert 'SITE_TARIFF' in cloud.pwcachetime
         with open(cloud.sitefile, encoding='utf-8') as site_file:
             assert site_file.read() == '222'
         assert old_site.api_calls == [('SITE_TARIFF', {})]
@@ -272,6 +274,46 @@ class TestStaleSiteRecovery:
         assert cloud._recover_stale_site() is True
         assert cloud.site is replacement
         assert cloud.siteindex == 1
+
+    def test_single_site_account_falls_back_to_its_only_site(self, cloud):
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW-OLD')
+        only_site = FakeSite(222, site_name='Renamed', gateway_id='GW-NEW')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [only_site])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.site is only_site and cloud.siteid == 222
+
+    def test_multi_site_account_without_match_does_not_guess(self, cloud):
+        # No gateway/name match among several sites: switching to sites[0] could
+        # send the retried call - here a TOU write - to a different installation
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW-HOME', api_error=FakeHttpError(404))
+        cabin = FakeSite(222, site_name='Cabin', gateway_id='GW-CABIN')
+        shop = FakeSite(333, site_name='Shop', gateway_id='GW-SHOP')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [cabin, shop])
+
+        with pytest.raises(FakeHttpError):
+            cloud._call_site_api('TIME_OF_USE_SETTINGS', tou_settings={'x': 1})
+
+        assert cloud.site is old_site and cloud.siteid == 111
+        assert cabin.api_calls == [] and shop.api_calls == []
+        assert not os.path.exists(cloud.sitefile)
+
+    def test_recovery_keeps_cache_timestamps_for_concurrent_readers(self, cloud):
+        # A concurrent _site_api fast path reads pwcachetime[name] after seeing a
+        # cached value; clearing timestamps would make that a KeyError
+        cloud.site = FakeSite(111, site_name='Home', gateway_id='GW1')
+        cloud.siteid = 111
+        cloud.pwcache['SITE_SUMMARY'] = {'response': {'old': True}}
+        cloud.pwcachetime['SITE_SUMMARY'] = 1.0
+        self._configure_tesla(cloud, [FakeSite(222, site_name='Home', gateway_id='GW1')])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.pwcache['SITE_SUMMARY'] is None
+        assert cloud.pwcachetime['SITE_SUMMARY'] == 1.0
 
     def test_404_does_not_switch_when_current_site_still_exists(self, cloud):
         current_site = FakeSite(111, api_error=FakeHttpError(404))

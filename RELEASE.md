@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-* feat(tariff): add tariff read and Time-of-Use write support across Tesla Cloud and FleetAPI, facade helpers, TEDAPI mock parity, and cache invalidation after successful TOU updates. (#382)
-* fix(cloud): recover stale Tesla `energy_site_id` values after 404 responses using guarded site matching, a 60-second cooldown, non-blocking locking, persistent `.pypowerwall.site` updates, and a single retry. (#382)
+* feat(tariff): read the site's utility tariff and update Time-of-Use settings - `pw.get_tariff()` / `pw.set_tariff(tou_settings)` (endpoints `/api/tesla/tariff_rate` and `/api/tesla/time_of_use_settings`). Cloud reads the Owner API tariff and FleetAPI reads `tariff_content` from site info; writes follow Tesla's `time_of_use_settings` contract (`tariff_content_v2`). Responses are normalized (e.g. `{"Message": "Updated", "Code": 201}`), a successful write invalidates the cached tariff, and TEDAPI (mock read, `None` on write) and local mode (`None`) fail cleanly. Thanks @nesys (#382)
+* fix(cloud): recover when Tesla replaces or re-provisions a site - after a 404 for a site ID that's gone from the account, switch to the site with the same `gateway_id` (or unique `site_name`), or the only site on a single-site account, persist it to `.pypowerwall.site`, and retry once; with several sites and no match, leave the site unchanged and log an error. Serialized, rate-limited to one attempt per minute. Long-running processes no longer need a restart after a site change. (#382)
 
 ## v0.18.0 - Modern Packaging and Clean Distributions
 

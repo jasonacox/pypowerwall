@@ -109,31 +109,29 @@ pw = pypowerwall.Powerwall(
 
 #### Tesla tariff and Time-of-Use settings
 
-The following raw endpoints are supported across backends. Tesla Cloud and FleetAPI provide real tariff data and writes; TEDAPI has no tariff transport and returns the documented mock response:
+Tariff read and Time-of-Use write are Tesla cloud features. Cloud and FleetAPI modes provide them; TEDAPI returns an empty mock tariff (`{}`) and fails writes with `None`; local mode returns `None` for both (the gateway has no tariff endpoint).
 
-- `GET /api/tesla/tariff_rate` via `pw.poll("/api/tesla/tariff_rate")`  
-  Returns the current Tesla Owner API tariff (`SITE_TARIFF`). The result is cached using the normal cloud cache TTL unless `force=True` is supplied.
+- `pw.get_tariff(force=False)` (or `pw.poll("/api/tesla/tariff_rate")`) → dict/None  
+  Returns the site's utility tariff object (`code`, `name`, `utility`, `currency`, `seasons`, `energy_charges`, …). Cloud reads the Owner API tariff (`SITE_TARIFF`); FleetAPI reads `tariff_content` from site info. Cached for the normal cloud TTL unless `force=True`.
 
-- `POST /api/tesla/time_of_use_settings` via `pw.post("/api/tesla/time_of_use_settings", payload)`  
-  Updates the Tesla Time-of-Use tariff (`TIME_OF_USE_SETTINGS`). The payload must contain a `tou_settings` object, for example:
+- `pw.set_tariff(tou_settings)` (or `pw.post("/api/tesla/time_of_use_settings", {"tou_settings": ...})`) → dict/None  
+  Updates the Time-of-Use tariff. `tou_settings` follows Tesla's `time_of_use_settings` contract, which takes the tariff as `tariff_content_v2`:
 
 ```python
-payload = {
-    "tou_settings": {
-        "optimization_strategy": "economics",
-        "tariff_content_v2": {
-            # Tesla tariff content
-        },
-    }
-}
-
-result = pw.post("/api/tesla/time_of_use_settings", payload)
-# {"Message": "Updated", "Code": 201}
+result = pw.set_tariff({
+    "optimization_strategy": "economics",
+    "tariff_content_v2": {
+        # Tesla tariff content (v2 form)
+    },
+})
+# {"Message": "Updated", "Code": 201}, or None on failure
 ```
 
-The convenience methods `pw.get_tariff(force=False)` and `pw.set_tariff(tou_settings)` use the same endpoints. Tesla response envelopes are normalized, including embedded JSON strings, so successful writes return a stable dictionary such as `{"Message": "Updated", "Code": 201}`.
+  `tariff_content_v2` is the same structure as the object `get_tariff()` returns plus a `version` field (FleetAPI site info exposes both forms), so build the write from the v2 form rather than assuming the read result can be written back unchanged.
 
-A successful TOU write invalidates the cached `SITE_TARIFF`, so the next tariff read is refreshed. Cloud site-scoped calls also recover from a stale `energy_site_id` when Tesla replaces/re-provisions a site: recovery is rate-limited, serialized, persists the replacement ID to `.pypowerwall.site`, and prefers matching the previous `gateway_id`/`site_name` before falling back to the first returned site.
+Tesla response envelopes are normalized, including embedded JSON strings, so successful writes return a stable dictionary. A successful write invalidates the cached tariff, so the next read is fresh.
+
+Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site call returns 404 and the site ID is gone from the account's site list, pypowerwall switches to the site with the same `gateway_id` (or a unique `site_name` match), or to the only site on a single-site account, persists the new ID to `.pypowerwall.site`, and retries the call once. With several sites and no match it leaves the site unchanged and logs an error rather than guessing. Recovery is serialized and rate-limited to one attempt per minute.
 
 ### Power and Energy
 

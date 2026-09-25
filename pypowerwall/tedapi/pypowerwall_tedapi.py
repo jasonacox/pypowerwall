@@ -249,16 +249,18 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return json.loads(TESLA_TARIFF_RATE)
 
     # pylint: disable=unused-argument
-    # noinspection PyUnusedLocal
-    @not_implemented_mock_data
     def set_time_of_use_settings(
         self,
         payload: Optional[dict],
         din: Optional[str] = None,
         **kwargs,
     ) -> Optional[Union[dict, list, str, bytes]]:
-        """TEDAPI does not expose Time-of-Use tariff writes."""
-        return json.loads(TESLA_TIME_OF_USE_SETTINGS)
+        """TEDAPI has no Time-of-Use tariff transport. Like other unsupported
+        writes (post_api_operation without v1r), fail with None - a
+        success-shaped mock would read as a completed write."""
+        log.error("set_time_of_use_settings is not supported in TEDAPI mode - "
+                  "use Cloud or FleetAPI mode")
+        return None
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
