@@ -50,16 +50,22 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 # silently dropping unknown names. Names are appended (never inserted) so every
 # captured signal keeps its position in each component's response list.
 #
-# PW3 temperatures (degrees C) - hardware-validated 2026-09-24 on a PW3 leader +
-# follower (WiFi TEDAPI and v1r LAN). PW3 has no TETHC thermal controller, so the
-# PW2 THC_AmbientTemp signal does not exist there. PCH_heatsinkTemp is passed
-# through as delivered, but on firmware current at validation it read a constant
-# 45.450980 (an 8-bit raw value) on both units while ambient moved 2.5 C, so it is
-# kept out of derived values like temps(). V2026_06 cannot carry extras: its
-# PW3Query has the signal names inline in the signed text.
+# get_pw3_vitals() passes every COMPONENTS extra through to vitals as delivered
+# (pch -> TEPINV block, bms/hvp -> each battery's TEPOD block), so adding a name
+# here is the whole change. Derived values (temps()) use proven-live signals only.
+#
+# PW3 temperatures - hardware-validated 2026-09-24 on a PW3 leader + follower
+# (WiFi TEDAPI and v1r LAN). PW3 has no TETHC thermal controller, so the PW2
+# THC_AmbientTemp signal does not exist there. Temperatures are degrees C; the
+# BMS_LOG_tempOutOfBounds* signals are over-temperature event counters (0 at
+# validation; Tesla's own PW3Query requests them). PCH_heatsinkTemp read a constant
+# 45.450980 (an 8-bit raw value) on both units while ambient moved over 7 C, so
+# temps() doesn't use it. V2026_06 cannot carry extras: its PW3Query has the
+# signal names inline in the signed text.
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
         "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp"),
+        "bmsSignalNames": ("BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"),
         "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"),
     },
 }
@@ -94,6 +100,8 @@ V2026_06_ROLES = {
     QueryRole.COMPONENTS:              "PW3Query",
 }
 
+# The pristine captured sets. What goes on the wire is get_query(), which adds
+# EXTRA_SIGNAL_NAMES to the V2024_06 captures.
 QUERY_SETS = {
     TEDAPIApiVersion.V2024_06: V2024_06_QUERIES,
     TEDAPIApiVersion.V2026_06: V2026_06_QUERIES,

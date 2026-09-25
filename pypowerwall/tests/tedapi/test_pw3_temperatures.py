@@ -23,6 +23,7 @@ EXPANSION_DIN = "2707000-11-J--TG12000000004Z"
 
 TEMP_EXTRAS = {
     "pchSignalNames": ["PCH_AmbientTemp", "PCH_heatsinkTemp"],
+    "bmsSignalNames": ["BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"],
     "hvpSignalNames": ["HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"],
 }
 
@@ -36,7 +37,8 @@ HEATSINK = 45.450980392156865   # the constant both PW3s delivered at validation
 
 def _payload(ambient, packs, hvp_serials):
     """Components payload for one PW3: ``packs`` is a list of
-    (energy_remaining_kwh, (pack_max, pack_min, shunt)) per BMS/HVP index."""
+    (energy_remaining_kwh, (pack_max, pack_min, shunt), (oob, oob_charge))
+    per BMS/HVP index."""
     return json.dumps({"components": {
         "pws": [{"signals": [], "activeAlerts": []}],
         "pch": [{"signals": [
@@ -47,20 +49,24 @@ def _payload(ambient, packs, hvp_serials):
         "bms": [{"signals": [
             _sig("BMS_nominalEnergyRemaining", energy),
             _sig("BMS_nominalFullPackEnergy", 13.5),
-        ], "activeAlerts": []} for energy, _ in packs],
+            _sig("BMS_LOG_tempOutOfBounds", counters[0]),
+            _sig("BMS_LOG_tempOutOfBoundsCharge", counters[1]),
+        ], "activeAlerts": []} for energy, _, counters in packs],
         "hvp": [{"partNumber": "1707000-11-J", "serialNumber": serial, "signals": [
             _sig("HVP_State", None),
             _sig("HVP_PackTempMax", temps[0]),
             _sig("HVP_PackTempMin", temps[1]),
             _sig("HVP_ShuntTemperature", temps[2]),
-        ], "activeAlerts": []} for serial, (_, temps) in zip(hvp_serials, packs)],
+        ], "activeAlerts": []} for serial, (_, temps, _) in zip(hvp_serials, packs)],
         "baggr": [{"signals": [], "activeAlerts": []}],
     }})
 
 
-LEADER_PAYLOAD = _payload(45.4, [(7.0, (39.7, 35.1, 40.2)), (6.0, (38.0, 34.0, 39.0))],
+# Distinct per-battery values so a wrong BMS/HVP index pairing can't pass
+LEADER_PAYLOAD = _payload(45.4, [(7.0, (39.7, 35.1, 40.2), (1, 2)),
+                                (6.0, (38.0, 34.0, 39.0), (3, 4))],
                           ["TG12000000001Z", "TG12000000004Z"])
-FOLLOWER_PAYLOAD = _payload(44.7, [(6.9, (39.5, 34.8, 39.9))], ["TG12000000002Z"])
+FOLLOWER_PAYLOAD = _payload(44.7, [(6.9, (39.5, 34.8, 39.9), (0, 0))], ["TG12000000002Z"])
 
 BATTERY_BLOCKS = [
     {"vin": LEADER_DIN, "type": "Powerwall3", "battery_expansions": [{"din": EXPANSION_DIN}]},
@@ -166,6 +172,40 @@ class TestPw3VitalsTemperatures:
         expansion = vitals[f"TEPOD--{EXPANSION_DIN}"]
         assert (expansion["HVP_PackTempMax"], expansion["HVP_PackTempMin"]) == (38.0, 34.0)
 
+    def test_bms_counters_follow_their_battery(self, api):
+        vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: FOLLOWER_PAYLOAD})
+        expected = {LEADER_DIN: (1, 2), EXPANSION_DIN: (3, 4), FOLLOWER_DIN: (0, 0)}
+        for din, counters in expected.items():
+            pod = vitals[f"TEPOD--{din}"]
+            assert (pod["BMS_LOG_tempOutOfBounds"], pod["BMS_LOG_tempOutOfBoundsCharge"]) == counters
+
+    def test_any_requested_extra_is_surfaced(self, api):
+        # Single source of truth: adding a name to EXTRA_SIGNAL_NAMES is the whole change
+        future = json.loads(FOLLOWER_PAYLOAD)
+        future["components"]["hvp"][0]["signals"].append(_sig("HVP_FutureSignal", 7))
+        extras = q.EXTRA_SIGNAL_NAMES[QueryRole.COMPONENTS]
+        grown = {"hvpSignalNames": extras["hvpSignalNames"] + ("HVP_FutureSignal",)}
+        payloads = {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: json.dumps(future)}
+        with patch.dict(extras, grown):
+            vitals = _vitals_for(api, payloads)
+        assert vitals[f"TEPOD--{FOLLOWER_DIN}"]["HVP_FutureSignal"] == 7
+        assert vitals[f"TEPOD--{LEADER_DIN}"]["HVP_FutureSignal"] is None
+
+    def test_malformed_hvp_entry_does_not_raise(self, api):
+        # A None component entry used to crash the alert collection before any
+        # vitals were built; now the battery still reports energy and None temps
+        bad = json.loads(FOLLOWER_PAYLOAD)
+        bad["components"]["hvp"][0] = None
+        vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: json.dumps(bad)})
+        assert vitals[f"TEPOD--{FOLLOWER_DIN}"]["HVP_PackTempMax"] is None
+        assert vitals[f"TEPOD--{FOLLOWER_DIN}"]["POD_nom_energy_remaining"] == 6900
+
+    def test_alerts_still_collected(self, api):
+        alerting = json.loads(FOLLOWER_PAYLOAD)
+        alerting["components"]["pch"][0]["activeAlerts"] = [{"name": "PCH_a054_test"}, {"bogus": 1}]
+        vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: json.dumps(alerting)})
+        assert vitals[f"TEPOD--{FOLLOWER_DIN}"]["alerts"] == ["PCH_a054_test"]
+
     def test_existing_pod_fields_unchanged(self, api):
         vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: FOLLOWER_PAYLOAD})
         pod = vitals[f"TEPOD--{LEADER_DIN}"]
@@ -177,10 +217,13 @@ class TestPw3VitalsTemperatures:
     def test_missing_signals_yield_none_keys(self, api):
         bare = json.loads(FOLLOWER_PAYLOAD)
         bare["components"]["pch"][0]["signals"] = [_sig("PCH_AcFrequency", 60.0)]
+        bare["components"]["bms"][0]["signals"] = bare["components"]["bms"][0]["signals"][:2]
         bare["components"]["hvp"][0]["signals"] = []
         vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: json.dumps(bare)})
         pod = vitals[f"TEPOD--{FOLLOWER_DIN}"]
         assert pod["HVP_PackTempMax"] is None and pod["HVP_ShuntTemperature"] is None
+        assert pod["BMS_LOG_tempOutOfBounds"] is None
+        assert pod["POD_nom_energy_remaining"] == 6900   # energy still parsed
         assert vitals[f"TEPINV--{FOLLOWER_DIN}"]["PCH_AmbientTemp"] is None
         assert vitals[f"TEPINV--{FOLLOWER_DIN}"]["PCH_heatsinkTemp"] is None
 

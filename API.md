@@ -144,7 +144,7 @@ pw = pypowerwall.Powerwall(
   Returns solar panel string data.
 
 - `temps(jsonformat=False)` → dict/str  
-  Returns Powerwall temperatures in degrees C, keyed by device. Powerwall 2 reports the thermal controller ambient (`TETHC--…` keys). Powerwall 3 reports the hottest battery-pack reading (`TEPOD--…` keys, one per Powerwall 3 and expansion pack). The full Powerwall 3 breakdown is in `vitals()`: `HVP_PackTempMax`, `HVP_PackTempMin`, and `HVP_ShuntTemperature` on each `TEPOD--…` block, and the inverter's `PCH_AmbientTemp` (enclosure) and `PCH_heatsinkTemp` on each `TEPINV--…` block (`None` when the gateway doesn't report them; `PCH_heatsinkTemp` is passed through as delivered but reads a constant value on current firmware). Powerwall 3 temperatures need the default `tedapi_api_version="V2024_06"`.
+  Returns Powerwall temperatures in degrees C, keyed by device. Powerwall 2 reports the thermal controller ambient (`TETHC--…` keys). Powerwall 3 reports the hottest battery-pack reading (`TEPOD--…` keys, one per Powerwall 3 and expansion pack). The full Powerwall 3 breakdown is in `vitals()`: `HVP_PackTempMax`, `HVP_PackTempMin`, `HVP_ShuntTemperature`, and the over-temperature event counters `BMS_LOG_tempOutOfBounds` / `BMS_LOG_tempOutOfBoundsCharge` on each `TEPOD--…` block, and the inverter's `PCH_AmbientTemp` (enclosure) and `PCH_heatsinkTemp` on each `TEPINV--…` block (`None` when the gateway doesn't report them; `PCH_heatsinkTemp` is passed through as delivered but reads a constant value on current firmware). Powerwall 3 temperatures need the default `tedapi_api_version="V2024_06"`.
 
 - `alerts(jsonformat=False, alertsonly=True)` → list/str  
   Returns array of alerts from devices.
