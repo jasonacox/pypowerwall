@@ -136,9 +136,9 @@ The V2024_06 captures' ECDSA signature covers only the query **text**. The `*Sig
 
 ## Versioning & Release Checklist
 
-- Library version: bump `version_tuple` in `pypowerwall/__init__.py` (the only place).
-- Add a `## vX.Y.Z - Title` entry at the top of `RELEASE.md` (conventional-ish `feat(scope):`/`fix(scope):` bullets, PR refs like `(#345)`).
-- Proxy changes: bump `BUILD = "tNN"` in `proxy/server.py` + entry in `proxy/RELEASE.md`. After a library release, update the pin in `proxy/requirements.txt`.
+- Feature and fix PRs add their bullets under a single `## Unreleased` heading at the top of `RELEASE.md` (create it if absent; conventional-ish `feat(scope):`/`fix(scope):` bullets, PR refs like `(#345)`) and **never bump the version** — several PRs usually land in one release, and a version edit in each collides with the others.
+- Release PR (maintainer): bump `version_tuple` in `pypowerwall/__init__.py` (the only place) and rename `## Unreleased` to `## vX.Y.Z - Title`, ending with a `* Library version bumped to \`X.Y.Z\`` bullet.
+- Proxy: bump `BUILD = "tNN"` in `proxy/server.py` + an entry in `proxy/RELEASE.md` for proxy-visible changes. Update the pin in `proxy/requirements.txt` **only after** the new library version is on PyPI (DESIGN.md release order) — a pin to an unpublished version breaks proxy image builds from `main`.
 - Do not run `upload.sh` / `proxy/upload.sh` — publishing is the maintainer's job.
 
 ## Gotchas an Agent Must Know
