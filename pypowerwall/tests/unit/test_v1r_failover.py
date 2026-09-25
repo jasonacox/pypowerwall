@@ -118,6 +118,74 @@ class TestConnectV1rColdFailover:
         assert ted._connect_v1r() is None
         assert ted.lan_failed is False
 
+    def test_cold_failover_on_din_failure(self):
+        ted = _make_tedapi()
+        mock_transport = MagicMock()
+        mock_transport.login.return_value = True
+        mock_transport.get_din.return_value = None
+        ted.v1r_transport = mock_transport
+        ted.wifi_session = MagicMock()
+        ted.wifi_session.get.return_value = _din_response()
+        ted.wifi_host = '192.168.1.39'
+
+        assert ted._connect_v1r() == 'WIFI_DIN'
+        assert ted.lan_failed is True
+
+    def test_cold_failover_on_exception(self, caplog):
+        ted = _make_tedapi()
+        mock_transport = MagicMock()
+        mock_transport.login.side_effect = ConnectionError('gone')
+        ted.v1r_transport = mock_transport
+        ted.wifi_session = MagicMock()
+        ted.wifi_session.get.return_value = _din_response()
+        ted.wifi_host = '192.168.1.39'
+
+        import logging
+        with caplog.at_level(logging.ERROR):
+            assert ted._connect_v1r() == 'WIFI_DIN'
+        assert ted.lan_failed is True
+
+    def test_cold_failover_non_ok_status_returns_none(self):
+        ted = _make_tedapi()
+        mock_transport = MagicMock()
+        mock_transport.login.return_value = False
+        ted.v1r_transport = mock_transport
+        ted.wifi_session = MagicMock()
+        resp = MagicMock()
+        resp.status_code = HTTPStatus.FORBIDDEN
+        ted.wifi_session.get.return_value = resp
+        ted.wifi_host = '192.168.1.39'
+
+        assert ted._connect_v1r() is None
+        assert ted.lan_failed is False
+
+    def test_cold_failover_decode_error_returns_none(self):
+        ted = _make_tedapi()
+        mock_transport = MagicMock()
+        mock_transport.login.return_value = False
+        ted.v1r_transport = mock_transport
+        ted.wifi_session = MagicMock()
+        resp = MagicMock()
+        resp.status_code = HTTPStatus.OK
+        resp.content = b'\xff\xfe\x00bad'
+        ted.wifi_session.get.return_value = resp
+        ted.wifi_host = '192.168.1.39'
+
+        assert ted._connect_v1r() is None
+        assert ted.lan_failed is False
+
+    def test_cold_failover_empty_din_returns_none(self):
+        ted = _make_tedapi()
+        mock_transport = MagicMock()
+        mock_transport.login.return_value = False
+        ted.v1r_transport = mock_transport
+        ted.wifi_session = MagicMock()
+        ted.wifi_session.get.return_value = _din_response('   ')
+        ted.wifi_host = '192.168.1.39'
+
+        assert ted._connect_v1r() is None
+        assert ted.lan_failed is False
+
     def test_lan_success_still_clears_state(self):
         ted = _make_tedapi()
         ted.lan_failed = True
@@ -161,5 +229,34 @@ class TestRecoveryProbeOverFallback:
             'continuing on WiFi' in r.message for r in caplog.records
         )
         assert not any(
+            'resuming wired' in r.message for r in caplog.records
+        )
+
+    def test_recovery_lan_resumed_routes_via_lan(self, caplog):
+        ted = _make_tedapi()
+        ted.lan_failed = True
+        ted.lan_recover_after = 0  # recovery window reached
+        ted.din = 'LAN_DIN'
+        mock_transport = MagicMock()
+        mock_transport.post_v1r.return_value = b'envelope'
+        ted.v1r_transport = mock_transport
+
+        def fake_reconnect():
+            ted.lan_failed = False
+            ted.lan_fail_count = 0
+            return 'LAN_DIN'
+
+        with patch.object(
+            TEDAPI, '_connect_v1r', side_effect=fake_reconnect,
+        ), patch.object(
+            TEDAPI, '_envelope_bytes', return_value=b'env',
+        ), patch.object(
+            TEDAPI, '_post_tedapi_wifi',
+        ) as mock_wifi:
+            with caplog.at_level(logging.INFO):
+                assert ted._post_tedapi(b'pb', din='D') == b'envelope'
+        mock_wifi.assert_not_called()
+        mock_transport.post_v1r.assert_called_once_with(b'env', 'LAN_DIN')
+        assert any(
             'resuming wired' in r.message for r in caplog.records
         )
