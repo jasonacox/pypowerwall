@@ -625,3 +625,118 @@ class TestGetDin:
         with caplog.at_level(logging.ERROR):
             assert api.get_din() is None
         assert "WiFi fallback failed" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# @uses_api_lock — locks are per instance and per method
+# ---------------------------------------------------------------------------
+
+class TestPerInstanceLocks:
+    """The getter locks used to live on the function object, i.e. one lock per
+    method shared by every TEDAPI in the process: a server polling several
+    gateways serialized all of them behind whichever fetch was in flight (and
+    a slow gateway starved the others into lock timeouts / stale cache). They
+    now live on the instance, keyed by method name."""
+
+    def test_other_instance_is_not_blocked_by_a_held_lock(self, getter):
+        method = getattr(TEDAPI, getter.name)
+        a, b = make_tedapi(), make_tedapi()
+        a.timeout = b.timeout = 0.2
+
+        assert a._api_lock(method).acquire(blocking=False)
+        try:
+            # b fetches normally while a's lock is held ...
+            with patch.object(b, getter.patch_target, return_value=getter.ok_response) as tb:
+                assert getter.call(b) == getter.ok_value
+            tb.assert_called_once()
+            # ... whereas a itself hits the lock timeout (no cache -> None)
+            with patch.object(a, getter.patch_target, return_value=getter.ok_response) as ta:
+                assert getter.call(a) is None
+            ta.assert_not_called()
+        finally:
+            a._api_lock(method).release()
+
+    def test_locks_are_per_method_and_stable(self):
+        api = make_tedapi()
+        status_lock = api._api_lock(TEDAPI.get_status)
+        assert status_lock is api._api_lock(TEDAPI.get_status)
+        assert status_lock is not api._api_lock(TEDAPI.get_config)
+        assert set(api._api_locks) == {"get_status", "get_config"}
+
+    def test_locks_are_per_instance(self):
+        a, b = make_tedapi(), make_tedapi()
+        assert a._api_lock(TEDAPI.get_status) is not b._api_lock(TEDAPI.get_status)
+
+    def test_no_function_means_no_lock(self):
+        api = make_tedapi()
+        assert api._api_lock(None) is None
+        assert api._api_locks == {}
+
+    def test_concurrent_first_use_yields_one_lock(self):
+        import threading
+
+        api = make_tedapi()
+        seen = []
+        barrier = threading.Barrier(16)
+
+        def grab():
+            barrier.wait()
+            seen.append(api._api_lock(TEDAPI.get_status))
+
+        threads = [threading.Thread(target=grab) for _ in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert len(seen) == 16
+        assert all(lock is seen[0] for lock in seen)
+
+    def test_decorator_no_longer_installs_a_shared_function_lock(self):
+        for name in ("get_status", "get_config", "get_device_controller",
+                     "get_firmware_version", "get_components", "get_battery_block"):
+            assert not hasattr(getattr(TEDAPI, name), "api_lock")
+
+
+class TestAcquireLockWithBackoff:
+    """acquire_lock_with_backoff accepts a bare lock, a legacy holder object
+    carrying ``api_lock``, or None / a holder without a lock (no-op)."""
+
+    def test_bare_lock(self):
+        import threading
+        from pypowerwall.api_lock import acquire_lock_with_backoff
+
+        lock = threading.Lock()
+        with acquire_lock_with_backoff(lock, 1):
+            assert lock.locked()
+        assert not lock.locked()
+
+    def test_holder_with_api_lock(self):
+        import threading
+        from pypowerwall.api_lock import acquire_lock_with_backoff
+
+        class Holder:
+            api_lock = threading.Lock()
+
+        with acquire_lock_with_backoff(Holder, 1):
+            assert Holder.api_lock.locked()
+        assert not Holder.api_lock.locked()
+
+    @pytest.mark.parametrize("holder", [None, object()])
+    def test_nothing_to_lock_is_a_noop(self, holder):
+        from pypowerwall.api_lock import acquire_lock_with_backoff
+
+        with acquire_lock_with_backoff(holder, 1):
+            pass
+
+    def test_timeout_raises(self):
+        import threading
+        from pypowerwall.api_lock import acquire_lock_with_backoff
+
+        lock = threading.Lock()
+        lock.acquire()
+        try:
+            with pytest.raises(TimeoutError):
+                with acquire_lock_with_backoff(lock, 0.05):
+                    pass
+        finally:
+            lock.release()

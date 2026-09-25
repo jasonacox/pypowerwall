@@ -15,7 +15,7 @@ class AuthMode(str, Enum):
     """How TEDAPI authenticates to the Powerwall Gateway."""
     BASIC = "basic"    # HTTP Basic Auth to 192.168.91.1 (Gateway Wi-Fi only)
     BEARER = "bearer"  # /api/login/Basic token + AuthEnvelope(PRESENCE);
-                       # also works over wired LAN. PW2/solar-only — not PW3.
+                       # also works over wired LAN. Solar-only — not PW2 or PW3.
 
     def __str__(self) -> str:
         # Stable display across Python versions (avoids "AuthMode.BASIC").
