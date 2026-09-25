@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* build: packaging moved to a PEP 621 `pyproject.toml` (setuptools backend); `setup.py` is now a compatibility shim, so existing `python setup.py …` tooling keeps working. The version is a single plain `__version__` literal in `pypowerwall/__init__.py`, read at build time via setuptools' `attr:` (no import, no regex), replacing `setup.py`'s regex parse. The public `version` and `version_tuple` attributes are unchanged. Thanks @jasonacox-sam, prompted by @hulkster (#389, #388).
+* fix(build): distributions no longer ship the repository's `proxy/` directory as a top-level `proxy` package. The 0.17.x wheels carried the proxy's `server.py` and tests, and — because a local `proxy/pypowerwall` symlink was followed at build time — a duplicate copy of the library (~85 files). Package discovery is now explicit (`pypowerwall*`), so neither can leak in. Nothing imported `proxy` from the installed package (the proxy's Docker image copies its files from the repo). (#389)
+* build: declares `requires-python = ">=3.9"`, matching the CI-tested versions (Python 3.8 is end-of-life); pip keeps Python 3.8 environments on 0.17.x instead of offering an untested release. License metadata uses the PEP 639 SPDX form (`license = "MIT"`). (#389)
+
 ## v0.17.4 - Powerwall 3 Temperatures and Tesla Remote Meter
 
 * feat(tedapi): Powerwall 3 temperatures are back. `temps()` (and the proxy's `/temps` and `/temps/pw`) now report the hottest battery-pack reading per Powerwall 3 and expansion pack; they returned `{}` on PW3 because the PW2 thermal-controller signal (`THC_AmbientTemp`) doesn't exist there. `vitals()` carries the full breakdown in degrees C: `HVP_PackTempMax`, `HVP_PackTempMin`, and `HVP_ShuntTemperature` (plus the `BMS_LOG_tempOutOfBounds` / `BMS_LOG_tempOutOfBoundsCharge` over-temperature event counters) on each `TEPOD--…` block, and the inverter's `PCH_AmbientTemp` (enclosure) and `PCH_heatsinkTemp` on each `TEPINV--…` block (`None` when unavailable; `PCH_heatsinkTemp` is passed through as delivered but reads a constant 45.45 on current firmware, so `temps()` doesn't use it). Hardware-validated on a PW3 leader + follower over WiFi TEDAPI and v1r LAN; `/temps/pw` `PWn` numbering matches `/pod`. (#390)
