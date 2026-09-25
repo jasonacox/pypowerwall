@@ -169,7 +169,7 @@ class Powerwall(object):
                            over the Gateway's Wi-Fi; or "bearer" to log in via
                            /api/login/Basic and wrap queries in an AuthEnvelope,
                            which also works over the wired LAN IP. Bearer works
-                           on Powerwall 2 and solar-only gateways but NOT
+                           on solar-only gateways but NOT Powerwall 2 or
                            Powerwall 3 — for PW3 wired access use v1r mode
                            (rsa_key_path)
         """
