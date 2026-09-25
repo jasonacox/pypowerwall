@@ -284,6 +284,17 @@ class TestTempsFacade:
         with patch.object(pw, 'vitals', return_value=vitals):
             assert pw.temps() == {}
 
+    def test_missing_reading_keeps_its_position(self, pw):
+        # /temps/pw numbers entries by position and must match /pod, which lists
+        # every battery - so a battery without a reading stays in place as None
+        vitals = {
+            f"TEPOD--{LEADER_DIN}": {"HVP_PackTempMax": None},
+            f"TEPOD--{FOLLOWER_DIN}": {"HVP_PackTempMax": 39.5},
+        }
+        with patch.object(pw, 'vitals', return_value=vitals):
+            temps = pw.temps()
+        assert list(temps.items()) == [(f"TEPOD--{LEADER_DIN}", None), (f"TEPOD--{FOLLOWER_DIN}", 39.5)]
+
     def test_pw3_without_reading_stays_empty(self, pw):
         with patch.object(pw, 'vitals', return_value={f"TEPOD--{LEADER_DIN}": {"HVP_PackTempMax": None}}):
             assert pw.temps() == {}

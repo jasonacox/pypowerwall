@@ -294,6 +294,23 @@ class TestTempsEndpoint(BaseDoGetTest):
     @common_patches
     @patch('proxy.server.pw')
     @patch('proxy.server.safe_pw_call')
+    def test_temps_pw_missing_reading_keeps_numbering(self, proxystats_lock, mock_safe_pw_call, mock_pw):
+        """A battery without a reading stays in its PWn slot as null"""
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/temps/pw"
+            temps = {"TEPOD--1707000-11-J--TG12000000001Z": None,
+                     "TEPOD--1707000-11-J--TG12000000002Z": 39.5}
+            mock_safe_pw_call.side_effect = lambda func, *a, **k: (
+                dict(temps) if func == mock_pw.temps else None)
+
+            self.handler.do_GET()
+
+            self.handler.send_response.assert_called_with(HTTPStatus.OK)
+            self.assertEqual(json.loads(self.get_written_text()), {"PW1_temp": None, "PW2_temp": 39.5})
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.safe_pw_call')
     def test_temps_pw_empty_when_no_temps(self, proxystats_lock, mock_safe_pw_call, mock_pw):
         """No temperature data still returns an empty JSON object"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):

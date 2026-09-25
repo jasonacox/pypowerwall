@@ -689,18 +689,27 @@ class Powerwall(object):
         Powerwall 2 reports the thermal controller ambient (TETHC blocks,
         THC_AmbientTemp). Powerwall 3 has no thermal controller; it reports the
         hottest battery-pack reading (TEPOD blocks, HVP_PackTempMax) for each
-        Powerwall 3 and expansion pack. All values are degrees C. The full PW3
-        breakdown (pack min, shunt, inverter ambient) is in vitals().
+        Powerwall 3 and expansion pack - None for a battery without a reading
+        while others report one, so positions match the /pod numbering. All
+        values are degrees C. The full PW3 breakdown (pack min, shunt, inverter
+        ambient) is in vitals().
 
         Args:
           jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
         temps = {}
         devices: dict = self.vitals() or {}
+        # PW3 battery blocks always carry HVP_PackTempMax (None when unavailable).
+        # Once any reports a reading, list every PW3 block - None included - so the
+        # proxy's /temps/pw PWn numbering stays aligned with /pod; with no readings
+        # at all, list none (unchanged {} on firmware without the signal).
+        pw3_blocks = [d for d in devices if d.startswith('TEPOD')
+                      and isinstance(devices[d], dict) and 'HVP_PackTempMax' in devices[d]]
+        pw3_has_reading = any(devices[d]['HVP_PackTempMax'] is not None for d in pw3_blocks)
         for device in devices:
             if device.startswith('TETHC'):
                 temps[device] = devices[device].get('THC_AmbientTemp')
-            elif device.startswith('TEPOD') and devices[device].get('HVP_PackTempMax') is not None:
+            elif pw3_has_reading and device in pw3_blocks:
                 temps[device] = devices[device]['HVP_PackTempMax']
         if jsonformat:
             return json.dumps(temps, indent=4, sort_keys=True)
