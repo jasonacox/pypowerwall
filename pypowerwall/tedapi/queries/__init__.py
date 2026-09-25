@@ -52,13 +52,14 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 #
 # PW3 temperatures (degrees C) - hardware-validated 2026-09-24 on a PW3 leader +
 # follower (WiFi TEDAPI and v1r LAN). PW3 has no TETHC thermal controller, so the
-# PW2 THC_AmbientTemp signal does not exist there. PCH_heatsinkTemp also answers,
-# but read a constant 45.45 on both units while ambient moved 2.5 C, so it is not
-# requested until it is proven live. V2026_06 cannot carry extras: its PW3Query
-# has the signal names inline in the signed text.
+# PW2 THC_AmbientTemp signal does not exist there. PCH_heatsinkTemp is passed
+# through as delivered, but on firmware current at validation it read a constant
+# 45.450980 (an 8-bit raw value) on both units while ambient moved 2.5 C, so it is
+# kept out of derived values like temps(). V2026_06 cannot carry extras: its
+# PW3Query has the signal names inline in the signed text.
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
-        "pchSignalNames": ("PCH_AmbientTemp",),
+        "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp"),
         "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"),
     },
 }

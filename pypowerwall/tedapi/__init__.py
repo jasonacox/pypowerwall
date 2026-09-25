@@ -909,6 +909,7 @@ class TEDAPI:
             },
             "TEPINV--{part}--{sn}" {
                 "PCH_AmbientTemp": 47.2,          # degrees C, None if unavailable
+                "PCH_heatsinkTemp": 45.45,        # as delivered (constant on current firmware)
                 "PINV_Fout": 60.0,
                 ...
             }
@@ -1058,9 +1059,12 @@ class TEDAPI:
                     # PVAC, PVS and TEPINV
                     response[f"PVAC--{pw_din}"] = {}
                     response[f"PVS--{pw_din}"] = {}
-                    # Inverter enclosure ambient (degrees C); None when unavailable
-                    ambient = _component_signal_value(pch_components, 'PCH_AmbientTemp')
-                    response[f"TEPINV--{pw_din}"] = {"PCH_AmbientTemp": ambient}
+                    # Inverter temperatures (degrees C) as delivered; None when unavailable
+                    # (PCH_heatsinkTemp: see EXTRA_SIGNAL_NAMES - constant on current firmware)
+                    response[f"TEPINV--{pw_din}"] = {
+                        name: _component_signal_value(pch_components, name)
+                        for name in ('PCH_AmbientTemp', 'PCH_heatsinkTemp')
+                    }
                     # pch_components contain:
                     #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
                     #   PCH_PvVoltageA through F - value

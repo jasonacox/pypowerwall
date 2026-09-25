@@ -22,13 +22,16 @@ FOLLOWER_DIN = "1707000-11-J--TG12000000002Z"
 EXPANSION_DIN = "2707000-11-J--TG12000000004Z"
 
 TEMP_EXTRAS = {
-    "pchSignalNames": ["PCH_AmbientTemp"],
+    "pchSignalNames": ["PCH_AmbientTemp", "PCH_heatsinkTemp"],
     "hvpSignalNames": ["HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"],
 }
 
 
 def _sig(name, value):
     return {"name": name, "value": value, "textValue": "", "boolValue": False, "timestamp": 0}
+
+
+HEATSINK = 45.450980392156865   # the constant both PW3s delivered at validation
 
 
 def _payload(ambient, packs, hvp_serials):
@@ -39,6 +42,7 @@ def _payload(ambient, packs, hvp_serials):
         "pch": [{"signals": [
             _sig("PCH_AcFrequency", 60.0),
             _sig("PCH_AmbientTemp", ambient),
+            _sig("PCH_heatsinkTemp", HEATSINK),
         ], "activeAlerts": []}],
         "bms": [{"signals": [
             _sig("BMS_nominalEnergyRemaining", energy),
@@ -118,9 +122,6 @@ class TestComponentsRequestQuery:
             request[key] = request[key][:-len(extras)]
         assert json.dumps(request, separators=(",", ":")) == q.V2024_06_QUERIES["components"].b_value
 
-    def test_unproven_heatsink_signal_not_requested(self):
-        assert "PCH_heatsinkTemp" not in q.get_query(QueryRole.COMPONENTS).b_value
-
     def test_roles_without_extras_are_the_capture_object(self):
         for role in (QueryRole.DEVICE_CONTROLLER_BASIC, QueryRole.DEVICE_CONTROLLER_FULL):
             assert q.get_query(role) is q.V2024_06_QUERIES[role]
@@ -155,6 +156,11 @@ class TestPw3VitalsTemperatures:
         assert vitals[f"TEPINV--{LEADER_DIN}"]["PCH_AmbientTemp"] == 45.4
         assert vitals[f"TEPINV--{FOLLOWER_DIN}"]["PCH_AmbientTemp"] == 44.7
 
+    def test_heatsink_passed_through_as_delivered(self, api):
+        vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: FOLLOWER_PAYLOAD})
+        assert vitals[f"TEPINV--{LEADER_DIN}"]["PCH_heatsinkTemp"] == HEATSINK
+        assert vitals[f"TEPINV--{FOLLOWER_DIN}"]["PCH_heatsinkTemp"] == HEATSINK
+
     def test_expansion_pack_gets_its_own_hvp_temps(self, api):
         vitals = _vitals_for(api, {LEADER_DIN: LEADER_PAYLOAD, FOLLOWER_DIN: FOLLOWER_PAYLOAD})
         expansion = vitals[f"TEPOD--{EXPANSION_DIN}"]
@@ -176,6 +182,7 @@ class TestPw3VitalsTemperatures:
         pod = vitals[f"TEPOD--{FOLLOWER_DIN}"]
         assert pod["HVP_PackTempMax"] is None and pod["HVP_ShuntTemperature"] is None
         assert vitals[f"TEPINV--{FOLLOWER_DIN}"]["PCH_AmbientTemp"] is None
+        assert vitals[f"TEPINV--{FOLLOWER_DIN}"]["PCH_heatsinkTemp"] is None
 
     def test_malformed_signal_lists_do_not_raise(self, api):
         bad = json.loads(FOLLOWER_PAYLOAD)
@@ -227,6 +234,12 @@ class TestTempsFacade:
             (f"TEPOD--{EXPANSION_DIN}", 38.0),
             (f"TEPOD--{FOLLOWER_DIN}", 39.5),
         ]
+
+    def test_inverter_temps_never_feed_temps(self, pw):
+        # temps() is a derived summary: pack temps only, never TEPINV values
+        vitals = {f"TEPINV--{LEADER_DIN}": {"PCH_AmbientTemp": 45.4, "PCH_heatsinkTemp": HEATSINK}}
+        with patch.object(pw, 'vitals', return_value=vitals):
+            assert pw.temps() == {}
 
     def test_pw3_without_reading_stays_empty(self, pw):
         with patch.object(pw, 'vitals', return_value={f"TEPOD--{LEADER_DIN}": {"HVP_PackTempMax": None}}):

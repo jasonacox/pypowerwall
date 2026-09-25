@@ -122,7 +122,7 @@ The vendored `.proto` files under `pypowerwall/tedapi/protobuf/` are the **singl
 The V2024_06 captures' ECDSA signature covers only the query **text**. The `*SignalNames` variables (e.g. `hvpSignalNames` in the ComponentsQuery) are unsigned and honored by the gateway, which returns the signals it knows (with a value, or `None`) and silently drops unknown names — so extra signals can be requested without a new capture.
 
 - Add names to `EXTRA_SIGNAL_NAMES` in `pypowerwall/tedapi/queries/__init__.py`. **Never edit the `V2024_06.json` captures** — the extras are merged into `V2024_06_REQUEST_QUERIES` at import and appended after the captured names, so existing signals keep their response positions and the capture's meaning is unchanged (this is additive, consistent with the no-in-place-mutation rule above).
-- Only request a signal after proving it live on hardware: an echoed name can still carry a constant placeholder (`PCH_heatsinkTemp` reads a fixed 45.45 on PW3, so it is deliberately excluded). Record the validation date and hardware in the comment.
+- Present what the system provides: pass every signal the gateway delivers through to raw outputs like `vitals()`, even one that looks static today — it may become live in later firmware. Build derived/summary values (e.g. `temps()`, dashboard-facing numbers) only from signals proven live on hardware. `PCH_heatsinkTemp` is the example: it's in PW3 vitals but reads a constant 45.45 on current firmware, so `temps()` doesn't use it. Record the validation date, hardware, and any suspect behavior in the comment.
 - V2026_06 can't carry extras: its signed `PW3Query` has the signal names inline in the signed text.
 
 ## Testing
