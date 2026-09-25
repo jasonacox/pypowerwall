@@ -191,7 +191,9 @@ To reach this subnet you need a Layer 2 connection to the TEG Ethernet port:
 * **Direct cable** — Ethernet cable from your machine to the TEG port (you will need a static IP on the 10.42.1.x subnet)
 * **VLAN** — Managed switch with a VLAN that includes the TEG port
 
-> **Important:** The v1r/Basic LAN endpoints listen only on the vendor subnet (10.42.1.x). Requests to the Powerwall’s home LAN IP will not reach these endpoints. Use `ping 10.42.1.x` to verify connectivity before configuration.
+> **Important:** The v1r/Basic LAN endpoints listen on the vendor subnet (10.42.1.x). On many units, requests to the Powerwall’s home LAN IP will not reach these endpoints. Use `ping 10.42.1.x` to verify connectivity before configuration.
+>
+> Some units answer v1r on their home LAN address as well. Two UK Powerwall 3 units on firmware 26.x returned full config and vitals at their home LAN IP with no vendor-subnet route, VLAN or bridge (see [#354](https://github.com/jasonacox/pypowerwall/issues/354)). Try the home LAN address first; set up the vendor subnet only if it does not answer.
 
 #### Basic LAN Access (No RSA Key Required)
 
@@ -266,9 +268,22 @@ The script will then:
 1. Generate an RSA-4096 key pair (saves private key to `tedapi_rsa_private.pem`)
 2. Walk you through Tesla OAuth to authorize the registration
 3. Register the public key with the Powerwall
-4. Prompt you to confirm registration by toggling a Powerwall breaker off and back on (if not auto-verified)
+4. Prompt you to give the physical proof on the unit (if not auto-verified)
 
-After the breaker toggle, wait for the Powerwall status light to turn from red back to white — this can take 30-60 seconds. The script will poll for confirmation and show whether the key was authorized.
+The registered key sits in a verification window of about 10 minutes. Within that window, switch the Powerwall 3 On/Off switch (on the left side of the unit, under the red rapid-shutdown flap) **OFF for about 15 seconds, then back ON**. Do not leave it off until the unit powers down: the gateway then drops off the network for several minutes and the window closes before it can report. A 2 second flick is debounced and does nothing. On some units toggling one AC breaker also works. The script polls for confirmation and shows whether the key was authorized; on one unit the key read VERIFIED 62 seconds after the registration call.
+
+##### Key States
+
+The gateway reports one of these states for the key. The values match `tesla_fleet_api.const.AuthorizedClientState`.
+
+| State | Meaning | What to do |
+|---|---|---|
+| 1 | `PENDING_VERIFICATION` | Registered. Give the physical proof within the window. |
+| 2 | `PENDING_VERIFICATION_TIMEOUT` | The window closed. This key cannot reach 3. Run the tool again: re-registering the **same** public key reopens the window. No new key pair is needed. |
+| 3 | `VERIFIED` | Ready for use. |
+| 4 | `REMOVED` | The key was removed from the gateway. |
+
+State 2 is a timeout, not a stage between 1 and 3. Every "1 → 2" seen after a breaker toggle is the window expiring, not the toggle being noticed. Thanks to [@LAE1990](https://github.com/LAE1990) for working this out on UK Powerwall 3 units, firmware 26.x ([#354](https://github.com/jasonacox/pypowerwall/issues/354)).
 
 **Note (Fleet API only):** Tesla Fleet API requires your application’s public key to be served at `https://{DOMAIN}/.well-known/appspecific/com.tesla.3p.public-key.pem`. A Cloudflare Worker or any static web host can serve this file.
 

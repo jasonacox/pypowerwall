@@ -15,6 +15,8 @@ import hashlib
 import json
 import logging
 import math
+import os
+import shlex
 import struct
 import time
 import uuid
@@ -43,6 +45,25 @@ def _decode_payload_preview(raw: bytes, max_len: int = 200) -> str:
     return raw[:max_len].hex()
 
 
+REGISTER_KEY_FILENAME = 'tedapi_rsa_private.pem'  # the key file `pypowerwall register` reuses
+
+
+def reregister_hint(rsa_key_path: Optional[str]) -> str:
+    """The command that re-registers the key at ``rsa_key_path``.
+
+    `python -m pypowerwall register` reuses <authpath>/tedapi_rsa_private.pem and
+    silently generates a new key pair when that file is absent, so pointing it at
+    the configured key's directory is what keeps it the same key."""
+    if not isinstance(rsa_key_path, str) or not rsa_key_path:
+        return "python -m pypowerwall register"
+    key_dir = os.path.dirname(os.path.abspath(rsa_key_path))
+    hint = f"python -m pypowerwall register -authpath {shlex.quote(key_dir)}"
+    name = os.path.basename(rsa_key_path)
+    if name != REGISTER_KEY_FILENAME:
+        hint += f" (it reuses {REGISTER_KEY_FILENAME} there: rename {name} to that first)"
+    return hint
+
+
 class TEDAPIv1r:
     """RSA-signed transport for Powerwall /tedapi/v1r endpoint."""
 
@@ -50,6 +71,7 @@ class TEDAPIv1r:
                  timeout: int = 5, poolmaxsize: int = 10) -> None:
         self.host = host
         self.password = password
+        self.rsa_key_path = rsa_key_path  # for re-registration hints
         self.timeout = timeout
         self.poolmaxsize = poolmaxsize
         self.token: Optional[str] = None
@@ -247,8 +269,9 @@ class TEDAPIv1r:
                     msg = (
                         "v1r RSA key is not recognized by the gateway (UNKNOWN_KEY_ID). "
                         "The key file may not match the registered key, or no key has been "
-                        "registered. Run 'python -m pypowerwall register' to register or "
-                        f"verify your key. Key fingerprint in use (SHA256): {self.key_fingerprint} "
+                        "registered. Register or verify the configured key with: "
+                        f"{reregister_hint(getattr(self, 'rsa_key_path', None))} - "
+                        f"Key fingerprint in use (SHA256): {self.key_fingerprint} "
                         f"Gateway payload ({response_size} bytes): {raw_preview} "
                         "See: https://github.com/jasonacox/pypowerwall/issues/274"
                     )
@@ -273,9 +296,12 @@ class TEDAPIv1r:
                 msg = (
                     "v1r RSA key is registered but not yet VERIFIED by the gateway "
                     "(PENDING_VERIFICATION). "
-                    "Toggle ONE Powerwall circuit breaker OFF, wait 2 seconds, then back ON. "
-                    "Wait 30-60 seconds, then retry. "
-                    "Run 'python -m pypowerwall register' to check key state. "
+                    "Within about 10 minutes of registering, switch the Powerwall 3 "
+                    "On/Off switch OFF for about 15 seconds, then back ON (or toggle "
+                    "one AC breaker). If the key reads state 2 the window has closed: "
+                    "re-register the same key with: "
+                    f"{reregister_hint(getattr(self, 'rsa_key_path', None))} "
+                    "- then repeat the switch. "
                     f"Gateway payload ({response_size} bytes): {raw_preview} "
                     "See: https://github.com/jasonacox/pypowerwall/issues/274"
                 )
@@ -293,7 +319,8 @@ class TEDAPIv1r:
                     f"Gateway payload: {raw_preview} "
                     "The RSA key may not be registered or recognized by this gateway. "
                     f"Key fingerprint in use (SHA256): {self.key_fingerprint} "
-                    "Run 'python -m pypowerwall register' to register or verify your key. "
+                    "Register or verify the configured key with: "
+                    f"{reregister_hint(getattr(self, 'rsa_key_path', None))} - "
                     "See: https://github.com/jasonacox/pypowerwall/issues/274"
                 )
                 self._key_auth_warning('key_unknown', msg)

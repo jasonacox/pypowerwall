@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* docs(v1r): corrected key-state semantics: state 2 is `PENDING_VERIFICATION_TIMEOUT` (the ~10-minute verification window closed), not a stage between 1 and 3 — re-registering the same key reopens it. Updated physical-proof step: switch the Powerwall 3 On/Off switch OFF for about 15 seconds, then back ON; a quick flick is debounced. README gains a Key States table and a note that some units answer v1r on their home LAN address. Thanks @LAE1990 (#383, #354).
+* fix(register): `python -m pypowerwall register` now honors `-authpath` / `PW_AUTH_PATH` (it silently used the current directory, so re-registering could create a new key instead of reusing the configured one). Key-auth warnings now print the exact command that re-registers the configured key.
+* fix(register): the post-proof poll watches for VERIFIED for up to 120 seconds (was ~25 s, shorter than the documented 62 s transition), and a timed-out key (state 2) skips the physical-proof prompt and goes straight to re-register guidance.
+
 ## v0.17.3 - PW3 v1r Islanding Commands
 
 * fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).

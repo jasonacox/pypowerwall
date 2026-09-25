@@ -13,8 +13,9 @@ HOW IT WORKS:
     2. Query Tesla Cloud API to discover your Powerwall gateway details
     3. Generate RSA-4096 key pair locally
     4. Register public key with gateway via Tesla Cloud API
-    5. Physical confirmation required: toggle any Powerwall switch OFF/ON
-       within 30 seconds to approve the pairing
+    5. Physical confirmation required: within about 10 minutes, switch the
+       Powerwall 3 On/Off switch OFF for about 15 seconds, then back ON
+       (see https://github.com/jasonacox/pypowerwall#key-states)
     
     OPERATION PHASE (LAN - ongoing):
     6. Build TEDAPI protobuf messages locally
@@ -304,8 +305,11 @@ def pair_device_via_cloud(token, energy_site_id, public_key_bytes, device_name="
             print("⚠️  ACTION REQUIRED: Power toggle a Powerwall switch NOW")
             print("="*70)
             print("The gateway needs physical confirmation to accept the pairing.")
-            print("Toggle any Powerwall power switch OFF then ON within 30 seconds.")
-            input("\nPress Enter after toggling the switch...")
+            print("Within about 10 minutes, switch the Powerwall 3 On/Off switch OFF for")
+            print("about 15 seconds, then back ON. A quick flick is ignored; leaving it off")
+            print("until the unit powers down closes the window.")
+            print("Details: https://github.com/jasonacox/pypowerwall#key-states")
+            input("\nPress Enter after switching the Powerwall OFF and back ON...")
             return True
         else:
             print(f"✗ Pairing failed: {resp.status_code}")

@@ -1416,17 +1416,22 @@ class TEDAPI:
                 self.pwcache["config"] = probe
                 self.pwcachetime["config"] = time.time()
             else:
+                from .tedapi_v1r import reregister_hint
                 if self.v1r_transport.pending_verification:
                     log.error(
                         "v1r: RSA key is PENDING_VERIFICATION — data calls will return None. "
-                        "Toggle a Powerwall circuit breaker OFF then back ON to trigger verification."
+                        "Within about 10 minutes of registering, switch the Powerwall 3 On/Off "
+                        "switch OFF for about 15 seconds then ON (or toggle a breaker). "
+                        "A key at state 2 has timed out: re-register the same key with: "
+                        f"{reregister_hint(getattr(self.v1r_transport, 'rsa_key_path', None))}"
                     )
                 elif self.v1r_transport.key_unknown:
                     log.error(
                         "v1r: RSA key not recognized by gateway — data calls will return None. "
                         "Check that the key file matches the registered key "
                         f"(fingerprint in use: {getattr(self.v1r_transport, 'key_fingerprint', 'unknown')}). "
-                        "Run 'python -m pypowerwall register' to verify."
+                        "Register or verify the configured key with: "
+                        f"{reregister_hint(getattr(self.v1r_transport, 'rsa_key_path', None))}"
                     )
                 else:
                     log.debug("v1r: key probe returned no data (possibly transient) - continuing")

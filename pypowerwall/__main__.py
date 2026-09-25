@@ -759,7 +759,9 @@ def main():
     # Fleet API RSA Key Registration (v1r LAN mode)
     elif command == 'register':
         from pypowerwall.v1r_register import main as fleet_register_main
-        fleet_register_main()
+        # Honor -authpath / PW_AUTH_PATH (as 'setup -v1r' does) so re-registering
+        # reuses the existing key there instead of creating one in the CWD
+        fleet_register_main(authpath=authpath)
 
     # Run Scan
     elif command == 'scan':
