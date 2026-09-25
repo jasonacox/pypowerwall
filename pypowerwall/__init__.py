@@ -91,7 +91,7 @@ import sys
 import time
 from typing import Optional, Union
 
-version_tuple = (0, 17, 3)
+version_tuple = (0, 17, 4)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
