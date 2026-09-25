@@ -37,6 +37,7 @@
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
     get_fan_speed() - Get the fan speeds in RPM
+    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
 
@@ -1990,15 +1991,15 @@ class TEDAPI:
         return self.extract_fan_speeds(self.get_device_controller(force=force))
 
 
-    def derive_meter_config(self, config) -> dict:
-        """Build a lookup dictionary for Neurio meter configuration from config."""
+    def derive_meter_config(self, config, types=("neurio_w2_tcp",)) -> dict:
+        """Build a lookup dictionary for meter configuration from config, filtered by meter type(s)."""
         # Build meter Lookup if available
         meter_config = {}
         if not "meters" in config:
             return meter_config
         # Loop through each meter and use device_serial as the key
         for meter in config['meters']:
-            if meter.get('type') != "neurio_w2_tcp":
+            if meter.get('type') not in types:
                 continue
             device_serial = lookup(meter, ['connection', 'device_serial'])
             if not device_serial:
@@ -2074,6 +2075,82 @@ class TEDAPI:
             neurio_flat[f"NEURIO--{sn}"] = {**cts_flat, **rest}
         return (neurio_flat, neurio_hierarchy)
 
+    def aggregate_remote_meter_data(self, config_data, status_data, meter_config_data) -> Tuple[dict, dict]:
+        """Aggregate Tesla Remote Meter (teslaRemoteMeter) data from status and config into flat and hierarchical forms.
+
+        The hierarchy is keyed by "{din}:{ct index}" (not just the CT slot) so a
+        second remote meter doesn't overwrite the first - the full query supports
+        multiple meters. Each entry still carries its own "Index" (the CT's
+        original 0-based slot in that meter), so callers that need to map a CT
+        back to a specific phase (i_a/i_b/i_c) use that instead of iteration
+        order, which would silently misassign phases whenever a CT slot is
+        skipped (e.g. cts=[True, False, True, False])."""
+        remote_flat = {}
+        remote_hierarchy = {}
+        # Loop through each remote meter device (keyed by din)
+        for m in lookup(status_data, ['teslaRemoteMeter', 'meters']) or []:
+            din = m.get('din')
+            if not din:
+                continue
+            reading = m.get('reading') or {}
+            cts_flat = {}
+            for i, ct in enumerate(reading.get('ctReadings') or []):
+                # Only show if we have a meter configuration and cts[i] is true
+                cts_bool = lookup(meter_config_data, [din, 'cts'])
+                if isinstance(cts_bool, list) and i < len(cts_bool):
+                    if not cts_bool[i]:
+                        # Skip this CT
+                        continue
+                factor = lookup(meter_config_data, [din, 'real_power_scale_factor']) or 1
+                location = lookup(meter_config_data, [din, 'location'])
+                ct_hierarchy = {
+                    "Index": i,
+                    "InstRealPower": (ct.get('realPowerW') or 0) * factor,
+                    "InstReactivePower": ct.get('reactivePowerVAR'),
+                    "InstVoltage": ct.get('voltageV'),
+                    "InstCurrent": ct.get('currentA'),
+                    "EnergyExportedWs": ct.get('energyExportedWs'),
+                    "EnergyImportedWs": ct.get('energyImportedWs'),
+                    "Location": location[i] if location and len(location) > i else None
+                }
+                remote_hierarchy[f"{din}:{i}"] = ct_hierarchy
+                cts_flat.update({f"TRM_CT{i}_" + key: value for key, value in ct_hierarchy.items() if key != "Index"})
+            rest = {
+                "componentParentDin": lookup(config_data, ['vin']),
+                "firmwareVersion": reading.get('firmwareVersion'),
+                "lastCommunicationTime": reading.get('timestamp'),
+                "manufacturer": "TESLA" if lookup(meter_config_data, [din, "type"]) else None,
+                "meterAttributes": {
+                    "meterLocation": []
+                },
+                "serialNumber": din
+            }
+            remote_flat[f"TRM--{din}"] = {**cts_flat, **rest}
+        return (remote_flat, remote_hierarchy)
+
+    def get_remote_meter_readings(self, config=None, force=False) -> dict:
+        """
+        Fetch and aggregate Tesla Remote Meter (teslaRemoteMeter) CT readings, keyed by CT slot.
+
+        Remote meter data is only present in the Device Controller Full query
+        (get_device_controller()), not the basic status query used by get_status(), so this
+        issues its own (cached) fetch - but only when config.json actually declares a remote
+        meter (type "trm_mb"). Most installs have none, so callers that already have `config`
+        (the site/solar aggregate extractors) should pass it in: it lets this skip the extra
+        Full-query fetch entirely instead of paying for one on every poll for every user.
+        """
+        if config is None:
+            config = self.get_config(force=force)
+        if not isinstance(config, dict):
+            return {}
+        meter_config = self.derive_meter_config(config, types=("trm_mb",))
+        if not meter_config:
+            return {}
+        controller = self.get_device_controller(force=force)
+        if not isinstance(controller, dict):
+            return {}
+        return self.aggregate_remote_meter_data(config, controller, meter_config)[1]
+
     # Vitals API Mapping Function
     def vitals(self, force=False):
         """Create a vitals API dictionary using TEDAPI data."""
@@ -2107,6 +2184,11 @@ class TEDAPI:
             config_data=config,
             status_data=status,
             meter_config_data=self.derive_meter_config(config)
+        )[0]
+        remote_meter = self.aggregate_remote_meter_data(
+            config_data=config,
+            status_data=status,
+            meter_config_data=self.derive_meter_config(config, types=("trm_mb",))
         )[0]
 
         # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
@@ -2523,6 +2605,7 @@ class TEDAPI:
         vitals = {
             **header,
             **neurio,
+            **remote_meter,
             **pvac,
             **pvs,
             **ststsm,
