@@ -1,0 +1,67 @@
+name: Package
+
+# Builds the sdist and wheel, checks their contents, and installs each into a
+# clean venv - the tests workflow runs from the source tree, so it can't catch
+# packaging regressions (missing data files, repo trees leaking into the wheel,
+# version metadata drift).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    name: "Build and install (Python ${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # the requires-python floor and the newest supported version
+        python-version: ["3.9", "3.13"]
+
+    steps:
+      - uses: "actions/checkout@v4"
+
+      - uses: "actions/setup-python@v5"
+        with:
+          python-version: "${{ matrix.python-version }}"
+
+      - name: "Build sdist and wheel"
+        run: |
+          set -xe
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: "Check distribution contents"
+        run: python tools/check_dist.py dist
+
+      - name: "Install each artifact into a clean venv and import it"
+        run: |
+          set -xe
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            rm -rf /tmp/venv
+            python -m venv /tmp/venv
+            /tmp/venv/bin/pip install "$artifact"
+            # run from /tmp so the source tree isn't importable
+            (cd /tmp && /tmp/venv/bin/python -c "
+          import importlib.metadata as md
+          import importlib.util
+          import pypowerwall
+          import pypowerwall.tedapi.queries as q
+          assert md.version('pypowerwall') == pypowerwall.__version__, (md.version('pypowerwall'), pypowerwall.__version__)
+          assert q.V2024_06_QUERIES and q.V2026_06_QUERIES, 'query JSON not loaded'
+          assert importlib.util.find_spec('proxy') is None, 'a proxy package was installed'
+          print('ok', pypowerwall.__version__)
+          ")
+            /tmp/venv/bin/pypowerwall version
+          done

@@ -89,12 +89,23 @@
 import json
 import logging
 import os.path
+import re
 import sys
 import time
 from typing import Optional, Union
 
-version_tuple = (0, 17, 3)
-version = __version__ = '%d.%d.%d' % version_tuple
+
+def _release_tuple(version_string):
+    """Numeric release components of a version, e.g. "0.18.0rc1" -> (0, 18, 0).
+    Never raises, so a pre-release version string can't break import."""
+    return tuple(int(n) for n in re.findall(r"\d+", version_string.split("+")[0])[:3])
+
+
+# Single source of truth for the package version — keep this a plain literal.
+# pyproject.toml reads it at build time via [tool.setuptools.dynamic]
+# (attr:), which parses this file without importing it.
+__version__ = version = "0.18.0"
+version_tuple = _release_tuple(__version__)
 __author__ = 'jasonacox'
 
 # noinspection PyPackageRequirements
@@ -171,7 +182,7 @@ class Powerwall(object):
                            over the Gateway's Wi-Fi; or "bearer" to log in via
                            /api/login/Basic and wrap queries in an AuthEnvelope,
                            which also works over the wired LAN IP. Bearer works
-                           on Powerwall 2 and solar-only gateways but NOT
+                           on solar-only gateways but NOT Powerwall 2 or
                            Powerwall 3 — for PW3 wired access use v1r mode
                            (rsa_key_path)
         """
@@ -703,14 +714,31 @@ class Powerwall(object):
         """
         Temperatures of Powerwalls
 
+        Powerwall 2 reports the thermal controller ambient (TETHC blocks,
+        THC_AmbientTemp). Powerwall 3 has no thermal controller; it reports the
+        hottest battery-pack reading (TEPOD blocks, HVP_PackTempMax) for each
+        Powerwall 3 and expansion pack - None for a battery without a reading
+        while others report one, so positions match the /pod numbering. All
+        values are degrees C. The full PW3 breakdown (pack min, shunt, inverter
+        ambient) is in vitals().
+
         Args:
           jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
         temps = {}
         devices: dict = self.vitals() or {}
+        # PW3 battery blocks always carry HVP_PackTempMax (None when unavailable).
+        # Once any reports a reading, list every PW3 block - None included - so the
+        # proxy's /temps/pw PWn numbering stays aligned with /pod; with no readings
+        # at all, list none (unchanged {} on firmware without the signal).
+        pw3_blocks = [d for d in devices if d.startswith('TEPOD')
+                      and isinstance(devices[d], dict) and 'HVP_PackTempMax' in devices[d]]
+        pw3_has_reading = any(devices[d]['HVP_PackTempMax'] is not None for d in pw3_blocks)
         for device in devices:
             if device.startswith('TETHC'):
                 temps[device] = devices[device].get('THC_AmbientTemp')
+            elif pw3_has_reading and device in pw3_blocks:
+                temps[device] = devices[device]['HVP_PackTempMax']
         if jsonformat:
             return json.dumps(temps, indent=4, sort_keys=True)
         else:

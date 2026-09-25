@@ -413,8 +413,17 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         timestamp = lookup(status, ("system", "time"))
         data = API_METERS_AGGREGATES_STUB()
 
+        # Fetch the remote-meter hierarchy once and share it with both extractors
+        # below - each can independently need it (site as a last-resort fallback,
+        # solar for voltage and/or current), and without sharing, force=True would
+        # trigger two identical Full-query fetches in one /api/meters/aggregates
+        # call. get_remote_meter_readings() already skips the network fetch
+        # entirely when config.json declares no "trm_mb" meter, so this costs
+        # nothing extra for installs without one.
+        remote_hierarchy = self.tedapi.get_remote_meter_readings(config=config, force=force)
+
         # --- Site (Grid) ---
-        site_vals = self._extract_site_section(status, config, force)
+        site_vals = self._extract_site_section(status, config, force, remote_hierarchy=remote_hierarchy)
         data['site'].update(site_vals)
 
         # --- Load (Home) ---
@@ -422,7 +431,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         data['load'].update(load_vals)
 
         # --- Solar ---
-        solar_vals = self._extract_solar_section(status, config, force)
+        solar_vals = self._extract_solar_section(status, config, force, remote_hierarchy=remote_hierarchy)
         data['solar'].update(solar_vals)
 
         # --- Battery ---
@@ -457,8 +466,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
         return data
 
-    def _extract_site_section(self, status, config, force):
-        """Extract site (grid) section using Meter X, then Meter Z, then Neurio. Handles 2-phase and 3-phase setups. Sets i_a_current/i_b_current negative if InstRealPower is negative."""
+    def _extract_site_section(self, status, config, force, remote_hierarchy=None):
+        """Extract site (grid) section using Meter X, then Meter Z, then Neurio, then a Tesla Remote Meter. Handles 2-phase and 3-phase setups. Sets i_a_current/i_b_current negative if InstRealPower is negative."""
         grid_power = self.tedapi.current_power(force=force, location="site")
         meter_x = lookup(status, ("esCan","bus","SYNC","METER_X_AcMeasurements")) or {}
         meter_z = lookup(status, ("esCan","bus","MSA","METER_Z_AcMeasurements")) or {}
@@ -528,7 +537,35 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                     i3 = current
                     v3n = voltage
                 i += 1
-            used_meter = "Neurio"
+                used_meter = "Neurio"
+        # Fallback to a Tesla Remote Meter (wireless CT meter) assigned to the site/grid location -
+        # reached both when Meter X/Z/Neurio are all absent, and when Neurio exists but has no CT
+        # assigned to "site" (e.g. entirely assigned to solar/load), which the branch above no
+        # longer mistakes for "handled" since used_meter only flips to "Neurio" per matching CT.
+        if used_meter is None:
+            if remote_hierarchy is None:
+                remote_hierarchy = self.tedapi.get_remote_meter_readings(config=config, force=force)
+            site_cts = [d for d in remote_hierarchy.values() if d.get("Location") == "site"]
+            for d in site_cts:
+                # Map by the CT's own slot (0/1/2), not iteration order, so a
+                # skipped slot (e.g. cts=[True, False, True, False]) still lands
+                # on the correct phase instead of shifting into the next one.
+                idx = d.get("Index")
+                if idx not in (0, 1, 2):
+                    continue
+                current = math.copysign(d.get("InstCurrent") or 0, d.get("InstRealPower") or 0)
+                voltage = d.get("InstVoltage") or 0
+                if idx == 0:
+                    i1 = current
+                    v1n = voltage
+                elif idx == 1:
+                    i2 = current
+                    v2n = voltage
+                elif idx == 2:
+                    i3 = current
+                    v3n = voltage
+            if site_cts:
+                used_meter = "Remote Meter"
         # Handle 2-phase (single phase) vs 3-phase
         if v3n == 0:
             v3n = None
@@ -571,8 +608,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "disclaimer": "load: voltage from ISLAND_AcMeasurements, current calculated from power",
         }
 
-    def _extract_solar_section(self, status, config, force):
-        """Extract solar section using PVAC for voltage and current."""
+    def _extract_solar_section(self, status, config, force, remote_hierarchy=None):
+        """Extract solar section using PVAC for voltage and Meter Y for current, falling back to a
+        Tesla Remote Meter for whichever of voltage/current Meter Y and PVAC did not report. Voltage
+        and current sources are independent: a remote meter measuring solar contributes its per-CT
+        current even when PVAC already supplied voltage (there is no Meter Y on a remote-metered
+        solar circuit, so METER_Y_CT*_I is always 0 in that case)."""
         solar_power = self.tedapi.current_power(force=force, location="solar")
         v_solar_sum = 0
         count_solar = 0
@@ -596,16 +637,59 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 v_solar_sum += v
                 count_solar += 1
         vll_solar = v_solar_sum / count_solar if count_solar else 0
+        voltage_source = "PVAC" if vll_solar else None
         meter_y = lookup(status, ("esCan","bus","SYNC","METER_Y_AcMeasurements")) or {}
         yi1 = meter_y.get("METER_Y_CTA_I", 0)
         yi2 = meter_y.get("METER_Y_CTB_I", 0)
         yi3 = meter_y.get("METER_Y_CTC_I", 0)
+        current_source = "Meter Y" if (yi1 or yi2 or yi3) else None
         # If no voltage data check METER_Y_AcMeasurements
         if not vll_solar:
             yv1 = meter_y.get("METER_Y_VL1N", 0)
             yv2 = meter_y.get("METER_Y_VL2N", 0)
             yv3 = meter_y.get("METER_Y_VL3N", 0)
             vll_solar = compute_LL_voltage(yv1, yv2, yv3)
+            if vll_solar:
+                voltage_source = "Meter Y"
+        # Fallback to a Tesla Remote Meter (wireless CT meter) for whichever of voltage/current is
+        # still missing - independently, since a remote-metered solar circuit has no Meter Y at all.
+        if not vll_solar or not current_source:
+            if remote_hierarchy is None:
+                remote_hierarchy = self.tedapi.get_remote_meter_readings(config=config, force=force)
+            solar_cts = [d for d in remote_hierarchy.values() if d.get("Location") == "solar"]
+            if solar_cts:
+                v1n = v2n = v3n = 0
+                currents = [0, 0, 0]
+                for d in solar_cts:
+                    # Map by the CT's own slot (0/1/2), not iteration order, so a
+                    # skipped slot (e.g. cts=[True, False, True, False]) still
+                    # lands on the correct phase instead of shifting into the next one.
+                    idx = d.get("Index")
+                    if idx not in (0, 1, 2):
+                        continue
+                    currents[idx] = math.copysign(d.get("InstCurrent") or 0, d.get("InstRealPower") or 0)
+                    voltage = d.get("InstVoltage") or 0
+                    if idx == 0:
+                        v1n = voltage
+                    elif idx == 1:
+                        v2n = voltage
+                    elif idx == 2:
+                        v3n = voltage
+                if not current_source:
+                    yi1, yi2, yi3 = currents
+                    current_source = "Remote Meter"
+                if not vll_solar:
+                    if v3n == 0:
+                        v3n = None
+                    vll_solar = compute_LL_voltage(v1n, v2n, v3n) or 0
+                    if vll_solar:
+                        voltage_source = "Remote Meter"
+        # The no-current-source wording matches the pre-remote-meter fixed string
+        # ("...PVAC, calculated current from power") so existing installs' output
+        # is unchanged; only cases the old string misdescribed read differently.
+        current_desc = (f"current from {current_source}" if current_source
+                        else "calculated current from power")
+        disclaimer = f"solar: voltage from {voltage_source or 'unknown'}, {current_desc}"
         if vll_solar == 0:
             vll_solar = None
         i_solar = solar_power / vll_solar if vll_solar else None
@@ -618,7 +702,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "i_c_current": yi3,
             "instant_total_current": i_solar,
             "num_meters_aggregated": count_solar,
-            "disclaimer": "solar: voltage from PVAC, calculated current from power",
+            "disclaimer": disclaimer,
         }
 
     def _extract_battery_section(self, status, config, force):

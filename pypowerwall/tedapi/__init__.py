@@ -37,6 +37,7 @@
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
     get_fan_speed() - Get the fan speeds in RPM
+    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
 
@@ -77,7 +78,7 @@ from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
 from .auth_mode import AuthMode
-from .queries import apply_query, get_query, QueryRole
+from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -111,9 +112,15 @@ log.debug('Python %s on %s', sys.version, sys.platform)
 # shared None-safe implementation used by all backends
 
 def uses_api_lock(func):
-    # If the attribute doesn't exist or isn't a valid threading.Lock, overwrite it.
-    if not hasattr(func, 'api_lock') or not isinstance(func.api_lock, type(threading.Lock)):
-        func.api_lock = threading.Lock()
+    """Mark a getter as serialized by a per-instance, per-method API lock.
+
+    The wrapper injects the undecorated function as ``self_function`` so the
+    getter can hand it to ``_cached_fetch()``, which resolves the lock through
+    ``TEDAPI._api_lock()``. The lock lives on the *instance* (keyed by method
+    name), not on the function object: a process that polls several gateways
+    holds one TEDAPI per gateway, and a lock on the function would serialize
+    every gateway behind every other gateway's fetch.
+    """
     @wraps(func)
     def wrapper(*args, **kwargs):
         # Inject the function object itself into kwargs.
@@ -142,6 +149,26 @@ def decompress_response(content: bytes) -> bytes:
             log.debug(f"Gzip decompression failed: {e}")
     return content
 
+def _component_signal_value(components, name):
+    """First non-None value of signal ``name`` across a ComponentsQuery component
+    list (e.g. ``data['components']['pch']``), or None. Tolerates missing or
+    None ``signals`` lists and non-dict entries - firmware varies."""
+    for component in components or []:
+        if not isinstance(component, dict):
+            continue
+        for signal in component.get('signals') or []:
+            if not isinstance(signal, dict) or signal.get('name') != name:
+                continue
+            if signal.get('value') is not None:
+                return signal['value']
+    return None
+
+def _extra_signals(variables_key):
+    """Signal names requested beyond the ComponentsQuery capture for one component
+    group (EXTRA_SIGNAL_NAMES, e.g. 'hvpSignalNames'). get_pw3_vitals passes each
+    through as delivered, so adding a name there is the only change needed."""
+    return EXTRA_SIGNAL_NAMES[QueryRole.COMPONENTS].get(variables_key, ())
+
 _CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values are never None)
 
 # TEDAPI Class
@@ -159,10 +186,11 @@ class TEDAPI:
         "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
         only reachable over the gateway's Wi-Fi; "bearer" logs in via
         /api/login/Basic for a Bearer token and wraps each query in an
-        AuthEnvelope, which also works over the wired LAN IP. Bearer works on
-        Powerwall 2 and solar-only gateways but NOT Powerwall 3 — PW3 wired
-        access is v1r's job. Bearer is mutually exclusive with v1r (its own
-        RSA transport).
+        AuthEnvelope, which also works over the wired LAN IP. Bearer has been
+        verified on solar-only/inverter gateways; Powerwall 2 (Gateway 2) is
+        NOT supported — installer login returns 401 on wired LAN (see
+        jasonacox/pypowerwall-server#105). PW3 wired access is v1r's job.
+        Bearer is mutually exclusive with v1r (its own RSA transport).
         """
         self.debug = debug
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
@@ -212,6 +240,12 @@ class TEDAPI:
         self.wifi_last_success = 0  # timestamp of last successful WiFi call
         self.wifi_fail_count = 0    # consecutive follower WiFi failures (exponential backoff)
         self._wifi_lock = threading.Lock()  # protects wifi_fail_count and wifi_cooldown
+        # Per-method API locks for the @uses_api_lock getters, created lazily
+        # by _api_lock(). Per instance so multiple gateways (one TEDAPI each)
+        # never serialize on each other; per method so e.g. a slow
+        # get_device_controller() doesn't block get_config() on the same gateway.
+        self._api_locks: Dict[str, threading.Lock] = {}
+        self._api_locks_guard = threading.Lock()
         # LAN (v1r) failure tracking — triggers full fallback to WiFi TEDAPI v1
         self.lan_failed = False     # True when wired LAN is unreachable
         self.lan_fail_count = 0     # consecutive LAN failures
@@ -297,6 +331,20 @@ class TEDAPI:
             return True
         return False
 
+    def _api_lock(self, self_function) -> Optional[threading.Lock]:
+        """The lock serializing ``self_function`` on *this* instance.
+
+        Created on first use and keyed by the getter's name, so each TEDAPI
+        instance (gateway) has its own set of per-method locks. ``None`` in
+        (a getter called without the decorator, e.g. directly in tests) is
+        ``None`` out, which ``acquire_lock_with_backoff`` treats as "no lock".
+        """
+        if self_function is None:
+            return None
+        name = getattr(self_function, '__name__', None) or str(self_function)
+        with self._api_locks_guard:
+            return self._api_locks.setdefault(name, threading.Lock())
+
     def _cached_fetch(self, key: str, *, expire: float, force: bool, self_function,
                       fetch, name: str):
         """Skeleton shared by the locked, cached getters.
@@ -304,9 +352,10 @@ class TEDAPI:
         1. Serve a fresh cache entry, else bail out during a rate-limit cooldown
            — both checked before taking the lock, so pollers don't queue behind
            a fetch they don't need (``force`` skips both).
-        2. Take the per-method lock (``self_function.api_lock``, installed by
-           @uses_api_lock; bounded wait). On timeout serve the stale cache entry
-           if there is one, else None — never raise into a poller.
+        2. Take the per-instance, per-method lock (``_api_lock(self_function)``,
+           keyed by the @uses_api_lock getter's name; bounded wait). On timeout
+           serve the stale cache entry if there is one, else None — never raise
+           into a poller.
         3. Under the lock re-check cache and cooldown (another thread may have
            refreshed while we waited), and reconnect if the DIN is unknown.
         4. ``fetch()`` returns the value to cache and return, or None to leave
@@ -318,7 +367,7 @@ class TEDAPI:
         if not force and self._in_cooldown():
             return None
         try:
-            with acquire_lock_with_backoff(self_function, self.timeout):
+            with acquire_lock_with_backoff(self._api_lock(self_function), self.timeout):
                 cached = self._cache_get(key, expire, force)
                 if cached is not _CACHE_MISS:
                     return cached
@@ -885,6 +934,19 @@ class TEDAPI:
                 "POD_nom_energy_remaining": 0.0,
                 "POD_nom_full_pack_energy": 0.0,
                 "POD_nom_energy_to_be_charged": 0.0,
+                # EXTRA_SIGNAL_NAMES bms/hvp signals as delivered (None if unavailable)
+                "BMS_LOG_tempOutOfBounds": 0,     # over-temperature event counters
+                "BMS_LOG_tempOutOfBoundsCharge": 0,
+                "HVP_PackTempMax": 40.3,          # degrees C
+                "HVP_PackTempMin": 35.6,
+                "HVP_ShuntTemperature": 41.3,
+            },
+            "TEPINV--{part}--{sn}" {
+                # EXTRA_SIGNAL_NAMES pch signals as delivered (None if unavailable)
+                "PCH_AmbientTemp": 47.2,          # degrees C
+                "PCH_heatsinkTemp": 45.45,        # constant on current firmware
+                "PINV_Fout": 60.0,
+                ...
             }
         }
         """
@@ -964,10 +1026,14 @@ class TEDAPI:
                     # TEDPOD
                     alerts = []
                     for component in components:
-                        if components[component]:
-                            for alert in components[component][0]['activeAlerts']:
-                                if alert['name'] not in alerts:
-                                    alerts.append(alert['name'])
+                        # Guard the gateway payload - a malformed entry must not abort vitals
+                        first = (components[component] or [None])[0]
+                        if not isinstance(first, dict):
+                            continue
+                        for alert in first.get('activeAlerts') or []:
+                            name = alert.get('name') if isinstance(alert, dict) else None
+                            if name and name not in alerts:
+                                alerts.append(name)
                     # Process all BMS and HVP components to support expansion packs
                     # HVP entries have serial numbers, BMS entries have energy data
                     # They correspond 1:1 by index
@@ -1000,10 +1066,11 @@ class TEDAPI:
                         if nom_full_pack_energy == 0:
                             continue
 
-                        # Get corresponding HVP serial (same index)
-                        hvp_serial = None
-                        if bms_idx < len(hvp_list):
-                            hvp_serial = hvp_list[bms_idx].get('serialNumber')
+                        # Get corresponding HVP component and serial (same index)
+                        hvp_component = hvp_list[bms_idx] if bms_idx < len(hvp_list) else None
+                        if not isinstance(hvp_component, dict):
+                            hvp_component = {}
+                        hvp_serial = hvp_component.get('serialNumber')
 
                         # Determine DIN for this BMS entry
                         if bms_idx == 0:
@@ -1023,10 +1090,21 @@ class TEDAPI:
                             "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
                             "POD_nom_full_pack_energy": nom_full_pack_energy,
                         }
+                        # Extra signals as delivered; always present (None when unavailable)
+                        # so the block shape is stable
+                        pod = response[f"TEPOD--{pod_din}"]
+                        for name in _extra_signals('bmsSignalNames'):
+                            pod[name] = _component_signal_value([bms_component], name)
+                        for name in _extra_signals('hvpSignalNames'):
+                            pod[name] = _component_signal_value([hvp_component], name)
                     # PVAC, PVS and TEPINV
                     response[f"PVAC--{pw_din}"] = {}
                     response[f"PVS--{pw_din}"] = {}
-                    response[f"TEPINV--{pw_din}"] = {}
+                    # Extra inverter signals as delivered; None when unavailable
+                    response[f"TEPINV--{pw_din}"] = {
+                        name: _component_signal_value(pch_components, name)
+                        for name in _extra_signals('pchSignalNames')
+                    }
                     # pch_components contain:
                     #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
                     #   PCH_PvVoltageA through F - value
@@ -1415,17 +1493,22 @@ class TEDAPI:
                 self.pwcache["config"] = probe
                 self.pwcachetime["config"] = time.time()
             else:
+                from .tedapi_v1r import reregister_hint
                 if self.v1r_transport.pending_verification:
                     log.error(
                         "v1r: RSA key is PENDING_VERIFICATION — data calls will return None. "
-                        "Toggle a Powerwall circuit breaker OFF then back ON to trigger verification."
+                        "Within about 10 minutes of registering, switch the Powerwall 3 On/Off "
+                        "switch OFF for about 15 seconds then ON (or toggle a breaker). "
+                        "A key at state 2 has timed out: re-register the same key with: "
+                        f"{reregister_hint(getattr(self.v1r_transport, 'rsa_key_path', None))}"
                     )
                 elif self.v1r_transport.key_unknown:
                     log.error(
                         "v1r: RSA key not recognized by gateway — data calls will return None. "
                         "Check that the key file matches the registered key "
                         f"(fingerprint in use: {getattr(self.v1r_transport, 'key_fingerprint', 'unknown')}). "
-                        "Run 'python -m pypowerwall register' to verify."
+                        "Register or verify the configured key with: "
+                        f"{reregister_hint(getattr(self.v1r_transport, 'rsa_key_path', None))}"
                     )
                 else:
                     log.debug("v1r: key probe returned no data (possibly transient) - continuing")
@@ -1908,15 +1991,15 @@ class TEDAPI:
         return self.extract_fan_speeds(self.get_device_controller(force=force))
 
 
-    def derive_meter_config(self, config) -> dict:
-        """Build a lookup dictionary for Neurio meter configuration from config."""
+    def derive_meter_config(self, config, types=("neurio_w2_tcp",)) -> dict:
+        """Build a lookup dictionary for meter configuration from config, filtered by meter type(s)."""
         # Build meter Lookup if available
         meter_config = {}
         if not "meters" in config:
             return meter_config
         # Loop through each meter and use device_serial as the key
         for meter in config['meters']:
-            if meter.get('type') != "neurio_w2_tcp":
+            if meter.get('type') not in types:
                 continue
             device_serial = lookup(meter, ['connection', 'device_serial'])
             if not device_serial:
@@ -1992,6 +2075,82 @@ class TEDAPI:
             neurio_flat[f"NEURIO--{sn}"] = {**cts_flat, **rest}
         return (neurio_flat, neurio_hierarchy)
 
+    def aggregate_remote_meter_data(self, config_data, status_data, meter_config_data) -> Tuple[dict, dict]:
+        """Aggregate Tesla Remote Meter (teslaRemoteMeter) data from status and config into flat and hierarchical forms.
+
+        The hierarchy is keyed by "{din}:{ct index}" (not just the CT slot) so a
+        second remote meter doesn't overwrite the first - the full query supports
+        multiple meters. Each entry still carries its own "Index" (the CT's
+        original 0-based slot in that meter), so callers that need to map a CT
+        back to a specific phase (i_a/i_b/i_c) use that instead of iteration
+        order, which would silently misassign phases whenever a CT slot is
+        skipped (e.g. cts=[True, False, True, False])."""
+        remote_flat = {}
+        remote_hierarchy = {}
+        # Loop through each remote meter device (keyed by din)
+        for m in lookup(status_data, ['teslaRemoteMeter', 'meters']) or []:
+            din = m.get('din')
+            if not din:
+                continue
+            reading = m.get('reading') or {}
+            cts_flat = {}
+            for i, ct in enumerate(reading.get('ctReadings') or []):
+                # Only show if we have a meter configuration and cts[i] is true
+                cts_bool = lookup(meter_config_data, [din, 'cts'])
+                if isinstance(cts_bool, list) and i < len(cts_bool):
+                    if not cts_bool[i]:
+                        # Skip this CT
+                        continue
+                factor = lookup(meter_config_data, [din, 'real_power_scale_factor']) or 1
+                location = lookup(meter_config_data, [din, 'location'])
+                ct_hierarchy = {
+                    "Index": i,
+                    "InstRealPower": (ct.get('realPowerW') or 0) * factor,
+                    "InstReactivePower": ct.get('reactivePowerVAR'),
+                    "InstVoltage": ct.get('voltageV'),
+                    "InstCurrent": ct.get('currentA'),
+                    "EnergyExportedWs": ct.get('energyExportedWs'),
+                    "EnergyImportedWs": ct.get('energyImportedWs'),
+                    "Location": location[i] if location and len(location) > i else None
+                }
+                remote_hierarchy[f"{din}:{i}"] = ct_hierarchy
+                cts_flat.update({f"TRM_CT{i}_" + key: value for key, value in ct_hierarchy.items() if key != "Index"})
+            rest = {
+                "componentParentDin": lookup(config_data, ['vin']),
+                "firmwareVersion": reading.get('firmwareVersion'),
+                "lastCommunicationTime": reading.get('timestamp'),
+                "manufacturer": "TESLA" if lookup(meter_config_data, [din, "type"]) else None,
+                "meterAttributes": {
+                    "meterLocation": []
+                },
+                "serialNumber": din
+            }
+            remote_flat[f"TRM--{din}"] = {**cts_flat, **rest}
+        return (remote_flat, remote_hierarchy)
+
+    def get_remote_meter_readings(self, config=None, force=False) -> dict:
+        """
+        Fetch and aggregate Tesla Remote Meter (teslaRemoteMeter) CT readings, keyed by CT slot.
+
+        Remote meter data is only present in the Device Controller Full query
+        (get_device_controller()), not the basic status query used by get_status(), so this
+        issues its own (cached) fetch - but only when config.json actually declares a remote
+        meter (type "trm_mb"). Most installs have none, so callers that already have `config`
+        (the site/solar aggregate extractors) should pass it in: it lets this skip the extra
+        Full-query fetch entirely instead of paying for one on every poll for every user.
+        """
+        if config is None:
+            config = self.get_config(force=force)
+        if not isinstance(config, dict):
+            return {}
+        meter_config = self.derive_meter_config(config, types=("trm_mb",))
+        if not meter_config:
+            return {}
+        controller = self.get_device_controller(force=force)
+        if not isinstance(controller, dict):
+            return {}
+        return self.aggregate_remote_meter_data(config, controller, meter_config)[1]
+
     # Vitals API Mapping Function
     def vitals(self, force=False):
         """Create a vitals API dictionary using TEDAPI data."""
@@ -2025,6 +2184,11 @@ class TEDAPI:
             config_data=config,
             status_data=status,
             meter_config_data=self.derive_meter_config(config)
+        )[0]
+        remote_meter = self.aggregate_remote_meter_data(
+            config_data=config,
+            status_data=status,
+            meter_config_data=self.derive_meter_config(config, types=("trm_mb",))
         )[0]
 
         # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
@@ -2441,6 +2605,7 @@ class TEDAPI:
         vitals = {
             **header,
             **neurio,
+            **remote_meter,
             **pvac,
             **pvs,
             **ststsm,
