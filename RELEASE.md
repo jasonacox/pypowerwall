@@ -1,6 +1,6 @@
 # RELEASE NOTES
 
-## Unreleased
+## v0.18.0 - Modern Packaging and Clean Distributions
 
 * build: packaging moved to a PEP 621 `pyproject.toml` (setuptools backend); `setup.py` is now a compatibility shim, so existing `python setup.py …` tooling keeps working. The version is a single plain `__version__` literal in `pypowerwall/__init__.py`, read at build time via setuptools' `attr:` (no import, no regex), replacing `setup.py`'s regex parse. The public `version` and `version_tuple` attributes are unchanged. Thanks @jasonacox-sam, prompted by @hulkster (#389, #388).
 * fix(build): distributions no longer ship the repository's `proxy/` directory as a top-level `proxy` package. The 0.17.x wheels carried the proxy's `server.py` and tests, and — because a local `proxy/pypowerwall` symlink was followed at build time — a duplicate copy of the library (~85 files). Package discovery is now explicit (`pypowerwall*`), so neither can leak in. Nothing imported `proxy` from the installed package (the proxy's Docker image copies its files from the repo). (#389)
@@ -8,6 +8,7 @@
 * fix: `version_tuple` is derived from `__version__` without raising, so a pre-release version string (e.g. `0.18.0rc1`) can't break `import pypowerwall`; it yields the numeric release components, `(0, 18, 0)`. (#389)
 * build: the published dependency list now requires `requests-oauthlib>=1.3.0`, matching what CI tests (`requirements.txt`); a test keeps the two lists in sync. (#389)
 * ci: new `Package` workflow builds the sdist and wheel on Python 3.9 and 3.13, runs `twine check --strict` and the new `tools/check_dist.py`, and installs each artifact into a clean venv to verify import, metadata version, data files, and that no `proxy` package ships. Run `python tools/check_dist.py dist` locally before publishing. (#389)
+* Library version bumped to `0.18.0`
 
 ## v0.17.4 - Powerwall 3 Temperatures and Tesla Remote Meter
 
