@@ -32,8 +32,8 @@ The proxy server exposes a RESTful API for accessing Powerwall data, including s
 | `/api/system_status/grid_status`| Grid status (JSON)                               |
 | `/vitals`                       | Device vitals (JSON)                             |
 | `/strings`                      | Solar string data (JSON)                         |
-| `/temps`                        | Powerwall temperatures (JSON)                    |
-| `/temps/pw`                     | Powerwall temperatures, simplified keys (JSON)   |
+| `/temps`                        | Powerwall temperatures in °C (JSON); PW2 thermal controller ambient, PW3 hottest battery-pack reading |
+| `/temps/pw`                     | Powerwall temperatures, simplified keys (JSON); `PWn` numbering matches `/pod` |
 | `/alerts`                       | Alerts (JSON array)                              |
 | `/alerts/pw`                    | Alerts (JSON object)                             |
 | `/stats`                        | Internal proxy stats (JSON)                      |

@@ -117,6 +117,14 @@ The vendored `.proto` files under `pypowerwall/tedapi/protobuf/` are the **singl
 - Version-dependent behavior in code is gated by comparing `self.tedapi_api_version < TEDAPIApiVersion.V2026_06` (ordering derives from the date label — a minimum check, not equality, so future sets inherit the newer path).
 - A new Tesla query set gets a new date-labeled member/directory (`V<YYYY>_<MM>[_<DD>]`), never an in-place mutation of an existing set: existing users' pinned `tedapi_api_version` values must keep meaning what they meant.
 
+### Requesting additional TEDAPI signals
+
+The V2024_06 captures' ECDSA signature covers only the query **text**. The `*SignalNames` variables (e.g. `hvpSignalNames` in the ComponentsQuery) are unsigned and honored by the gateway, which returns the signals it knows (with a value, or `None`) and silently drops unknown names — so extra signals can be requested without a new capture.
+
+- Add names to `EXTRA_SIGNAL_NAMES` in `pypowerwall/tedapi/queries/__init__.py`. **Never edit the `V2024_06.json` captures** — the extras are merged into `V2024_06_REQUEST_QUERIES` at import and appended after the captured names, so existing signals keep their response positions and the capture's meaning is unchanged (this is additive, consistent with the no-in-place-mutation rule above).
+- Only request a signal after proving it live on hardware: an echoed name can still carry a constant placeholder (`PCH_heatsinkTemp` reads a fixed 45.45 on PW3, so it is deliberately excluded). Record the validation date and hardware in the comment.
+- V2026_06 can't carry extras: its signed `PW3Query` has the signal names inline in the signed text.
+
 ## Testing
 
 - `pytest -m "not live"` must pass before any change is complete. Live tests require real hardware and self-skip.

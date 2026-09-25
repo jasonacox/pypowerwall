@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## Unreleased - Powerwall 3 Temperatures
+
+* feat(tedapi): Powerwall 3 temperatures are back. `temps()` (and the proxy's `/temps` and `/temps/pw`) now report the hottest battery-pack reading per Powerwall 3 and expansion pack; they returned `{}` on PW3 because the PW2 thermal-controller signal (`THC_AmbientTemp`) doesn't exist there. `vitals()` carries the full breakdown in degrees C: `HVP_PackTempMax`, `HVP_PackTempMin`, and `HVP_ShuntTemperature` on each `TEPOD--…` block, and the inverter enclosure `PCH_AmbientTemp` on each `TEPINV--…` block (`None` when unavailable). Hardware-validated on a PW3 leader + follower over WiFi TEDAPI and v1r LAN; `/temps/pw` `PWn` numbering matches `/pod`.
+* feat(tedapi): the signals are requested through the existing signed V2024_06 ComponentsQuery — its signature covers only the query text, and the gateway honors additional `*SignalNames` variables. New `EXTRA_SIGNAL_NAMES` in `tedapi/queries/__init__.py` appends library-requested signals after the captured ones; the JSON captures are unchanged (see AGENTS.md, "Requesting additional TEDAPI signals"). The V2026_06 query set can't carry extra signals (names are inline in its signed text), so PW3 temperatures need the default `tedapi_api_version`.
+* Additive only: PW2 `temps()` output is unchanged, and existing vitals fields and component signal positions are preserved.
+
 ## v0.17.3 - PW3 v1r Islanding Commands
 
 * fix(tedapi): make the existing `Powerwall.go_off_grid(confirm=True)` and `Powerwall.reconnect_grid()` methods work in PW3 v1r mode by sending Tesla's signed legacy `setIslandMode` command through TEDAPI. Hardware-validated on a Powerwall 3 using the v1r transport (#379).

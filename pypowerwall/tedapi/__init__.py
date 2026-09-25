@@ -142,6 +142,24 @@ def decompress_response(content: bytes) -> bytes:
             log.debug(f"Gzip decompression failed: {e}")
     return content
 
+def _component_signal_value(components, name):
+    """First non-None value of signal ``name`` across a ComponentsQuery component
+    list (e.g. ``data['components']['pch']``), or None. Tolerates missing or
+    None ``signals`` lists and non-dict entries - firmware varies."""
+    for component in components or []:
+        if not isinstance(component, dict):
+            continue
+        for signal in component.get('signals') or []:
+            if not isinstance(signal, dict) or signal.get('name') != name:
+                continue
+            if signal.get('value') is not None:
+                return signal['value']
+    return None
+
+# Per-battery temperatures (degrees C) requested via EXTRA_SIGNAL_NAMES; each HVP
+# component carries one battery's values
+_PW3_HVP_TEMPERATURE_SIGNALS = ('HVP_PackTempMax', 'HVP_PackTempMin', 'HVP_ShuntTemperature')
+
 _CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values are never None)
 
 # TEDAPI Class
@@ -885,6 +903,14 @@ class TEDAPI:
                 "POD_nom_energy_remaining": 0.0,
                 "POD_nom_full_pack_energy": 0.0,
                 "POD_nom_energy_to_be_charged": 0.0,
+                "HVP_PackTempMax": 40.3,          # degrees C, None if unavailable
+                "HVP_PackTempMin": 35.6,
+                "HVP_ShuntTemperature": 41.3,
+            },
+            "TEPINV--{part}--{sn}" {
+                "PCH_AmbientTemp": 47.2,          # degrees C, None if unavailable
+                "PINV_Fout": 60.0,
+                ...
             }
         }
         """
@@ -1000,10 +1026,12 @@ class TEDAPI:
                         if nom_full_pack_energy == 0:
                             continue
 
-                        # Get corresponding HVP serial (same index)
+                        # Get corresponding HVP serial and temperatures (same index)
                         hvp_serial = None
+                        hvp_component = []
                         if bms_idx < len(hvp_list):
                             hvp_serial = hvp_list[bms_idx].get('serialNumber')
+                            hvp_component = [hvp_list[bms_idx]]
 
                         # Determine DIN for this BMS entry
                         if bms_idx == 0:
@@ -1023,10 +1051,16 @@ class TEDAPI:
                             "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
                             "POD_nom_full_pack_energy": nom_full_pack_energy,
                         }
+                        # Always present (None when unavailable) so the block shape is stable
+                        for temp_signal in _PW3_HVP_TEMPERATURE_SIGNALS:
+                            response[f"TEPOD--{pod_din}"][temp_signal] = _component_signal_value(
+                                hvp_component, temp_signal)
                     # PVAC, PVS and TEPINV
                     response[f"PVAC--{pw_din}"] = {}
                     response[f"PVS--{pw_din}"] = {}
-                    response[f"TEPINV--{pw_din}"] = {}
+                    # Inverter enclosure ambient (degrees C); None when unavailable
+                    ambient = _component_signal_value(pch_components, 'PCH_AmbientTemp')
+                    response[f"TEPINV--{pw_din}"] = {"PCH_AmbientTemp": ambient}
                     # pch_components contain:
                     #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
                     #   PCH_PvVoltageA through F - value

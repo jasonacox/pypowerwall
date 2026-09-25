@@ -686,6 +686,12 @@ class Powerwall(object):
         """
         Temperatures of Powerwalls
 
+        Powerwall 2 reports the thermal controller ambient (TETHC blocks,
+        THC_AmbientTemp). Powerwall 3 has no thermal controller; it reports the
+        hottest battery-pack reading (TEPOD blocks, HVP_PackTempMax) for each
+        Powerwall 3 and expansion pack. All values are degrees C. The full PW3
+        breakdown (pack min, shunt, inverter ambient) is in vitals().
+
         Args:
           jsonformat = If True, return JSON format otherwise return Python Dictionary
         """
@@ -694,6 +700,8 @@ class Powerwall(object):
         for device in devices:
             if device.startswith('TETHC'):
                 temps[device] = devices[device].get('THC_AmbientTemp')
+            elif device.startswith('TEPOD') and devices[device].get('HVP_PackTempMax') is not None:
+                temps[device] = devices[device]['HVP_PackTempMax']
         if jsonformat:
             return json.dumps(temps, indent=4, sort_keys=True)
         else:
