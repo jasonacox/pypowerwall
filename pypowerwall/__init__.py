@@ -87,15 +87,23 @@
 import json
 import logging
 import os.path
+import re
 import sys
 import time
 from typing import Optional, Union
+
+
+def _release_tuple(version_string):
+    """Numeric release components of a version, e.g. "0.18.0rc1" -> (0, 18, 0).
+    Never raises, so a pre-release version string can't break import."""
+    return tuple(int(n) for n in re.findall(r"\d+", version_string.split("+")[0])[:3])
+
 
 # Single source of truth for the package version — keep this a plain literal.
 # pyproject.toml reads it at build time via [tool.setuptools.dynamic]
 # (attr:), which parses this file without importing it.
 __version__ = version = "0.17.4"
-version_tuple = tuple(int(p) for p in __version__.split("."))
+version_tuple = _release_tuple(__version__)
 __author__ = 'jasonacox'
 
 # noinspection PyPackageRequirements

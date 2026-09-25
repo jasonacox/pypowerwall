@@ -3,6 +3,8 @@ import ast
 import pathlib
 import re
 
+import pytest
+
 import pypowerwall
 
 
@@ -20,6 +22,21 @@ def test_public_version_aliases_unchanged():
     # pypowerwall.version (read by the proxy) and version_tuple are public API
     assert pypowerwall.version == pypowerwall.__version__
     assert all(isinstance(p, int) for p in pypowerwall.version_tuple)
+
+
+@pytest.mark.parametrize("version_string, expected", [
+    ("0.18.0", (0, 18, 0)),
+    ("0.18.0b1", (0, 18, 0)),
+    ("0.18.0rc1", (0, 18, 0)),
+    ("0.18.0.dev0", (0, 18, 0)),
+    ("0.18.0.post1", (0, 18, 0)),
+    ("0.18.0+local.1", (0, 18, 0)),
+    ("not-a-version", ()),
+])
+def test_release_tuple_never_raises(version_string, expected):
+    # version_tuple is derived at import time - a pre-release string must not
+    # be able to break `import pypowerwall`
+    assert pypowerwall._release_tuple(version_string) == expected
 
 
 def test_version_is_semver():
