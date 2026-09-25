@@ -16,7 +16,7 @@ This script enables access to your Powerwall over your **local network (LAN)** w
 - Query Tesla Cloud API to discover gateway details (DIN, site ID)
 - Generate RSA-4096 key pair locally
 - Register public key with gateway via Tesla Cloud API
-- **Physical confirmation**: Toggle any Powerwall switch OFF then ON within 30 seconds
+- **Physical confirmation**: within about 10 minutes of registering, switch the Powerwall 3 On/Off switch OFF for about 15 seconds, then back ON (a quick flick is ignored). The main README's [Key States](https://github.com/jasonacox/pypowerwall#key-states) section is the source of truth for this step.
 - Credentials saved for future use
 
 **Operation Phase (Subsequent Runs)**:
