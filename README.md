@@ -191,7 +191,7 @@ To reach this subnet you need a Layer 2 connection to the TEG Ethernet port:
 * **Direct cable** — Ethernet cable from your machine to the TEG port (you will need a static IP on the 10.42.1.x subnet)
 * **VLAN** — Managed switch with a VLAN that includes the TEG port
 
-> **Important:** The v1r/Basic LAN endpoints listen only on the vendor subnet (10.42.1.x). Requests to the Powerwall’s home LAN IP will not reach these endpoints. Use `ping 10.42.1.x` to verify connectivity before configuration.
+> **Important:** The v1r/Basic LAN endpoints listen on the vendor subnet (10.42.1.x). On many units, requests to the Powerwall’s home LAN IP will not reach these endpoints. Use `ping 10.42.1.x` to verify connectivity before configuration.
 >
 > Some units answer v1r on their home LAN address as well. Two UK Powerwall 3 units on firmware 26.x returned full config and vitals at their home LAN IP with no vendor-subnet route, VLAN or bridge (see [#354](https://github.com/jasonacox/pypowerwall/issues/354)). Try the home LAN address first; set up the vendor subnet only if it does not answer.
 

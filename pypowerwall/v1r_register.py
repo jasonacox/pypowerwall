@@ -387,6 +387,14 @@ PHYSICAL_PROOF_HINT = (
 )
 
 
+# How long to watch for VERIFIED after the physical proof. The documented
+# transition took 62 s from the registration call (#354); a deadline (not an
+# attempt count) with margin keeps a working procedure from being reported as a
+# failure. Polls every 10 s to limit Fleet API command calls.
+POST_PROOF_POLL_SECONDS = 120
+POST_PROOF_POLL_DELAY = 10
+
+
 def key_state_name(state):
     """Human-readable name for a gateway key state integer."""
     return KEY_STATES.get(state, "UNKNOWN")
@@ -447,11 +455,15 @@ def _check_key_state(resp, pubkey_der=None):
     return None
 
 
-def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5, pubkey_der=None):
+def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5, pubkey_der=None,
+                    timeout=None):
     """Poll list_authorized_clients_request to check key verification state.
 
     Returns the state integer of the most recently registered key, or None.
     If pubkey_der is provided, checks the specific key instead of any key.
+    Stops early on a terminal state (3 VERIFIED, 2 TIMEOUT). With ``timeout``
+    (seconds) it polls every ``delay`` seconds until that deadline instead of
+    making ``attempts`` polls.
     """
     verify_payload = {
         "command_properties": {
@@ -465,16 +477,27 @@ def _poll_key_state(token, energy_site_id, fleet_api_base, attempts=3, delay=5, 
         "command_type": "grpc_command",
     }
 
-    for attempt in range(attempts):
+    state = None
+    start = time.monotonic()
+    attempt = 0
+    while True:
         if attempt > 0:
+            if timeout is None and attempt >= attempts:
+                break
+            if timeout is not None and time.monotonic() - start + delay > timeout:
+                break
             time.sleep(delay)
+        attempt += 1
         code, resp = api_call(
             f"{fleet_api_base}/api/1/energy_sites/{energy_site_id}/command",
             method="POST",
             data=verify_payload,
             token=token,
         )
-        print(f"  Poll attempt {attempt + 1}/{attempts}: ({code})")
+        if timeout is None:
+            print(f"  Poll attempt {attempt}/{attempts}: ({code})")
+        else:
+            print(f"  Poll at +{time.monotonic() - start:.0f}s of {timeout}s: ({code})")
         state = _check_key_state(resp, pubkey_der=pubkey_der)
         if state is not None:
             print(f"  Key state: {state} ({key_state_name(state)})")
@@ -543,6 +566,10 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, pr
         state = _poll_key_state(token, energy_site_id, fleet_api_base, pubkey_der=public_key_der)
         if state == 3:
             print("\n  Key verified via cloud!")
+        elif state == 2:
+            # Terminal: the physical proof cannot verify a timed-out key, so skip
+            # STEP 5 and go straight to the re-register guidance below
+            pass
         else:
             # Fallback: physical confirmation
             print()
@@ -556,7 +583,9 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, pr
             print()
             input("  Press Enter after switching the Powerwall OFF and back ON...")
             print("\n  Verifying key registration...")
-            state = _poll_key_state(token, energy_site_id, fleet_api_base, attempts=6, pubkey_der=public_key_der)
+            state = _poll_key_state(token, energy_site_id, fleet_api_base,
+                                    pubkey_der=public_key_der, delay=POST_PROOF_POLL_DELAY,
+                                    timeout=POST_PROOF_POLL_SECONDS)
 
     # Done
     verified = state == 3
@@ -570,9 +599,11 @@ def step4_register_key(token, energy_site_id, public_key_der, fleet_api_base, pr
     else:
         print("  Key state could not be confirmed as verified.")
         if state == 2:
+            from pypowerwall.tedapi.tedapi_v1r import reregister_hint
             print("  State 2 means the verification window closed (PENDING_VERIFICATION_TIMEOUT).")
-            print("  Run this tool again to re-register the same key, then give the physical")
-            print("  proof within about 10 minutes.")
+            print("  Re-register the same key, then give the physical proof within about")
+            print("  10 minutes:")
+            print(f"    {reregister_hint(private_key_file)}")
         else:
             print("  It may still be pending — check again later with list_authorized_clients.")
     if private_key_file:
