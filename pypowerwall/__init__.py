@@ -476,6 +476,7 @@ class Powerwall(object):
         Args:
           tou_settings = Tesla time_of_use_settings contract, e.g.
                          {"optimization_strategy": "economics", "tariff_content_v2": {...}}
+                         (the v2 tariff schema differs from the get_tariff() result - see API.md)
           jsonformat   = If True, return JSON format otherwise return Python Dictionary
 
         Returns the normalized Tesla response, e.g. {"Message": "Updated", "Code": 201},

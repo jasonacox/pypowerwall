@@ -127,7 +127,7 @@ result = pw.set_tariff({
 # {"Message": "Updated", "Code": 201}, or None on failure
 ```
 
-  `tariff_content_v2` is the same structure as the object `get_tariff()` returns plus a `version` field (FleetAPI site info exposes both forms), so build the write from the v2 form rather than assuming the read result can be written back unchanged.
+  `tariff_content_v2` is a different schema from the object `get_tariff()` returns, not just a `version` field: rates are nested under `rates` (e.g. `energy_charges.Summer.rates.ON_PEAK` instead of `energy_charges.Summer.ON_PEAK`) and each TOU period list is wrapped as `{"periods": [...]}`. The read result therefore can't be written back unchanged. FleetAPI site info exposes the current tariff in both forms (`tariff_content` and `tariff_content_v2`); Cloud mode exposes only the v1 form.
 
 Tesla response envelopes are normalized, including embedded JSON strings, so successful writes return a stable dictionary. A successful write invalidates the cached tariff, so the next read is fresh.
 
