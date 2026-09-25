@@ -120,7 +120,7 @@ Example: `pw.power()`
 There are up to four cache layers between a dashboard and the gateway:
 
 1. **Backend `pwcache`** (library) — per-URI response cache, TTL `pwcacheexpire` (default 5s). Local mode also negative-caches 404s (600s) and rate-limit cooldowns (300s). TEDAPI has separate TTLs for status (`pwcacheexpire`) and config (`pwconfigexpire`).
-2. **TEDAPI per-function locks** — the `@uses_api_lock` decorator attaches a `threading.Lock` to each fetch function; callers use `acquire_lock_with_backoff()` (native lock timeout; raises `TimeoutError`, which call sites convert to cached data or `None`) and double-check the cache under the lock, so concurrent callers don't stampede the gateway.
+2. **TEDAPI per-instance, per-method locks** — `@uses_api_lock` routes each fetch function through the instance's `_api_lock()` mapping, which lazily creates a distinct `threading.Lock` per method on each `TEDAPI` instance. Callers use `acquire_lock_with_backoff()` (native lock timeout; raises `TimeoutError`, which call sites convert to cached data or `None`) and double-check the cache under the lock, so concurrent callers don't stampede the gateway without process-wide serialization.
 3. **Proxy performance cache** (`cached_route_handler` in [proxy/server.py](proxy/server.py)) — short-TTL response cache for hot routes (`/aggregates`, `/csv`, `/freq`, `/pod`, `/json`, `/vitals`, `/strings`, `/temps/pw`, `/alerts/pw`).
 4. **Proxy graceful-degradation cache** (`safe_endpoint_call`) — last-known-good responses served during gateway outages, TTL `PW_CACHE_TTL` (default 30s), size-capped.
 

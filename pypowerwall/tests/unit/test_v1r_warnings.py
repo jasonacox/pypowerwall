@@ -202,6 +202,20 @@ class TestPostV1rWarnings:
         )
         assert "PENDING_VERIFICATION" in str(user_warnings[0].message)
 
+    def test_pending_verification_names_the_configured_key(self):
+        """The recovery command must re-register the configured key, not a new one."""
+        transport = self._make_transport()
+        transport.rsa_key_path = "/app/.auth/tedapi_rsa_private.pem"
+        transport.session.post.return_value = self._mock_response(
+            b"v1r: client authorization not verified")
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            transport.post_v1r(b"fake-payload", "TEST_DIN")
+
+        message = str([w for w in caught if issubclass(w.category, UserWarning)][0].message)
+        assert "python -m pypowerwall register -authpath /app/.auth" in message
+
     def test_pending_verification_flag_is_set(self):
         """pending_verification flag must be True after the first auth failure."""
         transport = self._make_transport()

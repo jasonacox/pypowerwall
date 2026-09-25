@@ -1,5 +1,12 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t102 (25 Sep 2026)
+
+* Upgraded to pyPowerwall v0.17.4 (Powerwall 3 temperatures and Tesla Remote Meter — see library release notes)
+* `/temps` and `/temps/pw` now report Powerwall 3 battery-pack temperatures (the hottest reading per Powerwall 3 and expansion pack; they returned `{}` on PW3 before). `PWn` numbering in `/temps/pw` matches `/pod`, with `null` in place for a battery without a reading. `/vitals` carries the full PW3 breakdown on `TEPOD--`/`TEPINV--` blocks: pack max/min, shunt, inverter ambient and heatsink temperatures, and over-temperature event counters
+* Tesla Remote Meter (`trm_mb`) installs: `/vitals` gains `TRM--<din>` blocks, and `/aggregates` falls back to the remote meter for site and solar readings. Installs without a remote meter do no extra gateway fetches
+* New `/temps/pw` tests in `proxy/tests/test_api_endpoints.py` pin the PW3 `PWn` numbering
+
 ### Proxy t101 (4 Sep 2026)
 
 * New firmware change tracking in logs (#854): a `firmware-watchdog` daemon thread polls `pw.version()` every `PW_FIRMWARE_CHECK_INTERVAL` seconds (default 300, minimum 30) and logs a line whenever the gateway firmware version changes — handy for correlating behavior shifts after Tesla OTA updates. Covers all modes (Cloud/FleetAPI/local/TEDAPI/v1r); `None` responses (e.g. during 429/503 cooldown) are skipped silently. Firmware version strings are sanitized before logging to match the proxy's log-forging posture. The current version and check interval are reported in `/stats`
@@ -8,7 +15,7 @@
 ### Proxy t100 (9 Aug 2026)
 
 * Upgraded to pyPowerwall v0.16.5 (TEDAPI bearer authentication mode — see library release notes)
-* New `PW_TEDAPI_AUTH_MODE=basic|bearer` environment variable (default `basic`): `basic` uses HTTP Basic Auth against `192.168.91.1`, which is only reachable over the Gateway's Wi-Fi; `bearer` logs in via `/api/login/Basic` and wraps queries in an AuthEnvelope, which also works over the Gateway's wired LAN IP. Pair `bearer` with `PW_TEDAPI_API_VERSION=V2026_06` — the bearer transport expects the Tesla-signed GraphQL query set. Bearer works on Powerwall 2 and solar-only gateways but **not** Powerwall 3; PW3 wired access remains v1r mode (`PW_RSA_KEY_PATH`).
+* New `PW_TEDAPI_AUTH_MODE=basic|bearer` environment variable (default `basic`): `basic` uses HTTP Basic Auth against `192.168.91.1`, which is only reachable over the Gateway's Wi-Fi; `bearer` logs in via `/api/login/Basic` and wraps queries in an AuthEnvelope, which also works over the Gateway's wired LAN IP. Pair `bearer` with `PW_TEDAPI_API_VERSION=V2026_06` — the bearer transport expects the Tesla-signed GraphQL query set. Bearer works on solar-only gateways but **not** Powerwall 2 or Powerwall 3; PW3 wired access remains v1r mode (`PW_RSA_KEY_PATH`).
 * Applies to full TEDAPI mode (`PW_GW_PWD` set, `PW_PASSWORD` blank); hybrid and v1r modes always use their own transport. An unrecognized value warns at startup and falls back to `basic` instead of failing into a restart loop.
 * The active auth mode is reported in `/stats` and `/health`, taken from the live TEDAPI client rather than the env var, and a warning is logged when the requested mode differs from the active one (e.g. hybrid mode always speaks basic). `PW_TEDAPI_API_VERSION` and `PW_TEDAPI_AUTH_MODE` now appear in the `/stats` config dump.
 * New `proxy/tests/test_tedapi_auth_mode.py` (7 tests — env wiring and `/stats`/`/health` reporting; the lenient-coercion behavior itself lives in the library as `AuthMode.coerce(..., default=)` and is tested there)

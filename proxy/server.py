@@ -46,8 +46,8 @@
       basic is HTTP Basic Auth to 192.168.91.1, only reachable over the
       Gateway's Wi-Fi; bearer logs in via /api/login/Basic and also works
       over the wired LAN IP. Use bearer together with
-      PW_TEDAPI_API_VERSION=V2026_06. Bearer works on Powerwall 2 and
-      solar-only gateways but NOT Powerwall 3 (PW3 wired access = v1r mode).
+      PW_TEDAPI_API_VERSION=V2026_06. Bearer works on solar-only
+      gateways but NOT Powerwall 2 or 3 (PW3 wired access = v1r mode).
     The active values are reported in /stats and /health.
 
  Control Mode
@@ -169,7 +169,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t101"
+BUILD = "t102"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
