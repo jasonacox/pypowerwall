@@ -165,10 +165,11 @@ class TEDAPI:
         "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
         only reachable over the gateway's Wi-Fi; "bearer" logs in via
         /api/login/Basic for a Bearer token and wraps each query in an
-        AuthEnvelope, which also works over the wired LAN IP. Bearer works on
-        solar-only gateways but NOT Powerwall 2 or 3 — PW3 wired
-        access is v1r's job. Bearer is mutually exclusive with v1r (its own
-        RSA transport).
+        AuthEnvelope, which also works over the wired LAN IP. Bearer has been
+        verified on solar-only/inverter gateways; Powerwall 2 (Gateway 2) is
+        NOT supported — installer login returns 401 on wired LAN (see
+        jasonacox/pypowerwall-server#105). PW3 wired access is v1r's job.
+        Bearer is mutually exclusive with v1r (its own RSA transport).
         """
         self.debug = debug
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
@@ -1442,17 +1443,22 @@ class TEDAPI:
                 self.pwcache["config"] = probe
                 self.pwcachetime["config"] = time.time()
             else:
+                from .tedapi_v1r import reregister_hint
                 if self.v1r_transport.pending_verification:
                     log.error(
                         "v1r: RSA key is PENDING_VERIFICATION — data calls will return None. "
-                        "Toggle a Powerwall circuit breaker OFF then back ON to trigger verification."
+                        "Within about 10 minutes of registering, switch the Powerwall 3 On/Off "
+                        "switch OFF for about 15 seconds then ON (or toggle a breaker). "
+                        "A key at state 2 has timed out: re-register the same key with: "
+                        f"{reregister_hint(getattr(self.v1r_transport, 'rsa_key_path', None))}"
                     )
                 elif self.v1r_transport.key_unknown:
                     log.error(
                         "v1r: RSA key not recognized by gateway — data calls will return None. "
                         "Check that the key file matches the registered key "
                         f"(fingerprint in use: {getattr(self.v1r_transport, 'key_fingerprint', 'unknown')}). "
-                        "Run 'python -m pypowerwall register' to verify."
+                        "Register or verify the configured key with: "
+                        f"{reregister_hint(getattr(self.v1r_transport, 'rsa_key_path', None))}"
                     )
                 else:
                     log.debug("v1r: key probe returned no data (possibly transient) - continuing")
