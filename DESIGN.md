@@ -130,7 +130,7 @@ There are up to four cache layers between a dashboard and the gateway:
 
 | Module | Responsibility |
 |--------|----------------|
-| `__init__.py` | `Powerwall` facade: mode selection, validation, all public convenience methods, `set_debug()`, `version_tuple` (single source of version truth) |
+| `__init__.py` | `Powerwall` facade: mode selection, validation, all public convenience methods, `set_debug()`, `__version__` (single source of version truth; `version`/`version_tuple` derived) |
 | `pypowerwall_base.py` | `PyPowerwallBase` abstract contract; shared `power()`/`fetchpower()`; `parse_version()`; write→read cache-invalidation map |
 | `local/pypowerwall_local.py` | Local gateway REST backend; cookie/token auth; protobuf vitals decode; optional embedded TEDAPI (hybrid) |
 | `cloud/pypowerwall_cloud.py` | Owner API backend via vendored teslapy; `.pypowerwall.auth` / `.pypowerwall.site` files |
@@ -232,10 +232,10 @@ The proxy pins its library dependency (`proxy/requirements.txt`: `pypowerwall==X
 
 ## Versioning & Release
 
-- Library version lives **only** in `version_tuple` in [pypowerwall/__init__.py](pypowerwall/__init__.py); `setup.py` regex-extracts it.
+- Library version lives **only** in the `__version__` literal in [pypowerwall/__init__.py](pypowerwall/__init__.py); `version`/`version_tuple` are derived from it, and `pyproject.toml` reads it at build time (`dynamic = ["version"]` + `attr:` — no regex, no import).
 - Proxy build tag lives **only** in `BUILD = "tNN"` in [proxy/server.py](proxy/server.py); reported as `"<libversion> Proxy tNN"`.
 - Docker tag is the concatenation: `jasonacox/pypowerwall:0.15.13t94`.
-- Release order: bump `version_tuple` → update root `RELEASE.md` → `upload.sh` (PyPI) → bump `proxy/requirements.txt` pin + `BUILD` + `proxy/RELEASE.md` → `proxy/upload.sh` (Docker Hub; it verifies the pinned version exists on PyPI first).
+- Release order: bump `__version__` in `pypowerwall/__init__.py` → update root `RELEASE.md` → `upload.sh` (PyPI) → bump `proxy/requirements.txt` pin + `BUILD` + `proxy/RELEASE.md` → `proxy/upload.sh` (Docker Hub; it verifies the pinned version exists on PyPI first).
 
 ## Key Invariants
 
@@ -245,4 +245,4 @@ The proxy pins its library dependency (`proxy/requirements.txt`: `pypowerwall==X
 4. **`Powerwall` construction must not require network** — unit tests patch the backend classes by name.
 5. **Writes must invalidate reads** — extend `WRITE_OP_READ_OP_CACHE_MAP` when adding a write endpoint whose result is visible through a cached read.
 6. **The vendored teslapy fork is patched** (HTTP/2, TLS fingerprint). Never swap it for upstream TeslaPy.
-7. **Version strings have exactly one home each** (library: `version_tuple`; proxy: `BUILD`).
+7. **Version strings have exactly one home each** (library: `__version__` in `__init__.py`; proxy: `BUILD`).
