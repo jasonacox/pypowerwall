@@ -1,5 +1,11 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): v1r LAN-down failover to the WiFi fallback host is actually reached now. A dead wired LAN (`No route to host` / `Read timed out`) used to hold per-function API locks through `Retry(total=3-5)` (~4-6x timeout) while callers with shorter outer timeouts gave up first; the abandoned thread kept the lock, so later polls ended in lock-wait timeouts and never reached the WiFi path even after `lan_failed` was set. All three TEDAPI sessions (v1r, primary, WiFi) now use fail-fast retries (`total=1`), so a dead host fails in ~2x timeout.
+* fix(tedapi): `_connect_v1r()` falls back to WiFi TEDAPI at connect time. Previously a (re)start while the LAN was down could never come up — the login failed, connect returned None, and the 3 slow failures needed for the regular `lan_failed` fallback never happened. With a WiFi host configured and answering `/tedapi/din`, the DIN is adopted over WiFi, `lan_failed` is entered immediately (same backoff as 3 consecutive failures), and data flows over WiFi until the LAN recovery probe succeeds. Both hosts down still returns None (connect contract unchanged).
+* fix(tedapi): the LAN recovery probe no longer logs `resuming wired transport` when the reconnect came back over the WiFi fallback path.
+
 ## v0.18.0 - Modern Packaging and Clean Distributions
 
 * build: packaging moved to a PEP 621 `pyproject.toml` (setuptools backend); `setup.py` is now a compatibility shim, so existing `python setup.py …` tooling keeps working. The version is a single plain `__version__` literal in `pypowerwall/__init__.py`, read at build time via setuptools' `attr:` (no import, no regex), replacing `setup.py`'s regex parse. The public `version` and `version_tuple` attributes are unchanged. Thanks @jasonacox-sam, prompted by @hulkster (#389, #388).

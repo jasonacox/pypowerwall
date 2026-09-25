@@ -108,7 +108,13 @@ class TEDAPIv1r:
         """Initialize requests session for v1r communication."""
         session = requests.Session()
         if self.poolmaxsize > 0:
-            retries = urllib3.Retry(total=3, backoff_factor=1, raise_on_status=False)
+            # Fail fast on a dead LAN host: each attempt already carries the
+            # full per-request timeout, so 1 retry (~2x timeout) is enough to
+            # ride out a transient blip. More retries only hold the caller's
+            # API lock while a dead gateway burns 4x timeout + backoff, which
+            # starves the WiFi fallback (lan_failed is set per completed call,
+            # and a thread abandoned by an outer timeout keeps the lock).
+            retries = urllib3.Retry(total=1, backoff_factor=0.2, raise_on_status=False)
             adapter = requests.adapters.HTTPAdapter(
                 max_retries=retries,
                 pool_connections=self.poolmaxsize,

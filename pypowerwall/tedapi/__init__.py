@@ -1202,9 +1202,13 @@ class TEDAPI:
         """Initialize and return a requests.Session for TEDAPI communication."""
         session = requests.Session()
         if self.poolmaxsize > 0:
+            # Fail fast on a dead host (see tedapi_v1r._init_session): 1 retry
+            # (~2x timeout) instead of 5 (~6x timeout + backoff). A dead gateway
+            # otherwise holds the caller's per-function API lock long after an
+            # outer timeout gave up, cascading into lock-wait timeouts.
             retries = urllib3.Retry(
-                total=5,
-                backoff_factor=1,
+                total=1,
+                backoff_factor=0.2,
                 status_forcelist=RETRY_FORCE_CODES,
                 raise_on_status=False
             )
@@ -1225,9 +1229,11 @@ class TEDAPI:
         """Initialize WiFi TEDAPI session for follower queries in v1r mode."""
         session = requests.Session()
         if self.poolmaxsize > 0:
+            # Same fail-fast rationale as _init_session: the WiFi path must
+            # itself fail fast so a dead fallback host cannot wedge callers.
             retries = urllib3.Retry(
-                total=2,
-                backoff_factor=0.5,
+                total=1,
+                backoff_factor=0.2,
                 status_forcelist=RETRY_FORCE_CODES,
                 raise_on_status=False
             )
@@ -1470,11 +1476,11 @@ class TEDAPI:
         try:
             if not self.v1r_transport.login():
                 log.error("v1r: Login failed")
-                return None
+                return self._v1r_cold_failover()
             self.din = self.v1r_transport.get_din()
             if not self.din:
                 log.error("v1r: Failed to get DIN")
-                return None
+                return self._v1r_cold_failover()
             log.debug(f"v1r: Connected, DIN={self.din}")
             # On successful LAN connect, clear any prior failure state
             self.lan_failed = False
@@ -1517,7 +1523,53 @@ class TEDAPI:
                 self._test_wifi_path()
         except Exception as e:
             log.error(f"v1r: Connection error: {e}")
+            if not self.din:
+                return self._v1r_cold_failover()
         return self.din
+
+    def _v1r_cold_failover(self):
+        """Fail over to WiFi TEDAPI when the v1r LAN is unreachable at connect.
+
+        Without this, a container (re)started while the wired LAN is down can
+        never come up: the LAN login fails, connect returns None, and the 3
+        slow failures needed for the regular ``lan_failed`` fallback never
+        happen because no data call is ever made. When a WiFi fallback host
+        is configured and answers ``/tedapi/din``, the DIN is adopted, the
+        ``lan_failed`` state is entered immediately (same 480s backoff as 3
+        consecutive failures), and data calls route via WiFi straight away.
+        Returns the DIN, or None when no usable fallback exists — the
+        long-standing connect() contract (DIN or None) is unchanged.
+        """
+        if not self.wifi_session:
+            return None
+        try:
+            r = self.wifi_session.get(f'https://{self.wifi_host}/tedapi/din', timeout=self.timeout)
+        except Exception as e:
+            log.warning('v1r: WiFi fallback unreachable (%s): %s', self.wifi_host, e)
+            return None
+        if r.status_code != HTTPStatus.OK:
+            log.warning('v1r: WiFi fallback returned status %d', r.status_code)
+            return None
+        try:
+            din = decompress_response(r.content).decode('utf-8').strip()
+        except Exception as e:
+            log.error(f'v1r: Error decoding WiFi DIN response: {e}')
+            return None
+        if not din:
+            return None
+        self.din = din
+        self.lan_failed = True
+        self.lan_fail_count = 3
+        backoff = min(60 * (2 ** self.lan_fail_count), 7680)
+        self.lan_recover_after = time.time() + backoff
+        self.wifi_available = True
+        self.wifi_last_success = time.time()
+        log.warning(
+            'v1r: LAN unreachable at connect — using WiFi TEDAPI fallback (%s)'
+            ' (retry LAN in %.0fs)',
+            self.wifi_host, backoff
+        )
+        return din
 
     def close_session(self):
         """Close the underlying requests.Session objects to the Gateway."""
@@ -1784,8 +1836,13 @@ class TEDAPI:
             # a reconnect before routing this request over WiFi.
             if self.lan_failed and time.time() >= self.lan_recover_after:
                 log.info("v1r: LAN recovery window reached — attempting reconnect")
-                if self._connect_v1r():  # clears lan_failed on success
-                    log.info("v1r: LAN recovered — resuming wired transport")
+                if self._connect_v1r():
+                    if self.lan_failed:
+                        # _connect_v1r came back via cold failover (DIN over
+                        # WiFi): LAN is still down, keep serving over WiFi.
+                        log.info("v1r: LAN still unreachable — continuing on WiFi TEDAPI fallback")
+                    else:
+                        log.info("v1r: LAN recovered — resuming wired transport")
                 else:
                     # Still down — extend backoff and continue on WiFi
                     self.lan_fail_count += 1

@@ -4,8 +4,8 @@ Blocks real network I/O in every non-live test.
 
 This is not just hygiene. TEDAPI's default host is GW_IP = 192.168.91.1 — a real
 Powerwall Gateway on the developer's LAN — and TEDAPI.connect() probes it through
-a urllib3 Retry adapter (5 attempts, backoff_factor=1). A test that forgets to
-mock the session therefore does not fail fast: it spends ~60s talking to live
+a urllib3 Retry adapter (2 attempts, backoff_factor=0.2). A test that forgets to
+mock the session therefore does not fail fast: it spends ~10s talking to live
 hardware and then usually passes anyway, so the mistake never surfaces in CI and
 the suite quietly depends on whatever the gateway happened to answer.
 
