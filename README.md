@@ -973,10 +973,21 @@ The following APIs are a result of help from other projects as well as my own in
 
 * pw.temps(jsonformat=True)
 
+   Powerwall 2 (thermal controller ambient):
+
    ```json
    {
       "TETHC--2012170-25-E--TGxxxxxxxxxxxx": 17.5,
       "TETHC--3012170-05-B--TGxxxxxxxxxxxx": 17.700000000000003
+   }
+   ```
+
+   Powerwall 3 (hottest battery-pack reading per Powerwall 3 and expansion pack; full breakdown in `pw.vitals()`):
+
+   ```json
+   {
+      "TEPOD--1707000-11-M--TGxxxxxxxxxxxx": 39.4,
+      "TEPOD--1707000-11-M--TGyyyyyyyyyyyy": 39.2
    }
    ```
 

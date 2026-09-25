@@ -117,6 +117,14 @@ The vendored `.proto` files under `pypowerwall/tedapi/protobuf/` are the **singl
 - Version-dependent behavior in code is gated by comparing `self.tedapi_api_version < TEDAPIApiVersion.V2026_06` (ordering derives from the date label — a minimum check, not equality, so future sets inherit the newer path).
 - A new Tesla query set gets a new date-labeled member/directory (`V<YYYY>_<MM>[_<DD>]`), never an in-place mutation of an existing set: existing users' pinned `tedapi_api_version` values must keep meaning what they meant.
 
+### Requesting additional TEDAPI signals
+
+The V2024_06 captures' ECDSA signature covers only the query **text**. The `*SignalNames` variables (e.g. `hvpSignalNames` in the ComponentsQuery) are unsigned and honored by the gateway, which returns the signals it knows (with a value, or `None`) and silently drops unknown names — so extra signals can be requested without a new capture.
+
+- Add names to `EXTRA_SIGNAL_NAMES` in `pypowerwall/tedapi/queries/__init__.py` — that's the whole change for the ComponentsQuery: `get_pw3_vitals()` passes every extra through to vitals as delivered (pch → `TEPINV`, bms/hvp → each battery's `TEPOD`). **Never edit the `V2024_06.json` captures** — the extras are merged into `V2024_06_REQUEST_QUERIES` at import and appended after the captured names, so existing signals keep their response positions and the capture's meaning is unchanged (this is additive, consistent with the no-in-place-mutation rule above).
+- Present what the system provides: pass every signal the gateway delivers through to raw outputs like `vitals()`, even one that looks static today — it may become live in later firmware. Build derived/summary values (e.g. `temps()`, dashboard-facing numbers) only from signals proven live on hardware. `PCH_heatsinkTemp` is the example: it's in PW3 vitals but reads a constant 45.45 on current firmware, so `temps()` doesn't use it. Record the validation date, hardware, and any suspect behavior in the comment.
+- V2026_06 can't carry extras: its signed `PW3Query` has the signal names inline in the signed text.
+
 ## Testing
 
 - `pytest -m "not live"` must pass before any change is complete. Live tests require real hardware and self-skip.

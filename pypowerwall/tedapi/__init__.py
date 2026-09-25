@@ -77,7 +77,7 @@ from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
 from .auth_mode import AuthMode
-from .queries import apply_query, get_query, QueryRole
+from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -147,6 +147,26 @@ def decompress_response(content: bytes) -> bytes:
         except Exception as e:
             log.debug(f"Gzip decompression failed: {e}")
     return content
+
+def _component_signal_value(components, name):
+    """First non-None value of signal ``name`` across a ComponentsQuery component
+    list (e.g. ``data['components']['pch']``), or None. Tolerates missing or
+    None ``signals`` lists and non-dict entries - firmware varies."""
+    for component in components or []:
+        if not isinstance(component, dict):
+            continue
+        for signal in component.get('signals') or []:
+            if not isinstance(signal, dict) or signal.get('name') != name:
+                continue
+            if signal.get('value') is not None:
+                return signal['value']
+    return None
+
+def _extra_signals(variables_key):
+    """Signal names requested beyond the ComponentsQuery capture for one component
+    group (EXTRA_SIGNAL_NAMES, e.g. 'hvpSignalNames'). get_pw3_vitals passes each
+    through as delivered, so adding a name there is the only change needed."""
+    return EXTRA_SIGNAL_NAMES[QueryRole.COMPONENTS].get(variables_key, ())
 
 _CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values are never None)
 
@@ -913,6 +933,19 @@ class TEDAPI:
                 "POD_nom_energy_remaining": 0.0,
                 "POD_nom_full_pack_energy": 0.0,
                 "POD_nom_energy_to_be_charged": 0.0,
+                # EXTRA_SIGNAL_NAMES bms/hvp signals as delivered (None if unavailable)
+                "BMS_LOG_tempOutOfBounds": 0,     # over-temperature event counters
+                "BMS_LOG_tempOutOfBoundsCharge": 0,
+                "HVP_PackTempMax": 40.3,          # degrees C
+                "HVP_PackTempMin": 35.6,
+                "HVP_ShuntTemperature": 41.3,
+            },
+            "TEPINV--{part}--{sn}" {
+                # EXTRA_SIGNAL_NAMES pch signals as delivered (None if unavailable)
+                "PCH_AmbientTemp": 47.2,          # degrees C
+                "PCH_heatsinkTemp": 45.45,        # constant on current firmware
+                "PINV_Fout": 60.0,
+                ...
             }
         }
         """
@@ -992,10 +1025,14 @@ class TEDAPI:
                     # TEDPOD
                     alerts = []
                     for component in components:
-                        if components[component]:
-                            for alert in components[component][0]['activeAlerts']:
-                                if alert['name'] not in alerts:
-                                    alerts.append(alert['name'])
+                        # Guard the gateway payload - a malformed entry must not abort vitals
+                        first = (components[component] or [None])[0]
+                        if not isinstance(first, dict):
+                            continue
+                        for alert in first.get('activeAlerts') or []:
+                            name = alert.get('name') if isinstance(alert, dict) else None
+                            if name and name not in alerts:
+                                alerts.append(name)
                     # Process all BMS and HVP components to support expansion packs
                     # HVP entries have serial numbers, BMS entries have energy data
                     # They correspond 1:1 by index
@@ -1028,10 +1065,11 @@ class TEDAPI:
                         if nom_full_pack_energy == 0:
                             continue
 
-                        # Get corresponding HVP serial (same index)
-                        hvp_serial = None
-                        if bms_idx < len(hvp_list):
-                            hvp_serial = hvp_list[bms_idx].get('serialNumber')
+                        # Get corresponding HVP component and serial (same index)
+                        hvp_component = hvp_list[bms_idx] if bms_idx < len(hvp_list) else None
+                        if not isinstance(hvp_component, dict):
+                            hvp_component = {}
+                        hvp_serial = hvp_component.get('serialNumber')
 
                         # Determine DIN for this BMS entry
                         if bms_idx == 0:
@@ -1051,10 +1089,21 @@ class TEDAPI:
                             "POD_nom_energy_to_be_charged": nom_full_pack_energy - nom_energy_remaining,
                             "POD_nom_full_pack_energy": nom_full_pack_energy,
                         }
+                        # Extra signals as delivered; always present (None when unavailable)
+                        # so the block shape is stable
+                        pod = response[f"TEPOD--{pod_din}"]
+                        for name in _extra_signals('bmsSignalNames'):
+                            pod[name] = _component_signal_value([bms_component], name)
+                        for name in _extra_signals('hvpSignalNames'):
+                            pod[name] = _component_signal_value([hvp_component], name)
                     # PVAC, PVS and TEPINV
                     response[f"PVAC--{pw_din}"] = {}
                     response[f"PVS--{pw_din}"] = {}
-                    response[f"TEPINV--{pw_din}"] = {}
+                    # Extra inverter signals as delivered; None when unavailable
+                    response[f"TEPINV--{pw_din}"] = {
+                        name: _component_signal_value(pch_components, name)
+                        for name in _extra_signals('pchSignalNames')
+                    }
                     # pch_components contain:
                     #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]
                     #   PCH_PvVoltageA through F - value
