@@ -37,6 +37,7 @@
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
     get_fan_speed() - Get the fan speeds in RPM
+    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
 

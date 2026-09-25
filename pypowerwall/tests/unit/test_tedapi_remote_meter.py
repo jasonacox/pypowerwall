@@ -548,7 +548,9 @@ class TestExtractSolarSectionRemoteMeter:
 
         result = backend._extract_solar_section(self._pvac_status(), {"vin": GATEWAY_DIN}, False)
         assert result["i_a_current"] == 0
-        assert result["disclaimer"] == "solar: voltage from PVAC, current calculated from power"
+        # Byte-identical to the fixed string used before remote-meter support, so
+        # the common PVAC-only install's /api/meters/aggregates output is unchanged
+        assert result["disclaimer"] == "solar: voltage from PVAC, calculated current from power"
 
     def test_meter_y_voltage_used_when_pvac_reports_none(self):
         """PVAC reports no voltage at all (no entries), but Meter Y's own

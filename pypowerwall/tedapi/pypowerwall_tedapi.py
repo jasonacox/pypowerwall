@@ -664,8 +664,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                     vll_solar = compute_LL_voltage(v1n, v2n, v3n) or 0
                     if vll_solar:
                         voltage_source = "Remote Meter"
-        current_desc = f"from {current_source}" if current_source else "calculated from power"
-        disclaimer = f"solar: voltage from {voltage_source or 'unknown'}, current {current_desc}"
+        # The no-current-source wording matches the pre-remote-meter fixed string
+        # ("...PVAC, calculated current from power") so existing installs' output
+        # is unchanged; only cases the old string misdescribed read differently.
+        current_desc = (f"current from {current_source}" if current_source
+                        else "calculated current from power")
+        disclaimer = f"solar: voltage from {voltage_source or 'unknown'}, {current_desc}"
         if vll_solar == 0:
             vll_solar = None
         i_solar = solar_power / vll_solar if vll_solar else None
