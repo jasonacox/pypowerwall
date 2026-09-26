@@ -5,6 +5,11 @@ Hardware basis (2026-09-26, PW3 leader + follower, firmware 26.18.1, no DC
 expansions): each PW3 inverter (pch) reports PCH_FanSpeed_A/B (measured RPM) and
 PCH_FanDuty_A/B (duty cycle, %). The PW2 PVAC_Fan_Speed_* names are echoed by the
 device controller's msa components on PW3 but always None.
+
+V2026_06 can't request the fans: its signed PW3Query has the signal names inline
+in the signed text, and they aren't among them. PW3 fans then stay {} (as before);
+get_fan_speeds() isn't gated on the api version, so a future signed query set that
+delivers them is reported without a code change.
 """
 import json
 import time
@@ -13,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from pypowerwall.tedapi import TEDAPI, tedapi_pb2
+from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi import queries as q
 from pypowerwall.tedapi.queries import QueryRole
 
@@ -220,3 +226,36 @@ class TestGetFanSpeeds:
         api.pw3 = False
         with patch.object(api, 'get_device_controller', return_value=None):
             assert api.get_fan_speeds() == {}
+
+
+# --- V2026_06: the signed PW3Query cannot carry the fan signals ---------------------
+
+class TestV2026Unsupported:
+
+    def test_signed_pw3query_has_no_fan_names(self):
+        text = q.get_query(QueryRole.COMPONENTS, TEDAPIApiVersion.V2026_06).text
+        assert not any(name in text for name in FAN_NAMES)
+
+    def test_v2026_request_carries_no_fan_names(self, api):
+        api.tedapi_api_version = TEDAPIApiVersion.V2026_06
+        request = api._build_request(QueryRole.COMPONENTS, recipient_din=LEADER_DIN)
+        assert request and not any(name.encode() in request for name in FAN_NAMES)
+
+    @staticmethod
+    def _v2026_fans(api, payloads):
+        """get_fan_speeds() on a PW3 under V2026_06, each device answering its payload."""
+        api.pw3 = True
+        api.tedapi_api_version = TEDAPIApiVersion.V2026_06
+        with patch.object(api, '_post_tedapi', side_effect=lambda data, din=None, url_suffix=None: din.encode()), \
+                patch.object(api, '_parse_response',
+                             side_effect=lambda resp, **kw: payloads[resp.decode()]):
+            return api.get_fan_speeds()
+
+    def test_pw3_fans_stay_empty(self, api):
+        # PW3Query answers without the fan signals: nothing to report, same as before
+        payloads = {LEADER_DIN: _payload({}), FOLLOWER_DIN: _payload({})}
+        assert self._v2026_fans(api, payloads) == {}
+
+    def test_not_gated_if_a_signed_query_ever_delivers_them(self, api):
+        payloads = {LEADER_DIN: _payload(LEADER_FANS), FOLLOWER_DIN: _payload({})}
+        assert self._v2026_fans(api, payloads) == {f"TEPINV--{LEADER_DIN}": LEADER_FANS}

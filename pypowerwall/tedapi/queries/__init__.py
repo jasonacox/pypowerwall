@@ -78,7 +78,9 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 # group (pws, pch, bms, hvp, baggr) echoed only these four, all on pch. The PW2
 # PVAC_Fan_Speed_Actual/Target_RPM names are echoed by the device controller's
 # msa components on PW3 but are always None there, which is why
-# get_fan_speeds() used to be empty on PW3.
+# get_fan_speeds() used to be empty on PW3. As with the temperatures, V2026_06
+# can't request the fans (its PW3Query doesn't list them), so there PW3 fan
+# output stays {}.
 PW3_FAN_SIGNAL_NAMES = ("PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PCH_FanDuty_B")
 
 EXTRA_SIGNAL_NAMES = {

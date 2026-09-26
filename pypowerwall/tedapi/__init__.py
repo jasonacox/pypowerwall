@@ -2229,6 +2229,11 @@ class TEDAPI:
         "TEPINV--<din>" like the vitals() block they also appear in (see
         extract_pw3_fan_speeds). PW3 has no target-RPM signal, so its fans are not
         reported under the PVAC names.
+
+        PW3 fans need the default V2024_06 query set: they are EXTRA_SIGNAL_NAMES,
+        which the V2026_06 signed PW3Query can't carry, so under V2026_06 the PW3
+        part stays {} (as before). Deliberately not gated on the api version: a
+        future signed query set that delivers the fan signals is reported as is.
         """
         fans = self.extract_fan_speeds(self.get_device_controller(force=force))
         if self.pw3:

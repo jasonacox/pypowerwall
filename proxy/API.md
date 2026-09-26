@@ -213,7 +213,7 @@ Available when TEDAPI provides fan telemetry (Powerwall 2/+ and Powerwall 3):
 If fan data is unavailable, these return an empty JSON object `{}`.
 
 - **Powerwall 2/+**: one fan per inverter. `/fans` keys are `PVAC--<part>--<sn>` with `PVAC_Fan_Speed_Actual_RPM` and `PVAC_Fan_Speed_Target_RPM`; `/fans/pw` has `FANn_actual` and `FANn_target` (RPM), numbered in sorted key order.
-- **Powerwall 3**: two fans (A and B) per inverter. `/fans` keys are `TEPINV--<din>` (the same block `/vitals` carries them on) with `PCH_FanSpeed_A`/`PCH_FanSpeed_B` (measured RPM) and `PCH_FanDuty_A`/`PCH_FanDuty_B` (drive duty cycle, %). `/fans/pw` numbers two fans per Powerwall 3 after any PW2 fans, leader first (as in `/pod`): `FANn_actual` is the measured RPM, `FANn_target` is `null` (PW3 has no target-RPM signal) and `FANn_duty` is the duty cycle in percent.
+- **Powerwall 3**: two fans (A and B) per inverter. `/fans` keys are `TEPINV--<din>` (the same block `/vitals` carries them on) with `PCH_FanSpeed_A`/`PCH_FanSpeed_B` (measured RPM) and `PCH_FanDuty_A`/`PCH_FanDuty_B` (drive duty cycle, %). `/fans/pw` numbers two fans per Powerwall 3 after any PW2 fans, leader first (as in `/pod`): `FANn_actual` is the measured RPM, `FANn_target` is `null` (PW3 has no target-RPM signal) and `FANn_duty` is the duty cycle in percent. PW3 fans need the default `PW_TEDAPI_API_VERSION=V2024_06`: the V2026_06 query set's signed PW3 query can't request them, so there these endpoints stay `{}` on PW3.
 
 Update interval: Fan metrics refresh with standard polling (same cadence as vitals/strings) and appear only in TEDAPI modes on hardware that reports them.
 
