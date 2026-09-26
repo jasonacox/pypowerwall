@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): `get_battery_block(din)` returns the Powerwall 3 battery block (the per-Powerwall ComponentsQuery answer: `{"components": {"baggr", "bms", "hvp", "pch", "pws"}, "pw3Can": {...}}`) in basic/WiFi TEDAPI mode and for v1r followers routed over WiFi. Since it was added (v0.10.8) it read the answer from the config-file slot of the response (`config.recv.file.text`), which a query answer never fills, so every call returned `{}` and logged `Error Decoding JSON: Expecting value: line 1 column 1 (char 0)`; the gateway was answering all along in `payload.recv.text`, as `get_pw3_vitals()` reads it (verified on 2x PW3, firmware 26.18.1). The v1r LAN and `V2026_06` paths already read the right field and are unchanged. The failure shapes are unchanged: `{}` (logged, cached for `pwcacheexpire`) for an empty or malformed payload, `None` without a DIN or answer. The internal `config` flag on `_fetch_query()`/`_parse_response()`, used only by this call, is removed; config.json fetches keep `_parse_legacy_response(config=True)`.
+
 ## v0.18.1 - Tesla Tariff API and v1r WiFi Failover
 
 * feat(tariff): read the site's utility tariff and update Time-of-Use settings - `pw.get_tariff()` / `pw.set_tariff(tou_settings)` (endpoints `/api/tesla/tariff_rate` and `/api/tesla/time_of_use_settings`). Cloud reads the Owner API tariff and FleetAPI reads `tariff_content` from site info; writes follow Tesla's `time_of_use_settings` contract (`tariff_content_v2`). Responses are normalized (e.g. `{"Message": "Updated", "Code": 201}`), a successful write invalidates the cached tariff, and TEDAPI (mock read, `None` on write) and local mode (`None`) fail cleanly. Thanks @nesys (#382)

@@ -516,14 +516,14 @@ class TestParseResponseBranches:
 
     def test_config_text_from_bare_envelope(self):
         api = make_tedapi("bearer")
-        parsed = api._parse_response(make_envelope(config_text='{"c":2}'), config=True)
+        parsed = api._parse_legacy_response(make_envelope(config_text='{"c":2}'), config=True)
         assert parsed == '{"c":2}'
 
     def test_basic_mode_still_parses_full_message(self):
         """Regression guard: the default transport must be untouched."""
         api = make_tedapi("basic")
         assert api._parse_response(make_message(text='{"q":1}')) == '{"q":1}'
-        assert api._parse_response(make_message(config_text='{"c":2}'), config=True) == '{"c":2}'
+        assert api._parse_legacy_response(make_message(config_text='{"c":2}'), config=True) == '{"c":2}'
 
     def test_bearer_misparse_would_be_caught(self):
         """Sanity check on the above: a bare envelope read as a full Message
