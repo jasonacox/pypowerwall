@@ -1,10 +1,11 @@
 # RELEASE NOTES
 
-## Unreleased
+## v0.18.1 - Tesla Tariff API and v1r WiFi Failover
 
 * feat(tariff): read the site's utility tariff and update Time-of-Use settings - `pw.get_tariff()` / `pw.set_tariff(tou_settings)` (endpoints `/api/tesla/tariff_rate` and `/api/tesla/time_of_use_settings`). Cloud reads the Owner API tariff and FleetAPI reads `tariff_content` from site info; writes follow Tesla's `time_of_use_settings` contract (`tariff_content_v2`). Responses are normalized (e.g. `{"Message": "Updated", "Code": 201}`), a successful write invalidates the cached tariff, and TEDAPI (mock read, `None` on write) and local mode (`None`) fail cleanly. Thanks @nesys (#382)
 * fix(cloud): recover when Tesla replaces or re-provisions a site - after a 404 for a site ID that's gone from the account, switch to the site with the same `gateway_id` (or unique `site_name`), or the only site on a single-site account, persist it to `.pypowerwall.site`, and retry once; with several sites and no match, leave the site unchanged and log an error. Serialized, rate-limited to one attempt per minute. Long-running processes no longer need a restart after a site change. (#382)
 * fix(tedapi): v1r failover to the WiFi fallback host (`wifi_host`) now actually happens when the wired LAN is down. The v1r LAN and WiFi-fallback sessions retry once instead of 2-3 times, so a dead host fails in ~2x timeout instead of holding the per-method API lock long enough for callers' outer timeouts to abandon it (later polls then only saw `Timeout waiting for API lock` and never reached WiFi). And a start or LAN recovery probe with the LAN down now adopts the DIN over WiFi and serves data there, where it used to return None and never come up; the LAN retry backoff still doubles on each failed probe. Both hosts down still returns None. Basic (WiFi) and bearer TEDAPI sessions are unchanged. Thanks @erikgieseler, requested by @jasonacox-sam (#394).
+* Library version bumped to `0.18.1`
 
 ## v0.18.0 - Modern Packaging and Clean Distributions
 
