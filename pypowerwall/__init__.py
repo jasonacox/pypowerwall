@@ -150,7 +150,7 @@ class Powerwall(object):
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
                  rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.V2024_06,
-                 tedapi_auth_mode=AuthMode.BASIC):
+                 tedapi_auth_mode=AuthMode.BASIC, failover=True):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -185,6 +185,14 @@ class Powerwall(object):
                            on solar-only gateways but NOT Powerwall 2 or
                            Powerwall 3 — for PW3 wired access use v1r mode
                            (rsa_key_path)
+            failover     = If True (default), switch automatically when the configured
+                           transport fails: connect() falls back to the other modes
+                           (local -> fleetapi -> cloud), and in v1r mode with a
+                           wifi_host the Powerwall's queries move to the WiFi host
+                           while the wired LAN is down and return to the LAN when
+                           it recovers. False = strict: only the configured mode
+                           and transport are used, and a failure returns None/False
+                           - e.g. for a script that tests which modes work.
         """
 
         # Attributes
@@ -209,6 +217,7 @@ class Powerwall(object):
         self.client: Optional[PyPowerwallBase] = None
         self.fleetapi = fleetapi
         self.retry_modes = retry_modes
+        self.failover = failover  # False: configured mode/transport only (no fallback)
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
@@ -270,13 +279,15 @@ class Powerwall(object):
         """
         Connect to Tesla Energy Gateway Powerwall
 
-        Tries the configured mode first and falls back to the other modes
-        (local -> fleetapi -> cloud -> local) on failure. If every mode fails,
-        the configured mode is restored so a later connect() retries in the
-        configured order.
+        Tries the configured mode first and, when failover is on (the
+        default), falls back to the other modes (local -> fleetapi -> cloud ->
+        local) on failure. If every mode fails, the configured mode is restored
+        so a later connect() retries in the configured order. With
+        failover=False only the configured mode is tried.
 
         Args:
-            retry = If True, keep cycling through the modes until one connects.
+            retry = If True, keep cycling through the modes (only the configured
+                    mode when failover=False) until one connects.
                     WARNING: this blocks the calling thread indefinitely (by
                     design for daemon use, e.g. the proxy) - it only returns
                     once a connection succeeds.
@@ -297,6 +308,18 @@ class Powerwall(object):
         count = 0
         while count < 3:
             count += 1
+            if not self.failover and count > 1:
+                # Strict: the configured mode failed - no fallback to the others
+                if not retry:
+                    break
+                log.warning("Failed to connect to Powerwall in %s mode (failover off). Waiting 30s to retry "
+                            "(retry enabled - blocking until a connection succeeds; "
+                            "%ds cumulative wait so far).", configured_mode[0], total_wait)
+                time.sleep(30)
+                total_wait += 30
+                count = 1
+                (self.mode, self.cloudmode, self.fleetapi,
+                 self.tedapi, self.tedapi_mode) = configured_mode
             if retry and count == 3:
                 log.warning("Failed to connect to Powerwall with all modes. Waiting 30s to retry "
                             "(retry enabled - blocking until a connection succeeds; "
@@ -331,7 +354,8 @@ class Powerwall(object):
                             v1r=True, password=pw,
                             rsa_key_path=self.rsa_key_path,
                             wifi_host=self.wifi_host,
-                            tedapi_api_version=self.tedapi_api_version)
+                            tedapi_api_version=self.tedapi_api_version,
+                            failover=self.failover)
                     elif not self.password and self.gw_pwd:  # Full TEDAPI WiFi (mode 4)
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
@@ -354,7 +378,8 @@ class Powerwall(object):
                         self.tedapi_mode = "off"
                     return True
                 except Exception as exc:
-                    log.warning(f"Failed to connect using Local mode: {exc} - trying fleetapi mode.")
+                    log.warning(f"Failed to connect using Local mode: {exc}"
+                                + (" - trying fleetapi mode." if self.failover else ""))
                     self.tedapi = False
                     self.tedapi_mode = "off"
                     self.mode = "fleetapi"
@@ -368,7 +393,8 @@ class Powerwall(object):
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
-                    log.warning(f"Failed to connect using FleetAPI mode: {exc} - trying cloud mode.")
+                    log.warning(f"Failed to connect using FleetAPI mode: {exc}"
+                                + (" - trying cloud mode." if self.failover else ""))
                     self.mode = "cloud"
                     continue
             if self.mode == "cloud":
@@ -380,7 +406,8 @@ class Powerwall(object):
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
-                    log.warning(f"Failed to connect using Cloud mode: {exc} - trying local mode.")
+                    log.warning(f"Failed to connect using Cloud mode: {exc}"
+                                + (" - trying local mode." if self.failover else ""))
                     self.mode = "local"
                     continue
         # Total failure - restore the configured mode so a subsequent

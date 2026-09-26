@@ -5,11 +5,14 @@ per-method API lock, so several threads can be inside TEDAPI._post_tedapi at
 once. These tests pin that:
   1. exactly one thread claims each LAN recovery probe (_connect_v1r runs
      once) while the others keep routing via the WiFi fallback;
-  2. _connect_v1r keeps the known DIN visible while it reconnects, and still
-     clears it (returning None) when the reconnect fails;
+  2. the leader DIN is identity, not connection state: _connect_v1r never
+     clears a known DIN (no DIN-None window mid-reconnect; a failed probe
+     leaves WiFi serving), while still returning None when it fails;
   3. concurrent LAN failures trip the failover exactly once, on the regular
      backoff schedule, and requests already in flight when it tripped don't
-     escalate it.
+     escalate it;
+  4. without a WiFi host there is nothing to fail over to, so the LAN never
+     trips and every request keeps trying it.
 
 Everything is mocked at the transport boundary — nothing here touches a gateway.
 """
@@ -69,7 +72,7 @@ class TestLanRecoveryProbeClaim:
         wifi_done = threading.Semaphore(0)
         connect_calls = []
 
-        def slow_connect(keep_din=False):
+        def slow_connect():
             connect_calls.append(threading.current_thread().name)
             # Held here, mid-reconnect, until the other THREADS-1 callers have
             # been routed via WiFi (bounded so a regression fails, not hangs).
@@ -149,8 +152,8 @@ class TestLanRecoveryProbeClaim:
             [480, 960, 1920, 3840, 7680, 7680, 7680]
 
 
-class TestConnectV1rKeepsDin:
-    """_connect_v1r doesn't expose DIN None to other threads mid-reconnect."""
+class TestDinIsIdentity:
+    """_connect_v1r never clears a known DIN; it returns None when it fails."""
 
     def test_din_visible_during_reconnect(self):
         ted = _make_v1r_tedapi()
@@ -167,14 +170,16 @@ class TestConnectV1rKeepsDin:
 
         assert ted._connect_v1r() == LEADER_DIN
         assert seen == [LEADER_DIN, LEADER_DIN]
-        assert ted.din == LEADER_DIN
         assert ted.lan_failed is False and ted.lan_fail_count == 0 and ted.lan_recover_after == 0
 
+    @pytest.mark.parametrize("wifi", [True, False])
     @pytest.mark.parametrize("failure", ["login", "din", "exception"])
-    def test_failed_reconnect_still_clears_din(self, failure):
-        """connect() contract: DIN or None — a failed reconnect returns None and
-        leaves no stale DIN behind, exactly as before."""
+    def test_failed_reconnect_keeps_din_returns_none(self, failure, wifi):
+        """connect() contract: DIN or None. The known DIN stays, with or without
+        a WiFi host, and a reconnect of a known gateway never goes to WiFi."""
         ted = _make_v1r_tedapi()
+        if not wifi:
+            ted.wifi_session = None
         if failure == "login":
             ted.v1r_transport.login.return_value = False
         elif failure == "din":
@@ -184,25 +189,17 @@ class TestConnectV1rKeepsDin:
             ted.v1r_transport.login.side_effect = OSError("No route to host")
 
         assert ted._connect_v1r() is None
-        assert ted.din is None
-        assert ted.lan_failed is True   # failover state untouched by a failed connect
-
-    @pytest.mark.parametrize("failure", ["login", "din", "exception"])
-    def test_keep_din_on_failed_reconnect(self, failure):
-        """keep_din (probe with WiFi fallback): the failure still returns None,
-        but the known DIN stays for the WiFi path."""
-        ted = _make_v1r_tedapi()
-        if failure == "login":
-            ted.v1r_transport.login.return_value = False
-        elif failure == "din":
-            ted.v1r_transport.login.return_value = True
-            ted.v1r_transport.get_din.return_value = None
-        else:
-            ted.v1r_transport.login.side_effect = OSError("No route to host")
-
-        assert ted._connect_v1r(keep_din=True) is None
         assert ted.din == LEADER_DIN
-        assert ted.lan_failed is True
+        if wifi:
+            ted.wifi_session.get.assert_not_called()
+
+    def test_first_connect_failure_without_wifi(self):
+        ted = _make_v1r_tedapi()
+        ted.din = None
+        ted.wifi_session = None
+        ted.v1r_transport.login.return_value = False
+        assert ted._connect_v1r() is None
+        assert ted.din is None
 
     def test_initial_connect_sets_din(self):
         ted = _make_v1r_tedapi()
@@ -227,43 +224,8 @@ class TestConnectV1rKeepsDin:
         assert ted.din == LEADER_DIN
 
 
-class TestFailedProbeDin:
-    """What a failed recovery probe leaves behind for the getters."""
-
-    def _fail_probe(self, ted):
-        ted.v1r_transport.login.return_value = False
-        with patch.object(ted, "_post_tedapi_wifi", return_value=None):
-            ted._post_tedapi(b"req")
-
-    def test_wifi_fallback_keeps_din_and_backoff(self):
-        """With a WiFi fallback, the failed probe keeps the DIN, so the next
-        getter serves via WiFi instead of reconnecting LAN (and bailing with
-        "Not Connected") on every poll."""
-        ted = _make_v1r_tedapi()
-        self._fail_probe(ted)
-        assert ted.din == LEADER_DIN
-        assert ted.lan_fail_count == 4 and ted.lan_recover_after > time.time() + 900
-
-        ted.pwcache.clear()
-        with patch.object(ted, "connect") as connect, \
-                patch.object(ted, "_post_tedapi_wifi", return_value=None) as wifi:
-            ted.get_status(force=True)
-        connect.assert_not_called()
-        wifi.assert_called_once()
-        assert ted.v1r_transport.login.call_count == 1   # only the probe
-
-    def test_no_wifi_fallback_clears_din(self):
-        """Without a WiFi fallback, unchanged: the DIN is cleared so the next
-        getter's connect() retries LAN — the only way data comes back sooner."""
-        ted = _make_v1r_tedapi()
-        ted.wifi_session = None
-        self._fail_probe(ted)
-        assert ted.din is None
-
-
-class TestProbeWithColdFailover:
-    """The probe's reconnect runs the real _connect_v1r, including the WiFi cold
-    failover (#394): when the LAN is down but the WiFi host answers /tedapi/din."""
+class TestProbeRealReconnect:
+    """The probe running the real _connect_v1r against a LAN that is still down."""
 
     def _wifi_din(self, ted, din=LEADER_DIN):
         r = MagicMock()
@@ -271,9 +233,8 @@ class TestProbeWithColdFailover:
         r.content = din.encode()
         ted.wifi_session.get.return_value = r
 
-    def test_concurrent_probe_via_cold_failover_runs_once(self):
+    def test_concurrent_probe_reconnects_once(self):
         ted = _make_v1r_tedapi()
-        self._wifi_din(ted)
         release = threading.Event()
         wifi_done = threading.Semaphore(0)
 
@@ -296,19 +257,28 @@ class TestProbeWithColdFailover:
                 t.join(WAIT)
         assert not errors, errors
         assert ted.v1r_transport.login.call_count == 1
-        assert ted.wifi_session.get.call_count == 1   # one WiFi DIN fetch
-        # One failed probe = one backoff step, set by the cold failover
+        ted.wifi_session.get.assert_not_called()   # DIN known: no WiFi DIN fetch
+        # One failed probe = one backoff step: 3 -> 4 failures, next probe in 960s
         assert ted.din == LEADER_DIN and ted.lan_failed is True
         assert ted.lan_fail_count == 4
         assert before + 960 <= ted.lan_recover_after <= time.time() + 960
 
-    def test_both_down_keeps_din_with_wifi_configured(self):
-        ted = _make_v1r_tedapi()   # WiFi /tedapi/din answers 503
+    def test_getters_serve_via_wifi_after_failed_probe(self):
+        """The failed probe leaves the DIN, so the next getter serves via WiFi
+        instead of reconnecting (and bailing with "Not Connected") every poll."""
+        ted = _make_v1r_tedapi()
         ted.v1r_transport.login.return_value = False
         with patch.object(ted, "_post_tedapi_wifi", return_value=None):
             ted._post_tedapi(b"req")
-        assert ted.din == LEADER_DIN
         assert ted.lan_fail_count == 4 and ted.lan_recover_after > time.time() + 900
+
+        ted.pwcache.clear()
+        with patch.object(ted, "connect") as connect, \
+                patch.object(ted, "_post_tedapi_wifi", return_value=None) as wifi:
+            ted.get_status(force=True)
+        connect.assert_not_called()
+        wifi.assert_called_once()
+        assert ted.v1r_transport.login.call_count == 1   # only the probe
 
     def test_initial_connect_cold_failover_unchanged(self):
         ted = _make_v1r_tedapi()
@@ -325,10 +295,14 @@ class TestProbeWithColdFailover:
 class TestLanFailureAccounting:
     """Concurrent LAN failures trip the failover once, on the regular schedule."""
 
-    def test_concurrent_failures_trip_failover_once(self):
+    def _healthy(self):
         ted = _make_v1r_tedapi()
         ted.lan_failed = False
         ted.lan_fail_count = 0
+        return ted
+
+    def test_concurrent_failures_trip_failover_once(self):
+        ted = self._healthy()
         in_flight = threading.Barrier(THREADS)
 
         def post_v1r(envelope, din):
@@ -348,8 +322,7 @@ class TestLanFailureAccounting:
         assert before + 480 <= ted.lan_recover_after <= time.time() + 480
 
     def test_straggler_success_leaves_failover_counter(self):
-        ted = _make_v1r_tedapi()
-        ted.lan_failed = False
+        ted = self._healthy()
         ted.lan_fail_count = 2
 
         def post_v1r(envelope, din):
@@ -364,11 +337,9 @@ class TestLanFailureAccounting:
         assert ted.lan_last_success > 0
 
     def test_sequential_failures_unchanged(self):
-        """Single-threaded behavior is unchanged: 3 consecutive failures trip the
-        failover with a 480s window; a success before that resets the count."""
-        ted = _make_v1r_tedapi()
-        ted.lan_failed = False
-        ted.lan_fail_count = 0
+        """3 consecutive failures trip the failover with a 480s window; a
+        success before that resets the count."""
+        ted = self._healthy()
         ted.v1r_transport.post_v1r.return_value = None
         ted._post_tedapi(b"req")
         ted._post_tedapi(b"req")
@@ -381,3 +352,22 @@ class TestLanFailureAccounting:
             ted._post_tedapi(b"req")
         assert ted.lan_failed is True and ted.lan_fail_count == 3
         assert ted.lan_recover_after == pytest.approx(time.time() + 480, abs=5)
+
+
+class TestNoWifiHost:
+    """Without a WiFi host there is nothing to fail over to: never trip."""
+
+    def test_failures_never_trip_and_lan_resumes_immediately(self):
+        ted = _make_v1r_tedapi()
+        ted.wifi_session = None
+        ted.lan_failed = False
+        ted.lan_fail_count = 0
+        ted.v1r_transport.post_v1r.return_value = None
+        for _ in range(10):
+            assert ted._post_tedapi(b"req") is None
+        # Every request tried the LAN (it used to stop trying for 8 minutes)
+        assert ted.v1r_transport.post_v1r.call_count == 10
+        assert ted.lan_failed is False and ted.lan_fail_count == 10
+        ted.v1r_transport.post_v1r.return_value = b"envelope"
+        assert ted._post_tedapi(b"req") == b"envelope"
+        assert ted.lan_fail_count == 0

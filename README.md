@@ -366,7 +366,22 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 
 #### v1r WiFi Fallback
 
-When both the wired LAN (v1r) and WiFi TEDAPI connections are available, pyPowerwall transparently uses WiFi as a fallback transport for follower queries. This is automatically enabled when `PW_GW_PWD` is set alongside the v1r configuration. The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`), and the mode string dynamically reflects what's active (e.g., `Local (v1r+wifi+control)`).
+Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to give v1r mode a second route to the gateway: its WiFi TEDAPI access point (normally `192.168.91.1`). pyPowerwall uses it in two ways:
+
+* **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host.
+* **Failover (default)** — after 3 consecutive wired-LAN failures, the leader's queries move to the WiFi host. The LAN is retried after 8 minutes, then at doubling intervals up to about 2 hours, and traffic moves back on the first successful retry. If the LAN is already down when pyPowerwall starts, it starts on the WiFi host.
+
+Without a `wifi_host` there is nothing to fail over to: every request tries the wired LAN, and data resumes as soon as it answers.
+
+To pin the transports (for example, a script that tests which paths work), turn failover off. The leader then always uses the LAN and followers the WiFi host; a failed request returns `None` instead of being rerouted, and `connect()` no longer falls back to FleetAPI or Cloud mode:
+
+```python
+pw = pypowerwall.Powerwall(host="10.42.1.40", gw_pwd="ABCDEFGHIJ",
+                           rsa_key_path="tedapi_rsa_private.pem",
+                           wifi_host="192.168.91.1", failover=False)
+```
+
+The proxy `/health` endpoint reports the active transports (e.g., `v1r_lan + wifi_tedapi`) and, under `transports.v1r_lan`, whether the leader has failed over to WiFi (`failed_over`) and when the LAN is retried next (`lan_retry_in_seconds`). The mode string reflects what's active (e.g., `Local (v1r+wifi+control)`).
 
 #### LAN Control (v1r)
 

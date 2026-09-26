@@ -206,6 +206,8 @@ Proxy-level inconsistencies (equally frozen):
 ## Threading Model
 
 - The **library** is used concurrently by the proxy's `ThreadingHTTPServer`. Shared state that matters: backend `pwcache` dicts (benign races — worst case a duplicate fetch), TEDAPI per-function locks (real mutual exclusion around gateway calls), and the cloud backend's `apilock` spin-flags.
+- **Claim, then act outside the lock.** Where exactly one thread must do something slow (TEDAPI `connect()`, the v1r LAN recovery probe), a small lock guards only the claim — a flag, or pushing `lan_recover_after` forward — and the network call runs after it is released; other threads proceed on the current state instead of waiting. The v1r failover state (`lan_failed`, `lan_fail_count`, `lan_recover_after`) changes only in TEDAPI's `_lan_*` methods under `_lan_lock`. The leader DIN is identity, not connection state: a failed v1r reconnect never clears it, so no thread sees DIN `None` mid-reconnect.
+- **`failover`** (default `True`) gates every automatic transport or mode switch: `Powerwall.connect()` mode fallback, v1r LAN → WiFi failover (which trips only when a WiFi host exists), startup on WiFi, and `get_native_api()`'s second host. `False` means the configured transport only.
 - The **proxy** guards its stats with `proxystats_lock` (an `RLock`) and size-caps its tracking dicts. Request handlers must not hold any lock across a network call.
 - `Powerwall.connect(retry_modes=True)` blocks the calling thread indefinitely until a connection succeeds — by design for daemon use (the proxy), but callers embedding the library should know.
 
