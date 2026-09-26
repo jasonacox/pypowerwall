@@ -113,8 +113,8 @@ GETTERS = [
            bad_response=make_message(config_text="{bad"), bad_value={"battery_blocks": []}),
     Getter("get_battery_block", DIN, "pwcacheexpire",
            lambda api, **kw: api.get_battery_block(din=DIN, **kw),
-           "_post_tedapi", make_message(config_text='{"block": 1}'), {"block": 1},
-           bad_response=make_message(config_text="{bad"), bad_value={}),
+           "_post_tedapi", make_message(text='{"block": 1}'), {"block": 1},
+           bad_response=make_message(text="{bad"), bad_value={}),
     # the firmware cache holds the SystemInfo; the getter derives the version
     Getter("get_firmware_version", "firmware", "pwcacheexpire",
            lambda api, **kw: api.get_firmware_version(**kw),
@@ -503,7 +503,7 @@ class TestBatteryBlock:
 
     def test_cache_is_keyed_by_din(self):
         api = make_tedapi()
-        with patch.object(api, "_post_tedapi", return_value=make_message(config_text='{"b": 1}')):
+        with patch.object(api, "_post_tedapi", return_value=make_message(text='{"b": 1}')):
             api.get_battery_block(din=FOLLOWER)
         assert api.pwcache[FOLLOWER] == {"b": 1}
 
@@ -520,13 +520,59 @@ class TestBatteryBlock:
         api.v1r = True
         api.wifi_session = object()
         with patch.object(api, "_post_tedapi_wifi",
-                          return_value=make_message(config_text='{"b": 2}')) as wifi:
+                          return_value=make_message(text='{"b": 2}')) as wifi:
             assert api.get_battery_block(din=FOLLOWER) == {"b": 2}
         assert wifi.call_args.kwargs["url_suffix"] == f"/tedapi/device/{FOLLOWER}/v1"
         sent = tedapi_pb2.Message.FromString(wifi.call_args.args[0])
         assert sent.message.recipient.din == FOLLOWER
         assert sent.message.sender.din == DIN
         assert sent.tail.value == 2
+
+    # The gateway answers the battery-block query like any other query, in
+    # payload.recv.text. Before this was fixed it was read from
+    # config.recv.file.text, which a query response never fills, so every
+    # basic/WiFi call returned {} and logged "Error Decoding JSON" (seen on
+    # 2x PW3, firmware 26.18.1).
+    PW3_ANSWER = ('{"components": {"baggr": [], "bms": [], "hvp": [], "pch": [], "pws": []},'
+                  ' "pw3Can": {"firmwareUpdate": {"isUpdating": false}}}')
+
+    def test_reads_query_payload_not_config_slot(self, caplog):
+        api = make_tedapi()
+        with patch.object(api, "_post_tedapi", return_value=make_message(text=self.PW3_ANSWER)), \
+                caplog.at_level(logging.ERROR):
+            block = api.get_battery_block(din=FOLLOWER, force=True)
+        assert set(block) == {"components", "pw3Can"}
+        assert set(block["components"]) == {"baggr", "bms", "hvp", "pch", "pws"}
+        assert "Error Decoding JSON" not in caplog.text
+
+    def test_config_slot_is_ignored(self):
+        """Pin the parse location from the other side: an answer only in the
+        config-file slot is not a battery block (payload empty -> {}), and one
+        in both slots is read from the query payload."""
+        api = make_tedapi()
+        with patch.object(api, "_post_tedapi", return_value=make_message(config_text='{"wrong": 1}')):
+            assert api.get_battery_block(din=FOLLOWER, force=True) == {}
+        both = make_message(text='{"right": 1}', config_text='{"wrong": 1}')
+        with patch.object(api, "_post_tedapi", return_value=both):
+            assert api.get_battery_block(din=FOLLOWER, force=True) == {"right": 1}
+
+    def test_v1r_follower_wifi_reads_query_payload(self):
+        api = make_tedapi()
+        api.v1r = True
+        api.wifi_session = object()
+        with patch.object(api, "_post_tedapi_wifi", return_value=make_message(text=self.PW3_ANSWER)):
+            assert "components" in api.get_battery_block(din=FOLLOWER, force=True)
+
+    def test_v1r_leader_lan_reads_query_payload(self):
+        """The v1r LAN route returns a bare envelope; unaffected by the old bug
+        (the v1r parser always read payload.recv.text) - pinned so it stays so."""
+        api = make_tedapi()
+        api.v1r = True
+        env = tedapi_pb2.MessageEnvelope()
+        env.payload.recv.text = self.PW3_ANSWER
+        with patch.object(api, "_post_tedapi", return_value=env.SerializeToString()) as lan:
+            assert "components" in api.get_battery_block(din=DIN, force=True)
+        assert lan.call_args.kwargs["url_suffix"] == f"/tedapi/device/{DIN}/v1"
 
 
 # ---------------------------------------------------------------------------
