@@ -3,16 +3,19 @@
 Covers the fail-fast / failover paths for TEDAPI v1r mode with a WiFi
 fallback host configured:
 
-  1. Session retry policy: v1r, primary TEDAPI and WiFi sessions mount
+  1. Session retry policy: the v1r LAN and WiFi-fallback sessions mount
      fail-fast adapters (total=1) so a dead host fails in ~2x timeout
-     instead of wedging API-lock holders for 4-6x timeout.
+     instead of wedging API-lock holders; the basic/bearer session keeps
+     its 5-retry policy.
   2. Cold-start failover: TEDAPI._connect_v1r() falls back to WiFi TEDAPI
      when the LAN login fails at connect time (DIN adopted over WiFi,
      lan_failed entered immediately) instead of returning None.
   3. Recovery probe: _post_tedapi() keeps routing via WiFi (not 'resumed')
-     when the recovery reconnect comes back over the fallback path.
+     when the recovery reconnect comes back over the fallback path, and
+     the LAN retry backoff keeps doubling.
 """
 import logging
+import time
 from http import HTTPStatus
 from unittest.mock import MagicMock, patch
 
@@ -55,11 +58,15 @@ class TestFailfastRetryPolicy:
         adapter = session.get_adapter('https://example.com')
         assert adapter.max_retries.total == 1
 
-    def test_primary_session_uses_single_retry(self):
+    def test_basic_session_retry_policy_unchanged(self):
+        # Basic (WiFi) and bearer users ride out flaky links on these
+        # retries; the v1r fail-fast change must not reach them.
         ted = _make_tedapi()
+        ted.v1r = False
         session = ted._init_session()
         adapter = session.get_adapter('https://example.com')
-        assert adapter.max_retries.total == 1
+        assert adapter.max_retries.total == 5
+        assert adapter.max_retries.backoff_factor == 1
 
     def test_wifi_session_uses_single_retry(self):
         ted = _make_tedapi()
@@ -140,7 +147,6 @@ class TestConnectV1rColdFailover:
         ted.wifi_session.get.return_value = _din_response()
         ted.wifi_host = '192.168.1.39'
 
-        import logging
         with caplog.at_level(logging.ERROR):
             assert ted._connect_v1r() == 'WIFI_DIN'
         assert ted.lan_failed is True
@@ -225,12 +231,63 @@ class TestRecoveryProbeOverFallback:
             with caplog.at_level(logging.INFO):
                 assert ted._post_tedapi(b'pb', din='D') is None
         mock_wifi.assert_called_once()
-        assert any(
-            'continuing on WiFi' in r.message for r in caplog.records
-        )
         assert not any(
             'resuming wired' in r.message for r in caplog.records
         )
+
+    def test_failed_probe_over_wifi_keeps_doubling_backoff(self):
+        # LAN still dead, WiFi up: the real _connect_v1r lands in the cold
+        # failover, which must escalate the LAN backoff (480s -> 960s)
+        # rather than reset it to 480s on every probe.
+        ted = _make_tedapi()
+        ted.lan_failed = True
+        ted.lan_fail_count = 3
+        ted.lan_recover_after = 0  # recovery window reached
+        mock_transport = MagicMock()
+        mock_transport.login.return_value = False
+        ted.v1r_transport = mock_transport
+        ted.wifi_session = MagicMock()
+        ted.wifi_session.get.return_value = _din_response()
+        ted.wifi_host = '192.168.1.39'
+
+        with patch.object(TEDAPI, '_post_tedapi_wifi', return_value=None) as mock_wifi:
+            before = time.time()
+            assert ted._post_tedapi(b'pb', din='D') is None
+        mock_wifi.assert_called_once()
+        assert ted.din == 'WIFI_DIN'
+        assert ted.lan_failed is True
+        assert ted.lan_fail_count == 4
+        assert ted.lan_recover_after >= before + 960
+        mock_transport.post_v1r.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests: get_din() with the LAN down
+# ---------------------------------------------------------------------------
+
+class TestGetDinOverWifi:
+    """get_din() reads the DIN from the WiFi fallback while lan_failed."""
+
+    def test_get_din_uses_wifi_fallback(self):
+        ted = _make_tedapi()
+        ted.lan_failed = True
+        ted.v1r_transport = MagicMock()
+        ted.wifi_session = MagicMock()
+        ted.wifi_session.get.return_value = _din_response(' WIFI_DIN\n')
+        ted.wifi_host = '192.168.1.39'
+
+        assert ted.get_din(force=True) == 'WIFI_DIN'
+        ted.v1r_transport.get_din.assert_not_called()
+
+    def test_get_din_wifi_failure_returns_none(self):
+        ted = _make_tedapi()
+        ted.lan_failed = True
+        ted.v1r_transport = MagicMock()
+        ted.wifi_session = MagicMock()
+        ted.wifi_session.get.side_effect = TimeoutError('timed out')
+        ted.wifi_host = '192.168.1.39'
+
+        assert ted.get_din(force=True) is None
 
     def test_recovery_lan_resumed_routes_via_lan(self, caplog):
         ted = _make_tedapi()

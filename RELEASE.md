@@ -2,9 +2,7 @@
 
 ## Unreleased
 
-* fix(tedapi): v1r LAN-down failover to the WiFi fallback host is actually reached now. A dead wired LAN (`No route to host` / `Read timed out`) used to hold per-function API locks through `Retry(total=3-5)` (~4-6x timeout) while callers with shorter outer timeouts gave up first; the abandoned thread kept the lock, so later polls ended in lock-wait timeouts and never reached the WiFi path even after `lan_failed` was set. All three TEDAPI sessions (v1r, primary, WiFi) now use fail-fast retries (`total=1`), so a dead host fails in ~2x timeout.
-* fix(tedapi): `_connect_v1r()` falls back to WiFi TEDAPI at connect time. Previously a (re)start while the LAN was down could never come up — the login failed, connect returned None, and the 3 slow failures needed for the regular `lan_failed` fallback never happened. With a WiFi host configured and answering `/tedapi/din`, the DIN is adopted over WiFi, `lan_failed` is entered immediately (same backoff as 3 consecutive failures), and data flows over WiFi until the LAN recovery probe succeeds. Both hosts down still returns None (connect contract unchanged).
-* fix(tedapi): the LAN recovery probe no longer logs `resuming wired transport` when the reconnect came back over the WiFi fallback path.
+* fix(tedapi): v1r failover to the WiFi fallback host (`wifi_host`) now actually happens when the wired LAN is down. The v1r LAN and WiFi-fallback sessions retry once instead of 2-3 times, so a dead host fails in ~2x timeout instead of holding the per-method API lock long enough for callers' outer timeouts to abandon it (later polls then only saw `Timeout waiting for API lock` and never reached WiFi). And a start or LAN recovery probe with the LAN down now adopts the DIN over WiFi and serves data there, where it used to return None and never come up; the LAN retry backoff still doubles on each failed probe. Both hosts down still returns None. Basic (WiFi) and bearer TEDAPI sessions are unchanged. Thanks @erikgieseler, requested by @jasonacox-sam (#394).
 
 ## v0.18.0 - Modern Packaging and Clean Distributions
 
