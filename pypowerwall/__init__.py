@@ -44,6 +44,8 @@
  Functions 
     poll(api, jsonformat, raw, force)   # Return data from Powerwall api (JSON string if jsonformat=True, bypass cache force=True)
     post(api, payload, din, jsonformat) # Send payload to Powerwall api (JSON string if jsonformat=True)
+    get_tariff(force)         # Return current utility tariff
+    set_tariff(tou_settings)  # Update Time-of-Use utility tariff settings
     level()                   # Return battery power level percentage
     power()                   # Return power data returned as dictionary
     site(verbose)             # Return site sensor data (W or raw JSON if verbose=True)
@@ -457,6 +459,37 @@ class Powerwall(object):
                 return None
         else:
             return response
+
+    def get_tariff(self, force=False) -> Optional[Union[dict, list, str, bytes]]:
+        """
+        Utility tariff of the site (Cloud and FleetAPI modes)
+
+        Returns the tariff object (code, name, utility, seasons, energy_charges, ...),
+        or None when unavailable (local mode; TEDAPI returns an empty mock dict).
+        """
+        return self.poll('/api/tesla/tariff_rate', force=force)
+
+    def set_tariff(self, tou_settings: dict, jsonformat=False) -> Optional[Union[dict, str]]:
+        """
+        Update the Time-of-Use tariff (Cloud and FleetAPI modes)
+
+        Args:
+          tou_settings = Tesla time_of_use_settings contract, e.g.
+                         {"optimization_strategy": "economics", "tariff_content_v2": {...}}
+                         (the v2 tariff schema differs from the get_tariff() result - see API.md)
+          jsonformat   = If True, return JSON format otherwise return Python Dictionary
+
+        Returns the normalized Tesla response, e.g. {"Message": "Updated", "Code": 201},
+        or None on failure (including TEDAPI and local modes, which can't write tariffs).
+        """
+        if not isinstance(tou_settings, dict):
+            log.error("tou_settings must be a dictionary")
+            return None
+        return self.post(
+            '/api/tesla/time_of_use_settings',
+            {'tou_settings': tou_settings},
+            jsonformat=jsonformat,
+        )
 
     def level(self, scale=False):
         """

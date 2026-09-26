@@ -1,9 +1,11 @@
-"""Regression tests for cloud backend bugs:
+"""Regression tests for cloud backend bugs and Tesla tariff/site recovery:
 - set_grid_charging()/set_grid_export() returned the (response, cached) tuple
   from _site_api() instead of the response
 - post_api_operation() raised KeyError on partial payloads and did not
   normalize a False reserve to 0
+- Tesla tariff read/write cache invalidation and stale-site recovery behavior
 """
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,6 +17,33 @@ from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
 def fixture_cloud(tmp_path):
     # authpath pointed at tmp so no site/auth files are picked up
     return PyPowerwallCloud(email='test@example.com', authpath=str(tmp_path))
+
+
+class FakeHttpError(Exception):
+    """Minimal HTTP-style exception exposing response.status_code."""
+
+    def __init__(self, status_code):
+        super().__init__(f"{status_code} Client Error")
+        self.response = MagicMock(status_code=status_code)
+
+
+class FakeSite(dict):
+    """Dict-like Tesla site with a controllable api() result."""
+
+    def __init__(self, site_id, site_name='Test Site', gateway_id=None,
+                 api_result=None, api_error=None):
+        super().__init__(energy_site_id=site_id, site_name=site_name)
+        if gateway_id is not None:
+            self['gateway_id'] = gateway_id
+        self.api_result = api_result
+        self.api_error = api_error
+        self.api_calls = []
+
+    def api(self, name, **kwargs):
+        self.api_calls.append((name, kwargs))
+        if self.api_error is not None:
+            raise self.api_error
+        return self.api_result
 
 
 class TestSetGridChargingExport:
@@ -120,6 +149,221 @@ class TestPostApiOperation:
         resp = cloud.post_api_operation(payload={'real_mode': 'backup'})
         assert resp['set_operation']['result'] == 'BatteryNotFound'
         assert resp['set_backup_reserve_percent']['backup_reserve_percent'] is None
+
+
+class TestTeslaTariffApi:
+
+    def test_get_api_tariff_rate_unwraps_response(self, cloud):
+        tariff = {'code': 'TEST', 'energy_charges': {'AllYear': {'OFF_PEAK': 0.1}}}
+        with patch.object(cloud, '_site_api', return_value=({'response': tariff}, False)) as site_api:
+            result = cloud.get_api_tariff_rate(force=True)
+
+        assert result == tariff
+        site_api.assert_called_once_with('SITE_TARIFF', ttl=cloud.pwcacheexpire, force=True)
+
+    def test_get_api_tariff_rate_none_passthrough(self, cloud):
+        with patch.object(cloud, '_site_api', return_value=(None, False)):
+            assert cloud.get_api_tariff_rate() is None
+
+    def test_get_api_tariff_rate_parses_json_string_envelope(self, cloud):
+        response = {'response': '{"code":"TEST","currency":"EUR"}\n'}
+        with patch.object(cloud, '_site_api', return_value=(response, False)):
+            assert cloud.get_api_tariff_rate() == {'code': 'TEST', 'currency': 'EUR'}
+
+    def test_tou_post_invalidates_tariff_cache_through_base_map(self, cloud):
+        response = {'response': '{"Message":"Updated","Code":201}\n'}
+        site = FakeSite(123, api_result=response)
+        cloud.site = site
+        cloud.siteid = 123
+        cloud.tesla = MagicMock()
+        cloud.pwcache['SITE_TARIFF'] = {'response': {'code': 'OLD'}}
+        cloud.pwcachetime['SITE_TARIFF'] = 1.0
+        payload = {'tou_settings': {'optimization_strategy': 'economics'}}
+
+        result = cloud.post('/api/tesla/time_of_use_settings', payload, None)
+
+        assert result == {'Message': 'Updated', 'Code': 201}
+        assert site.api_calls == [('TIME_OF_USE_SETTINGS', payload)]
+        assert cloud.pwcache['SITE_TARIFF'] is None
+
+    def test_set_time_of_use_settings_rejects_invalid_payload(self, cloud):
+        cloud.site = FakeSite(123)
+        assert cloud.set_time_of_use_settings(None) is None
+        assert cloud.site.api_calls == []
+
+    def test_set_time_of_use_settings_requires_selected_site(self, cloud):
+        assert cloud.set_time_of_use_settings({'tou_settings': {}}) is None
+
+
+class TestStaleSiteRecovery:
+
+    def _configure_tesla(self, cloud, sites):
+        cloud.tesla = MagicMock()
+        cloud.tesla.battery_list.return_value = sites
+        cloud.tesla.solar_list.return_value = []
+
+    def test_http_status_from_response(self, cloud):
+        assert cloud._http_status_from_error(FakeHttpError(404)) == 404
+
+    def test_http_status_fallback_from_exception_text(self, cloud):
+        assert cloud._http_status_from_error(RuntimeError('404 Client Error: not_found')) == 404
+
+    def test_http_status_fallback_does_not_match_site_id_digits(self, cloud):
+        error = RuntimeError('500 Server Error for url /energy_sites/8404123/tariff')
+        assert cloud._http_status_from_error(error) == 500
+
+    def test_first_recovery_is_not_suppressed_on_low_uptime(self, cloud):
+        current_site = FakeSite(111)
+        cloud.site = current_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [current_site])
+
+        with patch('pypowerwall.cloud.pypowerwall_cloud.time.monotonic', return_value=30.0):
+            assert cloud._recover_stale_site() is False
+
+        cloud.tesla.battery_list.assert_called_once()
+        cloud.tesla.solar_list.assert_called_once()
+
+    def test_stale_site_404_switches_site_persists_clears_cache_and_retries(self, cloud):
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW1',
+                            api_error=FakeHttpError(404))
+        new_response = {'response': {'code': 'NEW'}}
+        new_site = FakeSite(222, site_name='Home', gateway_id='GW1', api_result=new_response)
+        cloud.site = old_site
+        cloud.siteid = 111
+        cloud.siteindex = 0
+        cloud.pwcache['SITE_TARIFF'] = {'response': {'code': 'OLD'}}
+        cloud.pwcachetime['SITE_TARIFF'] = 1.0
+        self._configure_tesla(cloud, [new_site])
+
+        result = cloud._call_site_api('SITE_TARIFF')
+
+        assert result == new_response
+        assert cloud.site is new_site
+        assert cloud.siteid == 222
+        assert cloud.siteindex == 0
+        # Invalidated like _invalidate_cache: value dropped, timestamp kept
+        assert cloud.pwcache['SITE_TARIFF'] is None
+        assert 'SITE_TARIFF' in cloud.pwcachetime
+        with open(cloud.sitefile, encoding='utf-8') as site_file:
+            assert site_file.read() == '222'
+        assert old_site.api_calls == [('SITE_TARIFF', {})]
+        assert new_site.api_calls == [('SITE_TARIFF', {})]
+
+    def test_recovery_prefers_gateway_match_over_first_site(self, cloud):
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW-HOME')
+        wrong_site = FakeSite(222, site_name='Cabin', gateway_id='GW-CABIN')
+        replacement = FakeSite(333, site_name='Home Renamed', gateway_id='GW-HOME')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [wrong_site, replacement])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.site is replacement
+        assert cloud.siteid == 333
+        assert cloud.siteindex == 1
+
+    def test_recovery_uses_site_name_when_gateway_id_missing(self, cloud):
+        old_site = FakeSite(111, site_name='Home')
+        wrong_site = FakeSite(222, site_name='Cabin')
+        replacement = FakeSite(333, site_name='Home')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [wrong_site, replacement])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.site is replacement
+        assert cloud.siteindex == 1
+
+    def test_single_site_account_falls_back_to_its_only_site(self, cloud):
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW-OLD')
+        only_site = FakeSite(222, site_name='Renamed', gateway_id='GW-NEW')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [only_site])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.site is only_site and cloud.siteid == 222
+
+    def test_multi_site_account_without_match_does_not_guess(self, cloud):
+        # No gateway/name match among several sites: switching to sites[0] could
+        # send the retried call - here a TOU write - to a different installation
+        old_site = FakeSite(111, site_name='Home', gateway_id='GW-HOME', api_error=FakeHttpError(404))
+        cabin = FakeSite(222, site_name='Cabin', gateway_id='GW-CABIN')
+        shop = FakeSite(333, site_name='Shop', gateway_id='GW-SHOP')
+        cloud.site = old_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [cabin, shop])
+
+        with pytest.raises(FakeHttpError):
+            cloud._call_site_api('TIME_OF_USE_SETTINGS', tou_settings={'x': 1})
+
+        assert cloud.site is old_site and cloud.siteid == 111
+        assert cabin.api_calls == [] and shop.api_calls == []
+        assert not os.path.exists(cloud.sitefile)
+
+    def test_recovery_keeps_cache_timestamps_for_concurrent_readers(self, cloud):
+        # A concurrent _site_api fast path reads pwcachetime[name] after seeing a
+        # cached value; clearing timestamps would make that a KeyError
+        cloud.site = FakeSite(111, site_name='Home', gateway_id='GW1')
+        cloud.siteid = 111
+        cloud.pwcache['SITE_SUMMARY'] = {'response': {'old': True}}
+        cloud.pwcachetime['SITE_SUMMARY'] = 1.0
+        self._configure_tesla(cloud, [FakeSite(222, site_name='Home', gateway_id='GW1')])
+
+        assert cloud._recover_stale_site() is True
+        assert cloud.pwcache['SITE_SUMMARY'] is None
+        assert cloud.pwcachetime['SITE_SUMMARY'] == 1.0
+
+    def test_404_does_not_switch_when_current_site_still_exists(self, cloud):
+        current_site = FakeSite(111, api_error=FakeHttpError(404))
+        cloud.site = current_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [current_site])
+
+        with pytest.raises(FakeHttpError):
+            cloud._call_site_api('SITE_TARIFF')
+
+        assert cloud.site is current_site
+        assert cloud.siteid == 111
+        assert current_site.api_calls == [('SITE_TARIFF', {})]
+
+    def test_recovery_cooldown_avoids_repeated_product_list_calls(self, cloud):
+        current_site = FakeSite(111)
+        cloud.site = current_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [current_site])
+
+        assert cloud._recover_stale_site() is False
+        assert cloud._recover_stale_site() is False
+
+        cloud.tesla.battery_list.assert_called_once()
+        cloud.tesla.solar_list.assert_called_once()
+
+    def test_recovery_lock_is_non_blocking(self, cloud):
+        cloud.site = FakeSite(111)
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [FakeSite(222)])
+        assert cloud._site_recovery_lock.acquire(blocking=False)
+        try:
+            assert cloud._recover_stale_site() is False
+        finally:
+            cloud._site_recovery_lock.release()
+
+        cloud.tesla.battery_list.assert_not_called()
+        cloud.tesla.solar_list.assert_not_called()
+
+    def test_non_404_does_not_attempt_site_recovery(self, cloud):
+        current_site = FakeSite(111, api_error=FakeHttpError(403))
+        cloud.site = current_site
+        cloud.siteid = 111
+        self._configure_tesla(cloud, [FakeSite(222)])
+
+        with pytest.raises(FakeHttpError):
+            cloud._call_site_api('SITE_TARIFF')
+
+        cloud.tesla.battery_list.assert_not_called()
+        cloud.tesla.solar_list.assert_not_called()
 
 
 class TestGetTimeRemaining:

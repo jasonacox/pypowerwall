@@ -119,6 +119,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def init_post_api_map(self) -> dict:
         return {
             "/api/operation": self.post_api_operation,
+            "/api/tesla/time_of_use_settings": self.set_time_of_use_settings,
         }
 
     def init_poll_api_map(self) -> dict:
@@ -130,6 +131,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "/api/operation": self.get_api_operation,
             "/api/site_info": self.get_api_site_info,
             "/api/site_info/site_name": self.get_api_site_info_site_name,
+            "/api/tesla/tariff_rate": self.get_api_tariff_rate,
             "/api/status": self.get_api_status,
             "/api/system_status": self.get_api_system_status,
             "/api/system_status/grid_status": self.get_api_system_status_grid_status,
@@ -239,6 +241,26 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
     def get_time_remaining(self, force: bool = False) -> Optional[float]:
         return self.tedapi.backup_time_remaining(force=force)
+
+    # noinspection PyUnusedLocal
+    @not_implemented_mock_data
+    def get_api_tariff_rate(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
+        """TEDAPI does not expose utility tariff data."""
+        return json.loads(TESLA_TARIFF_RATE)
+
+    # pylint: disable=unused-argument
+    def set_time_of_use_settings(
+        self,
+        payload: Optional[dict],
+        din: Optional[str] = None,
+        **kwargs,
+    ) -> Optional[Union[dict, list, str, bytes]]:
+        """TEDAPI has no Time-of-Use tariff transport. Like other unsupported
+        writes (post_api_operation without v1r), fail with None - a
+        success-shaped mock would read as a completed write."""
+        log.error("set_time_of_use_settings is not supported in TEDAPI mode - "
+                  "use Cloud or FleetAPI mode")
+        return None
 
     def get_api_system_status_soe(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)

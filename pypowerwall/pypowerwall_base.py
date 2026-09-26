@@ -1,4 +1,5 @@
 import abc
+import json
 import logging
 from typing import Optional, Any, Union
 
@@ -6,7 +7,8 @@ log = logging.getLogger(__name__)
 
 # Define which write API calls should invalidate which read API cache keys
 WRITE_OP_READ_OP_CACHE_MAP = {
-    '/api/operation': ['/api/operation', 'SITE_CONFIG']  # local and cloud mode respectively
+    '/api/operation': ['/api/operation', 'SITE_CONFIG'],  # local and cloud mode respectively
+    '/api/tesla/time_of_use_settings': ['SITE_TARIFF'],
 }
 
 
@@ -38,6 +40,18 @@ class PyPowerwallBase:
         self.auth = None
         self.token = None  # caches bearer token
         self.email = email
+
+    @staticmethod
+    def _unwrap_tesla_response(result):
+        """Normalize a Tesla API envelope and parse embedded JSON strings."""
+        if isinstance(result, dict):
+            result = result.get("response", result)
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError:
+                return result.strip()
+        return result
 
     @abc.abstractmethod
     def authenticate(self):

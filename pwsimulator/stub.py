@@ -15,6 +15,8 @@
     /api/status
     /api/meters/aggregates 
     /api/system_status/soe 
+    /api/tesla/tariff_rate
+    /api/tesla/time_of_use_settings
     /api/devices/vitals - Return sample protobuf binary
          * set VITALS = False to Return 404: Firmware 23.44.0+ does not support
     
@@ -56,6 +58,14 @@ agg_grid = -2100
 agg_powerwall = -3500
 percentage = 23.975388097174584
 active_scenario = ''
+
+tesla_tariff_rate = {
+    "code": "SIMULATOR-TOU",
+    "name": "Simulator Time-of-Use",
+    "utility": "Simulator",
+    "currency": "USD",
+    "energy_charges": {"AllYear": {"OFF_PEAK": 0.10, "ON_PEAK": 0.25}},
+}
 
 def generate_aggregates():
     global agg_solar, agg_home, agg_grid, agg_powerwall, percentage
@@ -360,6 +370,25 @@ class Handler(BaseHTTPRequestHandler):
         message = "ERROR!"
         session_valid = False
         
+        if self.path == '/api/tesla/time_of_use_settings':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                payload = json.loads(post_data or b'{}')
+            except json.JSONDecodeError:
+                payload = {}
+            if not isinstance(payload.get('tou_settings'), dict):
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                self.wfile.write(bytes(json.dumps({"error": "tou_settings must be an object"}), "utf8"))
+                return
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps({"Message": "Updated", "Code": 201}), "utf8"))
+            return
+
         # TEDAPI v1 - Protobuf endpoint
         if self.path == '/tedapi/v1':
             if not TEDAPI_ENABLED:
@@ -467,6 +496,13 @@ class Handler(BaseHTTPRequestHandler):
         
         # Handlers
         #
+        if self.path == '/api/tesla/tariff_rate':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(bytes(json.dumps(tesla_tariff_rate), "utf8"))
+            return
+
         # Status - SOE
         if self.path == '/api/status':
             session_valid = False
