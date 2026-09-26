@@ -107,6 +107,32 @@ pw = pypowerwall.Powerwall(
 - `post(api, payload, din=None, jsonformat=False, raw=False, recursive=False)` → dict/str/None  
   Sends a POST payload (dict) to the specified Powerwall API endpoint. Returns a dict by default, or a JSON string if `jsonformat=True`.
 
+#### Tesla tariff and Time-of-Use settings
+
+Tariff read and Time-of-Use write are Tesla cloud features. Cloud and FleetAPI modes provide them; TEDAPI returns an empty mock tariff (`{}`) and fails writes with `None`; local mode returns `None` for both (the gateway has no tariff endpoint).
+
+- `pw.get_tariff(force=False)` (or `pw.poll("/api/tesla/tariff_rate")`) → dict/None  
+  Returns the site's utility tariff object (`code`, `name`, `utility`, `currency`, `seasons`, `energy_charges`, …). Cloud reads the Owner API tariff (`SITE_TARIFF`); FleetAPI reads `tariff_content` from site info. Cached for the normal cloud TTL unless `force=True`.
+
+- `pw.set_tariff(tou_settings)` (or `pw.post("/api/tesla/time_of_use_settings", {"tou_settings": ...})`) → dict/None  
+  Updates the Time-of-Use tariff. `tou_settings` follows Tesla's `time_of_use_settings` contract, which takes the tariff as `tariff_content_v2`:
+
+```python
+result = pw.set_tariff({
+    "optimization_strategy": "economics",
+    "tariff_content_v2": {
+        # Tesla tariff content (v2 form)
+    },
+})
+# {"Message": "Updated", "Code": 201}, or None on failure
+```
+
+  `tariff_content_v2` is a different schema from the object `get_tariff()` returns, not just a `version` field: rates are nested under `rates` (e.g. `energy_charges.Summer.rates.ON_PEAK` instead of `energy_charges.Summer.ON_PEAK`) and each TOU period list is wrapped as `{"periods": [...]}`. The read result therefore can't be written back unchanged. FleetAPI site info exposes the current tariff in both forms (`tariff_content` and `tariff_content_v2`); Cloud mode exposes only the v1 form.
+
+Tesla response envelopes are normalized, including embedded JSON strings, so successful writes return a stable dictionary. A successful write invalidates the cached tariff, so the next read is fresh.
+
+Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site call returns 404 and the site ID is gone from the account's site list, pypowerwall switches to the site with the same `gateway_id` (or a unique `site_name` match), or to the only site on a single-site account, persists the new ID to `.pypowerwall.site`, and retries the call once. With several sites and no match it leaves the site unchanged and logs an error rather than guessing. Recovery is serialized and rate-limited to one attempt per minute.
+
 ### Power and Energy
 
 - `level(scale=False)` → float/None  

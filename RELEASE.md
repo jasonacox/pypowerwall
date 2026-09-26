@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* feat(tariff): read the site's utility tariff and update Time-of-Use settings - `pw.get_tariff()` / `pw.set_tariff(tou_settings)` (endpoints `/api/tesla/tariff_rate` and `/api/tesla/time_of_use_settings`). Cloud reads the Owner API tariff and FleetAPI reads `tariff_content` from site info; writes follow Tesla's `time_of_use_settings` contract (`tariff_content_v2`). Responses are normalized (e.g. `{"Message": "Updated", "Code": 201}`), a successful write invalidates the cached tariff, and TEDAPI (mock read, `None` on write) and local mode (`None`) fail cleanly. Thanks @nesys (#382)
+* fix(cloud): recover when Tesla replaces or re-provisions a site - after a 404 for a site ID that's gone from the account, switch to the site with the same `gateway_id` (or unique `site_name`), or the only site on a single-site account, persist it to `.pypowerwall.site`, and retry once; with several sites and no match, leave the site unchanged and log an error. Serialized, rate-limited to one attempt per minute. Long-running processes no longer need a restart after a site change. (#382)
+
 ## v0.18.0 - Modern Packaging and Clean Distributions
 
 * build: packaging moved to a PEP 621 `pyproject.toml` (setuptools backend); `setup.py` is now a compatibility shim, so existing `python setup.py …` tooling keeps working. The version is a single plain `__version__` literal in `pypowerwall/__init__.py`, read at build time via setuptools' `attr:` (no import, no regex), replacing `setup.py`'s regex parse. The public `version` and `version_tuple` attributes are unchanged. Thanks @jasonacox-sam, prompted by @hulkster (#389, #388).
