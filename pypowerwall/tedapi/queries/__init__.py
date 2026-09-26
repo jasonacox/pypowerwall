@@ -62,9 +62,28 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 # 45.450980 (an 8-bit raw value) on both units while ambient moved over 7 C, so
 # temps() doesn't use it. V2026_06 cannot carry extras: its PW3Query has the
 # signal names inline in the signed text.
+#
+# PW3 fans - hardware-validated 2026-09-26 on the same PW3 leader + follower
+# (firmware 26.18.1, no DC expansions). Each PW3 inverter (PCH) has two fans,
+# A and B: PCH_FanSpeed_* is the measured speed in RPM (it jitters a few RPM
+# between samples and differs between A and B at equal duty) and PCH_FanDuty_*
+# is the drive duty cycle in percent. Both proved live in a 30-minute, 30 s
+# sample while charging: duty is stepped, not continuous - the follower held
+# 5.1/6.6% (~1000 RPM) for 27 minutes, then stepped to 16.4/17.2% and 18.7/19.1%
+# within a minute as its inverter ambient reached 45.7 C and charge rose to
+# 2.1 kW, with RPM following to ~1391/1395; the leader held 19.1% (~1395 RPM)
+# throughout at 55-56 C. Values arrive as floats such as 5.1000000000000005
+# and are passed through as delivered. There is no target-RPM, command, fault
+# or state signal: a ~280k-name sweep of Fan/Pump/Blower name variants on every
+# group (pws, pch, bms, hvp, baggr) echoed only these four, all on pch. The PW2
+# PVAC_Fan_Speed_Actual/Target_RPM names are echoed by the device controller's
+# msa components on PW3 but are always None there, which is why
+# get_fan_speeds() used to be empty on PW3.
+PW3_FAN_SIGNAL_NAMES = ("PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PCH_FanDuty_B")
+
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
-        "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp"),
+        "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp") + PW3_FAN_SIGNAL_NAMES,
         "bmsSignalNames": ("BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"),
         "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"),
     },

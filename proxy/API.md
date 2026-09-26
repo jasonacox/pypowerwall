@@ -203,16 +203,19 @@ The proxy provides shorthand endpoints under `/pw/` that map to common library c
 
 ## Fans Endpoints
 
-Available when TEDAPI provides fan telemetry (e.g., Powerwall 3 systems):
+Available when TEDAPI provides fan telemetry (Powerwall 2/+ and Powerwall 3):
 
 | Endpoint     | Description                                         |
 |--------------|-----------------------------------------------------|
 | `/fans`      | Raw fan speed objects keyed by internal component   |
-| `/fans/pw`   | Simplified fan RPM (FANn_actual / FANn_target)      |
+| `/fans/pw`   | Simplified fan RPM (FANn_actual / FANn_target, plus FANn_duty on PW3) |
 
 If fan data is unavailable, these return an empty JSON object `{}`.
 
-Update interval: Fan metrics refresh with standard polling (same cadence as vitals/strings) and appear only when TEDAPI + compatible hardware (e.g., PW3) are present.
+- **Powerwall 2/+**: one fan per inverter. `/fans` keys are `PVAC--<part>--<sn>` with `PVAC_Fan_Speed_Actual_RPM` and `PVAC_Fan_Speed_Target_RPM`; `/fans/pw` has `FANn_actual` and `FANn_target` (RPM), numbered in sorted key order.
+- **Powerwall 3**: two fans (A and B) per inverter. `/fans` keys are `TEPINV--<din>` (the same block `/vitals` carries them on) with `PCH_FanSpeed_A`/`PCH_FanSpeed_B` (measured RPM) and `PCH_FanDuty_A`/`PCH_FanDuty_B` (drive duty cycle, %). `/fans/pw` numbers two fans per Powerwall 3 after any PW2 fans, leader first (as in `/pod`): `FANn_actual` is the measured RPM, `FANn_target` is `null` (PW3 has no target-RPM signal) and `FANn_duty` is the duty cycle in percent.
+
+Update interval: Fan metrics refresh with standard polling (same cadence as vitals/strings) and appear only in TEDAPI modes on hardware that reports them.
 
 ## Powerwall API Endpoints
 
@@ -355,8 +358,14 @@ Sample JSON Snippets:
 // POST /control/max_backup cancel success
 {"max_backup": "Cancelled"}
 
-// /fans/pw
+// /fans/pw (Powerwall 2/+)
 {"FAN1_actual": 1180, "FAN1_target": 1200, "FAN2_actual": 1175, "FAN2_target": 1200}
+
+// /fans/pw (two Powerwall 3s: leader fans A/B, then follower fans A/B)
+{"FAN1_actual": 1395, "FAN1_target": null, "FAN1_duty": 19.1,
+ "FAN2_actual": 1397, "FAN2_target": null, "FAN2_duty": 19.1,
+ "FAN3_actual": 1000, "FAN3_target": null, "FAN3_duty": 5.1,
+ "FAN4_actual": 991, "FAN4_target": null, "FAN4_duty": 6.6}
 ```
 
 For configuration options, see [proxy/README.md](https://github.com/jasonacox/pypowerwall/blob/main/proxy/README.md).

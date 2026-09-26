@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t104 (unreleased)
+
+* `/fans` and `/fans/pw` report Powerwall 3 fans (both returned `{}` on PW3). `/fans` adds a `TEPINV--<din>` object per PW3 inverter with `PCH_FanSpeed_A`/`_B` (RPM) and `PCH_FanDuty_A`/`_B` (%). `/fans/pw` numbers two fans per PW3 after any PW2 fans, leader first (as in `/pod`): `FANn_actual` is the measured RPM, `FANn_target` is `null` (PW3 has no target-RPM signal), and the new `FANn_duty` is the duty cycle in percent. `/vitals` carries the same four signals on each PW3 `TEPINV--` block. Powerwall 2/+ output is unchanged. Needs the pyPowerwall release that includes #PRNUM; with the pinned v0.18.1 library, PW3 output stays `{}`. New `proxy/tests/test_fans.py`
+
 ### Proxy t103 (26 Sep 2026)
 
 * Upgraded to pyPowerwall v0.18.1 (Tesla tariff API, v1r LAN-down failover to the WiFi host, race-free failover recovery, and the new `failover` option — see library release notes)
