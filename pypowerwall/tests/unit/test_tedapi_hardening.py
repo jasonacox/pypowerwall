@@ -176,6 +176,15 @@ class TestPw3Vitals:
             assert post.call_count == 4
         assert first and second is first
 
+    def test_cached_for_data_expiry_not_config_expiry(self):
+        api = self._api()
+        api.pwcacheexpire, api.pwconfigexpire = 5, 300
+        api._cache_put("pw3_vitals", {"TEPINV--x": {}})
+        api.pwcachetime["pw3_vitals"] -= 10       # older than the data expiry
+        with patch.object(api, "_post_tedapi", return_value=None) as post:
+            api.get_pw3_vitals()
+        assert post.call_count == 2               # refetched, not served for 300s
+
     def test_empty_result_not_cached(self):
         api = self._api()
         with patch.object(api, "_post_tedapi", return_value=None) as post:

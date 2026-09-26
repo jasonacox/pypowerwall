@@ -132,6 +132,11 @@ class TestStrictPowerwallConnect:
         clients["cloud"].assert_not_called()
         assert pw.mode == "local"
 
+    def test_full_tedapi_mode_forwards_failover(self, clients):
+        clients["tedapi"].side_effect = None
+        pypowerwall.Powerwall(host="192.168.91.1", gw_pwd="ABCDELNDYT", failover=False)
+        assert clients["tedapi"].call_args.kwargs["failover"] is False
+
     def test_default_still_falls_back_to_other_modes(self, clients):
         pw = self._v1r()
         assert clients["tedapi"].call_args.kwargs["failover"] is True

@@ -365,7 +365,8 @@ class Powerwall(object):
                                                         poolmaxsize=self.poolmaxsize,
                                                         tedapi_api_version=self.tedapi_api_version,
                                                         auth_mode=self.tedapi_auth_mode,
-                                                        timezone=self.timezone)
+                                                        timezone=self.timezone,
+                                                        failover=self.failover)
                     else:  # Hybrid (password + gw_pwd) or local-only (password only)
                         self.tedapi_mode = "hybrid"
                         self.client = PyPowerwallLocal(self.host, self.password, self.email, self.timezone, self.timeout,

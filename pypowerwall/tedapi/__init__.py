@@ -988,7 +988,9 @@ class TEDAPI:
                 log.error("Not Connected - Unable to get configuration")
                 return None
         # Check Cache
-        cached = self._cache_get("pw3_vitals", self.pwconfigexpire, force)
+        # Live data (PV, power, pack energy): the data-cache expiry, not the
+        # config one (a direct TEDAPI user may set pwconfigexpire much higher)
+        cached = self._cache_get("pw3_vitals", self.pwcacheexpire, force)
         if cached is not _CACHE_MISS:
             return cached
         if not force and self._in_cooldown():
@@ -1986,8 +1988,14 @@ class TEDAPI:
             # WiFi while it reconnects (no lock is held across the reconnect).
             if self.lan_failed and self._claim_lan_probe():
                 log.info("v1r: LAN recovery window reached — attempting reconnect")
-                if self._connect_v1r():  # closes the failover on success
-                    if not self.lan_failed:  # (unless it was re-tripped meanwhile)
+                # Through connect() so the probe is single-flight with any
+                # other connect (e.g. connect(force=True)): a probe failing
+                # after a concurrent connect succeeded would re-trip the
+                # failover with the LAN up. A connect already in flight
+                # returns the current DIN without reconnecting; lan_failed
+                # stays set and this window's probe is skipped.
+                if self.connect(force=True):  # closes the failover on success
+                    if not self.lan_failed:
                         log.info("v1r: LAN recovered — resuming wired transport")
                 else:
                     backoff = self._lan_probe_failed()

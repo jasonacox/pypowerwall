@@ -152,6 +152,45 @@ class TestLanRecoveryProbeClaim:
             [480, 960, 1920, 3840, 7680, 7680, 7680]
 
 
+class TestProbeSingleFlightWithConnect:
+    """The probe goes through connect()'s single-flight claim."""
+
+    def test_probe_skipped_while_connect_in_flight(self):
+        ted = _make_v1r_tedapi()
+        ted._connecting = True            # e.g. a connect(force=True) on another thread
+        with patch.object(ted, "_connect_v1r") as reconnect, \
+                patch.object(ted, "_post_tedapi_wifi", return_value=None) as wifi:
+            ted._post_tedapi(b"req")
+        reconnect.assert_not_called()
+        wifi.assert_called_once()        # served via WiFi meanwhile
+        assert ted.lan_failed is True and ted.lan_fail_count == 3
+
+    def test_force_connect_waits_out_probe(self):
+        """A connect(force=True) arriving mid-probe doesn't log in alongside it,
+        so a failing probe can't re-trip after that connect reset the state."""
+        ted = _make_v1r_tedapi()
+        in_probe = threading.Event()
+        release = threading.Event()
+        logins = []
+
+        def login():
+            logins.append(1)
+            in_probe.set()
+            release.wait(WAIT)
+            return False
+
+        ted.v1r_transport.login.side_effect = login
+        with patch.object(ted, "_post_tedapi_wifi", return_value=None):
+            prober = threading.Thread(target=lambda: ted._post_tedapi(b"req"))
+            prober.start()
+            assert in_probe.wait(WAIT)
+            assert ted.connect(force=True) == LEADER_DIN   # current DIN, no second login
+            release.set()
+            prober.join(WAIT)
+        assert len(logins) == 1
+        assert ted.lan_fail_count == 4
+
+
 class TestDinIsIdentity:
     """_connect_v1r never clears a known DIN; it returns None when it fails."""
 
