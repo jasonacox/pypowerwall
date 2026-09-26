@@ -87,7 +87,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                  wifi_host: str = None,
                  tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06,
                  auth_mode: Union[AuthMode, str] = AuthMode.BASIC,
-                 timezone: str = "America/Los_Angeles") -> None:
+                 timezone: str = "America/Los_Angeles",
+                 failover: bool = True) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self.timeout = timeout
@@ -110,7 +111,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                              pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
                              v1r=v1r, password=password, rsa_key_path=rsa_key_path,
                              wifi_host=wifi_host, tedapi_api_version=tedapi_api_version,
-                             auth_mode=auth_mode, timezone=timezone)
+                             auth_mode=auth_mode, timezone=timezone, failover=failover)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")

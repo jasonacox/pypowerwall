@@ -7,6 +7,7 @@ Covers two new code paths added in fix/v1r-pending-verification-warning:
      gateway returns an "authorization not verified" inner payload.
 """
 import logging
+import threading
 import warnings
 from unittest.mock import MagicMock, patch
 
@@ -162,6 +163,7 @@ class TestPostV1rWarnings:
         # Minimal attribute setup matching the real __init__
         transport.pending_verification = False
         transport.key_unknown = False
+        transport._flag_lock = threading.Lock()
         transport.host = "10.42.1.1"
         transport.timeout = 5
         transport.token = "fake-token"

@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t103 (unreleased)
+
+* `/health` `transports.v1r_lan` no longer reports `"ok"` while the leader's queries have failed over to the WiFi host: a known DIN stopped meaning the LAN is up (the library keeps it, or reads it from the WiFi host, while the LAN is down). The block also adds `failover` (the library setting), `failed_over`, and `lan_retry_in_seconds` while failed over. Additive; existing keys and status values are unchanged. New `proxy/tests/test_transport_health.py`
+* For pyPowerwall v0.18.1 (v1r failover fixes and the `failover` option — see library release notes); the `proxy/requirements.txt` pin moves to 0.18.1 once it is on PyPI
+
 ### Proxy t102 (25 Sep 2026)
 
 * Upgraded to pyPowerwall v0.17.4 (Powerwall 3 temperatures and Tesla Remote Meter — see library release notes)

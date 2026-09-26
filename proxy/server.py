@@ -169,7 +169,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t102"
+BUILD = "t103"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -1283,12 +1283,20 @@ def get_transport_health():
     tedapi = getattr(pw, 'tedapi', None)
     if tedapi and hasattr(tedapi, 'v1r') and tedapi.v1r:
         # v1r LAN transport
+        # A known DIN no longer means the LAN is up: the DIN is kept (or read
+        # from the WiFi host) while the LAN is down and queries run on WiFi.
+        lan_failed = bool(getattr(tedapi, "lan_failed", False))
         v1r_info = {
             "active": True,
-            "status": "ok" if tedapi.din else "unavailable",
+            "status": "ok" if tedapi.din and not lan_failed else "unavailable",
             "host": tedapi.gw_ip,
             "leader_din": tedapi.din,
+            "failover": bool(getattr(tedapi, "failover", True)),
+            "failed_over": lan_failed,
         }
+        if lan_failed:
+            v1r_info["lan_retry_in_seconds"] = round(
+                max(0, getattr(tedapi, "lan_recover_after", 0) - time.time()), 0)
         if tedapi.lan_last_success:
             v1r_info["last_success_age_seconds"] = round(time.time() - tedapi.lan_last_success, 1)
         transports["v1r_lan"] = v1r_info

@@ -50,7 +50,9 @@ pw = pypowerwall.Powerwall(
     gw_pwd=None,
     rsa_key_path=None,
     wifi_host=None,
-    tedapi_api_version="V2024_06"
+    tedapi_api_version="V2024_06",
+    tedapi_auth_mode="basic",
+    failover=True
 )
 ```
 
@@ -74,6 +76,8 @@ pw = pypowerwall.Powerwall(
 - `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 wired LAN)
 - `wifi_host`: Optional WiFi TEDAPI host used as fallback transport for follower queries in v1r mode
 - `tedapi_api_version`: TEDAPI query/protobuf set — `"V2024_06"` (default, legacy QueryType path) or `"V2026_06"` (Tesla-signed GraphQL / bearer path)
+- `tedapi_auth_mode`: TEDAPI authentication — `"basic"` (default, WiFi access point) or `"bearer"` (solar-only gateways over the wired LAN)
+- `failover`: Switch automatically when the configured transport fails (default: True). `connect()` falls back across modes (local → fleetapi → cloud), and in v1r mode with a `wifi_host` the leader's queries move to the WiFi host while the wired LAN is down and back when it recovers. `False` is strict: only the configured mode and transport are used, and a failed request returns `None` (followers still use `wifi_host`, their only route in v1r mode)
 
 ---
 

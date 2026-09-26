@@ -122,10 +122,13 @@ def uses_api_lock(func):
     every gateway behind every other gateway's fetch.
     """
     @wraps(func)
-    def wrapper(*args, **kwargs):
-        # Inject the function object itself into kwargs.
-        kwargs['self_function'] = func
-        return func(*args, **kwargs)
+    def wrapper(self, *args, **kwargs):
+        # Inject the function object itself as ``self_function`` - positionally,
+        # so a caller's positional arguments map to the parameters after it
+        # (get_battery_block("DIN"), as documented above; injecting it as a
+        # keyword made that raise "got multiple values for 'self_function'").
+        kwargs.pop('self_function', None)
+        return func(self, func, *args, **kwargs)
     return wrapper
 
 def decompress_response(content: bytes) -> bytes:
@@ -179,8 +182,20 @@ class TEDAPI:
                  wifi_host: str | None = None,
                  tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06,
                  auth_mode: AuthMode | str = AuthMode.BASIC,
-                 timezone: str = "America/Los_Angeles") -> None:
+                 timezone: str = "America/Los_Angeles",
+                 failover: bool = True) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication.
+
+        failover (v1r with a wifi_host) selects what happens when the wired LAN
+        stops answering. True (default): after 3 consecutive LAN failures the
+        leader's queries move to the WiFi host, the LAN is re-tried on a
+        backoff (8 min doubling to ~2 h) and traffic returns to it once it
+        answers; a LAN that is down at connect starts on WiFi; and
+        get_native_api() also tries the WiFi host. False: strict - every
+        request uses the transport it is addressed to (leader on the LAN,
+        followers on the WiFi host) and returns None when that fails; nothing
+        is substituted or suppressed. Without a wifi_host there is nothing to
+        fail over to and the two are identical.
 
         auth_mode selects how HTTP requests to the gateway are authenticated:
         "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
@@ -246,11 +261,20 @@ class TEDAPI:
         # get_device_controller() doesn't block get_config() on the same gateway.
         self._api_locks: Dict[str, threading.Lock] = {}
         self._api_locks_guard = threading.Lock()
-        # LAN (v1r) failure tracking — triggers full fallback to WiFi TEDAPI v1
-        self.lan_failed = False     # True when wired LAN is unreachable
+        # LAN (v1r) failover to the WiFi host — see failover in the docstring.
+        # lan_failed/lan_fail_count/lan_recover_after change only in the _lan_*
+        # methods, under _lan_lock (never held across a network call).
+        self.failover = bool(failover)
+        self.lan_failed = False     # True while leader queries route via WiFi
         self.lan_fail_count = 0     # consecutive LAN failures
         self.lan_recover_after = 0  # timestamp after which to retry LAN
         self.lan_last_success = 0   # timestamp of last successful LAN call
+        self._lan_lock = threading.Lock()
+        # Single-flight connect(): getters run under different per-method locks,
+        # so several can find no DIN and call connect() at once. _connect_guard
+        # guards the _connecting claim only (never held across the connect).
+        self._connect_guard = threading.Lock()
+        self._connecting = False
         # Gateway local API (classic /api/* endpoints) customer-login state.
         # PW3 firmware still serves /api/meters/aggregates and friends behind a
         # customer Bearer token from POST /api/login/Basic - see issue #221.
@@ -311,12 +335,20 @@ class TEDAPI:
     def _cache_get(self, key: str, expire: float, force: bool = False):
         """The cached value for ``key`` if it is younger than ``expire`` seconds
         and ``force`` is not set, else _CACHE_MISS."""
-        if force or key not in self.pwcachetime or key not in self.pwcache:
+        if force:
             return _CACHE_MISS
-        age = time.time() - self.pwcachetime[key]
-        if age < expire:
+        # .get(), not check-then-index: another thread (e.g. _write_config's
+        # invalidation) may pop the entry in between, which raised KeyError.
+        stamp = self.pwcachetime.get(key)
+        value = self.pwcache.get(key, _CACHE_MISS)
+        if stamp is None or value is _CACHE_MISS:
+            return _CACHE_MISS
+        age = time.time() - stamp
+        # A negative age means the wall clock stepped back (NTP): treat the
+        # entry as expired rather than fresh for the size of the step.
+        if 0 <= age < expire:
             log.debug(f"Using Cached {key} (age: {age:.2f}s, expire: {expire}s)")
-            return self.pwcache[key]
+            return value
         log.debug(f"Cache expired for {key} (age: {age:.2f}s, expire: {expire}s)")
         return _CACHE_MISS
 
@@ -938,13 +970,27 @@ class TEDAPI:
             }
         }
         """
+        # Read methods return None on failure, never raise: this method calls
+        # the transport directly (not through _cached_fetch), so a gateway
+        # timeout or malformed payload used to propagate into vitals(),
+        # get_blocks() and /api/meters/aggregates.
+        try:
+            return self._pw3_vitals(force)
+        except Exception as e:
+            log.error(f"Error getting Powerwall 3 vitals: {e}")
+            return None
+
+    def _pw3_vitals(self, force):
+        """get_pw3_vitals() body; may raise (the public method logs and returns None)."""
         # Check Connection
         if not self.din:
             if not self.connect():
                 log.error("Not Connected - Unable to get configuration")
                 return None
         # Check Cache
-        cached = self._cache_get("pw3_vitals", self.pwconfigexpire, force)
+        # Live data (PV, power, pack energy): the data-cache expiry, not the
+        # config one (a direct TEDAPI user may set pwconfigexpire much higher)
+        cached = self._cache_get("pw3_vitals", self.pwcacheexpire, force)
         if cached is not _CACHE_MISS:
             return cached
         if not force and self._in_cooldown():
@@ -994,13 +1040,20 @@ class TEDAPI:
                 recipient_din=pw_din,
                 sender_din=None if single_pw else din,
                 tail=1 if single_pw else 2)
-            if use_wifi:
-                # WiFi fallback for follower — use WiFi session (standard protobuf response)
-                api_response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
-            else:
-                api_response = self._post_tedapi(request_bytes, din=pw_din, url_suffix=url_suffix)
+            # One Powerwall's transport error (timeout, connection reset, bad
+            # protobuf) skips that Powerwall, not the whole vitals call
+            try:
+                if use_wifi:
+                    # WiFi fallback for follower — use WiFi session (standard protobuf response)
+                    api_response = self._post_tedapi_wifi(request_bytes, url_suffix=url_suffix)
+                else:
+                    api_response = self._post_tedapi(request_bytes, din=pw_din, url_suffix=url_suffix)
+                payload = None if api_response is None else \
+                    self._parse_response(api_response, from_wifi=use_wifi)
+            except Exception as e:
+                log.error(f"Error fetching components for {pw_din} - skipping: {e}")
+                continue
             if api_response is not None:
-                payload = self._parse_response(api_response, from_wifi=use_wifi)
                 if payload:
                     # Guard the JSON parse and component access - a malformed or
                     # partial follower payload should not abort the whole vitals call
@@ -1142,6 +1195,11 @@ class TEDAPI:
                     log.debug(f"No payload for {pw_din}")
             else:
                 log.debug(f"No response for {pw_din}")
+        # The cache read above was never paired with a write, so every caller
+        # (vitals(), get_blocks(), both /api/meters/aggregates sections) re-ran
+        # the per-Powerwall queries. An empty result isn't cached: retry next call.
+        if response:
+            self._cache_put("pw3_vitals", response)
         return response
 
 
@@ -1317,10 +1375,12 @@ class TEDAPI:
                         self.wifi_cooldown = time.time() + backoff
                 self.wifi_available = False
                 return None
-            # Success — reset failure tracking
+            # Success — reset failure tracking (including a cooldown another
+            # thread set while this request was in flight: the path works)
             self.wifi_available = True
             with self._wifi_lock:
                 self.wifi_fail_count = 0
+                self.wifi_cooldown = 0
                 self.wifi_last_success = time.time()
             return decompress_response(r.content)
         except Exception as e:
@@ -1422,6 +1482,23 @@ class TEDAPI:
             if self.v1r or getattr(self, 'session', None) is not None:
                 log.debug("Already connected to Powerwall Gateway - skipping reconnect")
                 return self.din
+        # One connect at a time. Concurrent connects each cleared the DIN and
+        # replaced (closing) the session other threads were mid-request on, or
+        # ran N parallel v1r logins; a caller that finds one in flight gets the
+        # current DIN (None if still unknown) instead of starting another.
+        with self._connect_guard:
+            if self._connecting:
+                log.debug("Connect already in progress on another thread - skipping")
+                return self.din
+            self._connecting = True
+        try:
+            return self._connect()
+        finally:
+            with self._connect_guard:
+                self._connecting = False
+
+    def _connect(self):
+        """connect() body; see connect(). Runs on one thread at a time."""
         if self.v1r:
             return self._connect_v1r()
         # Test IP Connection to Powerwall Gateway
@@ -1468,23 +1545,38 @@ class TEDAPI:
         return self.din
 
     def _connect_v1r(self):
-        """Connect via v1r transport (RSA-signed LAN access)."""
+        """Connect via v1r transport (RSA-signed LAN access). Returns the DIN,
+        or None when the LAN login or DIN fetch fails.
+
+        A known DIN is never cleared: it is the leader's identity, not
+        connection state, and it doesn't change. Keeping it through a failed
+        reconnect (a recovery probe, connect(force=True)) means other threads
+        never see DIN None mid-reconnect (which sent them into a second,
+        concurrent connect() or had the LAN path sign with None), requests
+        keep flowing on whatever transport is live, and the LAN resumes on the
+        first request that succeeds."""
         log.debug(f"v1r: Connecting to Powerwall Gateway: {self.gw_ip}")
-        self.din = None
+        din = None
         self.pw3 = True  # v1r is PW3-only
         try:
             if not self.v1r_transport.login():
                 log.error("v1r: Login failed")
+            else:
+                din = self.v1r_transport.get_din()
+                if not din:
+                    log.error("v1r: Failed to get DIN")
+        except Exception as e:
+            log.error(f"v1r: Connection error: {e}")
+        if not din:
+            if not self.din and self._lan_failover_enabled():
+                # First connect with the LAN down: start on the WiFi host
                 return self._v1r_cold_failover()
-            self.din = self.v1r_transport.get_din()
-            if not self.din:
-                log.error("v1r: Failed to get DIN")
-                return self._v1r_cold_failover()
-            log.debug(f"v1r: Connected, DIN={self.din}")
+            return None
+        self.din = din
+        log.debug(f"v1r: Connected, DIN={self.din}")
+        try:
             # On successful LAN connect, clear any prior failure state
-            self.lan_failed = False
-            self.lan_fail_count = 0
-            self.lan_recover_after = 0
+            self._lan_reset()
             # Probe key verification state. Login and DIN both succeed even when the
             # RSA key is registered but not yet verified (PENDING_VERIFICATION), or
             # when the wrong key file is being used (UNKNOWN_KEY_ID). A test read
@@ -1521,39 +1613,113 @@ class TEDAPI:
             if self.wifi_session:
                 self._test_wifi_path()
         except Exception as e:
+            # Past the DIN: the connect succeeded (e.g. the key probe failed)
             log.error(f"v1r: Connection error: {e}")
-            if not self.din:
-                return self._v1r_cold_failover()
         return self.din
 
     def _v1r_cold_failover(self):
-        """Fail over to WiFi TEDAPI when the v1r LAN is unreachable at connect.
+        """Start on the WiFi host when the v1r LAN is unreachable at first connect.
 
         Without this, a container (re)started while the wired LAN is down can
         never come up: the LAN login fails, connect returns None, and the 3
-        slow failures needed for the regular ``lan_failed`` fallback never
-        happen because no data call is ever made. When a WiFi fallback host
-        is configured and answers ``/tedapi/din``, the DIN is adopted, the
-        ``lan_failed`` state is entered immediately, and data calls route via
-        WiFi straight away. The LAN retry backoff starts where 3 consecutive
-        failures would put it (480s) and keeps doubling on each failed
-        recovery probe, which also lands here, exactly as before.
-        Returns the DIN, or None when no usable fallback exists — the
-        long-standing connect() contract (DIN or None) is unchanged.
+        failures needed to trip the regular failover never happen because no
+        data call is ever made. When the WiFi host answers ``/tedapi/din``, its
+        DIN is adopted and failover starts tripped, with the LAN retry where 3
+        consecutive failures would put it (480s). Returns the DIN, or None when
+        the WiFi host doesn't answer either (the connect() contract: DIN or
+        None). Only called when failover is enabled and no DIN is known yet.
         """
         din = self._fetch_wifi_din()
         if not din:
             return None
         self.din = din
-        self.lan_failed = True
-        self.lan_fail_count = max(self.lan_fail_count + 1, 3)
-        backoff = min(60 * (2 ** self.lan_fail_count), 7680)
-        self.lan_recover_after = time.time() + backoff
+        backoff = self._lan_trip_cold()
         self.wifi_available = True
         self.wifi_last_success = time.time()
         log.warning("v1r: LAN unreachable — using WiFi TEDAPI fallback (%s), retry LAN in %.0fs",
                     self.wifi_host, backoff)
         return din
+
+    # ── v1r LAN failover state ───────────────────────────────────────────────
+    # Closed (lan_failed False): leader queries go over the LAN, consecutive
+    # failures are counted, and the 3rd trips it. Tripped: leader queries go
+    # via the WiFi host; once lan_recover_after passes, one request claims a
+    # recovery probe (_connect_v1r): success closes it, failure pushes the next
+    # probe out one backoff step. Every transition is one short critical
+    # section under _lan_lock; the reconnect itself runs outside it.
+
+    LAN_TRIP_AFTER = 3  # consecutive LAN failures that trip the failover
+
+    def _lan_failover_enabled(self) -> bool:
+        """Failover applies: v1r, failover on, and a WiFi host to route to.
+        Without a WiFi host there is nowhere to fail over to, so tripping would
+        only return None without trying the LAN (for 8 minutes, even after it
+        came back); every request keeps trying the LAN instead."""
+        return bool(self.v1r and self.failover and self.wifi_session)
+
+    @staticmethod
+    def _lan_backoff(fail_count: int) -> float:
+        """Seconds until the next LAN recovery probe after ``fail_count``
+        consecutive LAN failures: 60 * 2**n, capped at 7680s (~2h)."""
+        return min(60 * (2 ** fail_count), 7680)
+
+    def _lan_record(self, ok: bool) -> None:
+        """Count one LAN request's outcome; the LAN_TRIP_AFTER-th consecutive
+        failure trips the failover (when enabled). Once tripped, the recovery
+        probe owns the state: a request already in flight on the LAN when it
+        tripped doesn't touch it (each late failure would push the first probe
+        out another backoff step)."""
+        tripped = None
+        with self._lan_lock:
+            if self.lan_failed:
+                return
+            if ok:
+                self.lan_fail_count = 0
+                return
+            self.lan_fail_count += 1
+            fail_count = self.lan_fail_count
+            if fail_count >= self.LAN_TRIP_AFTER and self._lan_failover_enabled():
+                tripped = self._lan_trip_locked(fail_count)
+        if tripped is not None:
+            log.warning("v1r: LAN failed %d consecutive times — switching to WiFi TEDAPI fallback"
+                        " (retry LAN in %.0fs)", fail_count, tripped)
+
+    def _lan_trip_cold(self) -> float:
+        """LAN down at first connect: trip where LAN_TRIP_AFTER consecutive
+        failures would. Returns the seconds until the LAN recovery probe."""
+        with self._lan_lock:
+            return self._lan_trip_locked(max(self.lan_fail_count + 1, self.LAN_TRIP_AFTER))
+
+    def _lan_trip_locked(self, fail_count: int) -> float:
+        """Trip (or re-arm) the failover at ``fail_count``; caller holds _lan_lock."""
+        self.lan_failed = True
+        self.lan_fail_count = fail_count
+        backoff = self._lan_backoff(fail_count)
+        self.lan_recover_after = time.time() + backoff
+        return backoff
+
+    def _claim_lan_probe(self) -> bool:
+        """True for exactly one caller once the recovery window opens: the
+        claim pushes the window to where a failed probe would put it, so
+        concurrent callers keep routing via WiFi instead of each reconnecting."""
+        with self._lan_lock:
+            if not self.lan_failed or time.time() < self.lan_recover_after:
+                return False
+            self.lan_recover_after = time.time() + self._lan_backoff(self.lan_fail_count + 1)
+            return True
+
+    def _lan_probe_failed(self) -> float:
+        """The claimed probe failed: one more failure, next probe one backoff
+        step later. Returns the seconds until then."""
+        with self._lan_lock:
+            return self._lan_trip_locked(self.lan_fail_count + 1)
+
+    def _lan_reset(self) -> None:
+        """LAN connected: close the failover and clear the failure count."""
+        with self._lan_lock:
+            self.lan_failed = False
+            self.lan_fail_count = 0
+            self.lan_recover_after = 0
 
     def close_session(self):
         """Close the underlying requests.Session objects to the Gateway."""
@@ -1817,19 +1983,22 @@ class TEDAPI:
         if self.v1r:
             # ── LAN recovery probe ────────────────────────────────────────────
             # If LAN was marked failed but recovery window has passed, attempt
-            # a reconnect before routing this request over WiFi.
-            if self.lan_failed and time.time() >= self.lan_recover_after:
+            # a reconnect before routing this request over WiFi. Exactly one
+            # thread claims each probe (_claim_lan_probe); the others route via
+            # WiFi while it reconnects (no lock is held across the reconnect).
+            if self.lan_failed and self._claim_lan_probe():
                 log.info("v1r: LAN recovery window reached — attempting reconnect")
-                if self._connect_v1r():
-                    # A DIN with lan_failed still set came from the WiFi
-                    # fallback, which has already extended the LAN backoff.
+                # Through connect() so the probe is single-flight with any
+                # other connect (e.g. connect(force=True)): a probe failing
+                # after a concurrent connect succeeded would re-trip the
+                # failover with the LAN up. A connect already in flight
+                # returns the current DIN without reconnecting; lan_failed
+                # stays set and this window's probe is skipped.
+                if self.connect(force=True):  # closes the failover on success
                     if not self.lan_failed:
                         log.info("v1r: LAN recovered — resuming wired transport")
                 else:
-                    # LAN and WiFi both down — extend backoff and keep trying WiFi
-                    self.lan_fail_count += 1
-                    backoff = min(60 * (2 ** self.lan_fail_count), 7680)
-                    self.lan_recover_after = time.time() + backoff
+                    backoff = self._lan_probe_failed()
                     log.warning("v1r: LAN still unreachable, next retry in %.0fs", backoff)
 
             # ── LAN failed → full WiFi TEDAPI v1 fallback ────────────────────
@@ -1866,21 +2035,8 @@ class TEDAPI:
             # on the leader only. The follower DIN is in the envelope's recipient
             # field for routing, but TLV personalization must match the leader.
             inner = self.v1r_transport.post_v1r(envelope_bytes, self.din)
-            if inner is None:
-                # LAN call failed — track for failover
-                self.lan_fail_count += 1
-                if self.lan_fail_count >= 3:
-                    self.lan_failed = True
-                    backoff = min(60 * (2 ** self.lan_fail_count), 7680)
-                    self.lan_recover_after = time.time() + backoff
-                    log.warning(
-                        "v1r: LAN failed %d consecutive times — switching to WiFi TEDAPI fallback"
-                        " (retry LAN in %.0fs)",
-                        self.lan_fail_count, backoff
-                    )
-            else:
-                # Successful LAN call — reset counter and record timestamp
-                self.lan_fail_count = 0
+            self._lan_record(inner is not None)
+            if inner is not None:
                 self.lan_last_success = time.time()
             return inner
         elif self.auth_mode == AuthMode.BEARER:
@@ -2872,13 +3028,13 @@ class TEDAPI:
         """
         Fetch a classic gateway local API endpoint (e.g. /api/meters/aggregates)
         using the customer login (Bearer token). Tries the primary gateway and,
-        when configured, the WiFi fallback host. Returns a dict or None when the
-        endpoint is not available on this firmware.
+        when configured and failover is on, the WiFi fallback host. Returns a
+        dict or None when the endpoint is not available on this firmware.
         """
         if not self._customer_password():
             return None
         hosts = [self.gw_ip]
-        if self.wifi_host and self.wifi_host != self.gw_ip:
+        if self.failover and self.wifi_host and self.wifi_host != self.gw_ip:
             hosts.append(self.wifi_host)
         if len(hosts) > 1:
             if self.customer_host in hosts:
