@@ -446,7 +446,7 @@ class TEDAPI:
                      sender_din: Optional[str] = None, tail: int = 1,
                      din: Optional[str] = None,
                      url_suffix: str = '/tedapi/v1', use_wifi: bool = False,
-                     config: bool = False, strict: bool = False) -> Optional[dict]:
+                     strict: bool = False) -> Optional[dict]:
         """One TEDAPI query end to end: build the request for ``role``
         (_build_request), post it (_post_tedapi, or _post_tedapi_wifi for a v1r
         follower), decode the answer (_parse_response + JSON). Returns the
@@ -462,7 +462,7 @@ class TEDAPI:
             response = self._post_tedapi(request_bytes, din=din, url_suffix=url_suffix)
         if response is None:
             return None
-        payload = self._parse_response(response, from_wifi=use_wifi, config=config)
+        payload = self._parse_response(response, from_wifi=use_wifi)
         return self._decode_json(payload, strict=strict)
 
     def get_din(self, force=False):
@@ -1220,6 +1220,14 @@ class TEDAPI:
         Args:
             din (str): DIN of Powerwall 3 to query
             force (bool): Force a refresh of the battery block
+        Returns:
+            The ComponentsQuery answer from that Powerwall, e.g.
+            {"components": {"baggr": [...], "bms": [...], "hvp": [...],
+                            "pch": [...], "pws": [...]},
+             "pw3Can": {"firmwareUpdate": {...}}}
+            {} (logged, cached for pwcacheexpire) for an empty or malformed
+            payload; None when no DIN is given, the gateway doesn't answer, or
+            (v1r) a follower has no WiFi route.
         Note: Provides 404 response for previous Powerwall versions
         """
         # Make sure we have a DIN
@@ -1234,15 +1242,20 @@ class TEDAPI:
                 return None
             use_wifi = True
             log.debug("v1r: Querying follower battery block %s via WiFi", din)
-        # Follower routed via the primary DIN (sender), tail 2, per-device URL;
-        # a config-shaped fetch — the legacy answer lives in config.recv.file.text
+        # Follower routed via the primary DIN (sender), tail 2, per-device URL.
+        # The answer is an ordinary query response in payload.recv.text — the
+        # same one get_pw3_vitals() reads per Powerwall. From v0.10.8 until this
+        # fix it was read from config.recv.file.text (the config-file slot,
+        # which a query response never fills), so every basic/WiFi call decoded
+        # "" and returned {} with an "Error Decoding JSON" log. Verified
+        # 2026-09-26 on 2x PW3 (firmware 26.18.1, WiFi TEDAPI): ~12 KB of
+        # ComponentsQuery JSON per DIN in payload.recv.text, config slot empty.
         return self._cached_fetch(
             din, expire=self.pwcacheexpire, force=force, self_function=self_function,
             name=f"battery block {din}",
             fetch=lambda: self._fetch_query(
                 QueryRole.COMPONENTS, recipient_din=din, sender_din=self.din, tail=2,
-                din=din, url_suffix=f'/tedapi/device/{din}/v1', use_wifi=use_wifi,
-                config=True))
+                din=din, url_suffix=f'/tedapi/device/{din}/v1', use_wifi=use_wifi))
 
     def _init_session(self):
         """Initialize and return a requests.Session for TEDAPI communication."""
@@ -1873,18 +1886,18 @@ class TEDAPI:
         pb.tail.value = 1
         return pb.SerializeToString()
 
-    def _parse_response(self, response: bytes, *, from_wifi: bool = False,
-                        config: bool = False) -> Optional[str]:
+    def _parse_response(self, response: bytes, *, from_wifi: bool = False) -> Optional[str]:
         """Decode a TEDAPI query response to its JSON payload text, dispatching on
         tedapi_api_version and transport. V2026_06 -> signed GraphQL; otherwise
-        the legacy protobuf (_parse_legacy_response, which takes ``from_wifi``
-        and ``config``). Single place the version+transport split lives for the
-        response side, so the WiFi-fallback context (``from_wifi``) can't be
-        forgotten at a call site (see the transport note on
-        _parse_signed_query_response)."""
+        the legacy protobuf (_parse_legacy_response, which takes ``from_wifi``).
+        Always the query payload (``payload.recv.text``): config-file fetches
+        call _parse_legacy_response(config=True) directly. Single place the
+        version+transport split lives for the response side, so the
+        WiFi-fallback context (``from_wifi``) can't be forgotten at a call site
+        (see the transport note on _parse_signed_query_response)."""
         if self.tedapi_api_version == TEDAPIApiVersion.V2026_06:
             return self._parse_signed_query_response(response, from_wifi=from_wifi)
-        return self._parse_legacy_response(response, from_wifi=from_wifi, config=config)
+        return self._parse_legacy_response(response, from_wifi=from_wifi)
 
     def _parse_legacy_response(self, response: bytes, *, from_wifi: bool = False,
                                config: bool = False) -> Optional[str]:
@@ -1893,8 +1906,8 @@ class TEDAPI:
         envelope; _post_tedapi normalizes its WiFi fallback to the same shape);
         bearer -> bare MessageEnvelope; basic, and requests sent straight through
         _post_tedapi_wifi (``from_wifi``) -> full Message with tail. ``config``
-        selects ``config.recv.file.text`` (config-file fetches, and the battery
-        block query whose legacy answer lives there) over ``payload.recv.text``.
+        selects ``config.recv.file.text`` (the config.json fetch) over
+        ``payload.recv.text`` (every query, get_battery_block included).
 
         Queries reach this through _parse_response's version dispatch. The
         config.json fetch (get_config) calls it directly: config.send is the same
