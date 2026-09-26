@@ -298,7 +298,7 @@ class TestGetDinOverWifi:
         mock_transport.post_v1r.return_value = b'envelope'
         ted.v1r_transport = mock_transport
 
-        def fake_reconnect():
+        def fake_reconnect(keep_din=False):
             ted.lan_failed = False
             ted.lan_fail_count = 0
             return 'LAN_DIN'

@@ -18,6 +18,7 @@ import math
 import os
 import shlex
 import struct
+import threading
 import time
 import uuid
 import warnings
@@ -79,6 +80,9 @@ class TEDAPIv1r:
         # Tracks key-auth failure state so warnings fire once per session
         self.pending_verification: bool = False
         self.key_unknown: bool = False
+        # Guards the flag transitions above (check-then-set from concurrent
+        # post_v1r calls); never held across a network call.
+        self._flag_lock = threading.Lock()
 
         # Load RSA private key
         from cryptography.hazmat.primitives import serialization
@@ -165,7 +169,10 @@ class TEDAPIv1r:
             if r.status_code != 200:
                 log.error(f"v1r get_din failed ({r.status_code})")
                 return None
-            self.din = r.text.strip()
+            # Firmware 25.42.2+ gzips /tedapi/din on the WiFi endpoint (see
+            # TEDAPI.get_din); decompress_response is a no-op on plain text.
+            from . import decompress_response
+            self.din = decompress_response(r.content).decode('utf-8').strip()
             log.debug(f"v1r DIN: {self.din}")
             return self.din
         except Exception as e:
@@ -208,25 +215,22 @@ class TEDAPIv1r:
 
         The flag ('pending_verification' or 'key_unknown') suppresses repeat
         warnings while the condition persists; it is cleared by post_v1r() on
-        the next successful response so a later recurrence warns again.
+        the next successful response so a later recurrence is eligible to warn
+        again (Python's warning filters may still suppress an identical
+        message; the log.error always fires). The check-and-set is atomic, so
+        concurrent failures warn once.
         """
         log.error("v1r: %s", msg)
-        if not getattr(self, flag):
+        with self._flag_lock:
+            first = not getattr(self, flag)
             setattr(self, flag, True)
+        if first:
             warnings.warn(msg, UserWarning, stacklevel=3)
 
-    def post_v1r(self, envelope_bytes: bytes, din: str) -> Optional[bytes]:
-        """
-        Wrap envelope_bytes in a signed RoutableMessage and POST to /tedapi/v1r.
+    def _signed_payload(self, envelope_bytes: bytes, din: str) -> bytes:
+        """Serialize envelope_bytes in a RoutableMessage signed for ``din``.
 
-        Args:
-            envelope_bytes: Serialized inner protobuf (MessageEnvelope or tedapi_pb2.Message)
-            din: Device Identification Number
-
-        Returns:
-            Raw protobuf_message_as_bytes from the response RoutableMessage, or None on error.
-        """
-        # Build RoutableMessage
+        Each call gets a fresh uuid and a signature that expires 12s later."""
         routable = combined_pb2.RoutableMessage()
         routable.to_destination.domain = combined_pb2.DOMAIN_ENERGY_DEVICE
         routable.protobuf_message_as_bytes = envelope_bytes
@@ -242,19 +246,38 @@ class TEDAPIv1r:
         routable.signature_data.signer_identity.public_key = self._public_key_der
         routable.signature_data.rsa_data.expires_at = expires_at
         routable.signature_data.rsa_data.signature = signature
+        return routable.SerializeToString()
 
-        # POST
+    def post_v1r(self, envelope_bytes: bytes, din: str) -> Optional[bytes]:
+        """
+        Wrap envelope_bytes in a signed RoutableMessage and POST to /tedapi/v1r.
+
+        Args:
+            envelope_bytes: Serialized inner protobuf (MessageEnvelope or tedapi_pb2.Message)
+            din: Device Identification Number
+
+        Returns:
+            Raw protobuf_message_as_bytes from the response RoutableMessage, or None on error.
+        """
+        if not din:
+            # The DIN personalizes the signature; without one there is nothing
+            # valid to send (and din.encode() would raise into the caller).
+            log.error("v1r: no DIN (not connected) - unable to sign request")
+            return None
         url = f'https://{self.host}/tedapi/v1r'
-        payload = routable.SerializeToString()
         headers = {'Content-Type': 'application/octet-stream'}
 
         try:
+            payload = self._signed_payload(envelope_bytes, din)
             r = self.session.post(url, data=payload, headers=headers,
                                   timeout=self.timeout)
             if r.status_code == 401 or r.status_code == 403:
                 log.warning(f"v1r auth error ({r.status_code}), attempting re-login")
                 if self.login():
-                    # Retry once after re-login
+                    # Retry once after re-login, re-signed: the signature
+                    # expires 12s after signing and the first attempt plus
+                    # the login can take longer than that.
+                    payload = self._signed_payload(envelope_bytes, din)
                     r = self.session.post(url, data=payload, headers=headers,
                                           timeout=self.timeout)
                 else:
@@ -338,10 +361,12 @@ class TEDAPIv1r:
             # Success — if a previous call flagged a key-auth failure, the key
             # has since been verified/recognized (e.g., breaker toggle completed
             # while running). Clear the flags so any future failure warns again.
-            if self.pending_verification or self.key_unknown:
-                log.info("v1r: key authentication recovered — gateway accepted signed request")
+            with self._flag_lock:
+                recovered = self.pending_verification or self.key_unknown
                 self.pending_verification = False
                 self.key_unknown = False
+            if recovered:
+                log.info("v1r: key authentication recovered — gateway accepted signed request")
 
             return inner
 
@@ -357,6 +382,9 @@ class TEDAPIv1r:
         - v1:  tedapi_pb2.Message with config.send.file = "config.json"
         - v1r: tedapi_combined_pb2.Message with filestore.readFileRequest
         """
+        if not din:
+            log.error("v1r: no DIN (not connected) - unable to get config")
+            return None
         # Build inner MessageEnvelope for config request
         msg = combined_pb2.Message()
         msg.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
@@ -413,6 +441,9 @@ class TEDAPIv1r:
         Returns:
             True on success, False on error.
         """
+        if not din:
+            log.error("write_config_v1r: no DIN (not connected)")
+            return False
         # Step 1: Read current config + hash
         msg = combined_pb2.Message()
         msg.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
@@ -474,19 +505,23 @@ class TEDAPIv1r:
             write_resp = combined_pb2.MessageEnvelope()
             write_resp.ParseFromString(write_inner)
             if write_resp.HasField('filestore'):
-                # updateFileResponse means success
-                log.info(f"write_config_v1r: config updated successfully: {list(updates.keys())}")
-                return True
-            # Check for error
-            if write_resp.HasField('error'):
-                log.error(f"write_config_v1r: error response: {write_resp.error}")
+                # updateFileResponse means success. Any other filestore reply
+                # (e.g. a readFileResponse) is not an acknowledgement of this
+                # write; an empty filestore message is accepted as before.
+                reply = write_resp.filestore.WhichOneof('message')
+                if reply in (None, 'updateFileResponse'):
+                    log.info(f"write_config_v1r: config updated successfully: {list(updates.keys())}")
+                    return True
+                log.error(f"write_config_v1r: unexpected filestore reply: {reply}")
                 return False
+            # MessageEnvelope has no error field (the old HasField('error')
+            # check raised ValueError): anything else is unexpected.
+            reply = write_resp.WhichOneof('payload')
+            log.error(f"write_config_v1r: unexpected response: {reply}")
+            return False
         except Exception as e:
             log.error(f"write_config_v1r: failed to parse write response: {e}")
             return False
-
-        log.error("write_config_v1r: unexpected response")
-        return False
 
     # ── TEGMessages Command ───────────────────────────────────────────
 
@@ -501,6 +536,9 @@ class TEDAPIv1r:
         Returns:
             Parsed MessageEnvelope from the response, or None on error.
         """
+        if not din:
+            log.error("send_teg_message: no DIN (not connected)")
+            return None
         msg = combined_pb2.MessageEnvelope()
         msg.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
         msg.sender.authorizedClient = 1  # CUSTOMER_MOBILE_APP
