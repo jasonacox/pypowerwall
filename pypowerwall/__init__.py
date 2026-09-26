@@ -104,7 +104,7 @@ def _release_tuple(version_string):
 # Single source of truth for the package version — keep this a plain literal.
 # pyproject.toml reads it at build time via [tool.setuptools.dynamic]
 # (attr:), which parses this file without importing it.
-__version__ = version = "0.18.1"
+__version__ = version = "0.18.2"
 version_tuple = _release_tuple(__version__)
 __author__ = 'jasonacox'
 
