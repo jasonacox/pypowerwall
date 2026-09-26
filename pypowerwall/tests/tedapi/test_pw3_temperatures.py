@@ -22,7 +22,9 @@ FOLLOWER_DIN = "1707000-11-J--TG12000000002Z"
 EXPANSION_DIN = "2707000-11-J--TG12000000004Z"
 
 TEMP_EXTRAS = {
-    "pchSignalNames": ["PCH_AmbientTemp", "PCH_heatsinkTemp"],
+    # the fan signals (test_pw3_fans.py) follow the temperatures
+    "pchSignalNames": ["PCH_AmbientTemp", "PCH_heatsinkTemp",
+                       "PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PCH_FanDuty_B"],
     "bmsSignalNames": ["BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"],
     "hvpSignalNames": ["HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"],
 }

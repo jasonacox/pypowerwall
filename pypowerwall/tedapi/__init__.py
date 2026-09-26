@@ -36,7 +36,7 @@
     get_battery_block(din) - Get the Powerwall 3 Battery Block Information
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
-    get_fan_speed() - Get the fan speeds in RPM
+    get_fan_speeds() - Get the fan speeds in RPM (PW2/PW+ PVAC fans, PW3 inverter fans)
     get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
@@ -78,7 +78,7 @@ from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
 from .auth_mode import AuthMode
-from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES
+from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES, PW3_FAN_SIGNAL_NAMES
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -965,6 +965,10 @@ class TEDAPI:
                 # EXTRA_SIGNAL_NAMES pch signals as delivered (None if unavailable)
                 "PCH_AmbientTemp": 47.2,          # degrees C
                 "PCH_heatsinkTemp": 45.45,        # constant on current firmware
+                "PCH_FanSpeed_A": 1395,           # inverter fans A/B, measured RPM
+                "PCH_FanSpeed_B": 1397,
+                "PCH_FanDuty_A": 19.1,            # fan drive duty cycle, percent
+                "PCH_FanDuty_B": 19.1,
                 "PINV_Fout": 60.0,
                 ...
             }
@@ -2194,9 +2198,47 @@ class TEDAPI:
                 result[f"PVAC--{componentPartNumber}--{componentSerialNumber}"] = fan_speeds
         return result
 
+    # Helper Function
+    def extract_pw3_fan_speeds(self, pw3_vitals) -> Dict[str, Dict[str, Optional[float]]]:
+        """Extract Powerwall 3 fan signals from get_pw3_vitals() data.
+
+        Each PW3 inverter has two fans (A and B), delivered on its TEPINV block as
+        PCH_FanSpeed_A/B (measured RPM) and PCH_FanDuty_A/B (drive duty cycle, %).
+        Returns {"TEPINV--<din>": {signal: value, ...}} in get_pw3_vitals() order
+        (leader first, matching /pod), all four signals as delivered (None when
+        unavailable). An inverter with no fan value at all is omitted, so firmware
+        without these signals returns {} exactly as before.
+        """
+        result = {}
+        if not isinstance(pw3_vitals, dict):
+            return result
+        for name, block in pw3_vitals.items():
+            if not name.startswith('TEPINV--') or not isinstance(block, dict):
+                continue
+            fans = {signal: block.get(signal) for signal in PW3_FAN_SIGNAL_NAMES}
+            if any(value is not None for value in fans.values()):
+                result[name] = fans
+        return result
+
     def get_fan_speeds(self, force=False):
-        """Get the fan speeds for the Powerwall or inverter."""
-        return self.extract_fan_speeds(self.get_device_controller(force=force))
+        """Get the fan speeds for the Powerwall or inverter.
+
+        Powerwall 2/+ fans come from the device controller's PVAC components,
+        keyed "PVAC--<part>--<sn>" (PVAC_Fan_Speed_Actual_RPM / _Target_RPM).
+        Powerwall 3 fans come from each inverter's ComponentsQuery signals, keyed
+        "TEPINV--<din>" like the vitals() block they also appear in (see
+        extract_pw3_fan_speeds). PW3 has no target-RPM signal, so its fans are not
+        reported under the PVAC names.
+
+        PW3 fans need the default V2024_06 query set: they are EXTRA_SIGNAL_NAMES,
+        which the V2026_06 signed PW3Query can't carry, so under V2026_06 the PW3
+        part stays {} (as before). Deliberately not gated on the api version: a
+        future signed query set that delivers the fan signals is reported as is.
+        """
+        fans = self.extract_fan_speeds(self.get_device_controller(force=force))
+        if self.pw3:
+            fans.update(self.extract_pw3_fan_speeds(self.get_pw3_vitals(force=force)))
+        return fans
 
 
     def derive_meter_config(self, config, types=("neurio_w2_tcp",)) -> dict:
