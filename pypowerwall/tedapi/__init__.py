@@ -22,6 +22,11 @@
                          path) or "V2026_06" (Tesla-signed GraphQL / bearer path).
                          Accepts a string or TEDAPIApiVersion.
 
+ Attributes:
+    solar_meter_hold_max_age - Seconds (default 60, 0 disables) a Tesla Remote Meter
+                         solar reading may be held through a SolarMeterComms
+                         dropout in /api/meters/aggregates (see TEDAPI.__init__).
+
  Functions:
     get_din() - Get the DIN from the Powerwall Gateway
     get_config() - Get the Powerwall Gateway Configuration
@@ -37,7 +42,7 @@
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
     get_fan_speeds() - Get the fan speeds in RPM (PW2/PW+ PVAC fans, PW3 inverter fans)
-    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb) CT readings
+    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb / trm_wifi) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
 
@@ -91,6 +96,14 @@ GW_IP = "192.168.91.1"
 CUSTOMER_TOKEN_EXPIRE: Final[float] = 3000.0
 # Backoff before retrying an unavailable local API endpoint
 NATIVE_FAIL_RETRY: Final[float] = 300.0
+
+# config.json meter types for a Tesla Remote Meter (wireless CT meter). Both report
+# through the Device Controller Full query's teslaRemoteMeter field with the same
+# reading/ctReadings shape. "trm_mb" was the first one supported (#386); "trm_wifi"
+# is the Wi-Fi-connected meter (hardware-validated 2026-09-27 on 2x Powerwall 3,
+# firmware 26.34.0, as the site's only solar meter). Before it was listed here a
+# trm_wifi site got no remote-meter data at all. Neurio (neurio_w2_tcp) is separate.
+REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
 
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
@@ -206,8 +219,23 @@ class TEDAPI:
         NOT supported — installer login returns 401 on wired LAN (see
         jasonacox/pypowerwall-server#105). PW3 wired access is v1r's job.
         Bearer is mutually exclusive with v1r (its own RSA transport).
+
+        solar_meter_hold_max_age (instance attribute, not a parameter; default
+        60 seconds, 0 disables): a Wi-Fi Tesla Remote Meter (trm_wifi) reports
+        over Wi-Fi, and the gateway periodically misses its packet for seconds. While it
+        does, the gateway raises the SolarMeterComms alert, reports SOLAR = 0
+        in meterAggregates and subtracts the missing solar from LOAD (which can
+        go negative), while teslaRemoteMeter keeps the last good reading with
+        its timestamp frozen. /api/meters/aggregates substitutes that retained
+        reading for solar (and adds it back to load) only when the alert is
+        active, the gateway reports solar as 0/None, and the reading is at most
+        this many seconds older than the gateway's system time. Set it on the
+        instance to tune or disable, e.g. tedapi.solar_meter_hold_max_age = 0.
         """
         self.debug = debug
+        # Seconds a remote-meter solar reading may be held through SolarMeterComms
+        # (see docstring above and PyPowerwallTEDAPI._hold_solar_through_meter_comms).
+        self.solar_meter_hold_max_age: int = 60
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
         # V2026_06 (Tesla-signed pairs sent via the energy_device graphql path).
         # Accepts a TEDAPIApiVersion or a plain string (e.g. from an env var / CLI).
@@ -2361,10 +2389,17 @@ class TEDAPI:
                     "InstCurrent": ct.get('currentA'),
                     "EnergyExportedWs": ct.get('energyExportedWs'),
                     "EnergyImportedWs": ct.get('energyImportedWs'),
-                    "Location": location[i] if location and len(location) > i else None
+                    "Location": location[i] if location and len(location) > i else None,
+                    # The meter's own reading timestamp (ISO-8601 with offset). The
+                    # gateway keeps the last good reading - timestamp frozen - while
+                    # the meter is out of contact, so this is how consumers tell a
+                    # live reading from a retained one. Hierarchy only: the flat
+                    # block already carries it once per meter as lastCommunicationTime.
+                    "Timestamp": reading.get('timestamp')
                 }
                 remote_hierarchy[f"{din}:{i}"] = ct_hierarchy
-                cts_flat.update({f"TRM_CT{i}_" + key: value for key, value in ct_hierarchy.items() if key != "Index"})
+                cts_flat.update({f"TRM_CT{i}_" + key: value for key, value in ct_hierarchy.items()
+                                 if key not in ("Index", "Timestamp")})
             rest = {
                 "componentParentDin": lookup(config_data, ['vin']),
                 "firmwareVersion": reading.get('firmwareVersion'),
@@ -2385,15 +2420,15 @@ class TEDAPI:
         Remote meter data is only present in the Device Controller Full query
         (get_device_controller()), not the basic status query used by get_status(), so this
         issues its own (cached) fetch - but only when config.json actually declares a remote
-        meter (type "trm_mb"). Most installs have none, so callers that already have `config`
-        (the site/solar aggregate extractors) should pass it in: it lets this skip the extra
-        Full-query fetch entirely instead of paying for one on every poll for every user.
+        meter (a type in REMOTE_METER_TYPES: "trm_mb" or "trm_wifi"). Most installs have none, so
+        callers that already have `config` (the site/solar aggregate extractors) should pass it
+        in: it lets this skip the extra Full-query fetch entirely instead of paying for one on every poll for every user.
         """
         if config is None:
             config = self.get_config(force=force)
         if not isinstance(config, dict):
             return {}
-        meter_config = self.derive_meter_config(config, types=("trm_mb",))
+        meter_config = self.derive_meter_config(config, types=REMOTE_METER_TYPES)
         if not meter_config:
             return {}
         controller = self.get_device_controller(force=force)
@@ -2438,7 +2473,7 @@ class TEDAPI:
         remote_meter = self.aggregate_remote_meter_data(
             config_data=config,
             status_data=status,
-            meter_config_data=self.derive_meter_config(config, types=("trm_mb",))
+            meter_config_data=self.derive_meter_config(config, types=REMOTE_METER_TYPES)
         )[0]
 
         # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
