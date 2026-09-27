@@ -317,3 +317,49 @@ class TestGetDinOverWifi:
         assert any(
             'resuming wired' in r.message for r in caplog.records
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: customer-API host stickiness across LAN recovery
+# ---------------------------------------------------------------------------
+
+class TestLanResetClearsCustomerHost:
+    """After LAN recovery the native API must prefer the LAN host again.
+
+    Regression: get_native_api() sorts 'last host that served us goes
+    first'. After a failover customer_host is the WiFi host, and _lan_reset
+    left it there — every poll's native overlay then kept hitting WiFi
+    forever even with the LAN healthy, since WiFi answers fine.
+    """
+
+    def test_lan_reset_forgets_sticky_wifi_host(self):
+        ted = _make_tedapi()
+        ted.lan_failed = True
+        ted.lan_fail_count = 3
+        ted.customer_host = '192.168.1.39'  # stuck on WiFi from failover
+        ted._lan_reset()
+        assert ted.lan_failed is False
+        assert ted.lan_fail_count == 0
+        assert ted.customer_host is None
+
+    def test_native_api_prefers_lan_after_reset(self):
+        ted = _make_tedapi()
+        ted.failover = True
+        ted.wifi_host = '192.168.1.39'
+        ted.customer_host = '192.168.1.39'  # as left behind by a failover
+        ted.lan_failed = False  # recovered, but host still sticky (pre-fix)
+        tried = []
+
+        def fake_native_get(host, path):
+            tried.append(host)
+            return {'served_by': host}
+
+        with patch.object(
+            TEDAPI, '_customer_password', return_value='x',
+        ), patch.object(
+            TEDAPI, '_native_get', side_effect=fake_native_get,
+        ):
+            ted._lan_reset()
+            assert ted.get_native_api('/api/meters/aggregates') == {
+                'served_by': '10.42.1.1'}
+        assert tried[0] == '10.42.1.1'
