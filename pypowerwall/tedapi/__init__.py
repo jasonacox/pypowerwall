@@ -1737,6 +1737,13 @@ class TEDAPI:
             self.lan_failed = False
             self.lan_fail_count = 0
             self.lan_recover_after = 0
+            # Forget the sticky customer-API host: while failed over,
+            # get_native_api() preferred the WiFi host ('last host that
+            # served us goes first'). Without reset it would keep
+            # preferring WiFi forever even with the LAN healthy, since
+            # WiFi answers fine. Next call re-prefers gw_ip; the token
+            # is re-issued on host switch by _native_get.
+            self.customer_host = None
 
     def close_session(self):
         """Close the underlying requests.Session objects to the Gateway."""
