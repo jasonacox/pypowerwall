@@ -223,13 +223,14 @@ class TEDAPI:
         solar_meter_hold_max_age (instance attribute, not a parameter; default
         60 seconds, 0 disables): a Wi-Fi Tesla Remote Meter (trm_wifi) reports
         over Wi-Fi, and the gateway periodically misses its packet for seconds. While it
-        does, the gateway raises the SolarMeterComms alert, reports SOLAR = 0
-        in meterAggregates and subtracts the missing solar from LOAD (which can
+        does, the gateway raises the SolarMeterComms alert, reports SOLAR = 0 (or a
+        watt or so) in meterAggregates and subtracts the missing solar from LOAD (which can
         go negative), while teslaRemoteMeter keeps the last good reading with
         its timestamp frozen. /api/meters/aggregates substitutes that retained
         reading for solar (and adds it back to load) only when the alert is
         active, the gateway reports solar as 0/None, and the reading is at most
-        this many seconds older than the gateway's system time. Set it on the
+        this many seconds older than the gateway's system time (or, because the
+        Full query is fetched just after the status, up to this many seconds newer). Set it on the
         instance to tune or disable, e.g. tedapi.solar_meter_hold_max_age = 0.
         """
         self.debug = debug

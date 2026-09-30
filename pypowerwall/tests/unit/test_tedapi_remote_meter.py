@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pypowerwall.tedapi import REMOTE_METER_TYPES, TEDAPI
-from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
+from pypowerwall.tedapi.pypowerwall_tedapi import SOLAR_METER_HOLD_ZERO_W, PyPowerwallTEDAPI
 
 GATEWAY_DIN = "1707000-21-M--TESTGW00000001"
 REMOTE_METER_DIN = "1234567-00-E--TESTMETER0001"
@@ -852,12 +852,39 @@ class TestHoldSolarThroughSolarMeterComms:
         data = self._backend(solar=2852.6, load=1194.1).get_api_meters_aggregates()
         self._assert_untouched(data, solar=2852.6, load=1194.1)
 
+    def test_hold_applied_when_solar_reads_one_watt(self):
+        # Observed 2026-09-30 13:38:05: SOLAR 1 W with the alert, LOAD short by the rest.
+        data = self._backend(solar=1.0, load=-1751.0).get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["load"]["instant_power"] == pytest.approx(1100.6)
+        assert "during SolarMeterComms (age 4s)" in data["solar"]["disclaimer"]
+
+    def test_not_applied_when_solar_just_above_zero_threshold(self):
+        data = self._backend(solar=SOLAR_METER_HOLD_ZERO_W + 1, load=-1741.0).get_api_meters_aggregates()
+        self._assert_untouched(data, solar=SOLAR_METER_HOLD_ZERO_W + 1, load=-1741.0)
+
+    def test_not_applied_when_solar_negative(self):
+        data = self._backend(solar=-1.0, load=-1753.0).get_api_meters_aggregates()
+        self._assert_untouched(data, solar=-1.0, load=-1753.0)
+
     def test_not_applied_when_reading_too_old(self):
         data = self._backend(reading_time="2026-09-27T12:13:22-04:00").get_api_meters_aggregates()  # 90 s
         self._assert_untouched(data)
 
-    def test_not_applied_when_reading_newer_than_system_time(self):
-        data = self._backend(reading_time="2026-09-27T12:14:55-04:00").get_api_meters_aggregates()
+    def test_hold_applied_when_reading_newer_than_system_time(self):
+        """The Full query is fetched after the status; a first packet after the dropout can be
+        stamped a second newer than the status snapshot (missed hold seen live 2026-09-28)."""
+        data = self._backend(reading_time="2026-09-27T12:14:53-04:00").get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["load"]["instant_power"] == pytest.approx(1100.6)
+        assert "during SolarMeterComms (age 0s)" in data["solar"]["disclaimer"]
+
+    def test_hold_applied_when_reading_newer_by_exact_max_age(self):
+        data = self._backend(reading_time="2026-09-27T12:15:52-04:00").get_api_meters_aggregates()  # -60 s
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+
+    def test_not_applied_when_reading_too_far_in_future(self):
+        data = self._backend(reading_time="2026-09-27T12:16:52-04:00").get_api_meters_aggregates()  # -120 s
         self._assert_untouched(data)
 
     def test_not_applied_without_reading_timestamp(self):

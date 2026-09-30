@@ -101,6 +101,12 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
         avg_ll_voltage = (v12 + v23 + v31) / 3
         return avg_ll_voltage
 
+# Gateway SOLAR aggregate at or below this (watts) counts as "missing" while
+# SolarMeterComms is active. Usually exactly 0, but observed as 1 W three times in
+# two days (2026-09-29/30) on the same site - the hold must not miss those.
+SOLAR_METER_HOLD_ZERO_W = 10
+
+
 # pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
 class PyPowerwallTEDAPI(PyPowerwallBase):
@@ -516,10 +522,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             frozen (system time 12:14:52, reading timestamp 12:14:48).
         The alert clears in the same sample the reading resumes.
 
-        So while the alert is active and the gateway reports solar as 0/None, substitute
+        So while the alert is active and the gateway reports solar as None or as (near)
+        zero - at most SOLAR_METER_HOLD_ZERO_W, since the "missing" value is usually
+        exactly 0 but has been seen as 1 W - substitute
         the retained solar reading (sum of solar-located remote CTs' InstRealPower, which
         aggregate_remote_meter_data() has already scaled by real_power_scale_factor) and
-        add it back to load - but only if that reading is at most
+        add the missing amount (retained minus whatever the gateway reported) back to
+        load - but only if that reading is at most
         TEDAPI.solar_meter_hold_max_age seconds older than the gateway's system time. A
         stale or undatable reading, no solar CT, or a retained value <= 0 leaves the
         gateway's numbers exactly as they are (0 solar and negative load pass through),
@@ -528,6 +537,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
         The alert comes from the basic status query and the reading from the (separately
         cached) Full query, so they can be one cache cycle apart; the age check bounds that.
+        The skew runs both ways: get_api_meters_aggregates() fetches the status first and
+        the Full query a moment later, timestamps are whole seconds, and the meter's first
+        packet after a dropout can land in that gap - then the reading is stamped up to a
+        cache cycle NEWER than the status snapshot (observed live 2026-09-28 10:24:45 as a
+        missed hold: solar 0, load -116, with the remote meter reporting a fresh value).
+        A newer reading is never stale, so it is held too; only a reading more than
+        max_age in the future of the gateway clock (clock trouble) is rejected.
 
         Mutates data['solar'] / data['load'] in place, and only after every value has been
         computed, so an exception leaves data unchanged.
@@ -537,7 +553,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             return
         solar = data["solar"]
         load = data["load"]
-        if solar.get("instant_power") not in (0, None):
+        gateway_solar = solar.get("instant_power")
+        if gateway_solar is not None and (
+                not isinstance(gateway_solar, (int, float)) or isinstance(gateway_solar, bool)
+                or not 0 <= gateway_solar <= SOLAR_METER_HOLD_ZERO_W):
             return
         max_age = getattr(self.tedapi, "solar_meter_hold_max_age", 0)
         if isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or max_age <= 0:
@@ -563,8 +582,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 return
             ages.append((system_time - reading_time).total_seconds())
         age = max(ages)
-        if min(ages) < 0 or age > max_age:
-            log.debug("SolarMeterComms active, retained reading age %.1fs outside 0-%ss - not holding", age, max_age)
+        if age > max_age or min(ages) < -max_age:
+            log.debug("SolarMeterComms active, retained reading age %.1fs (oldest) / %.1fs (newest) "
+                      "outside +/-%ss - not holding", age, min(ages), max_age)
             return
 
         # Compute everything first, then assign (assignments can't fail).
@@ -574,14 +594,15 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             i_solar = retained / v_solar
             solar_updates["instant_average_current"] = i_solar
             solar_updates["instant_total_current"] = i_solar
-        note = f"solar held from remote meter reading during SolarMeterComms (age {age:.0f}s)"
+        # A reading newer than the status snapshot (negative age) is reported as age 0.
+        note = f"solar held from remote meter reading during SolarMeterComms (age {max(age, 0):.0f}s)"
         existing = solar.get("disclaimer")
         solar_updates["disclaimer"] = f"{existing}; {note}" if existing else note
         load_updates = {}
         load_power = load.get("instant_power")
         if isinstance(load_power, (int, float)) and not isinstance(load_power, bool):
             # The gateway subtracted exactly the missing solar from load; add it back.
-            new_load = load_power + retained
+            new_load = load_power + retained - (gateway_solar or 0)
             load_updates["instant_power"] = new_load
             v_load = load.get("instant_average_voltage")
             if isinstance(v_load, (int, float)) and v_load:
