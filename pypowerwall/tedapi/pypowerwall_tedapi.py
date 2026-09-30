@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+from datetime import datetime
 from typing import Optional, Union
 
 from pypowerwall import __version__
@@ -28,6 +29,28 @@ def set_debug(debug=False, quiet=False, color=True):
         log.setLevel(logging.NOTSET)
 
 # Compute the line-to-line voltage of single, two and three phase legs
+def _parse_gateway_time(value) -> Optional[datetime]:
+    """Parse a gateway ISO-8601 timestamp with a UTC offset (e.g. "2026-09-27T12:14:48-04:00").
+
+    Returns a timezone-aware datetime, or None when the value is missing, not a
+    string, unparseable, or has no offset (a naive time can't be compared safely
+    with an offset one).
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    # datetime.fromisoformat() only accepts a trailing "Z" from Python 3.11
+    if text[-1] in "Zz":
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+
 def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
     """
     Compute the line-to-line voltage for various electrical system configurations.
@@ -77,6 +100,12 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
         v31 = math.sqrt(v3**2 + v1**2 + v3 * v1)
         avg_ll_voltage = (v12 + v23 + v31) / 3
         return avg_ll_voltage
+
+# Gateway SOLAR aggregate at or below this (watts) counts as "missing" while
+# SolarMeterComms is active. Usually exactly 0, but observed as 1 W three times in
+# two days (2026-09-29/30) on the same site - the hold must not miss those.
+SOLAR_METER_HOLD_ZERO_W = 10
+
 
 # pylint: disable=too-many-public-methods
 # noinspection PyMethodMayBeStatic
@@ -421,8 +450,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         # solar for voltage and/or current), and without sharing, force=True would
         # trigger two identical Full-query fetches in one /api/meters/aggregates
         # call. get_remote_meter_readings() already skips the network fetch
-        # entirely when config.json declares no "trm_mb" meter, so this costs
-        # nothing extra for installs without one.
+        # entirely when config.json declares no remote meter (REMOTE_METER_TYPES:
+        # "trm_mb" or "trm_wifi"), so this costs nothing extra for installs
+        # without one.
         remote_hierarchy = self.tedapi.get_remote_meter_readings(config=config, force=force)
 
         # --- Site (Grid) ---
@@ -436,6 +466,14 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         # --- Solar ---
         solar_vals = self._extract_solar_section(status, config, force, remote_hierarchy=remote_hierarchy)
         data['solar'].update(solar_vals)
+
+        # --- Remote solar meter dropout (SolarMeterComms) ---
+        # Must run after both load and solar are extracted: it corrects the pair.
+        # Never allowed to break aggregates - on any error the gateway's values stand.
+        try:
+            self._hold_solar_through_meter_comms(data, status, remote_hierarchy)
+        except Exception as exc:  # pylint: disable=broad-except
+            log.debug("SolarMeterComms solar hold skipped after error: %r", exc)
 
         # --- Battery ---
         battery_vals = self._extract_battery_section(status, config, force)
@@ -468,6 +506,113 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                     data[section]["disclaimer"] = f"{existing}; {note}" if existing else note
 
         return data
+
+    def _hold_solar_through_meter_comms(self, data, status, remote_hierarchy) -> None:
+        """Hold solar at the Tesla Remote Meter's retained reading through a SolarMeterComms dropout.
+
+        A Tesla Remote Meter (trm_wifi) reports over Wi-Fi, and the gateway misses its
+        packet for 8-28 s roughly every 5 minutes. In those samples (observed 2026-09-27
+        on 2x Powerwall 3, firmware 26.34.0; 28 of 701 samples, every one with the alert,
+        and the alert never seen with non-zero solar):
+          * control.meterAggregates reports SOLAR realPowerW = 0 and LOAD drops by exactly
+            the missing solar, going negative (SOLAR 2852.6 -> 0, LOAD 1194.1 -> -1752.0,
+            SITE unchanged) - current_power() passes that straight through;
+          * control.alerts.active gains "SolarMeterComms";
+          * teslaRemoteMeter.meters[].reading keeps the LAST GOOD reading, its timestamp
+            frozen (system time 12:14:52, reading timestamp 12:14:48).
+        The alert clears in the same sample the reading resumes.
+
+        So while the alert is active and the gateway reports solar as None or as (near)
+        zero - at most SOLAR_METER_HOLD_ZERO_W, since the "missing" value is usually
+        exactly 0 but has been seen as 1 W - substitute
+        the retained solar reading (sum of solar-located remote CTs' InstRealPower, which
+        aggregate_remote_meter_data() has already scaled by real_power_scale_factor) and
+        add the missing amount (retained minus whatever the gateway reported) back to
+        load - but only if that reading is at most
+        TEDAPI.solar_meter_hold_max_age seconds older than the gateway's system time. A
+        stale or undatable reading, no solar CT, or a retained value <= 0 leaves the
+        gateway's numbers exactly as they are (0 solar and negative load pass through),
+        as does solar_meter_hold_max_age = 0. Sites without a remote meter, without the
+        alert, or with non-zero solar are untouched.
+
+        The alert comes from the basic status query and the reading from the (separately
+        cached) Full query, so they can be one cache cycle apart; the age check bounds that.
+        The skew runs both ways: get_api_meters_aggregates() fetches the status first and
+        the Full query a moment later, timestamps are whole seconds, and the meter's first
+        packet after a dropout can land in that gap - then the reading is stamped up to a
+        cache cycle NEWER than the status snapshot (observed live 2026-09-28 10:24:45 as a
+        missed hold: solar 0, load -116, with the remote meter reporting a fresh value).
+        A newer reading is never stale, so it is held too; only a reading more than
+        max_age in the future of the gateway clock (clock trouble) is rejected.
+
+        Mutates data['solar'] / data['load'] in place, and only after every value has been
+        computed, so an exception leaves data unchanged.
+        """
+        alerts = lookup(status, ["control", "alerts", "active"]) or []
+        if not isinstance(alerts, list) or "SolarMeterComms" not in alerts:
+            return
+        solar = data["solar"]
+        load = data["load"]
+        gateway_solar = solar.get("instant_power")
+        if gateway_solar is not None and (
+                not isinstance(gateway_solar, (int, float)) or isinstance(gateway_solar, bool)
+                or not 0 <= gateway_solar <= SOLAR_METER_HOLD_ZERO_W):
+            return
+        max_age = getattr(self.tedapi, "solar_meter_hold_max_age", 0)
+        if isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or max_age <= 0:
+            return
+        solar_cts = [d for d in (remote_hierarchy or {}).values()
+                     if isinstance(d, dict) and d.get("Location") == "solar"]
+        if not solar_cts:
+            log.debug("SolarMeterComms active with solar 0, but no remote solar CT to hold from")
+            return
+        retained = sum(d.get("InstRealPower") or 0 for d in solar_cts)
+        if retained <= 0:
+            log.debug("SolarMeterComms active, retained remote solar reading is %s W - not holding", retained)
+            return
+        # Age of the retained reading relative to the gateway clock. Every solar CT must be
+        # datable; with several (e.g. two meters) the oldest reading governs.
+        system_time = _parse_gateway_time(lookup(status, ["system", "time"]))
+        ages = []
+        for d in solar_cts:
+            reading_time = _parse_gateway_time(d.get("Timestamp"))
+            if system_time is None or reading_time is None:
+                log.debug("SolarMeterComms active, reading age unknown (system time %r, reading %r) - not holding",
+                          lookup(status, ["system", "time"]), d.get("Timestamp"))
+                return
+            ages.append((system_time - reading_time).total_seconds())
+        age = max(ages)
+        if age > max_age or min(ages) < -max_age:
+            log.debug("SolarMeterComms active, retained reading age %.1fs (oldest) / %.1fs (newest) "
+                      "outside +/-%ss - not holding", age, min(ages), max_age)
+            return
+
+        # Compute everything first, then assign (assignments can't fail).
+        solar_updates = {"instant_power": retained}
+        v_solar = solar.get("instant_average_voltage")
+        if isinstance(v_solar, (int, float)) and v_solar:
+            i_solar = retained / v_solar
+            solar_updates["instant_average_current"] = i_solar
+            solar_updates["instant_total_current"] = i_solar
+        # A reading newer than the status snapshot (negative age) is reported as age 0.
+        note = f"solar held from remote meter reading during SolarMeterComms (age {max(age, 0):.0f}s)"
+        existing = solar.get("disclaimer")
+        solar_updates["disclaimer"] = f"{existing}; {note}" if existing else note
+        load_updates = {}
+        load_power = load.get("instant_power")
+        if isinstance(load_power, (int, float)) and not isinstance(load_power, bool):
+            # The gateway subtracted exactly the missing solar from load; add it back.
+            new_load = load_power + retained - (gateway_solar or 0)
+            load_updates["instant_power"] = new_load
+            v_load = load.get("instant_average_voltage")
+            if isinstance(v_load, (int, float)) and v_load:
+                i_load = new_load / v_load
+                load_updates["instant_average_current"] = i_load
+                load_updates["instant_total_current"] = i_load
+        solar.update(solar_updates)
+        load.update(load_updates)
+        log.debug("SolarMeterComms: held solar at %s W from remote meter reading (age %.1fs); load %s -> %s",
+                  retained, age, load_power, load_updates.get("instant_power", load_power))
 
     def _extract_site_section(self, status, config, force, remote_hierarchy=None):
         """Extract site (grid) section using Meter X, then Meter Z, then Neurio, then a Tesla Remote Meter. Handles 2-phase and 3-phase setups. Sets i_a_current/i_b_current negative if InstRealPower is negative."""
