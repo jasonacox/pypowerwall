@@ -75,6 +75,7 @@ def run_tedapi_test(argv=None, debug=False):
     # Imports
     from pypowerwall.tedapi import TEDAPI, GW_IP
     from pypowerwall import __version__
+    from pypowerwall.helpers import lookup
     import json
     import sys
     import requests
@@ -197,27 +198,36 @@ def run_tedapi_test(argv=None, debug=False):
     print(f"   - Firmware Version: {_render_firmware(ted.get_firmware_version(force=True))}")
     print()
 
-    # Print power data
+    # Save Configuration and Status to JSON files first, so the raw payloads are
+    # captured for debugging even if the structure below is unexpected.
+    with open('status.json', 'w') as f:
+        json.dump(status, f)
+    with open('config.json', 'w') as f:
+        json.dump(config, f)
+
+    # Print power data (null-safe: firmware can return explicit nulls for
+    # 'control' or 'systemStatus' - e.g. Powerwall 3 firmware 26.26.11 -
+    # which chained .get(key, default) does not guard against)
     print(" - Power Data:")
-    nominalEnergyRemainingWh = status.get('control', {}).get('systemStatus', {}).get('nominalEnergyRemainingWh', 0)
-    nominalFullPackEnergyWh = status.get('control', {}).get('systemStatus', {}).get('nominalFullPackEnergyWh', 0)
+    control = status.get('control') or {}
+    if not isinstance(status.get('control'), dict):
+        print("   - WARNING: Gateway status payload has no 'control' data (null or missing).")
+        print("     A recent gateway firmware update may have changed the response schema.")
+        print("     The raw payload was saved to status.json - please share it in a GitHub")
+        print("     issue (redact any site identifiers) so the schema can be mapped.")
+    nominalEnergyRemainingWh = lookup(control, ['systemStatus', 'nominalEnergyRemainingWh']) or 0
+    nominalFullPackEnergyWh = lookup(control, ['systemStatus', 'nominalFullPackEnergyWh']) or 0
     if nominalFullPackEnergyWh == 0:
         print(f"   - Battery Full Charge Unknown ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
     else:
         soe = round(nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100, 2)
         print(f"   - Battery Charge: {soe}% ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
-    meterAggregates = status.get('control', {}).get('meterAggregates', [])
+    meterAggregates = control.get('meterAggregates') or []
     for meter in meterAggregates:
         location = meter.get('location', 'Unknown').title()
         realPowerW = int(meter.get('realPowerW', 0))
         print(f"   - {location}: {realPowerW}W")
     print()
-
-    # Save Configuration and Status to JSON files
-    with open('status.json', 'w') as f:
-        json.dump(status, f)
-    with open('config.json', 'w') as f:
-        json.dump(config, f)
     print(" - Configuration and Status saved to config.json and status.json")
     print()
 
