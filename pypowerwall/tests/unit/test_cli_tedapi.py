@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock, patch
 
 
@@ -145,3 +146,90 @@ def test_get_local_without_host_exits_with_error(capsys):
     assert excinfo.value.code == 1
     assert '-local requires -host' in capsys.readouterr().out
     mock_pw.assert_not_called()
+
+
+def _run_cli_with_status(status_payload, tmp_path, monkeypatch):
+    """Drive run_tedapi_test() with a mocked TEDAPI returning status_payload."""
+    from pypowerwall.tedapi.__main__ import run_tedapi_test
+
+    mock_ted = MagicMock()
+    mock_ted.din = 'DIN123'
+    mock_ted.get_config.return_value = {"site": "test"}
+    mock_ted.get_status.return_value = status_payload
+    mock_ted.get_firmware_version.return_value = "26.26.11 test"
+    monkeypatch.chdir(tmp_path)
+
+    with patch('requests.get') as mock_get, \
+         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted):
+        mock_get.return_value.status_code = 200
+        run_tedapi_test([
+            '-host', '10.42.1.40',
+            '-v1r',
+            '-gw_pwd', 'ABCDEXXXXX',
+            '-rsa_key_path', '/tmp/test.pem',
+        ])
+    return mock_ted
+
+
+def test_run_tedapi_test_null_control_payload(tmp_path, monkeypatch, capsys):
+    """Regression: explicit null 'control' must not crash (PW3 fw 26.26.11)."""
+    status = {"control": None, "gateway": {"something": 1}}
+    _run_cli_with_status(status, tmp_path, monkeypatch)
+
+    out = capsys.readouterr().out
+    assert "WARNING" in out and "'control'" in out
+    assert "Battery Full Charge Unknown" in out
+    saved = json.loads((tmp_path / "status.json").read_text())
+    assert saved == status
+    assert json.loads((tmp_path / "config.json").read_text()) == {"site": "test"}
+
+
+def test_run_tedapi_test_null_system_status(tmp_path, monkeypatch, capsys):
+    """Regression: null 'control.systemStatus' must not crash."""
+    status = {"control": {"systemStatus": None, "meterAggregates": []}}
+    _run_cli_with_status(status, tmp_path, monkeypatch)
+
+    out = capsys.readouterr().out
+    assert "Battery Full Charge Unknown" in out
+    assert json.loads((tmp_path / "status.json").read_text()) == status
+
+
+def test_run_tedapi_test_null_meter_aggregates(tmp_path, monkeypatch, capsys):
+    """Regression: null 'control.meterAggregates' must not crash."""
+    status = {
+        "control": {
+            "systemStatus": {
+                "nominalEnergyRemainingWh": 7500,
+                "nominalFullPackEnergyWh": 10000,
+            },
+            "meterAggregates": None,
+        }
+    }
+    _run_cli_with_status(status, tmp_path, monkeypatch)
+
+    out = capsys.readouterr().out
+    assert "Battery Charge: 75.0%" in out
+    assert json.loads((tmp_path / "status.json").read_text()) == status
+
+
+def test_run_tedapi_test_normal_power_payload(tmp_path, monkeypatch, capsys):
+    """Normal payload still renders battery charge and meters."""
+    status = {
+        "control": {
+            "systemStatus": {
+                "nominalEnergyRemainingWh": 5000,
+                "nominalFullPackEnergyWh": 10000,
+            },
+            "meterAggregates": [
+                {"location": "load", "realPowerW": 1234},
+                {"location": "solar", "realPowerW": 250},
+            ],
+        }
+    }
+    _run_cli_with_status(status, tmp_path, monkeypatch)
+
+    out = capsys.readouterr().out
+    assert "Battery Charge: 50.0%" in out
+    assert "Load: 1234W" in out and "Solar: 250W" in out
+    assert "WARNING" not in out
+    assert json.loads((tmp_path / "status.json").read_text()) == status
