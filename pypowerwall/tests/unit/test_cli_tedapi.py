@@ -267,7 +267,8 @@ def test_run_tedapi_test_sitemanager_not_running(tmp_path, monkeypatch, capsys):
     _run_cli_with_payloads(status, {"site_info": {"site_name": "Test"}}, tmp_path, monkeypatch)
 
     out = capsys.readouterr().out
-    assert "site manager is not running" in out
+    assert "manager is not running" in out
+    assert "re-enable the site manager" in out
     assert "Tesla app" in out
     assert "not a pypowerwall problem" in out
     assert "isRunning: False" in out

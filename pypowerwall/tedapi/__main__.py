@@ -217,9 +217,11 @@ def run_tedapi_test(argv=None, debug=False):
         print(f"   - WARNING: Gateway status payload has no 'control' data "
               f"(system.sitemanagerStatus.isRunning: {is_running}).")
         if is_running is False:
-            print("     The gateway's site manager is not running, so it is not")
-            print("     producing live power data. Check the Tesla app for alerts or")
-            print("     faults - this is a gateway condition, not a pypowerwall problem.")
+            print("     The gateway is connected and communicating, but the site")
+            print("     manager is not running - the system appears switched off and")
+            print("     is not producing live power data. Check the Tesla app for")
+            print("     alerts or faults, and re-enable the site manager to restore")
+            print("     it. This is a gateway condition, not a pypowerwall problem.")
         else:
             print("     The site manager reports running, so this may be an unexpected")
             print("     schema change. The raw payload was saved to status.json - please")
