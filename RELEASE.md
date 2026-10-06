@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* fix(tedapi): native API prefers LAN again after v1r WiFi failover recovery - `get_native_api()` remembered the WiFi host ('last host that served us goes first') and `_lan_reset()` never cleared it, so every poll's native overlay kept hitting WiFi forever even with the LAN healthy; the sticky `customer_host` is now reset on recovery (token re-login on host switch already handled).
+* fix(tedapi): native API prefers LAN again after v1r WiFi failover recovery - `get_native_api()` remembered the WiFi host ('last host that served us goes first') and `_lan_reset()` never cleared it, so every poll's native overlay kept hitting WiFi forever even with the LAN healthy; the sticky `customer_host` is now reset on recovery (token re-login on host switch already handled). The reset and `get_native_api()`'s host selection both run under `_customer_lock`, so a native fetch in flight on WiFi during the recovery can't re-stick it. (#401)
 
 ## v0.18.2 - Powerwall 3 Fan Speeds and Battery Block Fix
 

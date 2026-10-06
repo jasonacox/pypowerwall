@@ -282,7 +282,9 @@ class TEDAPI:
         self.customer_token_time: float = 0.0
         self.customer_host: Optional[str] = None
         self.api_session: Optional[requests.Session] = None
-        # Reentrant so get_native_meters_aggregates can hold it across get_native_api
+        # Guards the customer login state (customer_host/token) and the native
+        # fetch; reentrant so get_native_meters_aggregates can hold it across
+        # get_native_api
         self._customer_lock = threading.RLock()
         self._native_fail_until: float = 0.0  # backoff when endpoint unavailable
         if v1r:
@@ -1732,17 +1734,20 @@ class TEDAPI:
             return self._lan_trip_locked(self.lan_fail_count + 1)
 
     def _lan_reset(self) -> None:
-        """LAN connected: close the failover and clear the failure count."""
+        """LAN connected: close the failover, clear the failure count, and
+        point the native API back at the LAN."""
         with self._lan_lock:
             self.lan_failed = False
             self.lan_fail_count = 0
             self.lan_recover_after = 0
-            # Forget the sticky customer-API host: while failed over,
-            # get_native_api() preferred the WiFi host ('last host that
-            # served us goes first'). Without reset it would keep
-            # preferring WiFi forever even with the LAN healthy, since
-            # WiFi answers fine. Next call re-prefers gw_ip; the token
-            # is re-issued on host switch by _native_get.
+        # Forget the sticky native-API host: while failed over, get_native_api()
+        # made the WiFi host sticky ('last host that served us goes first') and
+        # WiFi keeps answering, so it would never return to the LAN. Under
+        # _customer_lock, which get_native_api() holds from host selection
+        # through login, so an in-flight WiFi fetch can't re-stick it; taken
+        # after _lan_lock so that is never held while waiting on network work.
+        # The next fetch logs in on gw_ip (_native_get re-logs in on a switch).
+        with self._customer_lock:
             self.customer_host = None
 
     def close_session(self):
@@ -3095,21 +3100,23 @@ class TEDAPI:
         """
         if not self._customer_password():
             return None
-        hosts = [self.gw_ip]
-        if self.failover and self.wifi_host and self.wifi_host != self.gw_ip:
-            hosts.append(self.wifi_host)
-        if len(hosts) > 1:
-            if self.customer_host in hosts:
-                # Last host that served us goes first - a dead primary would
-                # otherwise cost a full timeout on every fetch
-                hosts.sort(key=lambda h: h != self.customer_host)
-            elif self.lan_failed:
-                hosts.reverse()
         # Bounded acquisition - don't pile threads up behind a slow fetch
         if not self._customer_lock.acquire(timeout=self.timeout):
             log.debug(f"Gateway local API busy - skipping {path}")
             return None
         try:
+            # Host order is chosen under _customer_lock: _lan_reset() clears
+            # customer_host under it, so a stale order can't outlive the reset
+            hosts = [self.gw_ip]
+            if self.failover and self.wifi_host and self.wifi_host != self.gw_ip:
+                hosts.append(self.wifi_host)
+            if len(hosts) > 1:
+                if self.customer_host in hosts:
+                    # Last host that served us goes first - a dead primary would
+                    # otherwise cost a full timeout on every fetch
+                    hosts.sort(key=lambda h: h != self.customer_host)
+                elif self.lan_failed:
+                    hosts.reverse()
             for host in hosts:
                 try:
                     data = self._native_get(host, path)
