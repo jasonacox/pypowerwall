@@ -1,31 +1,35 @@
 """Unit tests for Tesla Remote Meter (teslaRemoteMeter) plumbing.
 
-Wireless CT "remote meters" (config.json meter type "trm_mb") report through the
+Wireless CT "remote meters" (config.json meter type "trm_mb" or "trm_wifi") report through the
 Device Controller Full query's teslaRemoteMeter field returned by
 get_device_controller() - a field that was already being fetched but never
 read by anything. These tests cover config-driven CT selection/scaling,
-the site/solar aggregate fallbacks, and vitals() exposure.
+the site/solar aggregate fallbacks, vitals() exposure, and holding solar
+through a SolarMeterComms dropout in /api/meters/aggregates.
 
 All DIN/serial values here are fabricated test fixtures, not data captured
 from a real gateway.
 """
 from unittest.mock import MagicMock, patch
 
-from pypowerwall.tedapi import TEDAPI
-from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
+import pytest
+
+from pypowerwall.tedapi import REMOTE_METER_TYPES, TEDAPI
+from pypowerwall.tedapi.pypowerwall_tedapi import SOLAR_METER_HOLD_ZERO_W, PyPowerwallTEDAPI
 
 GATEWAY_DIN = "1707000-21-M--TESTGW00000001"
 REMOTE_METER_DIN = "1234567-00-E--TESTMETER0001"
 REMOTE_METER_DIN_2 = "1234567-00-E--TESTMETER0002"
 
 
-def _remote_meter_config(location="solar", cts=None, factor=1, din=REMOTE_METER_DIN):
+def _remote_meter_config(location="solar", cts=None, factor=1, din=REMOTE_METER_DIN,
+                         meter_type="trm_mb"):
     return {
         "vin": GATEWAY_DIN,
         "meters": [
             {
                 "location": location,
-                "type": "trm_mb",
+                "type": meter_type,
                 "cts": cts if cts is not None else [True, False, False, False],
                 "inverted": [False, False, False, False],
                 "connection": {"device_serial": din},
@@ -644,3 +648,348 @@ class TestGetApiMetersAggregatesSharedRemoteMeterFetch:
 
         backend.tedapi.get_remote_meter_readings.assert_called_once_with(
             config={"vin": GATEWAY_DIN}, force=True)
+
+
+class TestTrmWifiRecognition:
+    """config.json meter type "trm_wifi" (the Wi-Fi Tesla Remote Meter) reports
+    through teslaRemoteMeter exactly like "trm_mb"; it used to be ignored, so a
+    trm_wifi site got no remote-meter data at all."""
+
+    def test_remote_meter_types_constant(self):
+        assert REMOTE_METER_TYPES == ("trm_mb", "trm_wifi")
+
+    def test_derive_meter_config_picks_up_trm_wifi(self):
+        ted = _make_tedapi()
+        config = _remote_meter_config(location="solar", factor=2, meter_type="trm_wifi")
+        result = ted.derive_meter_config(config, types=REMOTE_METER_TYPES)
+        assert REMOTE_METER_DIN in result
+        entry = result[REMOTE_METER_DIN]
+        assert entry["type"] == "trm_wifi"
+        assert entry["location"] == ["solar", "solar", "solar", "solar"]
+        assert entry["cts"] == [True, False, False, False]
+        assert entry["real_power_scale_factor"] == 2
+
+    def test_derive_meter_config_default_still_neurio_only(self):
+        ted = _make_tedapi()
+        config = _remote_meter_config(meter_type="trm_wifi")
+        assert ted.derive_meter_config(config) == {}
+
+    def test_get_remote_meter_readings_fetches_for_trm_wifi_only_config(self):
+        ted = _make_tedapi()
+        ted.get_device_controller = MagicMock(return_value=_remote_meter_status(real_power=1517.0))
+        config = _remote_meter_config(location="solar", factor=2, meter_type="trm_wifi")
+
+        hierarchy = ted.get_remote_meter_readings(config=config)
+
+        ted.get_device_controller.assert_called_once()
+        entry = hierarchy[_hierarchy_key(REMOTE_METER_DIN, 0)]
+        assert entry["Location"] == "solar"
+        assert entry["InstRealPower"] == 3034.0  # scaled by factor 2
+
+    def test_get_remote_meter_readings_still_skips_without_remote_meter(self):
+        ted = _make_tedapi()
+        ted.get_device_controller = MagicMock(return_value=_remote_meter_status())
+        config = {"vin": GATEWAY_DIN, "meters": [{
+            "type": "neurio_w2_tcp", "location": "site",
+            "connection": {"device_serial": "NEURIOSN1"},
+        }]}
+        assert ted.get_remote_meter_readings(config=config) == {}
+        ted.get_device_controller.assert_not_called()
+
+    def test_vitals_trm_block_for_trm_wifi_has_location_and_scaling(self):
+        ted = _make_tedapi()
+        ted.pw3 = False
+        status = {
+            **_remote_meter_status(real_power=1517.0),
+            'control': {'alerts': {'active': []}},
+            'components': {'msa': []},
+            'esCan': {
+                'bus': {
+                    'PVAC': [], 'PVS': [], 'THC': [], 'POD': [], 'PINV': [],
+                    'SYNC': {}, 'ISLANDER': {}, 'MSA': {},
+                },
+            },
+        }
+        ted.get_config = MagicMock(return_value=_remote_meter_config(
+            location="solar", factor=2, meter_type="trm_wifi"))
+        ted.get_device_controller = MagicMock(return_value=status)
+
+        vitals = ted.vitals()
+        block = vitals[f"TRM--{REMOTE_METER_DIN}"]
+        assert block["TRM_CT0_Location"] == "solar"
+        assert block["TRM_CT0_InstRealPower"] == 3034.0
+        assert block["manufacturer"] == "TESLA"
+
+
+class TestRemoteMeterHierarchyTimestamp:
+    def test_hierarchy_entries_carry_reading_timestamp(self):
+        ted = _make_tedapi()
+        config = _remote_meter_config(cts=[True, False, True, False])
+        status = _remote_meter_status()
+        meter_config = ted.derive_meter_config(config, types=REMOTE_METER_TYPES)
+
+        _, hierarchy = ted.aggregate_remote_meter_data(config, status, meter_config)
+
+        assert hierarchy[_hierarchy_key(REMOTE_METER_DIN, 0)]["Timestamp"] == "2025-01-01T00:00:00-08:00"
+        assert hierarchy[_hierarchy_key(REMOTE_METER_DIN, 2)]["Timestamp"] == "2025-01-01T00:00:00-08:00"
+
+    def test_flat_block_does_not_gain_timestamp_keys(self):
+        """The flat TRM--<din> block already carries the reading time once as
+        lastCommunicationTime; no per-CT TRM_CT*_Timestamp keys."""
+        ted = _make_tedapi()
+        config = _remote_meter_config()
+        status = _remote_meter_status()
+        meter_config = ted.derive_meter_config(config, types=REMOTE_METER_TYPES)
+
+        flat, _ = ted.aggregate_remote_meter_data(config, status, meter_config)
+
+        block = flat[f"TRM--{REMOTE_METER_DIN}"]
+        assert not any(k.endswith("_Timestamp") for k in block)
+        assert block["lastCommunicationTime"] == "2025-01-01T00:00:00-08:00"
+
+    def test_missing_reading_timestamp_is_none(self):
+        ted = _make_tedapi()
+        config = _remote_meter_config()
+        status = _remote_meter_status()
+        del status["teslaRemoteMeter"]["meters"][0]["reading"]["timestamp"]
+        meter_config = ted.derive_meter_config(config, types=REMOTE_METER_TYPES)
+
+        _, hierarchy = ted.aggregate_remote_meter_data(config, status, meter_config)
+        assert hierarchy[_hierarchy_key(REMOTE_METER_DIN, 0)]["Timestamp"] is None
+
+
+# Values below reproduce a SolarMeterComms dropout observed on 2x Powerwall 3
+# (firmware 26.34.0, trm_wifi solar meter, real_power_scale_factor 2): the gateway
+# reports SOLAR 0 and LOAD -1752.0 while the remote meter keeps its last good
+# reading (CT0 1426.3 W, timestamp 4 s older than the gateway clock).
+DROPOUT_SYSTEM_TIME = "2026-09-27T12:14:52-04:00"
+DROPOUT_READING_TIME = "2026-09-27T12:14:48-04:00"
+
+
+class TestHoldSolarThroughSolarMeterComms:
+    """get_api_meters_aggregates() end to end against a real TEDAPI (transport mocked)."""
+
+    def _backend(self, alerts=("SolarMeterComms",), solar=0.0, load=-1752.0, site=-600.0,
+                 ct0_power=1426.3, factor=2, reading_time=DROPOUT_READING_TIME,
+                 system_time=DROPOUT_SYSTEM_TIME, location="solar"):
+        ted = _make_tedapi()
+        ted.pw3 = False
+        meter_aggregates = [
+            {"location": "SITE", "realPowerW": site},
+            {"location": "BATTERY", "realPowerW": 0.0},
+            {"location": "LOAD", "realPowerW": load},
+            {"location": "SOLAR", "realPowerW": solar},
+        ]
+        status = {
+            "control": {"meterAggregates": meter_aggregates,
+                        "alerts": {"active": list(alerts)}},
+            "esCan": {"bus": {
+                "SYNC": {}, "MSA": {}, "PINV": [],
+                "ISLANDER": {"ISLAND_AcMeasurements": {
+                    "ISLAND_VL1N_Load": 120.0, "ISLAND_VL2N_Load": 120.0, "ISLAND_VL3N_Load": 0,
+                }},
+                "PVAC": [{"packageSerialNumber": "PVACSN1", "PVAC_Status": {"PVAC_Vout": 240.0}}],
+            }},
+            "neurio": {"readings": []},
+        }
+        if system_time is not None:
+            status["system"] = {"time": system_time}
+        controller = _remote_meter_status(real_power=ct0_power, current=11.9, voltage=121.0)
+        reading = controller["teslaRemoteMeter"]["meters"][0]["reading"]
+        if reading_time is None:
+            del reading["timestamp"]
+        else:
+            reading["timestamp"] = reading_time
+        ted.get_config = MagicMock(return_value=_remote_meter_config(
+            location=location, factor=factor, meter_type="trm_wifi"))
+        ted.get_status = MagicMock(return_value=status)
+        ted.get_device_controller = MagicMock(return_value=controller)
+        ted.get_native_meters_aggregates = MagicMock(return_value=None)
+        backend = _make_backend()
+        backend.tedapi = ted
+        return backend
+
+    def _assert_untouched(self, data, solar=0.0, load=-1752.0):
+        assert data["solar"]["instant_power"] == solar
+        assert data["load"]["instant_power"] == load
+        assert "SolarMeterComms" not in data["solar"]["disclaimer"]
+
+    def test_hold_applied(self):
+        data = self._backend().get_api_meters_aggregates()
+
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["load"]["instant_power"] == pytest.approx(1100.6)
+        assert data["site"]["instant_power"] == -600.0  # untouched
+        assert "solar held from remote meter reading during SolarMeterComms (age 4s)" \
+            in data["solar"]["disclaimer"]
+        # Currents recomputed from the held power
+        assert data["solar"]["instant_average_current"] == pytest.approx(2852.6 / 240.0)
+        assert data["solar"]["instant_total_current"] == pytest.approx(2852.6 / 240.0)
+        assert data["load"]["instant_average_current"] == pytest.approx(1100.6 / 240.0)
+        assert data["load"]["instant_total_current"] == pytest.approx(1100.6 / 240.0)
+
+    def test_hold_applied_at_exact_max_age(self):
+        backend = self._backend(reading_time="2026-09-27T12:13:52-04:00")  # 60 s
+        data = backend.get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+
+    def test_hold_applied_with_utc_z_timestamps(self):
+        backend = self._backend(reading_time="2026-09-27T16:14:48Z",
+                                system_time="2026-09-27T12:14:52-04:00")
+        data = backend.get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+
+    def test_not_applied_without_alert(self):
+        data = self._backend(alerts=()).get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def test_not_applied_when_solar_nonzero(self):
+        data = self._backend(solar=2852.6, load=1194.1).get_api_meters_aggregates()
+        self._assert_untouched(data, solar=2852.6, load=1194.1)
+
+    def test_hold_applied_when_solar_reads_one_watt(self):
+        # Observed 2026-09-30 13:38:05: SOLAR 1 W with the alert, LOAD short by the rest.
+        data = self._backend(solar=1.0, load=-1751.0).get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["load"]["instant_power"] == pytest.approx(1100.6)
+        assert "during SolarMeterComms (age 4s)" in data["solar"]["disclaimer"]
+
+    def test_not_applied_when_solar_just_above_zero_threshold(self):
+        data = self._backend(solar=SOLAR_METER_HOLD_ZERO_W + 1, load=-1741.0).get_api_meters_aggregates()
+        self._assert_untouched(data, solar=SOLAR_METER_HOLD_ZERO_W + 1, load=-1741.0)
+
+    def test_not_applied_when_solar_negative(self):
+        data = self._backend(solar=-1.0, load=-1753.0).get_api_meters_aggregates()
+        self._assert_untouched(data, solar=-1.0, load=-1753.0)
+
+    def test_not_applied_when_reading_too_old(self):
+        data = self._backend(reading_time="2026-09-27T12:13:22-04:00").get_api_meters_aggregates()  # 90 s
+        self._assert_untouched(data)
+
+    def test_hold_applied_when_reading_newer_than_system_time(self):
+        """The Full query is fetched after the status; a first packet after the dropout can be
+        stamped a second newer than the status snapshot (missed hold seen live 2026-09-28)."""
+        data = self._backend(reading_time="2026-09-27T12:14:53-04:00").get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["load"]["instant_power"] == pytest.approx(1100.6)
+        assert "during SolarMeterComms (age 0s)" in data["solar"]["disclaimer"]
+
+    def test_hold_applied_when_reading_newer_by_exact_max_age(self):
+        data = self._backend(reading_time="2026-09-27T12:15:52-04:00").get_api_meters_aggregates()  # -60 s
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+
+    def test_not_applied_when_reading_too_far_in_future(self):
+        data = self._backend(reading_time="2026-09-27T12:16:52-04:00").get_api_meters_aggregates()  # -120 s
+        self._assert_untouched(data)
+
+    def test_not_applied_without_reading_timestamp(self):
+        data = self._backend(reading_time=None).get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def test_not_applied_with_unparseable_reading_timestamp(self):
+        data = self._backend(reading_time="not a time").get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def test_not_applied_without_system_time(self):
+        data = self._backend(system_time=None).get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def test_not_applied_without_solar_ct(self):
+        data = self._backend(location="load").get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def test_not_applied_when_retained_zero(self):
+        data = self._backend(ct0_power=0.0).get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def _drop_aggregate(self, backend, location):
+        """Remove a location from meterAggregates (current_power() -> None), leaving
+        the voltage sources in place - the realistic case the extractors must survive."""
+        status = backend.tedapi.get_status.return_value
+        aggregates = status["control"]["meterAggregates"]
+        aggregates[:] = [a for a in aggregates if a["location"] != location]
+
+    def test_solar_none_is_held(self):
+        """Gateway solar None (not 0) is held too, end to end with voltage sources
+        reporting (on a remote-meter site the meter itself supplies one)."""
+        backend = self._backend()
+        self._drop_aggregate(backend, "SOLAR")
+        data = backend.get_api_meters_aggregates()
+        v_solar = data["solar"]["instant_average_voltage"]
+        assert v_solar
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["solar"]["instant_total_current"] == pytest.approx(2852.6 / v_solar)
+        assert data["load"]["instant_power"] == pytest.approx(1100.6)
+
+    def _add_site_and_battery_voltage(self, backend):
+        """Give site (Meter X + islander main) and battery (PINV) a voltage source,
+        so all four sections divide power by a real voltage."""
+        bus = backend.tedapi.get_status.return_value["esCan"]["bus"]
+        bus["SYNC"]["METER_X_AcMeasurements"] = {
+            "METER_X_CTA_I": 2.5, "METER_X_CTB_I": 2.5, "METER_X_CTC_I": 0,
+            "METER_X_CTA_InstRealPower": -300.0, "METER_X_CTB_InstRealPower": -300.0}
+        bus["ISLANDER"]["ISLAND_AcMeasurements"].update(
+            {"ISLAND_VL1N_Main": 120.0, "ISLAND_VL2N_Main": 120.0, "ISLAND_VL3N_Main": 0})
+        bus["PINV"] = [{"PINV_Status": {"PINV_Vout": 240.0}}]
+
+    @pytest.mark.parametrize("location", ["SITE", "LOAD", "SOLAR", "BATTERY"])
+    def test_missing_power_with_voltage_does_not_raise(self, location):
+        """A location missing from meterAggregates while its voltage source still
+        reports yields power and current None - it used to raise TypeError."""
+        backend = self._backend(alerts=())
+        self._add_site_and_battery_voltage(backend)
+        self._drop_aggregate(backend, location)
+        data = backend.get_api_meters_aggregates()
+        section = {"SITE": "site", "LOAD": "load", "SOLAR": "solar", "BATTERY": "battery"}[location]
+        assert data[section]["instant_power"] is None
+        assert data[section]["instant_average_current"] is None
+
+    def test_control_null_does_not_raise(self):
+        """control: null (the gateway's site manager isn't running) with voltage
+        sources still reporting: aggregates degrade to None instead of raising."""
+        backend = self._backend(alerts=())
+        self._add_site_and_battery_voltage(backend)
+        backend.tedapi.get_status.return_value["control"] = None
+        data = backend.get_api_meters_aggregates()
+        for section in ("site", "load", "solar", "battery"):
+            assert data[section]["instant_power"] is None
+
+    def test_load_missing_holds_solar_and_leaves_load_alone(self):
+        backend = self._backend()
+        self._drop_aggregate(backend, "LOAD")
+        data = backend.get_api_meters_aggregates()
+        assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+        assert data["load"]["instant_power"] is None
+
+    def test_hold_helper_with_load_none_or_absent(self):
+        backend = _make_backend()
+        status = {"control": {"alerts": {"active": ["SolarMeterComms"]}},
+                  "system": {"time": DROPOUT_SYSTEM_TIME}}
+        hierarchy = {_hierarchy_key(REMOTE_METER_DIN, 0): {
+            **_remote_ct(0, power=2852.6, location="solar"), "Timestamp": DROPOUT_READING_TIME}}
+        for load in ({"instant_power": None, "instant_average_voltage": 240.0}, {}):
+            data = {"solar": {"instant_power": 0, "instant_average_voltage": None,
+                              "instant_average_current": None, "disclaimer": "solar"},
+                    "load": dict(load)}
+            backend._hold_solar_through_meter_comms(data, status, hierarchy)
+            assert data["solar"]["instant_power"] == pytest.approx(2852.6)
+            assert data["solar"]["instant_average_current"] is None  # no voltage to divide by
+            assert data["solar"]["disclaimer"] == (
+                "solar; solar held from remote meter reading during SolarMeterComms (age 4s)")
+            assert data["load"] == load
+
+    def test_error_in_hold_leaves_aggregates_intact(self):
+        backend = self._backend()
+        with patch.object(PyPowerwallTEDAPI, "_hold_solar_through_meter_comms",
+                          side_effect=RuntimeError("boom")):
+            data = backend.get_api_meters_aggregates()
+        self._assert_untouched(data)
+
+    def test_no_remote_meter_site_untouched(self):
+        """No remote meter in config.json: no Full-query fetch, nothing held,
+        even with the alert and solar 0."""
+        backend = self._backend()
+        backend.tedapi.get_config.return_value = {"vin": GATEWAY_DIN}
+        data = backend.get_api_meters_aggregates()
+        self._assert_untouched(data)
+        backend.tedapi.get_device_controller.assert_not_called()
