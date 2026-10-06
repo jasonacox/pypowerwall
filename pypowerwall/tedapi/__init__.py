@@ -2182,7 +2182,8 @@ class TEDAPI:
         * ``components.msa[].signals[]`` — the V2024_06 ``msaSignals`` request.
 
         Both are read; a device reported in both keeps the PVAC_Logging values.
-        Keys are ``PVAC--{part}--{serial}`` in either case.
+        Keys are ``PVAC--{part}--{serial}`` in either case, and a device's dict
+        holds only the RPMs it reported (one may be missing).
         """
         if not isinstance(data, dict):
             return {}
@@ -2192,9 +2193,12 @@ class TEDAPI:
         # List to store the valid fan speed values
         result = {}
 
-        # esCan.bus.PVAC[].PVAC_Logging (V2026_06 signed query)
+        # esCan.bus.PVAC[].PVAC_Logging (V2026_06 signed query). Entries without a
+        # packageSerialNumber are empty slots and skipped, as vitals() does: a PW3
+        # reports 8 of them (isMIA, fan RPMs 0), which would otherwise collapse
+        # into a phantom "PVAC--None--None" fan.
         for pvac in lookup(data, ['esCan', 'bus', 'PVAC']) or []:
-            if not isinstance(pvac, dict):
+            if not isinstance(pvac, dict) or not pvac.get("packageSerialNumber"):
                 continue
             logging_data = pvac.get("PVAC_Logging") or {}
             if not isinstance(logging_data, dict) or logging_data.get("isMIA"):
@@ -2545,9 +2549,10 @@ class TEDAPI:
             }
             pvac_fans = fan_speeds.get(pvac_name, {})
             if pvac_fans:
+                # .get(): extract_fan_speeds() omits an RPM the device didn't report
                 pvac[pvac_name].update({
-                    "PVAC_Fan_Speed_Actual_RPM": pvac_fans["PVAC_Fan_Speed_Actual_RPM"],
-                    "PVAC_Fan_Speed_Target_RPM": pvac_fans["PVAC_Fan_Speed_Target_RPM"]
+                    "PVAC_Fan_Speed_Actual_RPM": pvac_fans.get("PVAC_Fan_Speed_Actual_RPM"),
+                    "PVAC_Fan_Speed_Target_RPM": pvac_fans.get("PVAC_Fan_Speed_Target_RPM")
                 })
 
             pvs_name = f"PVS--{packagePartNumber}--{packageSerialNumber}"

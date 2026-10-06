@@ -83,6 +83,17 @@ class TestExtractFanSpeeds:
             "PVAC--P--HALF": {ACTUAL: 700},
         }
 
+    def test_pw3_empty_slots_yield_nothing(self):
+        # A PW3 under V2026_06 reports 8 serial-less PVAC slots, isMIA, fan
+        # RPMs 0 (live on 26.18.1); a serial-less slot must be skipped even
+        # if not flagged MIA, or it becomes a phantom "PVAC--None--None" fan.
+        empty_slot = {"packagePartNumber": None, "packageSerialNumber": None,
+                      "PVAC_Logging": {"isMIA": True, ACTUAL: 0, TARGET: 0}}
+        not_mia = {"packagePartNumber": None, "packageSerialNumber": "",
+                   "PVAC_Logging": {"isMIA": False, ACTUAL: 0, TARGET: 0}}
+        data = {"esCan": {"bus": {"PVAC": [empty_slot] * 8 + [not_mia]}}}
+        assert make_tedapi().extract_fan_speeds(data) == {}
+
     def test_malformed_payloads_yield_empty(self):
         api = make_tedapi()
         assert api.extract_fan_speeds(None) == {}
@@ -102,3 +113,36 @@ class TestExtractFanSpeeds:
                 "PVAC--P--SN1": {ACTUAL: 1300, TARGET: 1350},
             }
         gdc.assert_called_once_with(force=True)
+
+
+def _vitals_payload(actual, target):
+    """V2026_06-shaped device controller payload with one PVAC/PVS pair."""
+    pvac = _pvac("1538100-00-F", "SN1", actual, target)
+    for ch in "ABCD":
+        pvac["PVAC_Logging"][f"PVAC_PVMeasuredVoltage_{ch}"] = 300.0
+        pvac["PVAC_Logging"][f"PVAC_PVCurrent_{ch}"] = 1.0
+    pvac["PVAC_Logging"]["PVAC_VL2Ground"] = 120.0
+    return {"esCan": {"bus": {"PVAC": [pvac], "PVS": [{"PVS_Status": {}}]}}}
+
+
+class TestVitalsFanSpeeds:
+    """vitals() puts the PVAC_Logging fan RPMs on the PVAC block."""
+
+    def _pvac_block(self, actual, target):
+        api = make_tedapi()
+        with patch.object(TEDAPI, "get_config", return_value={"vin": "x"}), \
+                patch.object(TEDAPI, "get_device_controller",
+                             return_value=_vitals_payload(actual, target)):
+            return api.vitals()["PVAC--1538100-00-F--SN1"]
+
+    def test_fan_rpms_on_pvac_block(self):
+        block = self._pvac_block(1300, 1350)
+        assert block[ACTUAL] == 1300
+        assert block[TARGET] == 1350
+
+    def test_one_missing_rpm_does_not_raise(self):
+        # extract_fan_speeds() omits an unreported RPM; vitals() must not
+        # KeyError on it (that would drop vitals for the whole site)
+        block = self._pvac_block(1300, None)
+        assert block[ACTUAL] == 1300
+        assert block[TARGET] is None
