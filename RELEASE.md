@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): native API prefers LAN again after v1r WiFi failover recovery - `get_native_api()` remembered the WiFi host ('last host that served us goes first') and `_lan_reset()` never cleared it, so every poll's native overlay kept hitting WiFi forever even with the LAN healthy; the sticky `customer_host` is now reset on recovery (token re-login on host switch already handled). The reset and `get_native_api()`'s host selection both run under `_customer_lock`, so a native fetch in flight on WiFi during the recovery can't re-stick it. (#401)
+
 ## v0.18.2 - Powerwall 3 Fan Speeds and Battery Block Fix
 
 * feat(tedapi): Powerwall 3 fan speeds. Each PW3 inverter's two fans are requested as extra ComponentsQuery signals and passed through on its `TEPINV--<din>` vitals block as `PCH_FanSpeed_A`/`PCH_FanSpeed_B` (measured RPM) and `PCH_FanDuty_A`/`PCH_FanDuty_B` (drive duty cycle, %), `None` when unavailable. `TEDAPI.get_fan_speeds()` now reports them on PW3 (it returned `{}` there: the PW2 `PVAC_Fan_Speed_*` signals are always `None` on PW3), keyed `TEPINV--<din>` in `get_pw3_vitals()` order; new helper `extract_pw3_fan_speeds()`. Powerwall 2/+ output is unchanged. Hardware-validated on two PW3s (firmware 26.18.1). PW3 has no target-RPM signal, so the PW2 `PVAC_Fan_Speed_Target_RPM` name isn't reused. Like the PW3 temperatures (#390), PW3 fans need the default `tedapi_api_version="V2024_06"`: the V2026_06 signed `PW3Query` has its signal names inline in the signed text and doesn't include the fans, so under V2026_06 PW3 fan output stays `{}` as before. (#398)
