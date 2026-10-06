@@ -28,7 +28,6 @@ def set_debug(debug=False, quiet=False, color=True):
     else:
         log.setLevel(logging.NOTSET)
 
-# Compute the line-to-line voltage of single, two and three phase legs
 def _parse_gateway_time(value) -> Optional[datetime]:
     """Parse a gateway ISO-8601 timestamp with a UTC offset (e.g. "2026-09-27T12:14:48-04:00").
 
@@ -51,6 +50,7 @@ def _parse_gateway_time(value) -> Optional[datetime]:
     return parsed
 
 
+# Compute the line-to-line voltage of single, two and three phase legs
 def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
     """
     Compute the line-to-line voltage for various electrical system configurations.
@@ -105,6 +105,11 @@ def compute_LL_voltage(v1n=0, v2n=0, v3n=0):
 # SolarMeterComms is active. Usually exactly 0, but observed as 1 W three times in
 # two days (2026-09-29/30) on the same site - the hold must not miss those.
 SOLAR_METER_HOLD_ZERO_W = 10
+
+# Seconds a retained Tesla Remote Meter reading may be from the gateway's system
+# time (older, or newer - see _hold_solar_through_meter_comms) to be held through a
+# SolarMeterComms dropout. Observed dropouts last 8-28 s; anything older is stale.
+SOLAR_METER_HOLD_MAX_AGE = 60
 
 
 # pylint: disable=too-many-public-methods
@@ -436,6 +441,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         """
         Return Powerwall-style /api/meters/aggregates using TEDAPI data.
         Each section (site, load, solar, battery) is handled by a helper for clarity.
+        A section's power is None when its location is missing from meterAggregates
+        (or control is null, as when the gateway's site manager isn't running) while a
+        voltage source may still report; its current is then None rather than raising.
         """
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
@@ -529,11 +537,11 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         aggregate_remote_meter_data() has already scaled by real_power_scale_factor) and
         add the missing amount (retained minus whatever the gateway reported) back to
         load - but only if that reading is at most
-        TEDAPI.solar_meter_hold_max_age seconds older than the gateway's system time. A
+        SOLAR_METER_HOLD_MAX_AGE seconds older than the gateway's system time. A
         stale or undatable reading, no solar CT, or a retained value <= 0 leaves the
-        gateway's numbers exactly as they are (0 solar and negative load pass through),
-        as does solar_meter_hold_max_age = 0. Sites without a remote meter, without the
-        alert, or with non-zero solar are untouched.
+        gateway's numbers exactly as they are (0 solar and negative load pass through).
+        Sites without a remote meter, without the alert, or with non-zero solar are
+        untouched.
 
         The alert comes from the basic status query and the reading from the (separately
         cached) Full query, so they can be one cache cycle apart; the age check bounds that.
@@ -558,9 +566,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 not isinstance(gateway_solar, (int, float)) or isinstance(gateway_solar, bool)
                 or not 0 <= gateway_solar <= SOLAR_METER_HOLD_ZERO_W):
             return
-        max_age = getattr(self.tedapi, "solar_meter_hold_max_age", 0)
-        if isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or max_age <= 0:
-            return
+        max_age = SOLAR_METER_HOLD_MAX_AGE
         solar_cts = [d for d in (remote_hierarchy or {}).values()
                      if isinstance(d, dict) and d.get("Location") == "solar"]
         if not solar_cts:
@@ -720,7 +726,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
         if vll_site == 0:
             vll_site = None
-        i_site = grid_power / vll_site if vll_site else None
+        i_site = grid_power / vll_site if vll_site and grid_power is not None else None
         return {
             "instant_power": grid_power,
             "instant_average_voltage": vll_site,
@@ -743,7 +749,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_load = compute_LL_voltage(v1n, v2n, v3n)
         if vll_load == 0:
             vll_load = None
-        i_load = load_power / vll_load if vll_load else None
+        i_load = load_power / vll_load if vll_load and load_power is not None else None
         return {
             "instant_power": load_power,
             "instant_average_voltage": vll_load,
@@ -840,7 +846,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         disclaimer = f"solar: voltage from {voltage_source or 'unknown'}, {current_desc}"
         if vll_solar == 0:
             vll_solar = None
-        i_solar = solar_power / vll_solar if vll_solar else None
+        i_solar = solar_power / vll_solar if vll_solar and solar_power is not None else None
         return {
             "instant_power": solar_power,
             "instant_average_voltage": vll_solar,
@@ -877,7 +883,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_battery = sum_vll_battery / count_battery if count_battery else 0
         if vll_battery == 0:
             vll_battery = None
-        i_battery = battery_power / vll_battery if vll_battery else None
+        i_battery = battery_power / vll_battery if vll_battery and battery_power is not None else None
         return {
             "instant_power": battery_power,
             "instant_average_voltage": vll_battery,

@@ -22,11 +22,6 @@
                          path) or "V2026_06" (Tesla-signed GraphQL / bearer path).
                          Accepts a string or TEDAPIApiVersion.
 
- Attributes:
-    solar_meter_hold_max_age - Seconds (default 60, 0 disables) a Tesla Remote Meter
-                         solar reading may be held through a SolarMeterComms
-                         dropout in /api/meters/aggregates (see TEDAPI.__init__).
-
  Functions:
     get_din() - Get the DIN from the Powerwall Gateway
     get_config() - Get the Powerwall Gateway Configuration
@@ -219,24 +214,8 @@ class TEDAPI:
         NOT supported — installer login returns 401 on wired LAN (see
         jasonacox/pypowerwall-server#105). PW3 wired access is v1r's job.
         Bearer is mutually exclusive with v1r (its own RSA transport).
-
-        solar_meter_hold_max_age (instance attribute, not a parameter; default
-        60 seconds, 0 disables): a Wi-Fi Tesla Remote Meter (trm_wifi) reports
-        over Wi-Fi, and the gateway periodically misses its packet for seconds. While it
-        does, the gateway raises the SolarMeterComms alert, reports SOLAR = 0 (or a
-        watt or so) in meterAggregates and subtracts the missing solar from LOAD (which can
-        go negative), while teslaRemoteMeter keeps the last good reading with
-        its timestamp frozen. /api/meters/aggregates substitutes that retained
-        reading for solar (and adds it back to load) only when the alert is
-        active, the gateway reports solar as 0/None, and the reading is at most
-        this many seconds older than the gateway's system time (or, because the
-        Full query is fetched just after the status, up to this many seconds newer). Set it on the
-        instance to tune or disable, e.g. tedapi.solar_meter_hold_max_age = 0.
         """
         self.debug = debug
-        # Seconds a remote-meter solar reading may be held through SolarMeterComms
-        # (see docstring above and PyPowerwallTEDAPI._hold_solar_through_meter_comms).
-        self.solar_meter_hold_max_age: int = 60
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
         # V2026_06 (Tesla-signed pairs sent via the energy_device graphql path).
         # Accepts a TEDAPIApiVersion or a plain string (e.g. from an env var / CLI).

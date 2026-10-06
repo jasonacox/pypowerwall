@@ -771,11 +771,9 @@ class TestHoldSolarThroughSolarMeterComms:
 
     def _backend(self, alerts=("SolarMeterComms",), solar=0.0, load=-1752.0, site=-600.0,
                  ct0_power=1426.3, factor=2, reading_time=DROPOUT_READING_TIME,
-                 system_time=DROPOUT_SYSTEM_TIME, location="solar", max_age=None):
+                 system_time=DROPOUT_SYSTEM_TIME, location="solar"):
         ted = _make_tedapi()
         ted.pw3 = False
-        if max_age is not None:
-            ted.solar_meter_hold_max_age = max_age
         meter_aggregates = [
             {"location": "SITE", "realPowerW": site},
             {"location": "BATTERY", "realPowerW": 0.0},
@@ -815,9 +813,6 @@ class TestHoldSolarThroughSolarMeterComms:
         assert data["solar"]["instant_power"] == solar
         assert data["load"]["instant_power"] == load
         assert "SolarMeterComms" not in data["solar"]["disclaimer"]
-
-    def test_default_max_age_is_60(self):
-        assert _make_tedapi().solar_meter_hold_max_age == 60
 
     def test_hold_applied(self):
         data = self._backend().get_api_meters_aggregates()
@@ -907,37 +902,57 @@ class TestHoldSolarThroughSolarMeterComms:
         data = self._backend(ct0_power=0.0).get_api_meters_aggregates()
         self._assert_untouched(data)
 
-    def test_not_applied_when_disabled(self):
-        data = self._backend(max_age=0).get_api_meters_aggregates()
-        self._assert_untouched(data)
-
     def _drop_aggregate(self, backend, location):
-        """Remove a location from meterAggregates (current_power() -> None). The
-        voltages are dropped too: the section extractors divide power by voltage
-        and don't guard a None power, which is outside this change."""
+        """Remove a location from meterAggregates (current_power() -> None), leaving
+        the voltage sources in place - the realistic case the extractors must survive."""
         status = backend.tedapi.get_status.return_value
         aggregates = status["control"]["meterAggregates"]
         aggregates[:] = [a for a in aggregates if a["location"] != location]
-        status["esCan"]["bus"]["ISLANDER"] = {}
-        status["esCan"]["bus"]["PVAC"] = []
 
     def test_solar_none_is_held(self):
-        """Gateway solar None (not 0) is held too. Tested on the helper: end to end,
-        _extract_solar_section() already raises on a None solar power whenever any
-        voltage source (here the remote meter itself) reports - pre-existing, and
-        not what the hardware does during a dropout (it reports 0)."""
-        backend = _make_backend()
-        backend.tedapi.solar_meter_hold_max_age = 60
-        status = {"control": {"alerts": {"active": ["SolarMeterComms"]}},
-                  "system": {"time": DROPOUT_SYSTEM_TIME}}
-        hierarchy = {_hierarchy_key(REMOTE_METER_DIN, 0): {
-            **_remote_ct(0, power=2852.6, location="solar"), "Timestamp": DROPOUT_READING_TIME}}
-        data = {"solar": {"instant_power": None, "instant_average_voltage": 240.0, "disclaimer": "solar"},
-                "load": {"instant_power": -1752.0, "instant_average_voltage": 240.0}}
-        backend._hold_solar_through_meter_comms(data, status, hierarchy)
+        """Gateway solar None (not 0) is held too, end to end with voltage sources
+        reporting (on a remote-meter site the meter itself supplies one)."""
+        backend = self._backend()
+        self._drop_aggregate(backend, "SOLAR")
+        data = backend.get_api_meters_aggregates()
+        v_solar = data["solar"]["instant_average_voltage"]
+        assert v_solar
         assert data["solar"]["instant_power"] == pytest.approx(2852.6)
-        assert data["solar"]["instant_total_current"] == pytest.approx(2852.6 / 240.0)
+        assert data["solar"]["instant_total_current"] == pytest.approx(2852.6 / v_solar)
         assert data["load"]["instant_power"] == pytest.approx(1100.6)
+
+    def _add_site_and_battery_voltage(self, backend):
+        """Give site (Meter X + islander main) and battery (PINV) a voltage source,
+        so all four sections divide power by a real voltage."""
+        bus = backend.tedapi.get_status.return_value["esCan"]["bus"]
+        bus["SYNC"]["METER_X_AcMeasurements"] = {
+            "METER_X_CTA_I": 2.5, "METER_X_CTB_I": 2.5, "METER_X_CTC_I": 0,
+            "METER_X_CTA_InstRealPower": -300.0, "METER_X_CTB_InstRealPower": -300.0}
+        bus["ISLANDER"]["ISLAND_AcMeasurements"].update(
+            {"ISLAND_VL1N_Main": 120.0, "ISLAND_VL2N_Main": 120.0, "ISLAND_VL3N_Main": 0})
+        bus["PINV"] = [{"PINV_Status": {"PINV_Vout": 240.0}}]
+
+    @pytest.mark.parametrize("location", ["SITE", "LOAD", "SOLAR", "BATTERY"])
+    def test_missing_power_with_voltage_does_not_raise(self, location):
+        """A location missing from meterAggregates while its voltage source still
+        reports yields power and current None - it used to raise TypeError."""
+        backend = self._backend(alerts=())
+        self._add_site_and_battery_voltage(backend)
+        self._drop_aggregate(backend, location)
+        data = backend.get_api_meters_aggregates()
+        section = {"SITE": "site", "LOAD": "load", "SOLAR": "solar", "BATTERY": "battery"}[location]
+        assert data[section]["instant_power"] is None
+        assert data[section]["instant_average_current"] is None
+
+    def test_control_null_does_not_raise(self):
+        """control: null (the gateway's site manager isn't running) with voltage
+        sources still reporting: aggregates degrade to None instead of raising."""
+        backend = self._backend(alerts=())
+        self._add_site_and_battery_voltage(backend)
+        backend.tedapi.get_status.return_value["control"] = None
+        data = backend.get_api_meters_aggregates()
+        for section in ("site", "load", "solar", "battery"):
+            assert data[section]["instant_power"] is None
 
     def test_load_missing_holds_solar_and_leaves_load_alone(self):
         backend = self._backend()
@@ -948,7 +963,6 @@ class TestHoldSolarThroughSolarMeterComms:
 
     def test_hold_helper_with_load_none_or_absent(self):
         backend = _make_backend()
-        backend.tedapi.solar_meter_hold_max_age = 60
         status = {"control": {"alerts": {"active": ["SolarMeterComms"]}},
                   "system": {"time": DROPOUT_SYSTEM_TIME}}
         hierarchy = {_hierarchy_key(REMOTE_METER_DIN, 0): {
@@ -979,16 +993,3 @@ class TestHoldSolarThroughSolarMeterComms:
         data = backend.get_api_meters_aggregates()
         self._assert_untouched(data)
         backend.tedapi.get_device_controller.assert_not_called()
-
-    def test_hold_helper_ignores_mock_max_age(self):
-        """A non-numeric solar_meter_hold_max_age (e.g. a MagicMock TEDAPI) never holds."""
-        backend = _make_backend()  # tedapi is a MagicMock
-        data = {"solar": {"instant_power": 0, "disclaimer": "solar"},
-                "load": {"instant_power": -5.0}}
-        status = {"control": {"alerts": {"active": ["SolarMeterComms"]}},
-                  "system": {"time": DROPOUT_SYSTEM_TIME}}
-        hierarchy = {_hierarchy_key(REMOTE_METER_DIN, 0): {
-            **_remote_ct(0, power=100.0, location="solar"), "Timestamp": DROPOUT_READING_TIME}}
-        backend._hold_solar_through_meter_comms(data, status, hierarchy)
-        assert data["solar"]["instant_power"] == 0
-        assert data["load"]["instant_power"] == -5.0
