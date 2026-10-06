@@ -51,7 +51,7 @@ jobs:
       - name: "Run test.py on ${{ matrix.python-version }}"
         run: "python test.py"
 
-      # Upload both XML (for services/badges) and HTML (for browsing)
+      # Upload XML and HTML coverage for browsing (no external service)
       - name: Upload coverage artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -61,10 +61,3 @@ jobs:
             coverage.xml
             htmlcov/**
 
-      - name: Upload to Codecov
-        if: always()
-        uses: codecov/codecov-action@v4
-        with:
-          files: coverage.xml
-          flags: py${{ matrix.python-version }}
-          token: ${{ secrets.CODECOV_TOKEN }}
