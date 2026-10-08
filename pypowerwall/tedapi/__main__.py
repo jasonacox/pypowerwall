@@ -34,6 +34,8 @@ def _build_tedapi_arg_parser(default_host):
                         help='Fetch and print the gateway firmware version, then exit')
     parser.add_argument('-details', action='store_true',
                         help='With -firmware: include full system info (part/serial, githash)')
+    parser.add_argument('-fans', action='store_true',
+                        help='Fetch and print the fan speeds (get_fan_speeds) as JSON, then exit')
     parser.add_argument('--auth-mode', default=AuthMode.BASIC.value,
                         choices=[m.value for m in AuthMode],
                         help='Authentication mode: basic (default, Gateway Wi-Fi only via '
@@ -176,6 +178,21 @@ def run_tedapi_test(argv=None, debug=False):
             print(_render_firmware(info, details=True))
         else:
             print(f" - Firmware Version: {_render_firmware(info)}")
+        print()
+        return
+
+    # Focused fan-speed entrypoint: fetch + print get_fan_speeds() and exit (no
+    # config/status fetch, no files written). Lets the fan extraction be checked
+    # on its own -- e.g. run with -tedapi_api_version V2024_06 and V2026_06 and
+    # compare; PW2/+ PVAC fans should match across both query sets.
+    if args.fans:
+        print()
+        fans = ted.get_fan_speeds(force=True)
+        print(" - Fan Speeds:")
+        if fans:
+            print(json.dumps(fans, indent=2, default=_json_bytes_safe))
+        else:
+            print("   (none reported)")
         print()
         return
 

@@ -490,6 +490,8 @@ def main():
                              help="Fetch and print gateway firmware version, then exit")
     tedapi_args.add_argument("-details", action="store_true", default=False,
                              help="With -firmware: include full system info")
+    tedapi_args.add_argument("-fans", action="store_true", default=False,
+                             help="Fetch and print fan speeds (get_fan_speeds) as JSON, then exit")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -752,6 +754,8 @@ def main():
             tedapi_argv.append('-firmware')
         if getattr(args, 'details', False):
             tedapi_argv.append('-details')
+        if getattr(args, 'fans', False):
+            tedapi_argv.append('-fans')
         if args.debug:
             tedapi_argv.append('--debug')
         run_tedapi_test(argv=tedapi_argv, debug=args.debug)
