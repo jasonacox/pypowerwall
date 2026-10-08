@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): the CLI test tool (`python -m pypowerwall.tedapi`) no longer crashes with `AttributeError`/`TypeError` when the gateway returns explicit JSON `null`s - in `control`, `control.systemStatus`, `control.meterAggregates`, meter entries (`realPowerW`, `location`), or config `site_info`/`battery_blocks`. When `control` is null because the gateway's site manager is not running (`system.sitemanagerStatus.isRunning: false` - a faulted or uncommissioned gateway), the warning now says exactly that and points to the Tesla app, instead of suggesting a firmware schema change. Raw payloads are still saved to `status.json`/`config.json` before parsing. (#404)
+
 ## v0.18.2 - Powerwall 3 Fan Speeds and Battery Block Fix
 
 * feat(tedapi): Powerwall 3 fan speeds. Each PW3 inverter's two fans are requested as extra ComponentsQuery signals and passed through on its `TEPINV--<din>` vitals block as `PCH_FanSpeed_A`/`PCH_FanSpeed_B` (measured RPM) and `PCH_FanDuty_A`/`PCH_FanDuty_B` (drive duty cycle, %), `None` when unavailable. `TEDAPI.get_fan_speeds()` now reports them on PW3 (it returned `{}` there: the PW2 `PVAC_Fan_Speed_*` signals are always `None` on PW3), keyed `TEPINV--<din>` in `get_pw3_vitals()` order; new helper `extract_pw3_fan_speeds()`. Powerwall 2/+ output is unchanged. Hardware-validated on two PW3s (firmware 26.18.1). PW3 has no target-RPM signal, so the PW2 `PVAC_Fan_Speed_Target_RPM` name isn't reused. Like the PW3 temperatures (#390), PW3 fans need the default `tedapi_api_version="V2024_06"`: the V2026_06 signed `PW3Query` has its signal names inline in the signed text and doesn't include the fans, so under V2026_06 PW3 fan output stays `{}` as before. (#398)

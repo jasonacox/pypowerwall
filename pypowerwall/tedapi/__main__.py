@@ -75,6 +75,7 @@ def run_tedapi_test(argv=None, debug=False):
     # Imports
     from pypowerwall.tedapi import TEDAPI, GW_IP
     from pypowerwall import __version__
+    from pypowerwall.helpers import lookup
     import json
     import sys
     import requests
@@ -185,39 +186,64 @@ def run_tedapi_test(argv=None, debug=False):
 
     # Print Configuration
     print(" - Configuration:")
-    site_info = config.get('site_info', {})
+    site_info = config.get('site_info') or {}
     site_name = site_info.get('site_name', 'Unknown')
     print(f"   - Site Name: {site_name}")
     battery_commission_date = site_info.get('battery_commission_date', 'Unknown')
     print(f"   - Battery Commission Date: {battery_commission_date}")
     vin = config.get('vin', 'Unknown')
     print(f"   - VIN: {vin}")
-    number_of_powerwalls = len(config.get('battery_blocks', []))
+    number_of_powerwalls = len(config.get('battery_blocks') or [])
     print(f"   - Number of Powerwalls: {number_of_powerwalls}")
     print(f"   - Firmware Version: {_render_firmware(ted.get_firmware_version(force=True))}")
     print()
 
-    # Print power data
+    # Save Configuration and Status to JSON files first, so the raw payloads are
+    # captured for debugging even if the structure below is unexpected.
+    with open('status.json', 'w') as f:
+        json.dump(status, f)
+    with open('config.json', 'w') as f:
+        json.dump(config, f)
+
+    # Print power data (null-safe: a gateway in a faulted or uncommissioned
+    # state can return explicit nulls for 'control', 'systemStatus', meter
+    # entries, or config fields - chained .get(key, default) only guards
+    # missing keys, not null values)
     print(" - Power Data:")
-    nominalEnergyRemainingWh = status.get('control', {}).get('systemStatus', {}).get('nominalEnergyRemainingWh', 0)
-    nominalFullPackEnergyWh = status.get('control', {}).get('systemStatus', {}).get('nominalFullPackEnergyWh', 0)
+    control_raw = status.get('control')
+    control = control_raw if isinstance(control_raw, dict) else {}
+    if control_raw is None or not isinstance(control_raw, dict):
+        is_running = lookup(status, ['system', 'sitemanagerStatus', 'isRunning'])
+        print(f"   - WARNING: Gateway status payload has no 'control' data "
+              f"(system.sitemanagerStatus.isRunning: {is_running}).")
+        if is_running is False:
+            print("     The gateway is connected and communicating, but the site")
+            print("     manager is not running - the system appears switched off and")
+            print("     is not producing live power data. Check the Tesla app for")
+            print("     alerts or faults, and re-enable the site manager to restore")
+            print("     it. This is a gateway condition, not a pypowerwall problem.")
+        else:
+            print("     The site manager reports running, so this may be an unexpected")
+            print("     schema change. The raw payload was saved to status.json - please")
+            print("     share it in a GitHub issue (redact any site identifiers) so the")
+            print("     schema can be mapped.")
+    nominalEnergyRemainingWh = lookup(control, ['systemStatus', 'nominalEnergyRemainingWh']) or 0
+    nominalFullPackEnergyWh = lookup(control, ['systemStatus', 'nominalFullPackEnergyWh']) or 0
     if nominalFullPackEnergyWh == 0:
         print(f"   - Battery Full Charge Unknown ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
     else:
         soe = round(nominalEnergyRemainingWh / nominalFullPackEnergyWh * 100, 2)
         print(f"   - Battery Charge: {soe}% ({nominalEnergyRemainingWh}Wh of {nominalFullPackEnergyWh}Wh)")
-    meterAggregates = status.get('control', {}).get('meterAggregates', [])
+    meterAggregates = control.get('meterAggregates') or []
     for meter in meterAggregates:
-        location = meter.get('location', 'Unknown').title()
-        realPowerW = int(meter.get('realPowerW', 0))
+        if not isinstance(meter, dict):
+            continue
+        location = meter.get('location')
+        location = location.title() if isinstance(location, str) else 'Unknown'
+        realPowerW = meter.get('realPowerW')
+        realPowerW = int(realPowerW) if isinstance(realPowerW, (int, float)) else 0
         print(f"   - {location}: {realPowerW}W")
     print()
-
-    # Save Configuration and Status to JSON files
-    with open('status.json', 'w') as f:
-        json.dump(status, f)
-    with open('config.json', 'w') as f:
-        json.dump(config, f)
     print(" - Configuration and Status saved to config.json and status.json")
     print()
 
