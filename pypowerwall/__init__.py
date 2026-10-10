@@ -849,7 +849,8 @@ class Powerwall(object):
             scale    = If True (default) use Tesla's 5% reserve calculation
         """
         data = self.poll('/api/operation', force=force)
-        if data is not None and 'backup_reserve_percent' in data:
+        # Solar-only gateways (no battery) report backup_reserve_percent as None
+        if data is not None and data.get('backup_reserve_percent') is not None:
             percent = float(data['backup_reserve_percent'])
             if scale:
                 # Get percentage based on Tesla App scale

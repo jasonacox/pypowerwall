@@ -132,6 +132,15 @@ def test_get_reserve_and_mode(pw):
     assert m == 'self_consumption'
 
 
+def test_get_reserve_none_when_no_battery(pw):
+    # Solar-only (TEDAPI) gateways return the key with a None value; must not
+    # raise TypeError from float(None)
+    pw.client._poll_map['/api/operation'] = {'real_mode': 'self_consumption',
+                                             'backup_reserve_percent': None}
+    assert pw.get_reserve() is None
+    assert pw.get_reserve(scale=False) is None
+
+
 def test_set_mode_and_reserve_helpers(pw):
     # set_reserve wraps set_operation
     resp = pw.set_reserve(40)
