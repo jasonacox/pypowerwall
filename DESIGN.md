@@ -234,6 +234,7 @@ The proxy pins its library dependency (`proxy/requirements.txt`: `pypowerwall==X
 
 ## Versioning & Release
 
+- Version numbers follow SemVer; which part to bump (PATCH, MINOR or MAJOR) is defined in [AGENTS.md](AGENTS.md#versioning--release-checklist).
 - Library version lives **only** in the `__version__` literal in [pypowerwall/__init__.py](pypowerwall/__init__.py); `version`/`version_tuple` are derived from it, and `pyproject.toml` reads it at build time (`dynamic = ["version"]` + `attr:` — no regex, no import).
 - Proxy build tag lives **only** in `BUILD = "tNN"` in [proxy/server.py](proxy/server.py); reported as `"<libversion> Proxy tNN"`.
 - Docker tag is the concatenation: `jasonacox/pypowerwall:0.15.13t94`.

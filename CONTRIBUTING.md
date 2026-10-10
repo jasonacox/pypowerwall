@@ -133,7 +133,7 @@ This project follows [Semantic Versioning](https://semver.org/). Version numbers
 - **MINOR** version when you add functionality in a backwards-compatible manner, and
 - **PATCH** version when you make backwards-compatible bug fixes.
 
-Please update the version number appropriately in your pull request if your change warrants it, and describe the change in `RELEASE.md`.
+Please **don't** change the version number in your pull request. Describe your change in a bullet under the `## Unreleased` heading at the top of `RELEASE.md` instead (create the heading if it's missing). Several PRs usually ship together, so the maintainer picks the version at release time using the rules in [AGENTS.md](AGENTS.md#versioning--release-checklist) (Versioning & Release Checklist). A breaking change needs an explicit maintainer decision before any work starts (see Backward Compatibility below).
 
 ## Relationship to Powerwall-Dashboard
 
