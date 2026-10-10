@@ -29,6 +29,7 @@ import json
 # Modules
 from pypowerwall import version, set_debug
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.auth_mode import AuthMode
 
 
 def _email_from_auth(authpath):
@@ -40,6 +41,18 @@ def _email_from_auth(authpath):
         return list(data.keys())[0]
     except Exception:
         return None
+
+
+def _flatten(data, prefix=''):
+    """Flatten nested dicts into one level with dotted keys, for CSV columns
+    (e.g. {'temps': {'TEPOD--x': 24.1}} -> {'temps.TEPOD--x': 24.1})."""
+    flat = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            flat.update(_flatten(value, f"{prefix}{key}."))
+        else:
+            flat[f"{prefix}{key}"] = value
+    return flat
 
 
 def _add_connection_args(parser):
@@ -74,11 +87,27 @@ def _add_connection_args(parser):
                         help="Gateway password [required for -tedapi and -v1r]")
     parser.add_argument("-rsa_key_path", type=str, default=None,
                         help="RSA private key PEM path [v1r; default: ./tedapi_rsa_private.pem]")
+    parser.add_argument("-tedapi_api_version", type=str, default=None,
+                        choices=[v.value for v in TEDAPIApiVersion],
+                        help="TEDAPI query/protobuf set [tedapi/v1r; default: V2024_06]")
+    parser.add_argument("-tedapi_auth_mode", type=str, default=None,
+                        choices=[m.value for m in AuthMode],
+                        help="TEDAPI authentication [tedapi; default: basic]")
 
 
 def _build_powerwall(args, authpath):
     """Construct a Powerwall instance from the parsed connection mode flags."""
     import pypowerwall
+    # -tedapi_api_version / -tedapi_auth_mode; unset options keep the library defaults
+    tedapi_opts = {k: getattr(args, k) for k in ('tedapi_api_version', 'tedapi_auth_mode')
+                   if getattr(args, k, None)}
+    if tedapi_opts and not (getattr(args, 'tedapi', False) or getattr(args, 'v1r', False)):
+        print("ERROR: -tedapi_api_version and -tedapi_auth_mode require -tedapi or -v1r")
+        sys.exit(1)
+    if 'tedapi_auth_mode' in tedapi_opts and getattr(args, 'v1r', False):
+        # v1r authenticates with its registered RSA key; the auth mode would be ignored
+        print("ERROR: -tedapi_auth_mode applies to -tedapi only (v1r signs with its RSA key)")
+        sys.exit(1)
     if getattr(args, 'v1r', False):
         if not args.gw_pwd:
             print("ERROR: -v1r requires -gw_pwd <gateway_password>")
@@ -107,13 +136,14 @@ def _build_powerwall(args, authpath):
             gw_pwd=args.gw_pwd,
             rsa_key_path=rsa_key_path,
             authpath=authpath,
+            **tedapi_opts,
         )
     if getattr(args, 'tedapi', False):
         if not args.gw_pwd:
             print("ERROR: -tedapi requires -gw_pwd <gateway_password>")
             sys.exit(1)
         host = args.host or "192.168.91.1"
-        return pypowerwall.Powerwall(host=host, gw_pwd=args.gw_pwd, authpath=authpath)
+        return pypowerwall.Powerwall(host=host, gw_pwd=args.gw_pwd, authpath=authpath, **tedapi_opts)
     if getattr(args, 'local', False):
         if not args.host:
             # Powerwall(host="") silently flips to cloud mode - reject instead
@@ -524,7 +554,7 @@ def main():
                                 help="Grid Export Mode: battery_ok, pv_only, or never")
 
     get_mode_args = subparsers.add_parser("get", parents=[common],
-                                           help='Get Powerwall settings and power levels')
+                                           help='Get Powerwall settings, power levels, temperatures and fan speeds')
     _add_connection_args(get_mode_args)
     get_mode_args.add_argument("-format", type=str, default="text",
                                 help="Output format: text, json, csv")
@@ -886,12 +916,21 @@ def main():
             'grid_export_mode': pw.get_grid_export(),
             'time_remaining': pw.get_time_remaining(),
         }
+        # Per-device temperatures and fan speeds, when the connection mode reports
+        # them (TEDAPI/local vitals): same shapes as the proxy's /temps and /fans
+        temps = pw.temps() or {}
+        fans = (pw.tedapi.get_fan_speeds() if pw.tedapi else None) or {}
+        if temps:
+            output['temps'] = temps
+        if fans:
+            output['fans'] = fans
         if args.format == 'json':
             print(json.dumps(output, indent=2))
         elif args.format == 'csv':
-            header = ",".join(output.keys())
+            flat = _flatten(output)
+            header = ",".join(flat.keys())
             print(header)
-            values = ",".join("N/A" if v is None else str(v) for v in output.values())
+            values = ",".join("N/A" if v is None else str(v) for v in flat.values())
             print(values)
         else:
             # Table Output — override display labels for terse keys
@@ -899,10 +938,20 @@ def main():
                 'site_id': 'Site ID',
                 'din': 'DIN',
                 'soc': 'Battery Level',
+                'temps': 'Temperatures',
             }
             for item in output:
                 name = _labels.get(item, item.replace("_", " ").title())
                 value = output[item]
+                if isinstance(value, dict):
+                    # One row per device, keyed by its vitals name
+                    print(f"  {name}")
+                    for device, reading in value.items():
+                        if isinstance(reading, dict):
+                            reading = ", ".join(f"{k}={'N/A' if v is None else v}"
+                                                for k, v in reading.items())
+                        print("    {:<38}{}".format(device, "N/A" if reading is None else reading))
+                    continue
                 print("  {:<18}{}".format(name, "N/A" if value is None else value))
             print("")
 
