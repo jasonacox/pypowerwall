@@ -45,6 +45,13 @@
 #   pypowerwall/tedapi/protobuf/V2024_06/tedapi_combined.proto → tedapi_combined_pb2.py [LEGACY]
 #   pypowerwall/tedapi/protobuf/V2026_06/tedapi_v2_*.proto     → ..._pb2.py          [V2026_06]
 #
+# NAMESPACED REGISTRATION (issue #408):
+#   Each pb2 registers its descriptors in the process-wide protobuf pool under its
+#   own import path, e.g. file pypowerwall/tedapi/protobuf/V2024_06/tedapi.proto,
+#   package pypowerwall.tedapi.protobuf.V2024_06.tedapi (Python class names and
+#   wire bytes are unchanged). tools/namespace_protos.py stages renamed copies for
+#   protoc; the checked-in .proto sources keep their original packages.
+#
 # The bundle's TEDAPI schema spans several protobuf
 # packages, so it is emitted as one file per package (energy_device.v1,
 # energy_registration.v1, common.v1, google.rpc), referencing google.protobuf
@@ -70,20 +77,23 @@ provision() {  # <venv-dir> <python> <requirements-file>
 provision "$LEGACY_VENV" "$LEGACY_PY" tools/requirements-tools.txt
 provision "$V2_VENV"     "$V2_PY"     tools/requirements-tools-v2.txt
 
-# --- LEGACY toolchain: guard-free, protobuf 4.25 (runs on protobuf>=4.25.1) ---
-"$LEGACY_VENV/bin/python" -m grpc_tools.protoc -I. --python_out=pypowerwall/local tesla.proto
+# Namespace the sources (issue #408): stage each under its package path with a
+# prefixed package, so the registered descriptor names can't collide with other
+# libraries' copies of Tesla's protos in the same process. See namespace_protos.py.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
 PROTO_V1_DIR=pypowerwall/tedapi/protobuf/V2024_06
-"$LEGACY_VENV/bin/python" -m grpc_tools.protoc -I "$PROTO_V1_DIR" --python_out="$PROTO_V1_DIR" "$PROTO_V1_DIR"/tedapi.proto
-"$LEGACY_VENV/bin/python" -m grpc_tools.protoc -I "$PROTO_V1_DIR" --python_out="$PROTO_V1_DIR" "$PROTO_V1_DIR"/tedapi_combined.proto
+PROTO_V2_DIR=pypowerwall/tedapi/protobuf/V2026_06
+"$V2_VENV/bin/python" tools/namespace_protos.py "$STAGE" tesla.proto:pypowerwall/local \
+    "$PROTO_V1_DIR"/tedapi.proto:"$PROTO_V1_DIR" "$PROTO_V1_DIR"/tedapi_combined.proto:"$PROTO_V1_DIR" \
+    $(for f in "$PROTO_V2_DIR"/tedapi_v2_*.proto; do printf '%s:%s ' "$f" "$PROTO_V2_DIR"; done)
+
+# --- LEGACY toolchain: guard-free, protobuf 4.25 (runs on protobuf>=4.25.1) ---
+"$LEGACY_VENV/bin/python" -m grpc_tools.protoc -I "$STAGE" --python_out=. \
+    "$STAGE"/pypowerwall/local/tesla.proto "$STAGE/$PROTO_V1_DIR"/*.proto
 
 # --- V2026_06 toolchain: latest protoc, guarded (protobuf>=6.33.6, opt-in only) ---
-PROTO_V2_DIR=pypowerwall/tedapi/protobuf/V2026_06
-"$V2_VENV/bin/python" -m grpc_tools.protoc -I "$PROTO_V2_DIR" --python_out="$PROTO_V2_DIR" "$PROTO_V2_DIR"/tedapi_v2_*.proto
-# protoc emits bare cross-imports (`import tedapi_v2_x_pb2`); rewrite to package-
-# relative (`from . import tedapi_v2_x_pb2`) so the dir works as a Python package.
-# Deterministic, so committed output == script output (CI git-diff stays clean).
-# (perl, not sed -i: BSD/macOS sed treats -i's argument as a backup suffix, so
-# `sed -i -E` silently misparses there — perl -pi -e is portable GNU/BSD.)
-perl -pi -e 's/^import (tedapi_v2_[a-z_]+_pb2) as /from . import $1 as /' "$PROTO_V2_DIR"/tedapi_v2_*_pb2.py
+# protoc emits absolute imports (from pypowerwall.tedapi.protobuf.V2026_06 import ...).
+"$V2_VENV/bin/python" -m grpc_tools.protoc -I "$STAGE" --python_out=. "$STAGE/$PROTO_V2_DIR"/tedapi_v2_*.proto
 # Ensure the package marker exists.
 [ -f "$PROTO_V2_DIR/__init__.py" ] || printf '"""TEDAPI v2 energy_device protobufs (Tesla One, June 2026 query set)."""\n' > "$PROTO_V2_DIR/__init__.py"

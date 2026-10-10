@@ -47,6 +47,16 @@ V2026_06 set uses the latest toolchain and is imported lazily, opt-in only.
 Do not raise the protobuf floor in `requirements.txt`/`setup.py` to match the
 newer toolchain.
 
+The script registers every module under its own import path (issue #408):
+file `pypowerwall/tedapi/protobuf/V2024_06/tedapi.proto`, package
+`pypowerwall.tedapi.protobuf.V2024_06.tedapi`, and so on. Python keeps one
+protobuf descriptor pool per process, so generic names (`tedapi.proto`,
+`teslapower`, `google.rpc`) collide with other libraries' copies of Tesla's
+protos, for example in Home Assistant. `tools/namespace_protos.py` renames
+staged copies for `protoc`; the `.proto` files here keep their original
+packages, so they still diff cleanly against Tesla's schema. Class names and
+wire bytes are unchanged (the wire carries field numbers, not names).
+
 Guardrails: the pre-commit hook runs the script whenever a `.proto` is staged,
 and CI (`.github/workflows/check-protobuf.yml`) fails if committed pb2 files
 don't match their sources.

@@ -1763,15 +1763,23 @@ class TEDAPI:
         their `*_pb2.py` embed a `runtime_version.ValidateProtobufRuntimeVersion()`
         guard and require protobuf>=6.33.6. The library floor stays at 4.25.1 and
         the default V2024_06 path never imports these — so this newer requirement
-        (and this error) is only reached when a caller opts into the V2026_06 set."""
+        (and this error) is only reached when a caller opts into the V2026_06 set.
+        Any other import failure (e.g. a descriptor-pool clash with another
+        library, issue #408) is reported as itself, not as a version problem."""
         try:
             from .protobuf.V2026_06 import tedapi_v2_transport_pb2 as tx
             from .protobuf.V2026_06 import tedapi_v2_energy_device_pb2 as ed
             return tx, ed
         except Exception as e:
+            from google.protobuf import __version__ as protobuf_version
+            installed = tuple(int(part) for part in protobuf_version.split('.')[:3] if part.isdigit())
+            if installed < (6, 33, 6):
+                raise ImportError(
+                    'tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — '
+                    'pip install -U protobuf'
+                ) from e
             raise ImportError(
-                'tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — '
-                'pip install -U protobuf'
+                f'tedapi_api_version="V2026_06" protobuf modules failed to load: {e}'
             ) from e
 
     def _build_signed_query_request(self, query, *, recipient_din: Optional[str] = None,
