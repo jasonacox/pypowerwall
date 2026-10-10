@@ -13,8 +13,11 @@ fallback host configured:
   3. Recovery probe: _post_tedapi() keeps routing via WiFi (not 'resumed')
      when the recovery reconnect comes back over the fallback path, and
      the LAN retry backoff keeps doubling.
+  4. LAN recovery: _lan_reset() forgets the sticky WiFi native-API host, so
+     get_native_api() prefers the LAN again, even with a fetch in flight.
 """
 import logging
+import threading
 import time
 from http import HTTPStatus
 from unittest.mock import MagicMock, patch
@@ -317,3 +320,134 @@ class TestGetDinOverWifi:
         assert any(
             'resuming wired' in r.message for r in caplog.records
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: customer-API host stickiness across LAN recovery
+# ---------------------------------------------------------------------------
+
+class TestLanResetClearsCustomerHost:
+    """After LAN recovery the native API must prefer the LAN host again.
+
+    Regression: get_native_api() sorts 'last host that served us goes
+    first'. After a failover customer_host is the WiFi host, and _lan_reset
+    left it there — every poll's native overlay then kept hitting WiFi
+    forever even with the LAN healthy, since WiFi answers fine.
+    """
+
+    def test_lan_reset_forgets_sticky_wifi_host(self):
+        ted = _make_tedapi()
+        ted.lan_failed = True
+        ted.lan_fail_count = 3
+        ted.customer_host = '192.168.1.39'  # stuck on WiFi from failover
+        ted._lan_reset()
+        assert ted.lan_failed is False
+        assert ted.lan_fail_count == 0
+        assert ted.customer_host is None
+
+    def test_native_api_prefers_lan_after_reset(self):
+        ted = _make_tedapi()
+        ted.failover = True
+        ted.wifi_host = '192.168.1.39'
+        ted.customer_host = '192.168.1.39'  # as left behind by a failover
+        ted.lan_failed = False  # recovered, but host still sticky (pre-fix)
+        tried = []
+
+        def fake_native_get(host, path):
+            tried.append(host)
+            return {'served_by': host}
+
+        with patch.object(
+            TEDAPI, '_customer_password', return_value='x',
+        ), patch.object(
+            TEDAPI, '_native_get', side_effect=fake_native_get,
+        ):
+            ted._lan_reset()
+            assert ted.get_native_api('/api/meters/aggregates') == {
+                'served_by': '10.42.1.1'}
+        assert tried[0] == '10.42.1.1'
+
+    def _race_tedapi(self):
+        """Failed over and recovered: customer_host still sticky on WiFi.
+        Returns (ted, tried, fake_native_get): the fake fetch records each
+        host and, like a (re-)login, makes it the sticky host."""
+        ted = _make_tedapi()
+        ted.failover = True
+        ted.wifi_host = '192.168.1.39'
+        ted.customer_host = '192.168.1.39'
+        tried = []
+
+        def fake_native_get(host, path):
+            tried.append(host)
+            ted.customer_host = host
+            return {'served_by': host}
+        return ted, tried, fake_native_get
+
+    def test_reset_waits_for_in_flight_fetch(self):
+        # A fetch already on WiFi must not re-stick WiFi after the reset:
+        # the reset waits for it (under _customer_lock), then clears.
+        ted, tried, fake_native_get = self._race_tedapi()
+        in_fetch, release = threading.Event(), threading.Event()
+
+        def blocking_native_get(host, path):
+            in_fetch.set()
+            release.wait(5)
+            return fake_native_get(host, path)
+
+        with patch.object(
+            TEDAPI, '_customer_password', return_value='x',
+        ), patch.object(
+            TEDAPI, '_native_get', side_effect=blocking_native_get,
+        ):
+            fetch = threading.Thread(
+                target=ted.get_native_api, args=('/api/meters/aggregates',))
+            fetch.start()
+            assert in_fetch.wait(5)
+            reset = threading.Thread(target=ted._lan_reset)
+            reset.start()
+            reset.join(0.2)
+            assert reset.is_alive()  # blocked behind the in-flight fetch
+            release.set()
+            fetch.join(5)
+            reset.join(5)
+        assert tried == ['192.168.1.39']
+        assert ted.customer_host is None
+        assert ted.lan_failed is False  # _lan_lock part didn't wait
+
+    def test_host_order_chosen_after_reset_lands(self):
+        # A reset landing while a fetch waits for _customer_lock must decide
+        # that fetch's host order: chosen inside the lock, not before it.
+        ted, tried, fake_native_get = self._race_tedapi()
+        lock = ted._customer_lock
+
+        class ResetBeforeAcquire:
+            """_customer_lock whose first acquire lets a reset land first."""
+            fired = False
+
+            def acquire(self, *args, **kwargs):
+                if not self.fired:
+                    self.fired = True
+                    reset = threading.Thread(target=ted._lan_reset)
+                    reset.start()
+                    reset.join(5)
+                return lock.acquire(*args, **kwargs)
+
+            def release(self):
+                lock.release()
+
+            def __enter__(self):
+                return self.acquire()
+
+            def __exit__(self, *exc):
+                self.release()
+
+        ted._customer_lock = ResetBeforeAcquire()
+        with patch.object(
+            TEDAPI, '_customer_password', return_value='x',
+        ), patch.object(
+            TEDAPI, '_native_get', side_effect=fake_native_get,
+        ):
+            assert ted.get_native_api('/api/meters/aggregates') == {
+                'served_by': '10.42.1.1'}
+        assert tried == ['10.42.1.1']
+        assert ted.customer_host == '10.42.1.1'

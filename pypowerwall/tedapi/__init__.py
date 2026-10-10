@@ -37,7 +37,7 @@
     get_pw3_vitals() - Get the Powerwall 3 Vitals Information
     get_device_controller() - Get the Powerwall Device Controller Status
     get_fan_speeds() - Get the fan speeds in RPM (PW2/PW+ PVAC fans, PW3 inverter fans)
-    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb) CT readings
+    get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb / trm_wifi) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
 
@@ -92,6 +92,14 @@ GW_IP = "192.168.91.1"
 CUSTOMER_TOKEN_EXPIRE: Final[float] = 3000.0
 # Backoff before retrying an unavailable local API endpoint
 NATIVE_FAIL_RETRY: Final[float] = 300.0
+
+# config.json meter types for a Tesla Remote Meter (wireless CT meter). Both report
+# through the Device Controller Full query's teslaRemoteMeter field with the same
+# reading/ctReadings shape. "trm_mb" was the first one supported (#386); "trm_wifi"
+# is the Wi-Fi-connected meter (hardware-validated 2026-09-27 on 2x Powerwall 3,
+# firmware 26.34.0, as the site's only solar meter). Before it was listed here a
+# trm_wifi site got no remote-meter data at all. Neurio (neurio_w2_tcp) is separate.
+REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
 
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
@@ -283,7 +291,9 @@ class TEDAPI:
         self.customer_token_time: float = 0.0
         self.customer_host: Optional[str] = None
         self.api_session: Optional[requests.Session] = None
-        # Reentrant so get_native_meters_aggregates can hold it across get_native_api
+        # Guards the customer login state (customer_host/token) and the native
+        # fetch; reentrant so get_native_meters_aggregates can hold it across
+        # get_native_api
         self._customer_lock = threading.RLock()
         self._native_fail_until: float = 0.0  # backoff when endpoint unavailable
         if v1r:
@@ -1733,11 +1743,21 @@ class TEDAPI:
             return self._lan_trip_locked(self.lan_fail_count + 1)
 
     def _lan_reset(self) -> None:
-        """LAN connected: close the failover and clear the failure count."""
+        """LAN connected: close the failover, clear the failure count, and
+        point the native API back at the LAN."""
         with self._lan_lock:
             self.lan_failed = False
             self.lan_fail_count = 0
             self.lan_recover_after = 0
+        # Forget the sticky native-API host: while failed over, get_native_api()
+        # made the WiFi host sticky ('last host that served us goes first') and
+        # WiFi keeps answering, so it would never return to the LAN. Under
+        # _customer_lock, which get_native_api() holds from host selection
+        # through login, so an in-flight WiFi fetch can't re-stick it; taken
+        # after _lan_lock so that is never held while waiting on network work.
+        # The next fetch logs in on gw_ip (_native_get re-logs in on a switch).
+        with self._customer_lock:
+            self.customer_host = None
 
     def close_session(self):
         """Close the underlying requests.Session objects to the Gateway."""
@@ -2372,10 +2392,17 @@ class TEDAPI:
                     "InstCurrent": ct.get('currentA'),
                     "EnergyExportedWs": ct.get('energyExportedWs'),
                     "EnergyImportedWs": ct.get('energyImportedWs'),
-                    "Location": location[i] if location and len(location) > i else None
+                    "Location": location[i] if location and len(location) > i else None,
+                    # The meter's own reading timestamp (ISO-8601 with offset). The
+                    # gateway keeps the last good reading - timestamp frozen - while
+                    # the meter is out of contact, so this is how consumers tell a
+                    # live reading from a retained one. Hierarchy only: the flat
+                    # block already carries it once per meter as lastCommunicationTime.
+                    "Timestamp": reading.get('timestamp')
                 }
                 remote_hierarchy[f"{din}:{i}"] = ct_hierarchy
-                cts_flat.update({f"TRM_CT{i}_" + key: value for key, value in ct_hierarchy.items() if key != "Index"})
+                cts_flat.update({f"TRM_CT{i}_" + key: value for key, value in ct_hierarchy.items()
+                                 if key not in ("Index", "Timestamp")})
             rest = {
                 "componentParentDin": lookup(config_data, ['vin']),
                 "firmwareVersion": reading.get('firmwareVersion'),
@@ -2396,15 +2423,15 @@ class TEDAPI:
         Remote meter data is only present in the Device Controller Full query
         (get_device_controller()), not the basic status query used by get_status(), so this
         issues its own (cached) fetch - but only when config.json actually declares a remote
-        meter (type "trm_mb"). Most installs have none, so callers that already have `config`
-        (the site/solar aggregate extractors) should pass it in: it lets this skip the extra
-        Full-query fetch entirely instead of paying for one on every poll for every user.
+        meter (a type in REMOTE_METER_TYPES: "trm_mb" or "trm_wifi"). Most installs have none, so
+        callers that already have `config` (the site/solar aggregate extractors) should pass it
+        in: it lets this skip the extra Full-query fetch entirely instead of paying for one on every poll for every user.
         """
         if config is None:
             config = self.get_config(force=force)
         if not isinstance(config, dict):
             return {}
-        meter_config = self.derive_meter_config(config, types=("trm_mb",))
+        meter_config = self.derive_meter_config(config, types=REMOTE_METER_TYPES)
         if not meter_config:
             return {}
         controller = self.get_device_controller(force=force)
@@ -2449,7 +2476,7 @@ class TEDAPI:
         remote_meter = self.aggregate_remote_meter_data(
             config_data=config,
             status_data=status,
-            meter_config_data=self.derive_meter_config(config, types=("trm_mb",))
+            meter_config_data=self.derive_meter_config(config, types=REMOTE_METER_TYPES)
         )[0]
 
         # Create PVAC, PVS, and TESLA blocks - Assume the are aligned
@@ -3099,21 +3126,23 @@ class TEDAPI:
         """
         if not self._customer_password():
             return None
-        hosts = [self.gw_ip]
-        if self.failover and self.wifi_host and self.wifi_host != self.gw_ip:
-            hosts.append(self.wifi_host)
-        if len(hosts) > 1:
-            if self.customer_host in hosts:
-                # Last host that served us goes first - a dead primary would
-                # otherwise cost a full timeout on every fetch
-                hosts.sort(key=lambda h: h != self.customer_host)
-            elif self.lan_failed:
-                hosts.reverse()
         # Bounded acquisition - don't pile threads up behind a slow fetch
         if not self._customer_lock.acquire(timeout=self.timeout):
             log.debug(f"Gateway local API busy - skipping {path}")
             return None
         try:
+            # Host order is chosen under _customer_lock: _lan_reset() clears
+            # customer_host under it, so a stale order can't outlive the reset
+            hosts = [self.gw_ip]
+            if self.failover and self.wifi_host and self.wifi_host != self.gw_ip:
+                hosts.append(self.wifi_host)
+            if len(hosts) > 1:
+                if self.customer_host in hosts:
+                    # Last host that served us goes first - a dead primary would
+                    # otherwise cost a full timeout on every fetch
+                    hosts.sort(key=lambda h: h != self.customer_host)
+                elif self.lan_failed:
+                    hosts.reverse()
             for host in hosts:
                 try:
                     data = self._native_get(host, path)
