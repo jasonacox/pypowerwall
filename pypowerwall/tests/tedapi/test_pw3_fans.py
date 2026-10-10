@@ -22,6 +22,16 @@ from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi import queries as q
 from pypowerwall.tedapi.queries import QueryRole
 
+# The V2026_06 pb2 requires protobuf>=6.33.6 (guarded gencode); tests that build
+# or parse a V2026_06 message skip on the 4.25.1 floor (as test_api_version.py does).
+try:
+    from pypowerwall.tedapi.protobuf.V2026_06 import tedapi_v2_transport_pb2  # noqa: F401
+    HAVE_V2026 = True
+except Exception:
+    HAVE_V2026 = False
+
+v2026_only = pytest.mark.skipif(not HAVE_V2026, reason="V2026_06 protos require protobuf>=6.33.6")
+
 LEADER_DIN = "1707000-11-M--TG1253370033TB"
 FOLLOWER_DIN = "1707000-11-M--TG125337002LNY"   # sorts before the leader
 FAN_NAMES = ["PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PCH_FanDuty_B"]
@@ -236,6 +246,7 @@ class TestV2026Unsupported:
         text = q.get_query(QueryRole.COMPONENTS, TEDAPIApiVersion.V2026_06).text
         assert not any(name in text for name in FAN_NAMES)
 
+    @v2026_only
     def test_v2026_request_carries_no_fan_names(self, api):
         api.tedapi_api_version = TEDAPIApiVersion.V2026_06
         request = api._build_request(QueryRole.COMPONENTS, recipient_din=LEADER_DIN)
@@ -256,6 +267,7 @@ class TestV2026Unsupported:
         payloads = {LEADER_DIN: _payload({}), FOLLOWER_DIN: _payload({})}
         assert self._v2026_fans(api, payloads) == {}
 
+    @v2026_only
     def test_not_gated_if_a_signed_query_ever_delivers_them(self, api):
         payloads = {LEADER_DIN: _payload(LEADER_FANS), FOLLOWER_DIN: _payload({})}
         assert self._v2026_fans(api, payloads) == {f"TEPINV--{LEADER_DIN}": LEADER_FANS}
