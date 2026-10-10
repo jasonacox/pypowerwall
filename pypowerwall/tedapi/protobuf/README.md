@@ -55,7 +55,10 @@ protobuf descriptor pool per process, so generic names (`tedapi.proto`,
 protos, for example in Home Assistant. `tools/namespace_protos.py` renames
 staged copies for `protoc`; the `.proto` files here keep their original
 packages, so they still diff cleanly against Tesla's schema. Class names and
-wire bytes are unchanged (the wire carries field numbers, not names).
+message encoding are unchanged (fields are encoded by number, not name). The
+exception is `google.protobuf.Any`: `Any.Pack()` writes the message's full name
+into `type_url`, so packing one of these messages gives the namespaced URL.
+pypowerwall itself packs none.
 
 Guardrails: the pre-commit hook runs the script whenever a `.proto` is staged,
 and CI (`.github/workflows/check-protobuf.yml`) fails if committed pb2 files

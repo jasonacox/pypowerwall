@@ -58,6 +58,7 @@ import gzip
 import json
 import logging
 import math
+import re
 import sys
 import threading
 import time
@@ -1772,8 +1773,10 @@ class TEDAPI:
             return tx, ed
         except Exception as e:
             from google.protobuf import __version__ as protobuf_version
-            installed = tuple(int(part) for part in protobuf_version.split('.')[:3] if part.isdigit())
-            if installed < (6, 33, 6):
+            # Numeric major.minor.patch prefix ("6.33.6+vendor.1" is 6.33.6); an
+            # unrecognized version gets the real cause, not upgrade advice
+            installed = re.match(r'(\d+)\.(\d+)\.(\d+)', protobuf_version)
+            if installed and tuple(map(int, installed.groups())) < (6, 33, 6):
                 raise ImportError(
                     'tedapi_api_version="V2026_06" requires protobuf>=6.33.6 — '
                     'pip install -U protobuf'

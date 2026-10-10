@@ -48,9 +48,11 @@
 # NAMESPACED REGISTRATION (issue #408):
 #   Each pb2 registers its descriptors in the process-wide protobuf pool under its
 #   own import path, e.g. file pypowerwall/tedapi/protobuf/V2024_06/tedapi.proto,
-#   package pypowerwall.tedapi.protobuf.V2024_06.tedapi (Python class names and
-#   wire bytes are unchanged). tools/namespace_protos.py stages renamed copies for
-#   protoc; the checked-in .proto sources keep their original packages.
+#   package pypowerwall.tedapi.protobuf.V2024_06.tedapi. Python class names and
+#   message encoding are unchanged (fields are encoded by number); only an Any's
+#   type_url, which carries the full name, differs if one of these is packed.
+#   tools/namespace_protos.py stages renamed copies for protoc; the checked-in
+#   .proto sources keep their original packages.
 #
 # The bundle's TEDAPI schema spans several protobuf
 # packages, so it is emitted as one file per package (energy_device.v1,

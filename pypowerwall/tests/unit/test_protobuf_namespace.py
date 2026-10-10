@@ -88,7 +88,11 @@ def test_coexists_with_bare_named_copies():
 
 @pytest.mark.parametrize('version, expected', [
     ('4.25.1', 'requires protobuf>=6.33.6'),
+    ('6.33.5', 'requires protobuf>=6.33.6'),
+    ('6.33.6', 'failed to load'),
+    ('6.33.6+vendor.1', 'failed to load'),
     ('7.36.2', 'failed to load'),
+    ('unknown', 'failed to load'),
 ])
 def test_v2026_import_error_names_the_real_cause(version, expected, monkeypatch):
     # Only an old runtime gets the upgrade advice; anything else (e.g. a

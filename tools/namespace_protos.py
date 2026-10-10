@@ -14,8 +14,11 @@ its package is prefixed with that path in dotted form
 (pypowerwall.tedapi.protobuf.V2024_06.tedapi): unique by construction, like the
 Python module path. Sibling imports are rewritten to the staged paths and
 google.protobuf references are fully qualified (a prefixed google.rpc package
-would otherwise shadow them). Wire bytes are unchanged: they carry field
-numbers, not names. The checked-in .proto sources are not modified.
+would otherwise shadow them). Message encoding is unchanged: fields are
+encoded by number, not name. The one place a name reaches the wire is a
+google.protobuf.Any, whose type_url carries the packed message's full name, so
+packing one of these messages now yields the namespaced URL (pypowerwall packs
+none). The checked-in .proto sources are not modified.
 
 Usage: namespace_protos.py <stage-dir> <source.proto>:<target-dir> [...]
 """
