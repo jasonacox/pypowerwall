@@ -575,7 +575,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_site = compute_LL_voltage(v1n, v2n, v3n)
         if vll_site == 0:
             vll_site = None
-        i_site = grid_power / vll_site if vll_site else None
+        i_site = grid_power / vll_site if (vll_site and grid_power is not None) else None
         return {
             "instant_power": grid_power,
             "instant_average_voltage": vll_site,
@@ -598,7 +598,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_load = compute_LL_voltage(v1n, v2n, v3n)
         if vll_load == 0:
             vll_load = None
-        i_load = load_power / vll_load if vll_load else None
+        i_load = load_power / vll_load if (vll_load and load_power is not None) else None
         return {
             "instant_power": load_power,
             "instant_average_voltage": vll_load,
@@ -695,7 +695,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         disclaimer = f"solar: voltage from {voltage_source or 'unknown'}, {current_desc}"
         if vll_solar == 0:
             vll_solar = None
-        i_solar = solar_power / vll_solar if vll_solar else None
+        i_solar = solar_power / vll_solar if (vll_solar and solar_power is not None) else None
         return {
             "instant_power": solar_power,
             "instant_average_voltage": vll_solar,
@@ -732,7 +732,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         vll_battery = sum_vll_battery / count_battery if count_battery else 0
         if vll_battery == 0:
             vll_battery = None
-        i_battery = battery_power / vll_battery if vll_battery else None
+        i_battery = battery_power / vll_battery if (vll_battery and battery_power is not None) else None
         return {
             "instant_power": battery_power,
             "instant_average_voltage": vll_battery,
