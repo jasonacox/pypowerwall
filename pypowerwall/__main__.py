@@ -47,11 +47,15 @@ def _flatten(data, prefix=''):
     """Flatten nested dicts into one level with dotted keys, for CSV columns
     (e.g. {'temps': {'TEPOD--x': 24.1}} -> {'temps.TEPOD--x': 24.1})."""
     flat = {}
-    for key, value in data.items():
+    # Explicit stack instead of recursion; items are pushed in reverse so they
+    # pop in source order, preserving the depth-first key order (CSV columns).
+    stack = [(f"{prefix}{k}", v) for k, v in reversed(list(data.items()))]
+    while stack:
+        key, value = stack.pop()
         if isinstance(value, dict):
-            flat.update(_flatten(value, f"{prefix}{key}."))
+            stack.extend((f"{key}.{k}", v) for k, v in reversed(list(value.items())))
         else:
-            flat[f"{prefix}{key}"] = value
+            flat[key] = value
     return flat
 
 
