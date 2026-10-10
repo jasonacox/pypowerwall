@@ -2313,10 +2313,16 @@ class TEDAPI:
         """Build a lookup dictionary for meter configuration from config, filtered by meter type(s)."""
         # Build meter Lookup if available
         meter_config = {}
-        if not "meters" in config:
+        # Null-safe: a gateway restarted mid re-commissioning can return
+        # config with 'meters': null (or the whole config null), which is
+        # distinct from a config that simply has no meters (#407).
+        meters = config.get('meters') if isinstance(config, dict) else None
+        if not isinstance(meters, list):
             return meter_config
         # Loop through each meter and use device_serial as the key
-        for meter in config['meters']:
+        for meter in meters:
+            if not isinstance(meter, dict):
+                continue
             if meter.get('type') not in types:
                 continue
             device_serial = lookup(meter, ['connection', 'device_serial'])
@@ -2646,7 +2652,10 @@ class TEDAPI:
             }
 
         # Create STSTSM block
-        name = f"STSTSM--{lookup(config, ['vin'])}"
+        vin = lookup(config, ['vin'])
+        part_number = vin.split('--')[0] if isinstance(vin, str) else None
+        serial_number = vin.split('--')[-1] if isinstance(vin, str) else None
+        name = f"STSTSM--{vin}"
         ststsm = {}
         ststsm[name] =  {
             "STSTSM-Location": "Gateway",
@@ -2654,8 +2663,8 @@ class TEDAPI:
             "firmwareVersion": None,
             "lastCommunicationTime": None,
             "manufacturer": "TESLA",
-            "partNumber": lookup(config, ['vin']).split('--')[0],
-            "serialNumber": lookup(config, ['vin']).split('--')[-1],
+            "partNumber": part_number,
+            "serialNumber": serial_number,
             "teslaEnergyEcuAttributes": {
                 "ecuType": 207
             }
