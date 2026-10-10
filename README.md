@@ -797,7 +797,18 @@ pyPowerwall [0.15.13] - Get Powerwall settings using Local (v1r+wifi+control) mo
   Grid Charging      True
   Grid Export Mode   pv_only
   Time Remaining     N/A
+  Temperatures
+    TEPOD--1707000-11-M--TG1234567890TB   34.9
+  Fans
+    TEPINV--1707000-11-M--TG1234567890TB  PCH_FanSpeed_A=993, PCH_FanSpeed_B=1003, PCH_FanDuty_A=6.6, PCH_FanDuty_B=6.5
 ```
+
+When the connection mode reports them (TEDAPI and v1r; local mode on firmware
+with the vitals API), per-device temperatures and fan speeds are included after
+the other metrics, keyed by device as in the proxy's `/temps` and `/fans`: nested
+`temps`/`fans` objects in `-format json`, `temps.<device>` and
+`fans.<device>.<signal>` columns in `-format csv`. Modes that don't report them
+(cloud, Fleet API) print the same output as before.
 
 ### `set` — Control Powerwall
 

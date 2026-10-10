@@ -118,67 +118,6 @@ def test_run_tedapi_test_firmware_mode_exits_early(tmp_path, monkeypatch, capsys
     assert "26.11.1 abcd1234" in capsys.readouterr().out
 
 
-def test_run_tedapi_test_fans_mode_exits_early(tmp_path, monkeypatch, capsys):
-    """`-fans` fetches get_fan_speeds(), prints it as JSON, and skips config/status."""
-    from pypowerwall.tedapi.__main__ import run_tedapi_test
-
-    mock_ted = MagicMock()
-    mock_ted.din = 'DIN123'
-    mock_ted.get_fan_speeds.return_value = {
-        "PVAC--1538100-01-G--ADU25114D001SC": {
-            "PVAC_Fan_Speed_Actual_RPM": 1234,
-            "PVAC_Fan_Speed_Target_RPM": 1250,
-        }
-    }
-    monkeypatch.chdir(tmp_path)
-
-    with patch('requests.get') as mock_get, \
-         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted):
-        mock_get.return_value.status_code = 200
-        run_tedapi_test(['-host', '10.42.1.40', '-gw_pwd', 'ABCDEXXXXX', '-fans'])
-
-    mock_ted.get_fan_speeds.assert_called_once_with(force=True)
-    mock_ted.get_config.assert_not_called()
-    mock_ted.get_status.assert_not_called()
-    out = capsys.readouterr().out
-    assert "PVAC--1538100-01-G--ADU25114D001SC" in out
-    assert '"PVAC_Fan_Speed_Actual_RPM": 1234' in out
-    assert not (tmp_path / 'status.json').exists()
-
-
-def test_run_tedapi_test_fans_mode_reports_none(tmp_path, monkeypatch, capsys):
-    """`-fans` with an empty result says so instead of printing `{}`."""
-    from pypowerwall.tedapi.__main__ import run_tedapi_test
-
-    mock_ted = MagicMock()
-    mock_ted.din = 'DIN123'
-    mock_ted.get_fan_speeds.return_value = {}
-    monkeypatch.chdir(tmp_path)
-
-    with patch('requests.get') as mock_get, \
-         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted):
-        mock_get.return_value.status_code = 200
-        run_tedapi_test(['-host', '10.42.1.40', '-gw_pwd', 'ABCDEXXXXX', '-fans',
-                         '-tedapi_api_version', 'V2026_06'])
-
-    assert "none reported" in capsys.readouterr().out
-    mock_ted.get_config.assert_not_called()
-
-
-def test_main_forwards_tedapi_fans_flag():
-    from pypowerwall.__main__ import main
-
-    argv = ['pypowerwall', 'tedapi', '-host', '10.42.1.40',
-            '-gw_pwd', 'ABCDEXXXXX', '-fans', '-tedapi_api_version', 'V2026_06']
-    with patch('sys.argv', argv), \
-         patch('pypowerwall.tedapi.__main__.run_tedapi_test') as mock_run:
-        main()
-
-    forwarded = mock_run.call_args.kwargs['argv']
-    assert '-fans' in forwarded
-    assert forwarded[forwarded.index('-tedapi_api_version') + 1] == 'V2026_06'
-
-
 def test_main_forwards_tedapi_firmware_flags():
     from pypowerwall.__main__ import main
 

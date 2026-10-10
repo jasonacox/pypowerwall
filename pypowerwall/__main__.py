@@ -42,6 +42,18 @@ def _email_from_auth(authpath):
         return None
 
 
+def _flatten(data, prefix=''):
+    """Flatten nested dicts into one level with dotted keys, for CSV columns
+    (e.g. {'temps': {'TEPOD--x': 24.1}} -> {'temps.TEPOD--x': 24.1})."""
+    flat = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            flat.update(_flatten(value, f"{prefix}{key}."))
+        else:
+            flat[f"{prefix}{key}"] = value
+    return flat
+
+
 def _add_connection_args(parser):
     """Add mutually exclusive connection mode flags and credential args to a subparser.
 
@@ -490,8 +502,6 @@ def main():
                              help="Fetch and print gateway firmware version, then exit")
     tedapi_args.add_argument("-details", action="store_true", default=False,
                              help="With -firmware: include full system info")
-    tedapi_args.add_argument("-fans", action="store_true", default=False,
-                             help="Fetch and print fan speeds (get_fan_speeds) as JSON, then exit")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -526,7 +536,7 @@ def main():
                                 help="Grid Export Mode: battery_ok, pv_only, or never")
 
     get_mode_args = subparsers.add_parser("get", parents=[common],
-                                           help='Get Powerwall settings and power levels')
+                                           help='Get Powerwall settings, power levels, temperatures and fan speeds')
     _add_connection_args(get_mode_args)
     get_mode_args.add_argument("-format", type=str, default="text",
                                 help="Output format: text, json, csv")
@@ -754,8 +764,6 @@ def main():
             tedapi_argv.append('-firmware')
         if getattr(args, 'details', False):
             tedapi_argv.append('-details')
-        if getattr(args, 'fans', False):
-            tedapi_argv.append('-fans')
         if args.debug:
             tedapi_argv.append('--debug')
         run_tedapi_test(argv=tedapi_argv, debug=args.debug)
@@ -890,12 +898,21 @@ def main():
             'grid_export_mode': pw.get_grid_export(),
             'time_remaining': pw.get_time_remaining(),
         }
+        # Per-device temperatures and fan speeds, when the connection mode reports
+        # them (TEDAPI/local vitals): same shapes as the proxy's /temps and /fans
+        temps = pw.temps() or {}
+        fans = (pw.tedapi.get_fan_speeds() if pw.tedapi else None) or {}
+        if temps:
+            output['temps'] = temps
+        if fans:
+            output['fans'] = fans
         if args.format == 'json':
             print(json.dumps(output, indent=2))
         elif args.format == 'csv':
-            header = ",".join(output.keys())
+            flat = _flatten(output)
+            header = ",".join(flat.keys())
             print(header)
-            values = ",".join("N/A" if v is None else str(v) for v in output.values())
+            values = ",".join("N/A" if v is None else str(v) for v in flat.values())
             print(values)
         else:
             # Table Output — override display labels for terse keys
@@ -903,10 +920,20 @@ def main():
                 'site_id': 'Site ID',
                 'din': 'DIN',
                 'soc': 'Battery Level',
+                'temps': 'Temperatures',
             }
             for item in output:
                 name = _labels.get(item, item.replace("_", " ").title())
                 value = output[item]
+                if isinstance(value, dict):
+                    # One row per device, keyed by its vitals name
+                    print(f"  {name}")
+                    for device, reading in value.items():
+                        if isinstance(reading, dict):
+                            reading = ", ".join(f"{k}={'N/A' if v is None else v}"
+                                                for k, v in reading.items())
+                        print("    {:<38}{}".format(device, "N/A" if reading is None else reading))
+                    continue
                 print("  {:<18}{}".format(name, "N/A" if value is None else value))
             print("")
 
