@@ -80,3 +80,48 @@ def test_unchanged_without_temps_or_fans(capsys, fmt):
         assert out.splitlines()[0] == ','.join(BASE_KEYS)
     else:
         assert 'Temperatures' not in out and 'Fans' not in out
+
+
+def _build(argv):
+    """Run main() with argv and return the kwargs Powerwall() was built with."""
+    with patch('sys.argv', ['pypowerwall'] + argv), patch('pypowerwall.Powerwall') as pw_cls:
+        pw_cls.return_value.is_connected.return_value = False  # stop after construction
+        with pytest.raises(SystemExit):
+            main()
+    return pw_cls.call_args.kwargs
+
+
+def test_tedapi_options_reach_powerwall():
+    kwargs = _build(['get', '-tedapi', '-gw_pwd', 'ABCDEXXXXX',
+                     '-tedapi_api_version', 'V2026_06', '-tedapi_auth_mode', 'bearer'])
+    assert kwargs['tedapi_api_version'] == 'V2026_06'
+    assert kwargs['tedapi_auth_mode'] == 'bearer'
+
+
+def test_v1r_takes_api_version(tmp_path):
+    key = tmp_path / 'key.pem'
+    key.write_text('x')
+    kwargs = _build(['get', '-v1r', '-host', '10.42.1.40', '-gw_pwd', 'ABCDEXXXXX',
+                     '-rsa_key_path', str(key), '-tedapi_api_version', 'V2026_06'])
+    assert kwargs['tedapi_api_version'] == 'V2026_06'
+    assert 'tedapi_auth_mode' not in kwargs
+
+
+def test_unset_options_keep_library_defaults():
+    kwargs = _build(['get', '-tedapi', '-gw_pwd', 'ABCDEXXXXX'])
+    assert 'tedapi_api_version' not in kwargs and 'tedapi_auth_mode' not in kwargs
+
+
+@pytest.mark.parametrize('argv, message', [
+    (['get', '-cloud', '-tedapi_api_version', 'V2026_06'], 'require -tedapi or -v1r'),
+    (['set', '-reserve', '20', '-tedapi_auth_mode', 'bearer'], 'require -tedapi or -v1r'),
+    (['get', '-v1r', '-host', '10.42.1.40', '-gw_pwd', 'ABCDEXXXXX',
+      '-tedapi_auth_mode', 'bearer'], 'applies to -tedapi only'),
+])
+def test_options_rejected_where_they_would_be_ignored(capsys, argv, message):
+    with patch('sys.argv', ['pypowerwall'] + argv), patch('pypowerwall.Powerwall') as pw_cls:
+        with pytest.raises(SystemExit) as excinfo:
+            main()
+    assert excinfo.value.code == 1
+    assert message in capsys.readouterr().out
+    pw_cls.assert_not_called()

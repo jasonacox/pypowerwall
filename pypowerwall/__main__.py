@@ -29,6 +29,7 @@ import json
 # Modules
 from pypowerwall import version, set_debug
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
+from pypowerwall.tedapi.auth_mode import AuthMode
 
 
 def _email_from_auth(authpath):
@@ -86,11 +87,27 @@ def _add_connection_args(parser):
                         help="Gateway password [required for -tedapi and -v1r]")
     parser.add_argument("-rsa_key_path", type=str, default=None,
                         help="RSA private key PEM path [v1r; default: ./tedapi_rsa_private.pem]")
+    parser.add_argument("-tedapi_api_version", type=str, default=None,
+                        choices=[v.value for v in TEDAPIApiVersion],
+                        help="TEDAPI query/protobuf set [tedapi/v1r; default: V2024_06]")
+    parser.add_argument("-tedapi_auth_mode", type=str, default=None,
+                        choices=[m.value for m in AuthMode],
+                        help="TEDAPI authentication [tedapi; default: basic]")
 
 
 def _build_powerwall(args, authpath):
     """Construct a Powerwall instance from the parsed connection mode flags."""
     import pypowerwall
+    # -tedapi_api_version / -tedapi_auth_mode; unset options keep the library defaults
+    tedapi_opts = {k: getattr(args, k) for k in ('tedapi_api_version', 'tedapi_auth_mode')
+                   if getattr(args, k, None)}
+    if tedapi_opts and not (getattr(args, 'tedapi', False) or getattr(args, 'v1r', False)):
+        print("ERROR: -tedapi_api_version and -tedapi_auth_mode require -tedapi or -v1r")
+        sys.exit(1)
+    if 'tedapi_auth_mode' in tedapi_opts and getattr(args, 'v1r', False):
+        # v1r authenticates with its registered RSA key; the auth mode would be ignored
+        print("ERROR: -tedapi_auth_mode applies to -tedapi only (v1r signs with its RSA key)")
+        sys.exit(1)
     if getattr(args, 'v1r', False):
         if not args.gw_pwd:
             print("ERROR: -v1r requires -gw_pwd <gateway_password>")
@@ -119,13 +136,14 @@ def _build_powerwall(args, authpath):
             gw_pwd=args.gw_pwd,
             rsa_key_path=rsa_key_path,
             authpath=authpath,
+            **tedapi_opts,
         )
     if getattr(args, 'tedapi', False):
         if not args.gw_pwd:
             print("ERROR: -tedapi requires -gw_pwd <gateway_password>")
             sys.exit(1)
         host = args.host or "192.168.91.1"
-        return pypowerwall.Powerwall(host=host, gw_pwd=args.gw_pwd, authpath=authpath)
+        return pypowerwall.Powerwall(host=host, gw_pwd=args.gw_pwd, authpath=authpath, **tedapi_opts)
     if getattr(args, 'local', False):
         if not args.host:
             # Powerwall(host="") silently flips to cloud mode - reject instead

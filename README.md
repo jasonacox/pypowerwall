@@ -775,7 +775,18 @@ python -m pypowerwall get -tedapi -gw_pwd ABCDEXXXXX
 # v1r LAN TEDAPI (Powerwall 3 wired LAN)
 python -m pypowerwall get -v1r -host 10.42.1.40 -gw_pwd ABCDEXXXXX \
     -rsa_key_path ./tedapi_rsa_private.pem
+
+# TEDAPI query set and authentication (-tedapi; v1r takes -tedapi_api_version)
+python -m pypowerwall get -tedapi -gw_pwd ABCDEXXXXX -tedapi_api_version V2026_06
+python -m pypowerwall get -tedapi -host 10.0.1.50 -gw_pwd ABCDEXXXXX \
+    -tedapi_api_version V2026_06 -tedapi_auth_mode bearer
 ```
+
+`-tedapi_api_version` (`V2024_06` default, or `V2026_06`) and `-tedapi_auth_mode`
+(`basic` default, or `bearer`) match the proxy's `PW_TEDAPI_API_VERSION` and
+`PW_TEDAPI_AUTH_MODE`; see the proxy's TEDAPI notes for when each applies
+(bearer works on solar-only gateways, not Powerwall 2 or 3). `set` accepts them
+too.
 
 Example output (`-format text`, the default):
 
