@@ -5,6 +5,8 @@
 """
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pypowerwall.tedapi import TEDAPI
 from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
 
@@ -367,3 +369,69 @@ class TestVitalsPhantomBlocks:
         vitals = ted.vitals()
         assert 'TEMSA--MSAPN--MSASN' in vitals
         assert 'TESLA--MSASN' in vitals
+
+
+class TestMetersAggregatesNonePower:
+    """Regression for #407: right after a gateway restart, control
+    .meterAggregates can be missing a location while AC voltages are still
+    reported. current_power() then returns None, and the four aggregate
+    extractors used to divide it by a live voltage, raising
+    TypeError: unsupported operand type(s) for /: 'NoneType' and 'float'
+    from /api/meters/aggregates instead of returning partial data."""
+
+    def _make_backend(self):
+        with patch('pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI') as mock_tedapi_class:
+            backend = PyPowerwallTEDAPI(gw_pwd='password')
+        backend.tedapi = mock_tedapi_class.return_value
+        backend.tedapi.pw3 = False
+        backend.tedapi.get_pw3_vitals.return_value = None
+        backend.tedapi.get_remote_meter_readings.return_value = {
+            'TESTMETER1:0': {'Index': 0, 'InstCurrent': 0, 'InstRealPower': 0,
+                             'InstVoltage': 123.5, 'Location': 'site'},
+        }
+        return backend
+
+    def _status(self):
+        # Every section has a voltage source present (site via the remote
+        # meter above) while power is None.
+        return {
+            'esCan': {'bus': {
+                'ISLANDER': {'ISLAND_AcMeasurements': {
+                    'ISLAND_VL1N_Load': 121.0, 'ISLAND_VL2N_Load': 120.5, 'ISLAND_VL3N_Load': 0}},
+                'PVAC': [{'packageSerialNumber': 'PVACSN1',
+                          'PVAC_Status': {'PVAC_Vout': 245.0}}],
+                'PINV': [{'packageSerialNumber': 'PINVSN1',
+                          'PINV_Status': {'PINV_Vout': 240.0}}],
+                'SYNC': {},
+            }},
+            'neurio': {'readings': []},
+        }
+
+    def test_none_power_with_voltage_present_does_not_raise(self):
+        backend = self._make_backend()
+        backend.tedapi.current_power.return_value = None
+        status = self._status()
+
+        site = backend._extract_site_section(status, {'vin': 'GW--123'}, False)
+        load = backend._extract_load_section(status, {'vin': 'GW--123'}, False)
+        solar = backend._extract_solar_section(status, {'vin': 'GW--123'}, False)
+        battery = backend._extract_battery_section(status, {'vin': 'GW--123'}, False)
+
+        for section, result in [('site', site), ('load', load),
+                                ('solar', solar), ('battery', battery)]:
+            assert result['instant_power'] is None
+            assert result['instant_average_voltage'], f'{section}: voltage should survive'
+            assert result['instant_average_current'] is None, \
+                f'{section}: current must be None, not a TypeError'
+
+    def test_power_present_still_computes_current(self):
+        backend = self._make_backend()
+        backend.tedapi.current_power.return_value = 2450.0
+        status = self._status()
+
+        battery = backend._extract_battery_section(status, {'vin': 'GW--123'}, False)
+        assert battery['instant_average_voltage'] == 240.0
+        assert battery['instant_average_current'] == pytest.approx(2450.0 / 240.0)
+
+        load = backend._extract_load_section(status, {'vin': 'GW--123'}, False)
+        assert load['instant_average_current'] is not None
