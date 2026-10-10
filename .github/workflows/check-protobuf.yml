@@ -5,10 +5,14 @@ on:
     paths:
       - '**.proto'
       - '**_pb2.py'
+      - 'tools/gen_proto.sh'
+      - 'tools/namespace_protos.py'
   pull_request:
     paths:
       - '**.proto'
       - '**_pb2.py'
+      - 'tools/gen_proto.sh'
+      - 'tools/namespace_protos.py'
   workflow_dispatch:
 
 permissions:
