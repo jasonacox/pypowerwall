@@ -148,13 +148,13 @@ def test_get_local_without_host_exits_with_error(capsys):
     mock_pw.assert_not_called()
 
 
-def _run_cli_with_status(status_payload, tmp_path, monkeypatch):
+def _run_cli(status_payload, tmp_path, monkeypatch, config_payload=None):
     """Drive run_tedapi_test() with a mocked TEDAPI returning status_payload."""
     from pypowerwall.tedapi.__main__ import run_tedapi_test
 
     mock_ted = MagicMock()
     mock_ted.din = 'DIN123'
-    mock_ted.get_config.return_value = {"site": "test"}
+    mock_ted.get_config.return_value = config_payload if config_payload is not None else {"site": "test"}
     mock_ted.get_status.return_value = status_payload
     mock_ted.get_firmware_version.return_value = "26.26.11 test"
     monkeypatch.chdir(tmp_path)
@@ -172,9 +172,9 @@ def _run_cli_with_status(status_payload, tmp_path, monkeypatch):
 
 
 def test_run_tedapi_test_null_control_payload(tmp_path, monkeypatch, capsys):
-    """Regression: explicit null 'control' must not crash (PW3 fw 26.26.11)."""
+    """Regression: explicit null 'control' must not crash (#404)."""
     status = {"control": None, "gateway": {"something": 1}}
-    _run_cli_with_status(status, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch)
 
     out = capsys.readouterr().out
     assert "WARNING" in out and "'control'" in out
@@ -187,7 +187,7 @@ def test_run_tedapi_test_null_control_payload(tmp_path, monkeypatch, capsys):
 def test_run_tedapi_test_null_system_status(tmp_path, monkeypatch, capsys):
     """Regression: null 'control.systemStatus' must not crash."""
     status = {"control": {"systemStatus": None, "meterAggregates": []}}
-    _run_cli_with_status(status, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch)
 
     out = capsys.readouterr().out
     assert "Battery Full Charge Unknown" in out
@@ -205,7 +205,7 @@ def test_run_tedapi_test_null_meter_aggregates(tmp_path, monkeypatch, capsys):
             "meterAggregates": None,
         }
     }
-    _run_cli_with_status(status, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch)
 
     out = capsys.readouterr().out
     assert "Battery Charge: 75.0%" in out
@@ -226,7 +226,7 @@ def test_run_tedapi_test_normal_power_payload(tmp_path, monkeypatch, capsys):
             ],
         }
     }
-    _run_cli_with_status(status, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch)
 
     out = capsys.readouterr().out
     assert "Battery Charge: 50.0%" in out
@@ -235,40 +235,16 @@ def test_run_tedapi_test_normal_power_payload(tmp_path, monkeypatch, capsys):
     assert json.loads((tmp_path / "status.json").read_text()) == status
 
 
-def _run_cli_with_payloads(status_payload, config_payload, tmp_path, monkeypatch):
-    """Drive run_tedapi_test() with mocked TEDAPI config and status payloads."""
-    from pypowerwall.tedapi.__main__ import run_tedapi_test
-
-    mock_ted = MagicMock()
-    mock_ted.din = 'DIN123'
-    mock_ted.get_config.return_value = config_payload
-    mock_ted.get_status.return_value = status_payload
-    mock_ted.get_firmware_version.return_value = "26.26.11 test"
-    monkeypatch.chdir(tmp_path)
-
-    with patch('requests.get') as mock_get, \
-         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted):
-        mock_get.return_value.status_code = 200
-        run_tedapi_test([
-            '-host', '10.42.1.40',
-            '-v1r',
-            '-gw_pwd', 'ABCDEXXXXX',
-            '-rsa_key_path', '/tmp/test.pem',
-        ])
-    return mock_ted
-
-
 def test_run_tedapi_test_sitemanager_not_running(tmp_path, monkeypatch, capsys):
     """Trimmed shape of the reporter's capture: site manager down -> control null."""
     status = {
         "control": None,
         "system": {"sitemanagerStatus": {"isRunning": False}},
     }
-    _run_cli_with_payloads(status, {"site_info": {"site_name": "Test"}}, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch, {"site_info": {"site_name": "Test"}})
 
     out = capsys.readouterr().out
     assert "manager is not running" in out
-    assert "re-enable the site manager" in out
     assert "Tesla app" in out
     assert "not a pypowerwall problem" in out
     assert "isRunning: False" in out
@@ -282,12 +258,24 @@ def test_run_tedapi_test_sitemanager_running_null_control(tmp_path, monkeypatch,
         "control": None,
         "system": {"sitemanagerStatus": {"isRunning": True}},
     }
-    _run_cli_with_payloads(status, {}, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch, {})
 
     out = capsys.readouterr().out
     assert "isRunning: True" in out
     assert "share it in a GitHub issue" in out
     assert "site manager is not running" not in out
+
+
+def test_run_tedapi_test_sitemanager_state_unknown(tmp_path, monkeypatch, capsys):
+    """No control and no site manager state (e.g. empty status): neutral ask,
+    no claim that the site manager is running or stopped."""
+    for status in ({"control": None}, None):
+        _run_cli(status, tmp_path, monkeypatch, {})
+        out = capsys.readouterr().out
+        assert "isRunning: None" in out
+        assert "share it in a GitHub issue" in out
+        assert "reports running" not in out
+        assert "not running" not in out
 
 
 def test_run_tedapi_test_null_meter_entry_fields(tmp_path, monkeypatch, capsys):
@@ -305,7 +293,7 @@ def test_run_tedapi_test_null_meter_entry_fields(tmp_path, monkeypatch, capsys):
             ],
         }
     }
-    _run_cli_with_payloads(status, {}, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch, {})
 
     out = capsys.readouterr().out
     assert "Battery Charge: 50.0%" in out
@@ -316,7 +304,7 @@ def test_run_tedapi_test_null_meter_entry_fields(tmp_path, monkeypatch, capsys):
 def test_run_tedapi_test_control_as_list(tmp_path, monkeypatch, capsys):
     """control as a non-empty list must not crash .get() lookups."""
     status = {"control": [{"bogus": 1}]}
-    _run_cli_with_payloads(status, {}, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch, {})
 
     out = capsys.readouterr().out
     assert "WARNING" in out
@@ -327,7 +315,7 @@ def test_run_tedapi_test_null_config_fields(tmp_path, monkeypatch, capsys):
     """Null site_info / battery_blocks in config must not crash."""
     status = {"control": None}
     config = {"site_info": None, "vin": None, "battery_blocks": None}
-    _run_cli_with_payloads(status, config, tmp_path, monkeypatch)
+    _run_cli(status, tmp_path, monkeypatch, config)
 
     out = capsys.readouterr().out
     assert "Site Name: Unknown" in out

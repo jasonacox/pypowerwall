@@ -210,23 +210,20 @@ def run_tedapi_test(argv=None, debug=False):
     # entries, or config fields - chained .get(key, default) only guards
     # missing keys, not null values)
     print(" - Power Data:")
-    control_raw = status.get('control')
-    control = control_raw if isinstance(control_raw, dict) else {}
-    if control_raw is None or not isinstance(control_raw, dict):
+    control = status.get('control')
+    if not isinstance(control, dict):
         is_running = lookup(status, ['system', 'sitemanagerStatus', 'isRunning'])
         print(f"   - WARNING: Gateway status payload has no 'control' data "
               f"(system.sitemanagerStatus.isRunning: {is_running}).")
         if is_running is False:
-            print("     The gateway is connected and communicating, but the site")
-            print("     manager is not running - the system appears switched off and")
-            print("     is not producing live power data. Check the Tesla app for")
-            print("     alerts or faults, and re-enable the site manager to restore")
-            print("     it. This is a gateway condition, not a pypowerwall problem.")
+            print("     The gateway is connected and communicating, but its site")
+            print("     manager is not running, so it is not producing live power")
+            print("     data. Check the Tesla app for alerts or faults. This is a")
+            print("     gateway condition, not a pypowerwall problem.")
         else:
-            print("     The site manager reports running, so this may be an unexpected")
-            print("     schema change. The raw payload was saved to status.json - please")
-            print("     share it in a GitHub issue (redact any site identifiers) so the")
-            print("     schema can be mapped.")
+            print("     Unexpected payload. The raw payload was saved to status.json -")
+            print("     please share it in a GitHub issue (redact any site identifiers).")
+        control = {}
     nominalEnergyRemainingWh = lookup(control, ['systemStatus', 'nominalEnergyRemainingWh']) or 0
     nominalFullPackEnergyWh = lookup(control, ['systemStatus', 'nominalFullPackEnergyWh']) or 0
     if nominalFullPackEnergyWh == 0:
