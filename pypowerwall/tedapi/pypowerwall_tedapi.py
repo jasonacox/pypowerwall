@@ -381,7 +381,28 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return data
 
     def get_api_site_info(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
-        """/api/site_info from config.json's "site_info" section."""
+        """/api/site_info from config.json's "site_info" section.
+
+        Example config.json "site_info" section (the source):
+        "site_info": {
+            "battery_commission_date": "2021-09-25T16:05:08-07:00",
+            "backup_reserve_percent": 24,
+            "max_site_meter_power_ac": 1000000000,
+            "min_site_meter_power_ac": -1000000000,
+            "nominal_system_energy_ac": 27,
+            "nominal_system_power_ac": 10.8,
+            "on_grid_solar_curtailment_enabled": true,
+            "tariff_content": {},
+            "grid_code": "60Hz_240V_s_UL1741SA:2019_California",
+            "country": "United States",
+            "state": "California",
+            "utility": "Southern California Edison",
+            "site_name": "Cox Energy Gateway",
+            "timezone": "America/Los_Angeles",
+            "ITC_cliff": 0,
+            "panel_max_current": 100
+        }
+        """
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
         if not isinstance(config, dict):
