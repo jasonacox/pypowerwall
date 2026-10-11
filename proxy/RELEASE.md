@@ -1,5 +1,14 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t105 (10 Oct 2026)
+
+* Upgraded to pyPowerwall v0.19.0 - see the library release notes. Proxy-visible changes:
+  * `/aggregates` (`/api/meters/aggregates`): Wi-Fi Tesla Remote Meter (`trm_wifi`) sites hold the last solar reading through short `SolarMeterComms` dropouts instead of dropping solar to 0, and no longer return an error when the gateway reports a voltage but no power for a location.
+  * `/vitals` and `/aggregates` no longer fail on a gateway restarted mid re-commissioning (`config.meters` / `config.vin` null).
+  * `/fans` and `/fans/pw` report Powerwall 2/+ and solar-inverter PVAC fan speeds under `PW_TEDAPI_API_VERSION=V2026_06`. `get_reserve()` no longer crashes on solar-only gateways.
+  * v1r with a WiFi fallback host goes back to the wired LAN for the gateway's native API after failover recovery.
+  * The library's protobufs are namespaced, so the proxy image's Python environment can also load other Tesla protobuf libraries. Responses are unchanged.
+
 ### Proxy t104 (26 Sep 2026)
 
 * Upgraded to pyPowerwall v0.18.2 (Powerwall 3 fan speeds and the `get_battery_block()` fix - see library release notes)
