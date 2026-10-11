@@ -125,6 +125,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                  failover: bool = True) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
+        self._git_hash = None  # last git_hash seen (get_api_status)
         self.timeout = timeout
         self.pwcacheexpire = pwcacheexpire
         self.pwconfigexpire = pwconfigexpire
@@ -315,16 +316,16 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def get_api_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
-        firmware_version = self.tedapi.get_firmware_version(force=force)
+        firmware = self.tedapi.get_firmware_version(force=force, details=True)
+        firmware_version = lookup(firmware, ["system", "version", "text"])
         if config is None:
             data = None
         else:
             # When the gateway last started, in the gateway's formats; None without
             # a sync board. The commission date has its own key (#418).
             uptime = self.tedapi.get_gateway_uptime(force=force)
-            # cached: same SystemInfo as firmware_version. A failed lookup keeps the
-            # last hash: the gateway UI reloads the page whenever git_hash changes.
-            firmware = self.tedapi.get_firmware_version(details=True)
+            # A failed lookup keeps the last hash: the gateway UI reloads the page
+            # whenever git_hash changes.
             git_hash = lookup(firmware, ["system", "version", "githash"]) or getattr(self, '_git_hash', None)
             self._git_hash = git_hash
             data = {

@@ -227,6 +227,11 @@ _CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values a
 
 # TEDAPI Class
 class TEDAPI:
+    # get_gateway_uptime(): newest result and the lock guarding it (the proxy is
+    # multi-threaded; the critical section does no I/O, so one class-level lock is fine)
+    _gateway_uptime = None
+    _gateway_uptime_lock = threading.Lock()
+
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str | None = None, rsa_key_path: str | None = None,
@@ -274,7 +279,6 @@ class TEDAPI:
         self.gw_ip = host
         self.din = None
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
-        self._gateway_start_time = None  # get_gateway_uptime() latch
         self.v1r = v1r
         self.v1r_transport = None
         # Bearer auth support.
@@ -891,13 +895,19 @@ class TEDAPI:
         now = _parse_gateway_time(lookup(controller, ['system', 'time']))
         if uptime_ms is None or now is None:
             return None
-        start = now - timedelta(milliseconds=uptime_ms)
-        latched = getattr(self, '_gateway_start_time', None)
-        if latched is not None and abs((start - latched).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S:
-            start = latched  # same boot
-        else:
-            self._gateway_start_time = start
-        return {"uptime_ms": uptime_ms, "gateway_time": now, "start_time": start}
+        try:
+            start = now - timedelta(milliseconds=uptime_ms)
+        except OverflowError:
+            log.debug(f"get_gateway_uptime: SYNC_Uptime {uptime_ms} out of range")
+            return None
+        with self._gateway_uptime_lock:
+            last = self._gateway_uptime
+            if last is not None and now < last["gateway_time"]:
+                return dict(last)  # an older snapshot than the newest seen
+            if last is not None and abs((start - last["start_time"]).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S:
+                start = last["start_time"]  # same boot
+            self._gateway_uptime = {"uptime_ms": uptime_ms, "gateway_time": now, "start_time": start}
+            return dict(self._gateway_uptime)
 
 
     @uses_api_lock

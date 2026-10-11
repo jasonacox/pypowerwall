@@ -166,6 +166,27 @@ class TestGetGatewayUptime:
         assert after["start_time"] == datetime.fromisoformat("2026-10-11T12:56:31-07:00")
         assert after["start_time"] != before
 
+    @pytest.mark.parametrize("uptime", [1e300, 9e16])
+    def test_out_of_range_uptime_is_none(self, uptime):
+        # timedelta/datetime arithmetic would raise OverflowError out of a read method
+        api, p = self._api(_controller(uptime=uptime))
+        with p:
+            assert api.get_gateway_uptime() is None
+
+    def test_older_snapshot_never_rolls_back_a_newer_one(self):
+        # A slow request holding a pre-reboot snapshot must not replace the
+        # post-reboot result another request already reported
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            api = TEDAPI(gw_pwd='password')
+        after_reboot = _controller(uptime=90_000, system_time="2026-10-11T12:58:01-07:00")
+        with patch.object(TEDAPI, 'get_device_controller', return_value=after_reboot):
+            newest = api.get_gateway_uptime()
+        with patch.object(TEDAPI, 'get_device_controller', return_value=_controller()):  # 11:58, pre-reboot
+            stale = api.get_gateway_uptime()
+        assert stale == newest
+        with patch.object(TEDAPI, 'get_device_controller', return_value=after_reboot):
+            assert api.get_gateway_uptime()["start_time"] == newest["start_time"]
+
     def test_drift_beyond_tolerance_relatches(self):
         from pypowerwall.tedapi import GATEWAY_START_TIME_TOLERANCE_S
         with patch.object(TEDAPI, 'connect', return_value=True):
@@ -250,6 +271,12 @@ class TestApiStatus:
     @pytest.mark.parametrize("firmware", [{}, {"system": {"version": {"githash": ""}}}, {"system": None}])
     def test_git_hash_missing_is_none(self, firmware):
         assert _backend(_uptime_result(), firmware_details=firmware).get_api_status()["git_hash"] is None
+
+    def test_one_forced_firmware_lookup_supplies_version_and_hash(self):
+        backend = _backend(_uptime_result())
+        backend.get_api_status(force=True)
+        calls = backend.tedapi.get_firmware_version.call_args_list
+        assert len(calls) == 1 and calls[0].kwargs == {"force": True, "details": True}
 
     def test_git_hash_survives_a_failed_firmware_lookup(self):
         # The gateway UI (proxy/web/viz-static/app.js) reloads the page when git_hash
