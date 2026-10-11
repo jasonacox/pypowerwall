@@ -78,12 +78,14 @@ Example Output: [vitals-example.json](../vitals-example.json)
 * Part 1534000-xx-y - 3.8kW
 * Part 1538000-xx-y - 7.6kW
 * Component of TETHC
+* Vitals carry the per-string measurements: `PVAC_PVCurrent_X`, `PVAC_PVMeasuredVoltage_X`, `PVAC_PVMeasuredPower_X`, `PVAC_PvState_X` (strings A-D on Powerwall 2/+, A-F on Powerwall 3)
 
 #### PVS - Photovoltaic Strings
 
 * ECU Type is 297
 * This terminates the Photovoltaic DC power strings
 * Component of PVAC
+* Vitals carry the string connection flags: `PVS_StringX_Connected`. These live on the PVS block only, never on the PVAC block. `strings()` / `/strings` combine them with the PVAC measurements.
 
 #### NEURIO - Wireless Revenue Grade Solar Meter
 
