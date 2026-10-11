@@ -12,7 +12,6 @@ only, and the pywebview backend is driven through a stubbed `webview` module.
 import json
 import re
 import sys
-import threading
 import time
 from unittest.mock import patch
 
@@ -144,7 +143,6 @@ class TestLoginPathNeverPrintsTokens:
             )
         # And the raw token must never be printed anywhere except the helper
         in_helper = False
-        helper_depth = None
         for ln in lines:
             if ln.startswith("def _print_tokens_for_copy"):
                 in_helper = True
@@ -159,7 +157,6 @@ class TestAuthtokenPathStillPrintsTokens:
     """authtoken command (show_token_page=True) — behavior unchanged."""
 
     def test_pywebview_authtoken_prints_both_tokens(self, monkeypatch, capsys):
-        out = None
         _, out = _drive_pywebview_login(True, monkeypatch, capsys)
         assert FAKE_RT in out
         assert FAKE_AT in out
@@ -193,6 +190,81 @@ class TestV1rRegisterExchange:
         assert "expires in 28800s" in out
         assert tokens_file in out
         # File still written with the full tokens, same return value
-        saved = json.load(open(tokens_file))
+        with open(tokens_file) as f:
+            saved = json.load(f)
         assert saved["refresh_token"] == FAKE_RT
         assert "obtained_at" in saved
+
+
+class TestFleetApiSetupTokenLeak:
+    """`setup -fleetapi` must print no part of any token (#417 review).
+
+    Step 3A used to print a 40-char prefix of the partner token, and step 3D
+    printed the full access and refresh tokens after the code exchange.
+    Nobody copies these — setup writes them to the config file.
+    """
+
+    FAKE_PARTNER_TOKEN = "FAKE-PARTNER-" + "p" * 60
+
+    @staticmethod
+    def _make_response(payload, status=200):
+        class _Resp:
+            status_code = status
+
+            def json(self, **kwargs):
+                return payload
+
+        return _Resp()
+
+    def _run_setup(self, tmp_path, monkeypatch, capsys):
+        from pypowerwall.fleetapi import fleetapi as fa
+
+        configfile = str(tmp_path / "fleetapi.json")
+        partner_token = self.FAKE_PARTNER_TOKEN
+
+        def fake_http2(method, url, **kwargs):
+            if url.endswith("/.well-known/appspecific/com.tesla.3p.public-key.pem"):
+                return self._make_response({})
+            if url.endswith("/oauth2/v3/token"):
+                # Step 3A partner token, then 3D code exchange
+                if kwargs.get("data", {}).get("grant_type") == "authorization_code":
+                    return self._make_response(dict(FAKE_TOKEN_DATA))
+                return self._make_response({"access_token": partner_token})
+            if url.endswith("/api/1/partner_accounts"):
+                return self._make_response({"registered": True})
+            if url.endswith("/api/1/products"):
+                return self._make_response({"response": [
+                    {"energy_site_id": "SITE123", "site_name": "Home"},
+                ]})
+            if "/api/1/energy_sites/" in url:
+                return self._make_response({"response": {"site_name": "Home"}})
+            return self._make_response({"response": {}})
+
+        answers = iter(["", "", "", "", "", "fake-auth-code"])
+        monkeypatch.setattr(fa, "_http2_request", fake_http2)
+        monkeypatch.setattr("builtins.input", lambda prompt="": next(answers))
+        # Avoid a subprocess call on any platform
+        monkeypatch.setattr(fa.sys, "platform", "linux")
+
+        api = fa.FleetAPI(configfile=configfile)
+        result = api.setup()
+        out = capsys.readouterr().out
+        return result, configfile, out
+
+    def test_setup_prints_no_token_characters(self, tmp_path, monkeypatch, capsys):
+        # FAILS on pre-fix code: step 3A printed partner_token[:40] and
+        # step 3D printed the full access and refresh tokens.
+        result, configfile, out = self._run_setup(tmp_path, monkeypatch, capsys)
+        assert result is True
+        _assert_no_secret_slice(out, FAKE_RT)
+        _assert_no_secret_slice(out, FAKE_AT)
+        _assert_no_secret_slice(out, self.FAKE_PARTNER_TOKEN)
+        # Non-secret confirmations instead
+        assert "Partner token obtained" in out
+        assert "Tokens generated and saved to" in out
+        assert configfile in out
+        # Full tokens still saved to the config file
+        with open(configfile) as f:
+            saved = json.load(f)
+        assert saved["access_token"] == FAKE_AT
+        assert saved["refresh_token"] == FAKE_RT
