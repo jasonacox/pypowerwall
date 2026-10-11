@@ -27,17 +27,13 @@ def set_debug(debug=False, quiet=False, color=True):
     else:
         log.setLevel(logging.NOTSET)
 
-# /api/status time formats of a real gateway (e.g. "2024-03-11 09:12:41 +0800" and
-# "127h34m16.275122187s"). Strict clients parse exactly these: evcc's go-powerwall
-# reads start_time with Go layout "2006-01-02 15:04:05 -0700" and up_time_seconds
-# with time.ParseDuration, and fails on ISO-8601 or null (#418).
+# Formats of a real gateway's /api/status start_time and up_time_seconds, which
+# strict clients parse exactly (#418)
 GATEWAY_START_TIME_FORMAT = "%Y-%m-%d %H:%M:%S %z"
 
 def go_duration(milliseconds) -> str:
-    """Format a duration the way Go's time.Duration.String() does, which is what a
-    gateway reports in /api/status up_time_seconds: hours are not split into days,
-    zero units after the largest are kept ("1h0m0s"), and seconds keep their
-    fraction (here to the millisecond, trailing zeros dropped)."""
+    """Milliseconds as Go's time.Duration.String() writes them ("398h29m44.192s"),
+    the gateway's up_time_seconds format."""
     ms = int(round(milliseconds))
     if ms <= 0:
         return "0s"
@@ -323,30 +319,27 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if config is None:
             data = None
         else:
-            # start_time / up_time_seconds describe when the gateway last started, as
-            # on a real gateway: from the Backup Gateway sync board's SYNC_Uptime and
-            # the gateway clock (TEDAPI.get_gateway_uptime), in the gateway's own
-            # formats. None when the site has no sync board or the signal isn't
-            # available - never a placeholder. These used to carry the battery
-            # commission date (ISO-8601) and None, which is not what the gateway
-            # means by them; the commission date now has its own key (#418).
+            # When the gateway last started, in the gateway's formats; None without
+            # a sync board. The commission date has its own key (#418).
             uptime = self.tedapi.get_gateway_uptime(force=force)
-            # Same cached SystemInfo as firmware_version above, so no extra query
+            # cached: same SystemInfo as firmware_version. A failed lookup keeps the
+            # last hash: the gateway UI reloads the page whenever git_hash changes.
             firmware = self.tedapi.get_firmware_version(details=True)
+            git_hash = lookup(firmware, ["system", "version", "githash"]) or getattr(self, '_git_hash', None)
+            self._git_hash = git_hash
             data = {
                 "din": config.get("vin"),
                 "start_time": uptime["start_time"].strftime(GATEWAY_START_TIME_FORMAT) if uptime else None,
                 "up_time_seconds": go_duration(uptime["uptime_ms"]) if uptime else None,
                 "is_new": False,
                 "version": firmware_version,
-                "git_hash": lookup(firmware, ["system", "version", "githash"]) or None,
+                "git_hash": git_hash,
                 "commission_count": 0,
                 "device_type": None,
                 "teg_type": "unknown",
                 "sync_type": "unknown",
                 "cellular_disabled": False,
                 "can_reboot": True,
-                # Passed through as config.json has it (ISO-8601), under its own name
                 "battery_commission_date": lookup(config, ["site_info", "battery_commission_date"]),
             }
         return data

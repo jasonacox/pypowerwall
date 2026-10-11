@@ -98,12 +98,9 @@ NATIVE_FAIL_RETRY: Final[float] = 300.0
 # device controller's teslaRemoteMeter field in the same shape.
 REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
 
-# get_gateway_uptime(): the gateway publishes SYNC_Uptime about every 2.2 s and its
-# clock (system.time) has 1 s resolution, so system.time - SYNC_Uptime wobbles by
-# 1-2 s between reads (measured 2026-10-11). A real gateway's start_time is
-# constant, and clients detect reboots by watching it change, so a computed start
-# within this many seconds of the last one keeps the last one. A reboot moves it by
-# far more and is reported at once.
+# SYNC_Uptime is published every ~2.2 s and system.time has 1 s resolution, so the
+# computed gateway start wobbles by 1-2 s. get_gateway_uptime() keeps the previous
+# start while a new one is within this many seconds, so it only changes on a reboot.
 GATEWAY_START_TIME_TOLERANCE_S: Final[float] = 5.0
 
 # Rate Limit Codes
@@ -208,15 +205,8 @@ def _parse_gateway_time(value) -> Optional[datetime]:
     return parsed
 
 def _sync_uptime_ms(device_controller):
-    """The gateway sync board's SYNC_Uptime (milliseconds since it started) from a
-    DeviceController payload, or None.
-
-    Read only from the msa component whose serial is the esCan SYNC
-    packageSerialNumber (the Backup Gateway's sync board), never from a
-    serial-less or other component - the same serial-join rule as the PW2 msa
-    signals, so a stray slot can't supply a value (cf. #406). None when the site
-    has no SYNC device, the signal wasn't requested (V2026_06) or isn't a usable
-    number. See GATEWAY_MSA_SIGNAL_NAMES for the hardware validation."""
+    """SYNC_Uptime (ms) from a DeviceController payload, or None. Read only from the
+    msa component with the esCan SYNC serial, never a serial-less slot (#406)."""
     serial = lookup(device_controller, ['esCan', 'bus', 'SYNC', 'packageSerialNumber'])
     if not serial or not isinstance(serial, str):
         return None
@@ -890,16 +880,10 @@ class TEDAPI:
                                   fetch=lambda: self._fetch_query(QueryRole.DEVICE_CONTROLLER_FULL))
 
     def get_gateway_uptime(self, force=False) -> Optional[Dict[str, Any]]:
-        """Uptime of the Backup Gateway's sync board, from SYNC_Uptime.
-
-        Returns {"uptime_ms": <milliseconds>, "gateway_time": <aware datetime>,
-        "start_time": <aware datetime>} - start_time is the gateway's own clock
-        (system.time) minus the uptime, both from the same DeviceController
-        snapshot, so it doesn't drift with cache age, held steady across reads of
-        the same boot (GATEWAY_START_TIME_TOLERANCE_S). None when the site has no
-        sync board (e.g. a PW3 without a Backup Gateway), under V2026_06 (which
-        can't request the signal), or when the payload has no usable clock.
-        """
+        """Backup Gateway uptime from SYNC_Uptime: {"uptime_ms", "gateway_time",
+        "start_time"}, where start_time is the gateway clock minus the uptime (one
+        snapshot), held steady per GATEWAY_START_TIME_TOLERANCE_S. None without a
+        sync board, under V2026_06, or without a usable gateway clock."""
         controller = self.get_device_controller(force=force)
         if not isinstance(controller, dict):
             return None
@@ -910,7 +894,7 @@ class TEDAPI:
         start = now - timedelta(milliseconds=uptime_ms)
         latched = getattr(self, '_gateway_start_time', None)
         if latched is not None and abs((start - latched).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S:
-            start = latched  # same boot: keep start_time stable (GATEWAY_START_TIME_TOLERANCE_S)
+            start = latched  # same boot
         else:
             self._gateway_start_time = start
         return {"uptime_ms": uptime_ms, "gateway_time": now, "start_time": start}

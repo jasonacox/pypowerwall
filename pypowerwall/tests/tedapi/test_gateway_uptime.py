@@ -251,6 +251,14 @@ class TestApiStatus:
     def test_git_hash_missing_is_none(self, firmware):
         assert _backend(_uptime_result(), firmware_details=firmware).get_api_status()["git_hash"] is None
 
+    def test_git_hash_survives_a_failed_firmware_lookup(self):
+        # The gateway UI (proxy/web/viz-static/app.js) reloads the page when git_hash
+        # changes, so a transient lookup failure must not flip it to None
+        backend = _backend(_uptime_result())
+        assert backend.get_api_status()["git_hash"] == "c4db63cead7447561c1c60c34529d0f90ad2884f"
+        backend.tedapi.get_firmware_version.side_effect = lambda *a, **k: None
+        assert backend.get_api_status()["git_hash"] == "c4db63cead7447561c1c60c34529d0f90ad2884f"
+
     def test_missing_commission_date(self):
         status = _backend(None, config={"vin": "X"}).get_api_status()
         assert status["battery_commission_date"] is None
@@ -283,3 +291,38 @@ class TestVitalsTesync:
     def test_none_without_sync_value(self):
         vitals = self._vitals(_controller(uptime=None))
         assert vitals[f"TESYNC--1493315-01-F--{SYNC_SERIAL}"]["SYNC_Uptime"] is None
+
+
+# --- cloud / FleetAPI ----------------------------------------------------------------
+
+class TestCloudAndFleetApiStatus:
+    """The Tesla site API has no gateway start time, uptime, git hash or sync type
+    (checked live 2026-10-11), so those are None/"unknown" - no placeholders - and
+    the installation date is passed through under its own name."""
+    SITE = {"id": "1707000-11-M--LEADER_SERIAL", "installation_date": "2025-12-15T15:48:57-08:00",
+            "version": "26.26.11 c4db63ce", "components": {"gateway": "teg"}}
+
+    def _check(self, status):
+        assert status["start_time"] is None
+        assert status["up_time_seconds"] is None
+        assert status["git_hash"] is None
+        assert status["sync_type"] == "unknown"
+        assert status["installation_date"] == "2025-12-15T15:48:57-08:00"
+        assert status["version"] == "26.26.11 c4db63ce"
+        assert status["device_type"] == "teg"
+
+    def test_cloud(self, tmp_path):
+        from pypowerwall.cloud.pypowerwall_cloud import PyPowerwallCloud
+        cloud = PyPowerwallCloud(email='test@example.com', authpath=str(tmp_path))
+        with patch.object(PyPowerwallCloud, 'get_site_config', return_value={"response": self.SITE}):
+            self._check(cloud.get_api_status())
+        with patch.object(PyPowerwallCloud, 'get_site_config', return_value=None):
+            assert cloud.get_api_status() is None
+
+    def test_fleetapi(self, tmp_path):
+        from pypowerwall.fleetapi.pypowerwall_fleetapi import PyPowerwallFleetAPI
+        fleet = PyPowerwallFleetAPI(email='test@example.com', authpath=str(tmp_path))
+        with patch.object(fleet.fleet, 'get_site_info', return_value=self.SITE):
+            self._check(fleet.get_api_status())
+        with patch.object(fleet.fleet, 'get_site_info', return_value=None):
+            assert fleet.get_api_status() is None

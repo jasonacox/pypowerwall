@@ -420,19 +420,21 @@ class PyPowerwallFleetAPI(PyPowerwallBase):
         if config is None:
             data = None
         else:
+            # The Tesla site API has no gateway start time, uptime, git hash or sync type (#418)
             data = {
                 "din": config.get("id"),  # 1232100-00-E--TGxxxxxxxxxxxx
-                "start_time": config.get("installation_date"),  # "2023-10-13 04:01:45 +0800"
-                "up_time_seconds": None,  # "1541h38m20.998412744s"
+                "start_time": None,
+                "up_time_seconds": None,
                 "is_new": False,
                 "version": config.get("version"),  # 23.28.2 27626f98
-                "git_hash": "27626f98a66cad5c665bbe1d4d788cdb3e94fd34",
+                "git_hash": None,
                 "commission_count": 0,
                 "device_type": lookup(config, ("components", "gateway")),  # teg
                 "teg_type": "unknown",
-                "sync_type": "v2.1",
+                "sync_type": "unknown",
                 "cellular_disabled": False,
-                "can_reboot": True
+                "can_reboot": True,
+                "installation_date": config.get("installation_date"),
             }
         return data
 

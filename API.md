@@ -89,7 +89,7 @@ pw = pypowerwall.Powerwall(
   Returns True if able to connect and login to Powerwall.
 
 - `status(param=None, jsonformat=False)` → dict/str/None  
-  Returns system status. If `param` is provided, returns only that parameter. `start_time` (when the gateway last started, `YYYY-MM-DD HH:MM:SS ±HHMM`) and `up_time_seconds` (a Go duration string such as `398h29m44.192s`) come straight from the gateway in local mode. In TEDAPI mode they are computed in the same formats from the Backup Gateway sync board's `SYNC_Uptime` signal and the gateway clock; they are `None` on sites without a sync board (no `TESYNC` device) and under `tedapi_api_version="V2026_06"`, which can't request the signal. TEDAPI mode also reports `git_hash` from the firmware and the battery commission date as `battery_commission_date` (ISO-8601, as the gateway config has it).
+  Returns system status. If `param` is provided, returns only that parameter. `start_time` (`YYYY-MM-DD HH:MM:SS ±HHMM`) and `up_time_seconds` (Go duration, e.g. `398h29m44.192s`) give when the gateway last started. Local mode reports the gateway's own values; TEDAPI mode computes them from the Backup Gateway's `SYNC_Uptime` and is `None` without a sync board or under V2026_06; cloud and FleetAPI have no source and report `None`. The commission/installation date is a separate key: `battery_commission_date` (TEDAPI) or `installation_date` (cloud, FleetAPI).
 
 - `site_name()` → str/None  
   Returns the site name.
