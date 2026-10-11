@@ -176,8 +176,11 @@ def _component_signal_value(components, name):
         for signal in component.get('signals') or []:
             if not isinstance(signal, dict) or signal.get('name') != name:
                 continue
-            if signal.get('value') is not None:
-                return signal['value']
+            # numbers arrive in value, booleans in boolValue, enums in textValue;
+            # the gateway sends null for the other two
+            for key in ('value', 'boolValue', 'textValue'):
+                if signal.get(key) is not None:
+                    return signal[key]
     return None
 
 def _extra_signals(variables_key):
@@ -1235,8 +1238,11 @@ class TEDAPI:
                     response[f"PVS--{pw_din}"] = {}
                     # Extra inverter signals as delivered; None when unavailable
                     response[f"TEPINV--{pw_din}"] = {
-                        name: _component_signal_value(pch_components, name)
-                        for name in _extra_signals('pchSignalNames')
+                        name: _component_signal_value(components, name)
+                        for components, key in ((pch_components, 'pchSignalNames'),
+                                                (data['components'].get('pws'), 'pwsSignalNames'),
+                                                (data['components'].get('baggr'), 'baggrSignalNames'))
+                        for name in _extra_signals(key)
                     }
                     # pch_components contain:
                     #   PCH_PvState_A through F - textValue in [Pv_Active, Pv_Active_Parallel, Pv_Standby]

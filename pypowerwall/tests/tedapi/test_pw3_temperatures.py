@@ -28,10 +28,15 @@ TEMP_EXTRAS = {
     "bmsSignalNames": ["BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"],
     "hvpSignalNames": ["HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"],
 }
+# Every extra in request order: the temperatures (and fans) first, then the PW3
+# app signals (test_pw3_app_signals.py)
+ALL_EXTRAS = {key: TEMP_EXTRAS.get(key, []) + list(q.PW3_APP_SIGNAL_NAMES.get(key, ()))
+              for key in list(TEMP_EXTRAS) + [k for k in q.PW3_APP_SIGNAL_NAMES if k not in TEMP_EXTRAS]}
 
 
 def _sig(name, value):
-    return {"name": name, "value": value, "textValue": "", "boolValue": False, "timestamp": 0}
+    # as the gateway sends a numeric signal: the unused fields are null
+    return {"name": name, "value": value, "textValue": None, "boolValue": None, "timestamp": 0}
 
 
 HEATSINK = 45.450980392156865   # the constant both PW3s delivered at validation
@@ -117,16 +122,16 @@ class TestComponentsRequestQuery:
     def test_extras_appended_after_captured_names(self):
         captured = json.loads(q.V2024_06_QUERIES["components"].b_value)
         request = json.loads(q.get_query(QueryRole.COMPONENTS).b_value)
-        for key, extras in TEMP_EXTRAS.items():
+        for key, extras in ALL_EXTRAS.items():
             assert request[key] == captured[key] + extras
         for key in captured:
-            if key not in TEMP_EXTRAS:
+            if key not in ALL_EXTRAS:
                 assert request[key] == captured[key]
 
     def test_only_difference_on_wire_is_appended_names(self):
         # Removing the extras reproduces the capture byte-for-byte
         request = json.loads(q.get_query(QueryRole.COMPONENTS).b_value)
-        for key, extras in TEMP_EXTRAS.items():
+        for key, extras in ALL_EXTRAS.items():
             request[key] = request[key][:-len(extras)]
         assert json.dumps(request, separators=(",", ":")) == q.V2024_06_QUERIES["components"].b_value
 
@@ -147,7 +152,8 @@ class TestComponentsRequestQuery:
         msg = tedapi_pb2.Message()
         msg.ParseFromString(api._build_request(QueryRole.COMPONENTS))
         variables = json.loads(msg.message.payload.send.b.value)
-        assert variables["hvpSignalNames"][-3:] == TEMP_EXTRAS["hvpSignalNames"]
+        hvp = ALL_EXTRAS["hvpSignalNames"]
+        assert variables["hvpSignalNames"][-len(hvp):] == hvp
         assert msg.message.payload.send.code == q.V2024_06_QUERIES["components"].code
 
 

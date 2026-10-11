@@ -112,12 +112,12 @@ class TestFanSignalRequest:
         captured = json.loads(q.V2024_06_QUERIES["components"].b_value)["pchSignalNames"]
         request = json.loads(q.get_query(QueryRole.COMPONENTS).b_value)["pchSignalNames"]
         # every earlier name (capture + temperature extras) keeps its position
-        assert request == captured + ["PCH_AmbientTemp", "PCH_heatsinkTemp"] + FAN_NAMES
+        assert request[:len(captured) + 2 + len(FAN_NAMES)] == captured + ["PCH_AmbientTemp", "PCH_heatsinkTemp"] + FAN_NAMES
 
     def test_single_source_of_truth(self):
         assert list(q.PW3_FAN_SIGNAL_NAMES) == FAN_NAMES
         pch = q.EXTRA_SIGNAL_NAMES[QueryRole.COMPONENTS]["pchSignalNames"]
-        assert pch[-len(FAN_NAMES):] == q.PW3_FAN_SIGNAL_NAMES
+        assert pch[2:2 + len(FAN_NAMES)] == q.PW3_FAN_SIGNAL_NAMES
 
     def test_signature_unchanged(self):
         assert q.get_query(QueryRole.COMPONENTS).code == q.V2024_06_QUERIES["components"].code

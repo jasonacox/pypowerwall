@@ -92,11 +92,33 @@ PW3_FAN_SIGNAL_NAMES = ("PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PC
 # in its signed query).
 GATEWAY_MSA_SIGNAL_NAMES = ("SYNC_Uptime",)
 
+#
+# PW3 signals that Tesla's own app queries request (V2026_06 PW3Query and
+# ComplianceQuery list them inline) but our V2024_06 capture doesn't. All 23 were
+# echoed live on 2x PW3 (firmware 26.26.11) on 2026-10-11. Battery health on bms:
+# BMS_kwhDischargeTotal (kWh), BMS_LOG_ahDischargeTotal (Ah), BMS_LOG_cacAvg
+# (capacity, Ah), BMS_LOG_selfDischargeRate, BMS_LOG_numFullBattCycles (0 on both
+# units so far) and BMS_LOG_overDischargeCounter.
+PW3_APP_SIGNAL_NAMES = {
+    "pchSignalNames": ("PCH_AcRealPowerSum", "PCH_AcVoltageCN", "PCH_AcVoltageLL", "PCH_pcbaId", "PCH_usageId"),
+    "bmsSignalNames": ("BMS_kwhDischargeTotal", "BMS_LOG_ahDischargeTotal", "BMS_LOG_cacAvg",
+                       "BMS_LOG_numFullBattCycles", "BMS_LOG_overDischargeCounter", "BMS_LOG_selfDischargeRate"),
+    "hvpSignalNames": ("HVP_SafetyBiDisconnectState", "HVP_a061_LockoutOnIsoFaultRetry"),
+    "pwsSignalNames": ("PWS_ExtSwitch_State", "PWS_RSDSelfTest_Result", "PWS_RSDSelfTest_State", "PWS_RSD_State",
+                       "PWS_assemblyId", "PWS_pcbaId", "PWS_reversePolarityStrings"),
+    "baggrSignalNames": ("BAGGR_ExpectedEnergyRemaining", "BAGGR_ExpectedFullPackEnergy", "BAGGR_OperationType"),
+}
+
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
-        "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp") + PW3_FAN_SIGNAL_NAMES,
-        "bmsSignalNames": ("BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"),
-        "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"),
+        "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp") + PW3_FAN_SIGNAL_NAMES
+                          + PW3_APP_SIGNAL_NAMES["pchSignalNames"],
+        "bmsSignalNames": ("BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge")
+                          + PW3_APP_SIGNAL_NAMES["bmsSignalNames"],
+        "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature")
+                          + PW3_APP_SIGNAL_NAMES["hvpSignalNames"],
+        "pwsSignalNames": PW3_APP_SIGNAL_NAMES["pwsSignalNames"],
+        "baggrSignalNames": PW3_APP_SIGNAL_NAMES["baggrSignalNames"],
     },
     QueryRole.DEVICE_CONTROLLER_FULL: {
         "msaSignals": GATEWAY_MSA_SIGNAL_NAMES,
