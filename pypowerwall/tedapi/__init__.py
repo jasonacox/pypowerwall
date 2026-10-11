@@ -98,10 +98,13 @@ NATIVE_FAIL_RETRY: Final[float] = 300.0
 # device controller's teslaRemoteMeter field in the same shape.
 REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
 
-# SYNC_Uptime is published every ~2.2 s and system.time has 1 s resolution, so the
-# computed gateway start wobbles by 1-2 s. get_gateway_uptime() keeps the previous
-# start while a new one is within this many seconds, so it only changes on a reboot.
-GATEWAY_START_TIME_TOLERANCE_S: Final[float] = 5.0
+# get_gateway_uptime() keeps start_time fixed for a boot: system.time - SYNC_Uptime
+# wobbles by 1-2 s (the counter is published every ~2.2 s, the clock has 1 s
+# resolution) and drifts slowly against the clock, and clients detect reboots by
+# watching start_time change. A reboot shows as the counter going backwards by more
+# than GATEWAY_UPTIME_RESET_MS; a start that drifts beyond the tolerance is re-taken.
+GATEWAY_UPTIME_RESET_MS: Final[float] = 10_000
+GATEWAY_START_TIME_TOLERANCE_S: Final[float] = 600.0
 
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
@@ -886,7 +889,7 @@ class TEDAPI:
     def get_gateway_uptime(self, force=False) -> Optional[Dict[str, Any]]:
         """Backup Gateway uptime from SYNC_Uptime: {"uptime_ms", "gateway_time",
         "start_time"}, where start_time is the gateway clock minus the uptime (one
-        snapshot), held steady per GATEWAY_START_TIME_TOLERANCE_S. None without a
+        snapshot), fixed for a boot (GATEWAY_UPTIME_RESET_MS). None without a
         sync board, under V2026_06, or without a usable gateway clock."""
         controller = self.get_device_controller(force=force)
         if not isinstance(controller, dict):
@@ -904,7 +907,8 @@ class TEDAPI:
             last = self._gateway_uptime
             if last is not None and now < last["gateway_time"]:
                 return dict(last)  # an older snapshot than the newest seen
-            if last is not None and abs((start - last["start_time"]).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S:
+            if (last is not None and uptime_ms > last["uptime_ms"] - GATEWAY_UPTIME_RESET_MS
+                    and abs((start - last["start_time"]).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S):
                 start = last["start_time"]  # same boot
             self._gateway_uptime = {"uptime_ms": uptime_ms, "gateway_time": now, "start_time": start}
             return dict(self._gateway_uptime)

@@ -187,16 +187,37 @@ class TestGetGatewayUptime:
         with patch.object(TEDAPI, 'get_device_controller', return_value=after_reboot):
             assert api.get_gateway_uptime()["start_time"] == newest["start_time"]
 
+    def _start_after(self, api, uptime, clock="2026-10-11T11:58:01-07:00"):
+        with patch.object(TEDAPI, 'get_device_controller',
+                          return_value=_controller(uptime=uptime, system_time=clock)):
+            return api.get_gateway_uptime()["start_time"]
+
+    def test_slow_drift_does_not_move_start_time(self):
+        # The counter drifts against the gateway clock; a fixed band would step
+        # start_time (a false reboot) every few hours in a long-running proxy
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            api = TEDAPI(gw_pwd='password')
+        first = self._start_after(api, UPTIME_MS)
+        # 6 hours later the raw start has drifted 30 s
+        later = self._start_after(api, UPTIME_MS + 6 * 3600_000 - 30_000, "2026-10-11T17:58:01-07:00")
+        assert later == first
+
+    def test_publish_jitter_is_not_a_reboot(self):
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            api = TEDAPI(gw_pwd='password')
+        first = self._start_after(api, UPTIME_MS)
+        assert self._start_after(api, UPTIME_MS - 2_200, "2026-10-11T11:58:02-07:00") == first
+
     def test_drift_beyond_tolerance_relatches(self):
         from pypowerwall.tedapi import GATEWAY_START_TIME_TOLERANCE_S
         with patch.object(TEDAPI, 'connect', return_value=True):
             api = TEDAPI(gw_pwd='password')
-        with patch.object(TEDAPI, 'get_device_controller', return_value=_controller()):
-            first = api.get_gateway_uptime()["start_time"]
-        shifted = UPTIME_MS - int((GATEWAY_START_TIME_TOLERANCE_S + 1) * 1000)
+        first = self._start_after(api, UPTIME_MS)
+        # counter moving forward (not a reset) but implying a start beyond the tolerance
+        shifted = UPTIME_MS + int((GATEWAY_START_TIME_TOLERANCE_S + 1) * 1000)
         with patch.object(TEDAPI, 'get_device_controller', return_value=_controller(uptime=shifted)):
             second = api.get_gateway_uptime()["start_time"]
-        assert (second - first).total_seconds() == pytest.approx(GATEWAY_START_TIME_TOLERANCE_S + 1)
+        assert (first - second).total_seconds() == pytest.approx(GATEWAY_START_TIME_TOLERANCE_S + 1)
 
 
 # --- formatting ----------------------------------------------------------------------
