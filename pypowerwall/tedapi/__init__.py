@@ -62,6 +62,7 @@ import re
 import sys
 import threading
 import time
+from datetime import datetime, timedelta
 from functools import wraps
 from http import HTTPStatus
 from typing import Any, Dict, Final, List, Optional, Tuple, Union
@@ -96,6 +97,14 @@ NATIVE_FAIL_RETRY: Final[float] = 300.0
 # config.json meter types of a Tesla Remote Meter (#386, #400). Both report through the
 # device controller's teslaRemoteMeter field in the same shape.
 REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
+
+# get_gateway_uptime() keeps start_time fixed for a boot: system.time - SYNC_Uptime
+# wobbles by 1-2 s (the counter is published every ~2.2 s, the clock has 1 s
+# resolution) and drifts slowly against the clock, and clients detect reboots by
+# watching start_time change. A reboot shows as the counter going backwards by more
+# than GATEWAY_UPTIME_RESET_MS; a start that drifts beyond the tolerance is re-taken.
+GATEWAY_UPTIME_RESET_MS: Final[float] = 10_000
+GATEWAY_START_TIME_TOLERANCE_S: Final[float] = 600.0
 
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
@@ -177,10 +186,55 @@ def _extra_signals(variables_key):
     through as delivered, so adding a name there is the only change needed."""
     return EXTRA_SIGNAL_NAMES[QueryRole.COMPONENTS].get(variables_key, ())
 
+def _parse_gateway_time(value) -> Optional[datetime]:
+    """Parse a gateway ISO-8601 timestamp with a UTC offset (e.g. "2026-09-27T12:14:48-04:00").
+
+    Returns a timezone-aware datetime, or None when the value is missing, not a
+    string, unparseable, or has no offset (a naive time can't be compared safely
+    with an offset one).
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    # datetime.fromisoformat() only accepts a trailing "Z" from Python 3.11
+    if text[-1] in "Zz":
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+def _sync_uptime_ms(device_controller):
+    """SYNC_Uptime (ms) from a DeviceController payload, or None. Read only from the
+    msa component with the esCan SYNC serial, never a serial-less slot (#406)."""
+    serial = lookup(device_controller, ['esCan', 'bus', 'SYNC', 'packageSerialNumber'])
+    if not serial or not isinstance(serial, str):
+        return None
+    for component in lookup(device_controller, ['components', 'msa']) or []:
+        if not isinstance(component, dict) or component.get('serialNumber') != serial:
+            continue
+        for signal in component.get('signals') or []:
+            if not isinstance(signal, dict) or signal.get('name') != 'SYNC_Uptime':
+                continue
+            value = signal.get('value')
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if math.isfinite(value) and value >= 0:
+                return value
+    return None
+
 _CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values are never None)
 
 # TEDAPI Class
 class TEDAPI:
+    # get_gateway_uptime(): newest result and the lock guarding it (the proxy is
+    # multi-threaded; the critical section does no I/O, so one class-level lock is fine)
+    _gateway_uptime = None
+    _gateway_uptime_lock = threading.Lock()
+
     def __init__(self, gw_pwd: str = "", debug: bool = False, pwcacheexpire: int = 5, timeout: int = 5,
                  pwconfigexpire: int = 5, host: str = GW_IP, poolmaxsize: int = 10,
                  v1r: bool = False, password: str | None = None, rsa_key_path: str | None = None,
@@ -831,6 +885,33 @@ class TEDAPI:
         return self._cached_fetch("controller", expire=self.pwcacheexpire, force=force,
                                   self_function=self_function, name="controller data",
                                   fetch=lambda: self._fetch_query(QueryRole.DEVICE_CONTROLLER_FULL))
+
+    def get_gateway_uptime(self, force=False) -> Optional[Dict[str, Any]]:
+        """Backup Gateway uptime from SYNC_Uptime: {"uptime_ms", "gateway_time",
+        "start_time"}, where start_time is the gateway clock minus the uptime (one
+        snapshot), fixed for a boot (GATEWAY_UPTIME_RESET_MS). None without a
+        sync board, under V2026_06, or without a usable gateway clock."""
+        controller = self.get_device_controller(force=force)
+        if not isinstance(controller, dict):
+            return None
+        uptime_ms = _sync_uptime_ms(controller)
+        now = _parse_gateway_time(lookup(controller, ['system', 'time']))
+        if uptime_ms is None or now is None:
+            return None
+        try:
+            start = now - timedelta(milliseconds=uptime_ms)
+        except OverflowError:
+            log.debug(f"get_gateway_uptime: SYNC_Uptime {uptime_ms} out of range")
+            return None
+        with self._gateway_uptime_lock:
+            last = self._gateway_uptime
+            if last is not None and now < last["gateway_time"]:
+                return dict(last)  # an older snapshot than the newest seen
+            if (last is not None and uptime_ms > last["uptime_ms"] - GATEWAY_UPTIME_RESET_MS
+                    and abs((start - last["start_time"]).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S):
+                start = last["start_time"]  # same boot
+            self._gateway_uptime = {"uptime_ms": uptime_ms, "gateway_time": now, "start_time": start}
+            return dict(self._gateway_uptime)
 
 
     @uses_api_lock
@@ -2839,6 +2920,7 @@ class TEDAPI:
             "METER_Y_VL3N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL3N']),
             "SYNC_ExternallyPowered": None,
             "SYNC_SiteSwitchEnabled": None,
+            "SYNC_Uptime": _sync_uptime_ms(status),  # ms; see GATEWAY_MSA_SIGNAL_NAMES
             "alerts": lookup(sync, ['alerts', 'active']) or [],
             "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
             "firmwareVersion": None,

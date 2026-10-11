@@ -122,9 +122,17 @@ class TestFanSignalRequest:
     def test_signature_unchanged(self):
         assert q.get_query(QueryRole.COMPONENTS).code == q.V2024_06_QUERIES["components"].code
 
-    def test_device_controller_query_untouched(self):
-        # PW2 fans keep coming from the pristine device-controller capture
-        assert q.get_query(QueryRole.DEVICE_CONTROLLER_FULL) is q.V2024_06_QUERIES["device_controller_full"]
+    def test_device_controller_query_keeps_pw2_fan_names(self):
+        # PW2 fans keep coming from the device-controller capture: its signed text and
+        # every captured msaSignals name (PVAC_Fan_Speed_* included) are unchanged;
+        # extras (GATEWAY_MSA_SIGNAL_NAMES, test_gateway_uptime.py) are only appended
+        captured = q.V2024_06_QUERIES["device_controller_full"]
+        request = q.get_query(QueryRole.DEVICE_CONTROLLER_FULL)
+        assert (request.text, request.code) == (captured.text, captured.code)
+        captured_names = json.loads(captured.b_value)["msaSignals"]
+        request_names = json.loads(request.b_value)["msaSignals"]
+        assert request_names[:len(captured_names)] == captured_names
+        assert {"PVAC_Fan_Speed_Actual_RPM", "PVAC_Fan_Speed_Target_RPM"} <= set(captured_names)
 
 
 # --- vitals passthrough -----------------------------------------------------------

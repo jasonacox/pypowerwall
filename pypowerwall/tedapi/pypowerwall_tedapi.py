@@ -1,12 +1,11 @@
 import json
 import logging
 import math
-from datetime import datetime
 from typing import Optional, Union
 
 from pypowerwall import __version__
 from pypowerwall.pypowerwall_base import PyPowerwallBase
-from pypowerwall.tedapi import GW_IP, TEDAPI, lookup
+from pypowerwall.tedapi import GW_IP, TEDAPI, _parse_gateway_time, lookup
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
@@ -28,26 +27,27 @@ def set_debug(debug=False, quiet=False, color=True):
     else:
         log.setLevel(logging.NOTSET)
 
-def _parse_gateway_time(value) -> Optional[datetime]:
-    """Parse a gateway ISO-8601 timestamp with a UTC offset (e.g. "2026-09-27T12:14:48-04:00").
+# Formats of a real gateway's /api/status start_time and up_time_seconds, which
+# strict clients parse exactly (#418)
+GATEWAY_START_TIME_FORMAT = "%Y-%m-%d %H:%M:%S %z"
 
-    Returns a timezone-aware datetime, or None when the value is missing, not a
-    string, unparseable, or has no offset (a naive time can't be compared safely
-    with an offset one).
-    """
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    # datetime.fromisoformat() only accepts a trailing "Z" from Python 3.11
-    if text[-1] in "Zz":
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return None
-    return parsed
+def go_duration(milliseconds) -> str:
+    """Milliseconds as Go's time.Duration.String() writes them ("398h29m44.192s"),
+    the gateway's up_time_seconds format."""
+    ms = int(round(milliseconds))
+    if ms <= 0:
+        return "0s"
+    if ms < 1000:
+        return f"{ms}ms"
+    hours, rem = divmod(ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    seconds, frac = divmod(rem, 1000)
+    sec = f"{seconds}.{frac:03d}".rstrip("0") if frac else str(seconds)
+    if hours:
+        return f"{hours}h{minutes}m{sec}s"
+    if minutes:
+        return f"{minutes}m{sec}s"
+    return f"{sec}s"
 
 
 # Compute the line-to-line voltage of single, two and three phase legs
@@ -125,6 +125,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                  failover: bool = True) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
+        self._git_hash = None  # last git_hash seen (get_api_status)
         self.timeout = timeout
         self.pwcacheexpire = pwcacheexpire
         self.pwconfigexpire = pwconfigexpire
@@ -315,23 +316,32 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def get_api_status(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
-        firmware_version = self.tedapi.get_firmware_version(force=force)
+        firmware = self.tedapi.get_firmware_version(force=force, details=True)
+        firmware_version = lookup(firmware, ["system", "version", "text"])
         if config is None:
             data = None
         else:
+            # When the gateway last started, in the gateway's formats; None without
+            # a sync board. The commission date has its own key (#418).
+            uptime = self.tedapi.get_gateway_uptime(force=force)
+            # A failed lookup keeps the last hash: the gateway UI reloads the page
+            # whenever git_hash changes.
+            git_hash = lookup(firmware, ["system", "version", "githash"]) or getattr(self, '_git_hash', None)
+            self._git_hash = git_hash
             data = {
                 "din": config.get("vin"),
-                "start_time": lookup(config,["site_info", "battery_commission_date"]),
-                "up_time_seconds": None,
+                "start_time": uptime["start_time"].strftime(GATEWAY_START_TIME_FORMAT) if uptime else None,
+                "up_time_seconds": go_duration(uptime["uptime_ms"]) if uptime else None,
                 "is_new": False,
                 "version": firmware_version,
-                "git_hash": None,
+                "git_hash": git_hash,
                 "commission_count": 0,
                 "device_type": None,
                 "teg_type": "unknown",
                 "sync_type": "unknown",
                 "cellular_disabled": False,
-                "can_reboot": True
+                "can_reboot": True,
+                "battery_commission_date": lookup(config, ["site_info", "battery_commission_date"]),
             }
         return data
 

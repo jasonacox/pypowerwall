@@ -83,11 +83,23 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 # output stays {}.
 PW3_FAN_SIGNAL_NAMES = ("PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PCH_FanDuty_B")
 
+#
+# Gateway uptime (#418): SYNC_Uptime is the Backup Gateway sync board's uptime in
+# milliseconds, on the msa component whose serial is esCan.bus.SYNC's. Validated
+# 2026-10-11 on 2x PW3 + Backup Gateway 2 over WiFi and v1r: after 16 days it put the
+# start within a minute of the 2026-09-24 firmware-update reboot. A ~24k-name sweep
+# found no other uptime signal. V2026_06 can't request it (signal names are inline
+# in its signed query).
+GATEWAY_MSA_SIGNAL_NAMES = ("SYNC_Uptime",)
+
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
         "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp") + PW3_FAN_SIGNAL_NAMES,
         "bmsSignalNames": ("BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"),
         "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"),
+    },
+    QueryRole.DEVICE_CONTROLLER_FULL: {
+        "msaSignals": GATEWAY_MSA_SIGNAL_NAMES,
     },
 }
 
