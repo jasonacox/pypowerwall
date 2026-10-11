@@ -62,8 +62,18 @@ class _FakeWebview:
         return self.window
 
     def start(self):
-        # Give the poll_token thread time to run the (mocked) exchange
-        time.sleep(0.5)
+        # Block until the fake window reaches a terminal state (loaded
+        # success page or destroyed) with a bounded timeout, so the tests
+        # are deterministic on busy CI workers instead of relying on a
+        # fixed sleep racing the poll_token thread.
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if self.window.destroyed or self.window.loaded:
+                return
+            time.sleep(0.01)
+        raise TimeoutError(
+            "fake webview window never reached loaded/destroyed state"
+        )
 
 
 def _drive_pywebview_login(show_token_page, monkeypatch, capsys):
