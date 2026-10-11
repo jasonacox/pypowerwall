@@ -57,7 +57,7 @@ def test_same_shape_as_a_gateway():
 
 
 def test_missing_site_info_keeps_shape():
-    for config in ({}, {"site_info": None}, {"site_info": {}}):
+    for config in ({}, {"site_info": None}, {"site_info": {}}, {"site_info": "x"}, {"site_info": [1]}):
         data = _site_info(config)
         assert set(data) == set(GATEWAY_SITE_INFO)
         assert data["site_name"] is None and data["grid_code"]["grid_code"] is None

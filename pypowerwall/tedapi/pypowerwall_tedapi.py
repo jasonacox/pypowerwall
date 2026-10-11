@@ -386,7 +386,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         config = self.tedapi.get_config(force=force)
         if not isinstance(config, dict):
             return None
-        site_info = config.get("site_info") or {}
+        site_info = config.get("site_info")
+        if not isinstance(site_info, dict):
+            site_info = {}
         data = {
             "max_system_energy_kWh": site_info.get("nominal_system_energy_ac"),
             "max_system_power_kW": site_info.get("nominal_system_power_ac"),
