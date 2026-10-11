@@ -93,12 +93,8 @@ CUSTOMER_TOKEN_EXPIRE: Final[float] = 3000.0
 # Backoff before retrying an unavailable local API endpoint
 NATIVE_FAIL_RETRY: Final[float] = 300.0
 
-# config.json meter types for a Tesla Remote Meter (wireless CT meter). Both report
-# through the Device Controller Full query's teslaRemoteMeter field with the same
-# reading/ctReadings shape. "trm_mb" was the first one supported (#386); "trm_wifi"
-# is the Wi-Fi-connected meter (hardware-validated 2026-09-27 on 2x Powerwall 3,
-# firmware 26.34.0, as the site's only solar meter). Before it was listed here a
-# trm_wifi site got no remote-meter data at all. Neurio (neurio_w2_tcp) is separate.
+# config.json meter types of a Tesla Remote Meter (#386, #400). Both report through the
+# device controller's teslaRemoteMeter field in the same shape.
 REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
 
 # Rate Limit Codes
