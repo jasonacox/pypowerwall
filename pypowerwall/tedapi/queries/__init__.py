@@ -109,6 +109,45 @@ PW3_APP_SIGNAL_NAMES = {
     "baggrSignalNames": ("BAGGR_ExpectedEnergyRemaining", "BAGGR_ExpectedFullPackEnergy", "BAGGR_OperationType"),
 }
 
+#
+# PW2 per-Powerwall signals - hardware-validated 2026-10-09/11 on 4x Powerwall 2
+# behind a Backup Gateway 1 (firmware 26.34.0, v1r LAN), and on 2026-10-11 on a second
+# Backup Gateway 1 site with 4x Powerwall 2 on firmware 26.18.3, one a warranty
+# replacement with different TETHC/TEPINV part numbers. The capture's msaComp component
+# types are unchanged. They fill TEDAPI vitals keys that mirror the original
+# /api/devices/vitals and were placeholders (None) until now, plus three new TEPINV
+# keys. The msa TEPINV (battery module), TETHC (package) and TESYNC (gateway)
+# components deliver them; vitals() pairs each TEPINV with its package by component
+# order (_pw2_msa_module_pairing) and leaves its values None if that can't be proven.
+#   PINV_EnergyCharged / PINV_EnergyDischarged: per-module lifetime counters in Wh.
+#     The four modules' discharged sum matched the site's Fleet API cumulative battery
+#     discharge to 0.12% (2026-10-09 and again 2026-10-11), and over 5.9 hours of
+#     charging on 2026-10-10 the charged counters rose 30,048 Wh against 30,067.6 Wh
+#     integrated from the gateway's battery meter (0.07%).
+#   PINV_LifetimeEnergyCharged / PINV_LifetimeEnergyDischarged: equal to the two
+#     above in all 16 pack-reads on 2026-10-11; passed through as delivered.
+#   PINV_HeatsinkTemp: degrees C, differed by unit and drifted between reads
+#     (34.5-39.2 C across the four units, idle).
+#   PINV_PllFrequency, PINV_PllLocked, PINV_Qout, PINV_ReadyForGridForming,
+#     PINV_HardwareEnableLine, THC_State, SYNC_ExternallyPowered and
+#     SYNC_SiteSwitchEnabled: live, same units/strings as docs/vitals-example.json.
+#     Booleans arrive in boolValue and enums in textValue (see _msa_signal_value).
+#   PINV_PowerLimiter: echoed, but None on every unit on that firmware.
+# On Powerwall 3 (2x PW3, firmware 26.26.11, WiFi TEDAPI and v1r) the gateway accepts
+# this request with an unchanged response structure and echoes the names as null,
+# except SYNC_ExternallyPowered / SYNC_SiteSwitchEnabled on a site that reports a SYNC
+# device (such as a Backup Gateway 2): those now fill TESYNC there too (False, as in the
+# original /api/devices/vitals).
+# The TEPOD POD_* placeholders need TEPOD added to msaComp, which is deliberately not
+# done here: one component type a gateway doesn't recognise nulls the whole response.
+PW2_MSA_SIGNAL_NAMES = (
+    "PINV_EnergyCharged", "PINV_EnergyDischarged",
+    "PINV_LifetimeEnergyCharged", "PINV_LifetimeEnergyDischarged",
+    "PINV_HeatsinkTemp", "PINV_PllFrequency", "PINV_PllLocked", "PINV_Qout",
+    "PINV_ReadyForGridForming", "PINV_HardwareEnableLine", "PINV_PowerLimiter",
+    "THC_State", "SYNC_ExternallyPowered", "SYNC_SiteSwitchEnabled",
+)
+
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
         "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp") + PW3_FAN_SIGNAL_NAMES
@@ -121,7 +160,8 @@ EXTRA_SIGNAL_NAMES = {
         "baggrSignalNames": PW3_APP_SIGNAL_NAMES["baggrSignalNames"],
     },
     QueryRole.DEVICE_CONTROLLER_FULL: {
-        "msaSignals": GATEWAY_MSA_SIGNAL_NAMES,
+        # SYNC_Uptime first (#419), then the PW2 per-Powerwall names
+        "msaSignals": GATEWAY_MSA_SIGNAL_NAMES + PW2_MSA_SIGNAL_NAMES,
     },
 }
 

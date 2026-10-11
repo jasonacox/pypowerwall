@@ -52,9 +52,10 @@ class TestRequest:
         request = q.get_query(QueryRole.DEVICE_CONTROLLER_FULL)
         captured_names = json.loads(captured.b_value)["msaSignals"]
         request_names = json.loads(request.b_value)["msaSignals"]
-        # captured names keep their positions, the extra is appended after them
+        # captured names keep their positions, the extra is appended after them (first
+        # of the extras; the PW2 names follow, see test_pw2_msa_signals.py)
         assert request_names[:len(captured_names)] == captured_names
-        assert request_names[len(captured_names):] == ["SYNC_Uptime"]
+        assert request_names[len(captured_names)] == "SYNC_Uptime"
 
     def test_signed_text_component_types_and_signature_unchanged(self):
         captured = q.V2024_06_QUERIES["device_controller_full"]
