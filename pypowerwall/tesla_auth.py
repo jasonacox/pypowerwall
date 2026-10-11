@@ -402,6 +402,27 @@ def _remote_login() -> tuple:
 # Path 2 — Local login (native WebView with navigation interception)
 # ---------------------------------------------------------------------------
 
+def _print_tokens_for_copy(token, at):
+    """Print RT and AT so the user can copy them into setup -headless.
+
+    Called ONLY on the authtoken path (show_token_page=True) — there, showing
+    the tokens is the point. Never call from the login()/setup path: anything
+    capturing stdout (terminal scrollback, shell logs, CI logs, screen shares,
+    pasted bug reports) would hold working Tesla credentials. (#415)
+    """
+    # RT first — matches setup -headless prompt order
+    print("\n" + "=" * 60)
+    print("\u2705 Tesla Refresh Token (RT \u2014 valid 90 days):")
+    print("-" * 60)
+    print(token)
+    print("-" * 60)
+    print()
+    print("\u2705 Tesla Access Token (AT \u2014 valid ~8 hours):")
+    print("-" * 60)
+    print(at if at else "(not available)")
+    print("-" * 60)
+
+
 def _local_login(email: str = None, region: str = "us", debug: bool = False,
                    show_token_page: bool = False):
     """Local login via native WebView. Returns (refresh_token, email, token_data) tuple.
@@ -568,22 +589,19 @@ def _local_login_macos(email: str = None, region: str = "us", debug: bool = Fals
                                 clipboard_ok = True
                             except Exception:
                                 clipboard_ok = False
-                            # Print both tokens to terminal (RT first — matches setup -headless prompt order)
-                            print("\n" + "=" * 60)
-                            print("\u2705 Tesla Refresh Token (RT \u2014 valid 90 days):")
-                            print("-" * 60)
-                            print(token)
-                            print("-" * 60)
-                            print()
-                            print("\u2705 Tesla Access Token (AT \u2014 valid ~8 hours):")
-                            print("-" * 60)
-                            print(at if at else "(not available)")
-                            print("-" * 60)
-                            if not show_token_page:
-                                # Auto-close for setup — no success page needed
-                                print("  \u2705 Token captured — setup will continue.")
-                            else:
+                            # Print both tokens ONLY for the authtoken command
+                            # (show_token_page=True) — the user must copy them
+                            # into setup -headless. Never print token values on
+                            # the login() path; anything capturing stdout
+                            # (scrollback, CI logs, screen shares) would hold
+                            # working Tesla credentials. (Issue #415)
+                            if show_token_page:
+                                _print_tokens_for_copy(token, at)
                                 print("Copy BOTH tokens when prompted by setup -headless.")
+                            else:
+                                # Auto-close for setup — token is saved to file,
+                                # print only a non-secret confirmation
+                                print("  \u2705 Token captured \u2014 setup will continue.")
                             # Only load success page for authtoken (show_token_page=True)
                             if show_token_page:
                               success_html = f"""<!DOCTYPE html><html><head>
@@ -799,16 +817,17 @@ def _local_login_pywebview(email: str = None, region: str = "us",
                     return
                 token = result["token"]
                 at = token_data.get("access_token", "") if isinstance(token_data, dict) else ""
-                print("\n" + "=" * 60)
-                print("\u2705 Tesla Refresh Token (RT \u2014 valid 90 days):")
-                print("-" * 60)
-                print(token)
-                print("-" * 60)
-                print()
-                print("\u2705 Tesla Access Token (AT \u2014 valid ~8 hours):")
-                print("-" * 60)
-                print(at if at else "(not available)")
-                print("-" * 60)
+                # Keep the full token response so callers (setup / get_authtoken)
+                # get a populated token_data dict instead of an empty one.
+                # Previously this flow returned {} — the empty-token-dict bug
+                # seen on Windows (discussion #409).
+                result["token_data"] = token_data if isinstance(token_data, dict) else {}
+                # Print tokens ONLY for the authtoken command (show_token_page=True).
+                # Never print token values on the login() path — stdout capture
+                # (scrollback, CI logs, screen shares) would hold working Tesla
+                # credentials. (Issue #415)
+                if show_token_page:
+                    _print_tokens_for_copy(token, at)
 
                 if show_token_page:
                     # Show success page with AT + RT and separate copy buttons.
@@ -895,8 +914,9 @@ def _local_login_pywebview(email: str = None, region: str = "us",
                         except Exception:
                             pass
                 else:
-                    # Auto-close window for setup flow (token is saved to file)
-                    print("  \u2705 Token captured — setup will continue.")
+                    # Auto-close window for setup flow (token is saved to file);
+                    # print only a non-secret confirmation
+                    print("  \u2705 Token captured \u2014 setup will continue.")
                     def _close():
                         for attempt in range(5):
                             try:
@@ -921,7 +941,7 @@ def _local_login_pywebview(email: str = None, region: str = "us",
         raise RuntimeError("Login cancelled or timed out — no token received.")
 
     print("  ✅ Refresh token captured!")
-    return result["token"], "", {}
+    return result["token"], "", result.get("token_data", {})
 
 
 def _patch_pywebview_navigation(result, expected_state):

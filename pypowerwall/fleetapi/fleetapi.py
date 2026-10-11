@@ -949,7 +949,7 @@ class FleetAPI:
             log.debug(f"Response Code: {response.status_code}")
             partner_token = response.json().get("access_token")
             self.partner_token = partner_token
-            print(f"   Got Token: {partner_token[:40]}...\n")
+            print("   Partner token obtained")
             log.debug(f"Partner Token: [redacted] (len={len(partner_token) if partner_token else 0})")
             # Save the configuration
             self.save_config()
@@ -1034,14 +1034,12 @@ class FleetAPI:
         # Extract access_token and refresh_token from this response
         access_token = response.json().get('access_token')
         refresh_token = response.json().get('refresh_token')
-        print("\n  Tokens generated.")
-        print(f"   * Access Token: {access_token}")
-        print(f"   * Refresh Token: {refresh_token}\n")
         self.access_token = access_token
         self.refresh_token = refresh_token
         # Save the configuration
         self.save_config()
         print("  Configuration saved")
+        print("  Tokens generated and saved to " + self.configfile)
         print()
 
         # Select Site ID
