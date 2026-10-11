@@ -168,10 +168,10 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
 ### Device and System Data
 
 - `vitals(jsonformat=False)` → dict/str  
-  Returns Powerwall device vitals.
+  Returns Powerwall device vitals, one block per device as the gateway reports it. For solar, the `PVAC--…` (inverter) block carries the per-string measurements (`PVAC_PVCurrent_*`, `PVAC_PVMeasuredVoltage_*`, `PVAC_PVMeasuredPower_*`, `PVAC_PvState_*`), and its `PVS--…` component block carries the string connection flags (`PVS_StringA_Connected`, ...). See [docs/vitals-example.json](docs/vitals-example.json).
 
 - `strings(jsonformat=False, verbose=False)` → dict/str  
-  Returns solar panel string data.
+  Returns solar panel string data. Each string combines the measurements from its `PVAC--…` block with the `Connected` flag from the matching `PVS--…` block (in `verbose` output, the `PVS_String*_Connected` keys appear under the PVAC device). This is a view built for `strings()`: it does not modify `vitals()`, where those flags stay on the `PVS--…` block.
 
 - `temps(jsonformat=False)` → dict/str  
   Returns Powerwall temperatures in degrees C, keyed by device. Powerwall 2 reports the thermal controller ambient (`TETHC--…` keys). Powerwall 3 reports the hottest battery-pack reading (`TEPOD--…` keys, one per Powerwall 3 and expansion pack; a battery without a reading appears as `None` while others report one, so positions match the proxy's `/pod` numbering, and a system with no readings returns `{}`). The full Powerwall 3 breakdown is in `vitals()`: `HVP_PackTempMax`, `HVP_PackTempMin`, `HVP_ShuntTemperature`, and the over-temperature event counters `BMS_LOG_tempOutOfBounds` / `BMS_LOG_tempOutOfBoundsCharge` on each `TEPOD--…` block, and the inverter's `PCH_AmbientTemp` (enclosure) and `PCH_heatsinkTemp` on each `TEPINV--…` block (`None` when the gateway doesn't report them; `PCH_heatsinkTemp` is passed through as delivered but reads a constant value on current firmware). Powerwall 3 temperatures need the default `tedapi_api_version="V2024_06"`.

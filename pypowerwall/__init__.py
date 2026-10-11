@@ -580,24 +580,30 @@ class Powerwall(object):
         v: dict = self.vitals() or {}
         for device in v:
             if device.split('--')[0] == 'PVAC':
-                # Check for PVS data
+                # Merge the PVS string data (e.g. PVS_StringA_Connected) into a
+                # shallow copy of the PVAC block - never into v[device] itself.
+                # The vitals() dict can share its device blocks with a backend
+                # cache (TEDAPI's Powerwall 3 "pw3_vitals" entry), so writing
+                # into it leaked the PVS keys into every later vitals() call
+                # until the cache expired: /vitals showed them on PVAC blocks
+                # only when /strings had run first.
+                block = dict(v[device])
                 look = "PVS" + str(device)[4:]
                 if look in v:
-                    # Inject the PVS string data into the dictionary
                     for ee in v[look]:
                         if 'String' in ee:
-                            v[device][ee] = v[look][ee]
+                            block[ee] = v[look][ee]
                 if verbose:
                     result[device] = {}
                     # PVAC_Pout may be missing depending on firmware - default to None
-                    result[device]['PVAC_Pout'] = v[device].get('PVAC_Pout')
-                    for e in v[device]:
+                    result[device]['PVAC_Pout'] = block.get('PVAC_Pout')
+                    for e in block:
                         if 'PVAC_PVCurrent' in e or 'PVAC_PVMeasuredPower' in e or \
                                 'PVAC_PVMeasuredVoltage' in e or 'PVAC_PvState' in e or \
                                 'PVS_String' in e:
-                            result[device][e] = v[device][e]
+                            result[device][e] = block[e]
                 else:  # simplified results
-                    for e in v[device]:
+                    for e in block:
                         if 'PVAC_PVCurrent' in e or 'PVAC_PVMeasuredPower' in e or \
                                 'PVAC_PVMeasuredVoltage' in e or 'PVAC_PvState' in e or \
                                 'PVS_String' in e:
@@ -618,7 +624,7 @@ class Powerwall(object):
                                 idxname = 'Unknown'
                             if name not in result:
                                 result[name] = {}
-                            result[name][idxname] = v[device][e]
+                            result[name][idxname] = block[e]
                         # if
                     # for
                     deviceidx += 1

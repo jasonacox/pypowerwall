@@ -30,8 +30,8 @@ The proxy server exposes a RESTful API for accessing Powerwall data, including s
 | `/soe`                          | Battery state of energy (JSON)                   |
 | `/api/system_status/soe`        | Battery state of energy (95% scale, JSON)        |
 | `/api/system_status/grid_status`| Grid status (JSON)                               |
-| `/vitals`                       | Device vitals (JSON)                             |
-| `/strings`                      | Solar string data (JSON)                         |
+| `/vitals`                       | Device vitals (JSON), one block per device as the gateway reports it; string connection flags (`PVS_String*_Connected`) are on `PVS--` blocks |
+| `/strings`                      | Solar string data (JSON): `PVAC--` string measurements plus the `Connected` flag from the matching `PVS--` block |
 | `/temps`                        | Powerwall temperatures in °C (JSON); PW2 thermal controller ambient, PW3 hottest battery-pack reading |
 | `/temps/pw`                     | Powerwall temperatures, simplified keys (JSON); `PWn` numbering matches `/pod` |
 | `/alerts`                       | Alerts (JSON array)                              |
