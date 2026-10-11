@@ -381,7 +381,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return data
 
     def get_api_site_info(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
-        """
+        """/api/site_info from config.json's "site_info" section.
+
+        Example config.json "site_info" section (the source):
         "site_info": {
             "battery_commission_date": "2021-09-25T16:05:08-07:00",
             "backup_reserve_percent": 24,
@@ -399,30 +401,34 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "timezone": "America/Los_Angeles",
             "ITC_cliff": 0,
             "panel_max_current": 100
-        },
+        }
         """
         force = kwargs.get('force', False)
         config = self.tedapi.get_config(force=force)
         if not isinstance(config, dict):
             return None
+        site_info = config.get("site_info")
+        if not isinstance(site_info, dict):
+            site_info = {}
         data = {
-            "max_system_energy_kWh": config.get("nominal_system_energy_ac"),
-            "max_system_power_kW": config.get("nominal_system_power_ac"),
-            "site_name": config.get("site_name"),
-            "timezone": config.get("timezone"),
-            "max_site_meter_power_kW": config.get("max_site_meter_power_ac"),
-            "min_site_meter_power_kW": config.get("min_site_meter_power_ac"),
-            "nominal_system_energy_kWh": config.get("nominal_system_energy_ac"),
-            "nominal_system_power_kW": config.get("nominal_system_power_ac"),
-            "panel_max_current": config.get("panel_max_current"),
+            "max_system_energy_kWh": site_info.get("nominal_system_energy_ac"),
+            "max_system_power_kW": site_info.get("nominal_system_power_ac"),
+            "site_name": site_info.get("site_name"),
+            "timezone": site_info.get("timezone"),
+            "max_site_meter_power_kW": site_info.get("max_site_meter_power_ac"),
+            "min_site_meter_power_kW": site_info.get("min_site_meter_power_ac"),
+            "nominal_system_energy_kWh": site_info.get("nominal_system_energy_ac"),
+            "nominal_system_power_kW": site_info.get("nominal_system_power_ac"),
+            "panel_max_current": site_info.get("panel_max_current"),
             "grid_code": {
-                "grid_code": config.get("grid_code"),
+                "grid_code": site_info.get("grid_code"),
+                # config.json has no grid voltage/frequency/phase settings
                 "grid_voltage_setting": None,
                 "grid_freq_setting": None,
                 "grid_phase_setting": None,
-                "country": config.get("country"),
-                "state": config.get("state"),
-                "utility": config.get("utility")
+                "country": site_info.get("country"),
+                "state": site_info.get("state"),
+                "utility": site_info.get("utility")
             }
         }
         return data
@@ -520,7 +526,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
 
         A Tesla Remote Meter (trm_wifi) reports over Wi-Fi, and the gateway misses its
         packet for 8-28 s roughly every 5 minutes. In those samples (observed 2026-09-27
-        on 2x Powerwall 3, firmware 26.34.0; 28 of 701 samples, every one with the alert,
+        on 2x Powerwall 3: 28 of 701 samples, every one with the alert,
         and the alert never seen with non-zero solar):
           * control.meterAggregates reports SOLAR realPowerW = 0 and LOAD drops by exactly
             the missing solar, going negative (SOLAR 2852.6 -> 0, LOAD 1194.1 -> -1752.0,
