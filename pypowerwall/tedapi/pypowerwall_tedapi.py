@@ -1,12 +1,11 @@
 import json
 import logging
 import math
-from datetime import datetime
 from typing import Optional, Union
 
 from pypowerwall import __version__
 from pypowerwall.pypowerwall_base import PyPowerwallBase
-from pypowerwall.tedapi import GW_IP, TEDAPI, lookup
+from pypowerwall.tedapi import GW_IP, TEDAPI, _parse_gateway_time, lookup
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
@@ -28,26 +27,31 @@ def set_debug(debug=False, quiet=False, color=True):
     else:
         log.setLevel(logging.NOTSET)
 
-def _parse_gateway_time(value) -> Optional[datetime]:
-    """Parse a gateway ISO-8601 timestamp with a UTC offset (e.g. "2026-09-27T12:14:48-04:00").
+# /api/status time formats of a real gateway (e.g. "2024-03-11 09:12:41 +0800" and
+# "127h34m16.275122187s"). Strict clients parse exactly these: evcc's go-powerwall
+# reads start_time with Go layout "2006-01-02 15:04:05 -0700" and up_time_seconds
+# with time.ParseDuration, and fails on ISO-8601 or null (#418).
+GATEWAY_START_TIME_FORMAT = "%Y-%m-%d %H:%M:%S %z"
 
-    Returns a timezone-aware datetime, or None when the value is missing, not a
-    string, unparseable, or has no offset (a naive time can't be compared safely
-    with an offset one).
-    """
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    # datetime.fromisoformat() only accepts a trailing "Z" from Python 3.11
-    if text[-1] in "Zz":
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        return None
-    return parsed
+def go_duration(milliseconds) -> str:
+    """Format a duration the way Go's time.Duration.String() does, which is what a
+    gateway reports in /api/status up_time_seconds: hours are not split into days,
+    zero units after the largest are kept ("1h0m0s"), and seconds keep their
+    fraction (here to the millisecond, trailing zeros dropped)."""
+    ms = int(round(milliseconds))
+    if ms <= 0:
+        return "0s"
+    if ms < 1000:
+        return f"{ms}ms"
+    hours, rem = divmod(ms, 3_600_000)
+    minutes, rem = divmod(rem, 60_000)
+    seconds, frac = divmod(rem, 1000)
+    sec = f"{seconds}.{frac:03d}".rstrip("0") if frac else str(seconds)
+    if hours:
+        return f"{hours}h{minutes}m{sec}s"
+    if minutes:
+        return f"{minutes}m{sec}s"
+    return f"{sec}s"
 
 
 # Compute the line-to-line voltage of single, two and three phase legs
@@ -319,19 +323,31 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         if config is None:
             data = None
         else:
+            # start_time / up_time_seconds describe when the gateway last started, as
+            # on a real gateway: from the Backup Gateway sync board's SYNC_Uptime and
+            # the gateway clock (TEDAPI.get_gateway_uptime), in the gateway's own
+            # formats. None when the site has no sync board or the signal isn't
+            # available - never a placeholder. These used to carry the battery
+            # commission date (ISO-8601) and None, which is not what the gateway
+            # means by them; the commission date now has its own key (#418).
+            uptime = self.tedapi.get_gateway_uptime(force=force)
+            # Same cached SystemInfo as firmware_version above, so no extra query
+            firmware = self.tedapi.get_firmware_version(details=True)
             data = {
                 "din": config.get("vin"),
-                "start_time": lookup(config,["site_info", "battery_commission_date"]),
-                "up_time_seconds": None,
+                "start_time": uptime["start_time"].strftime(GATEWAY_START_TIME_FORMAT) if uptime else None,
+                "up_time_seconds": go_duration(uptime["uptime_ms"]) if uptime else None,
                 "is_new": False,
                 "version": firmware_version,
-                "git_hash": None,
+                "git_hash": lookup(firmware, ["system", "version", "githash"]) or None,
                 "commission_count": 0,
                 "device_type": None,
                 "teg_type": "unknown",
                 "sync_type": "unknown",
                 "cellular_disabled": False,
-                "can_reboot": True
+                "can_reboot": True,
+                # Passed through as config.json has it (ISO-8601), under its own name
+                "battery_commission_date": lookup(config, ["site_info", "battery_commission_date"]),
             }
         return data
 

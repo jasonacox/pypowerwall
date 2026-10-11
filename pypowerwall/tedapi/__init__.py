@@ -62,6 +62,7 @@ import re
 import sys
 import threading
 import time
+from datetime import datetime, timedelta
 from functools import wraps
 from http import HTTPStatus
 from typing import Any, Dict, Final, List, Optional, Tuple, Union
@@ -96,6 +97,14 @@ NATIVE_FAIL_RETRY: Final[float] = 300.0
 # config.json meter types of a Tesla Remote Meter (#386, #400). Both report through the
 # device controller's teslaRemoteMeter field in the same shape.
 REMOTE_METER_TYPES: Final[Tuple[str, ...]] = ("trm_mb", "trm_wifi")
+
+# get_gateway_uptime(): the gateway publishes SYNC_Uptime about every 2.2 s and its
+# clock (system.time) has 1 s resolution, so system.time - SYNC_Uptime wobbles by
+# 1-2 s between reads (measured 2026-10-11). A real gateway's start_time is
+# constant, and clients detect reboots by watching it change, so a computed start
+# within this many seconds of the last one keeps the last one. A reboot moves it by
+# far more and is reported at once.
+GATEWAY_START_TIME_TOLERANCE_S: Final[float] = 5.0
 
 # Rate Limit Codes
 BUSY_CODES: Final[List[HTTPStatus]] = [HTTPStatus.TOO_MANY_REQUESTS, HTTPStatus.SERVICE_UNAVAILABLE]
@@ -177,6 +186,53 @@ def _extra_signals(variables_key):
     through as delivered, so adding a name there is the only change needed."""
     return EXTRA_SIGNAL_NAMES[QueryRole.COMPONENTS].get(variables_key, ())
 
+def _parse_gateway_time(value) -> Optional[datetime]:
+    """Parse a gateway ISO-8601 timestamp with a UTC offset (e.g. "2026-09-27T12:14:48-04:00").
+
+    Returns a timezone-aware datetime, or None when the value is missing, not a
+    string, unparseable, or has no offset (a naive time can't be compared safely
+    with an offset one).
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    # datetime.fromisoformat() only accepts a trailing "Z" from Python 3.11
+    if text[-1] in "Zz":
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed
+
+def _sync_uptime_ms(device_controller):
+    """The gateway sync board's SYNC_Uptime (milliseconds since it started) from a
+    DeviceController payload, or None.
+
+    Read only from the msa component whose serial is the esCan SYNC
+    packageSerialNumber (the Backup Gateway's sync board), never from a
+    serial-less or other component - the same serial-join rule as the PW2 msa
+    signals, so a stray slot can't supply a value (cf. #406). None when the site
+    has no SYNC device, the signal wasn't requested (V2026_06) or isn't a usable
+    number. See GATEWAY_MSA_SIGNAL_NAMES for the hardware validation."""
+    serial = lookup(device_controller, ['esCan', 'bus', 'SYNC', 'packageSerialNumber'])
+    if not serial or not isinstance(serial, str):
+        return None
+    for component in lookup(device_controller, ['components', 'msa']) or []:
+        if not isinstance(component, dict) or component.get('serialNumber') != serial:
+            continue
+        for signal in component.get('signals') or []:
+            if not isinstance(signal, dict) or signal.get('name') != 'SYNC_Uptime':
+                continue
+            value = signal.get('value')
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if math.isfinite(value) and value >= 0:
+                return value
+    return None
+
 _CACHE_MISS = object()   # _cache_get(): "nothing fresh cached" (cached values are never None)
 
 # TEDAPI Class
@@ -228,6 +284,7 @@ class TEDAPI:
         self.gw_ip = host
         self.din = None
         self.pw3 = False # Powerwall 3 Gateway only supports TEDAPI
+        self._gateway_start_time = None  # get_gateway_uptime() latch
         self.v1r = v1r
         self.v1r_transport = None
         # Bearer auth support.
@@ -831,6 +888,32 @@ class TEDAPI:
         return self._cached_fetch("controller", expire=self.pwcacheexpire, force=force,
                                   self_function=self_function, name="controller data",
                                   fetch=lambda: self._fetch_query(QueryRole.DEVICE_CONTROLLER_FULL))
+
+    def get_gateway_uptime(self, force=False) -> Optional[Dict[str, Any]]:
+        """Uptime of the Backup Gateway's sync board, from SYNC_Uptime.
+
+        Returns {"uptime_ms": <milliseconds>, "gateway_time": <aware datetime>,
+        "start_time": <aware datetime>} - start_time is the gateway's own clock
+        (system.time) minus the uptime, both from the same DeviceController
+        snapshot, so it doesn't drift with cache age, held steady across reads of
+        the same boot (GATEWAY_START_TIME_TOLERANCE_S). None when the site has no
+        sync board (e.g. a PW3 without a Backup Gateway), under V2026_06 (which
+        can't request the signal), or when the payload has no usable clock.
+        """
+        controller = self.get_device_controller(force=force)
+        if not isinstance(controller, dict):
+            return None
+        uptime_ms = _sync_uptime_ms(controller)
+        now = _parse_gateway_time(lookup(controller, ['system', 'time']))
+        if uptime_ms is None or now is None:
+            return None
+        start = now - timedelta(milliseconds=uptime_ms)
+        latched = getattr(self, '_gateway_start_time', None)
+        if latched is not None and abs((start - latched).total_seconds()) <= GATEWAY_START_TIME_TOLERANCE_S:
+            start = latched  # same boot: keep start_time stable (GATEWAY_START_TIME_TOLERANCE_S)
+        else:
+            self._gateway_start_time = start
+        return {"uptime_ms": uptime_ms, "gateway_time": now, "start_time": start}
 
 
     @uses_api_lock
@@ -2839,6 +2922,7 @@ class TEDAPI:
             "METER_Y_VL3N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL3N']),
             "SYNC_ExternallyPowered": None,
             "SYNC_SiteSwitchEnabled": None,
+            "SYNC_Uptime": _sync_uptime_ms(status),  # ms; see GATEWAY_MSA_SIGNAL_NAMES
             "alerts": lookup(sync, ['alerts', 'active']) or [],
             "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
             "firmwareVersion": None,

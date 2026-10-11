@@ -83,11 +83,35 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 # output stays {}.
 PW3_FAN_SIGNAL_NAMES = ("PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PCH_FanDuty_B")
 
+#
+# Gateway uptime - hardware-validated 2026-10-11 on 2x PW3 + Backup Gateway 2
+# (firmware 26.26.11), over both WiFi TEDAPI and v1r LAN (#418). SYNC_Uptime is
+# requested through the device-controller query's unsigned msaSignals variable and
+# is delivered on the msa component of the gateway's sync board (the one whose
+# serial is esCan.bus.SYNC.packageSerialNumber). It counts milliseconds since that
+# board started, advancing with the gateway clock and published about every
+# 2.2 s. On 2026-10-11 it put the start at 2026-09-24 21:28:15 PDT, the firmware
+# update to 26.26.11: that site's Powerwall-Dashboard data has its only gap that
+# night at 21:25-21:27, so after 16.6 days the counter was within about a minute
+# of the reboot (under 0.01% drift). It arrives as a float (~128 ms steps at this
+# size); whether it wraps at 2^32 ms (49.7 days) is not yet observed. It is the
+# only uptime the gateway exposes: a ~24k-name sweep of uptime/boot/reset/runtime/
+# power-on name variants over ~50 prefixes echoed only this name in msaSignals,
+# and nothing in any PW3
+# ComponentsQuery group (pws, pch, bms, hvp, baggr). It measures the Backup
+# Gateway's sync board, so a site without one (no esCan SYNC serial) has no uptime.
+# V2026_06 can't request it: its signed DeviceControllerQuery has the signal names
+# inline in the signed text.
+GATEWAY_MSA_SIGNAL_NAMES = ("SYNC_Uptime",)
+
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
         "pchSignalNames": ("PCH_AmbientTemp", "PCH_heatsinkTemp") + PW3_FAN_SIGNAL_NAMES,
         "bmsSignalNames": ("BMS_LOG_tempOutOfBounds", "BMS_LOG_tempOutOfBoundsCharge"),
         "hvpSignalNames": ("HVP_PackTempMax", "HVP_PackTempMin", "HVP_ShuntTemperature"),
+    },
+    QueryRole.DEVICE_CONTROLLER_FULL: {
+        "msaSignals": GATEWAY_MSA_SIGNAL_NAMES,
     },
 }
 
