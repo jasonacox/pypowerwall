@@ -311,9 +311,9 @@ def step2_exchange_token(code, client_id, client_secret, redirect_uri, fleet_api
         json.dump(tokens, f, indent=2)
     os.chmod(tokens_file, 0o600)
 
-    print(f"  Access token:  {tokens['access_token'][:30]}...")
-    print(f"  Refresh token: {tokens.get('refresh_token', 'N/A')[:30]}...")
-    print(f"  Expires in:    {tokens.get('expires_in', '?')}s")
+    # Do not print any part of the tokens — even a 30-char prefix is a
+    # usable credential fragment in scrollback/logs. (Issue #415)
+    print(f"  Fleet API tokens obtained (expires in {tokens.get('expires_in', '?')}s)")
     print(f"  Saved to:      {tokens_file}")
     return tokens["access_token"]
 
