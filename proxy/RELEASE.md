@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t106 (11 Oct 2026)
+
+* Upgraded to pyPowerwall v0.20.0 - see the library release notes. Proxy-visible changes:
+  * `/vitals` and `/pw/vitals`: Powerwall 3 battery health on each `TEPOD--` block (lifetime kWh/Ah discharged, capacity average, cycle and over-discharge counters, self-discharge rate, safety disconnect state) and inverter, rapid-shutdown and battery-aggregate detail on each `TEPINV--` block; `SYNC_Uptime` on the `TESYNC--` block. PVAC blocks no longer pick up `PVS_String*_Connected` after a `/strings` call.
+  * `/api/status`: `start_time` and `up_time_seconds` report when the gateway last started, in the gateway's formats (TEDAPI with a Backup Gateway sync board; `null` otherwise), `git_hash` is filled, and the commission/installation date has its own key.
+  * `/api/site_info` is filled in TEDAPI mode (it returned `null` for every field).
 ### Proxy t105 (10 Oct 2026)
 
 * Upgraded to pyPowerwall v0.19.0 - see the library release notes. Proxy-visible changes:
