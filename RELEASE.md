@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* docs: README, proxy README and AGENTS.md say which TEDAPI query set to use. Keep the default `V2024_06` unless you need bearer mode: it is the only set pypowerwall can extend, so PW3 temperatures, fans and battery health and the gateway uptime are `null` under `V2026_06`. `V2026_06` stays for bearer mode on solar-only gateways.
+
 ## v0.20.0 - PW3 Battery Health, Truthful Gateway Status and Site Info, Token Hygiene
 
 * feat(tedapi): Powerwall 3 battery health and inverter detail in vitals. Tesla's own app queries (the V2026_06 `PW3Query` and `ComplianceQuery`) request 23 PW3 signals our default V2024_06 query didn't; they are now requested as ComponentsQuery extras (`PW3_APP_SIGNAL_NAMES`) and passed through as delivered. Each battery's `TEPOD` block gains `BMS_kwhDischargeTotal` (lifetime kWh discharged), `BMS_LOG_ahDischargeTotal`, `BMS_LOG_cacAvg`, `BMS_LOG_numFullBattCycles`, `BMS_LOG_overDischargeCounter`, `BMS_LOG_selfDischargeRate`, `HVP_SafetyBiDisconnectState` and `HVP_a061_LockoutOnIsoFaultRetry`. Each Powerwall's `TEPINV` block gains `PCH_AcRealPowerSum`, `PCH_AcVoltageLL`/`CN`, the rapid-shutdown and external-switch states (`PWS_*`), and the battery aggregate's expected energy (`BAGGR_*`). Enum and boolean signals now come through (they arrive in `textValue`/`boolValue`). Empty expansion slots report placeholder values and are still skipped. Validated live on 2x PW3 (firmware 26.26.11): only keys added. Under V2026_06 the `PCH`/`PWS`/`BAGGR`/`HVP` signals also arrive (Tesla's `PW3Query` requests them); the `BMS_*` ones are V2024_06 only.

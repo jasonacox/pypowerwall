@@ -788,6 +788,14 @@ python -m pypowerwall get -tedapi -host 10.0.1.50 -gw_pwd ABCDEXXXXX \
 (bearer works on solar-only gateways, not Powerwall 2 or 3). `set` accepts them
 too.
 
+**Which query set?** Keep the default `V2024_06` unless you need bearer mode. It
+is the only set pypowerwall can extend, so the signals it adds are `null` under
+`V2026_06`: Powerwall 3 temperatures, fans and battery health (`BMS_*`), and the
+gateway start time and uptime in `/api/status`. `V2026_06` is Tesla's own signed
+query set, needed for bearer mode on solar-only gateways; it returns what Tesla's
+app requests, which includes the PW3 inverter, rapid-shutdown and
+battery-aggregate signals.
+
 Example output (`-format text`, the default):
 
 ```

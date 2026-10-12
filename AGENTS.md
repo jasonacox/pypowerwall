@@ -125,7 +125,8 @@ The V2024_06 captures' ECDSA signature covers only the query **text**. The `*Sig
 - Present what the system provides: pass every signal the gateway delivers through to raw outputs like `vitals()`, even one that looks static today — it may become live in later firmware. Build derived/summary values (e.g. `temps()`, dashboard-facing numbers) only from signals proven live on hardware. `PCH_heatsinkTemp` is the example: it's in PW3 vitals but reads a constant 45.45 on current firmware, so `temps()` doesn't use it. Record the validation date, hardware, and any suspect behavior in the comment.
 - The device-controller query's `msaSignals` works the same way (`EXTRA_SIGNAL_NAMES[QueryRole.DEVICE_CONTROLLER_FULL]`). Don't extend its `msaComp` type list: one type the gateway doesn't know nulls the whole response.
 - To discover names, send candidates and see which are echoed. Keep each request under ~2,000 extra names (at +4,000 the device-controller response came back empty), and include a known name as a positive control. The query text is signature-checked, so only the variables can change.
-- V2026_06 can't carry extras: its signed `PW3Query` has the signal names inline in the signed text.
+- **New signals go in V2024_06.** V2026_06 can't carry extras: its queries that request signals list the names inline in the signed text. V2026_06 users get what Tesla's own queries request, and `null` for the rest.
+- **Keep V2026_06.** It exists for bearer mode (wired LAN on solar-only gateways, #340), and removing or repurposing it would break those users. Its query texts are also a vetted list of real signal names to try as V2024_06 extras: comparing them with our requests found the 23 PW3 signals in #421.
 
 ## Testing
 
