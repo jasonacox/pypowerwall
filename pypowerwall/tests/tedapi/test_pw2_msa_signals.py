@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pypowerwall.tedapi import TEDAPI, _msa_signal_value, _pw2_msa_module_pairing
+from pypowerwall.tedapi import TEDAPI, _signal_value, _pw2_msa_module_pairing
 from pypowerwall.tedapi import queries as q
 from pypowerwall.tedapi.queries import QueryRole
 from pypowerwall.tests.unit.test_tedapi_cached_fetch import make_tedapi
@@ -44,7 +44,7 @@ def _msa_component(serial):
 
 def _msa_value(serial, name):
     sig = next(s for s in _msa_component(serial)["signals"] if s["name"] == name)
-    return _msa_signal_value(sig)
+    return _signal_value(sig)
 
 
 def _vitals(status):
@@ -113,7 +113,7 @@ class TestMsaSignalValue:
         ("junk", None),
     ])
     def test_first_delivered_field(self, signal, expected):
-        assert _msa_signal_value(signal) == expected
+        assert _signal_value(signal) == expected
 
 
 # --- module -> package pairing ---------------------------------------------------

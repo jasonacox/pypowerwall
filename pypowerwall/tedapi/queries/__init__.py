@@ -131,7 +131,7 @@ PW3_APP_SIGNAL_NAMES = {
 #   PINV_PllFrequency, PINV_PllLocked, PINV_Qout, PINV_ReadyForGridForming,
 #     PINV_HardwareEnableLine, THC_State, SYNC_ExternallyPowered and
 #     SYNC_SiteSwitchEnabled: live, same units/strings as docs/vitals-example.json.
-#     Booleans arrive in boolValue and enums in textValue (see _msa_signal_value).
+#     Booleans arrive in boolValue and enums in textValue (see _signal_value).
 #   PINV_PowerLimiter: echoed, but None on every unit on that firmware.
 # On Powerwall 3 (2x PW3, firmware 26.26.11, WiFi TEDAPI and v1r) the gateway accepts
 # this request with an unchanged response structure and echoes the names as null,

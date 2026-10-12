@@ -176,21 +176,20 @@ def _component_signal_value(components, name):
         for signal in component.get('signals') or []:
             if not isinstance(signal, dict) or signal.get('name') != name:
                 continue
-            # numbers arrive in value, booleans in boolValue, enums in textValue;
-            # the gateway sends null for the other two
-            for key in ('value', 'boolValue', 'textValue'):
-                if signal.get(key) is not None:
-                    return signal[key]
+            value = _signal_value(signal)
+            if value is not None:
+                return value
     return None
 
-def _msa_signal_value(signal):
-    """Value of one DeviceController ``components.msa`` signal as delivered, or None.
-    The gateway puts numbers in ``value``, booleans in ``boolValue`` and enums in
-    ``textValue``, leaving the other two null - so ``value`` alone would turn
-    ``SYNC_ExternallyPowered: False`` or ``THC_State`` into None. Passed through as
-    delivered: the first of the three that isn't None (PW2 firmware 26.34.0 sends
-    explicit nulls for the unused fields, and all three null for a signal it echoes
-    with no value)."""
+def _signal_value(signal):
+    """Value of one gateway signal dict as delivered, or None. Shared by the
+    ComponentsQuery reader (``_component_signal_value``) and the DeviceController
+    ``components.msa`` reader (``_msa_signals``). The gateway puts numbers in
+    ``value``, booleans in ``boolValue`` and enums in ``textValue``, leaving the
+    other two null - so ``value`` alone would turn ``SYNC_ExternallyPowered: False``
+    or ``THC_State`` into None. Passed through as delivered: the first of the three
+    that isn't None (PW2 firmware 26.34.0 sends explicit nulls for the unused
+    fields, and all three null for a signal it echoes with no value)."""
     if not isinstance(signal, dict):
         return None
     for key in ('value', 'boolValue', 'textValue'):
@@ -201,7 +200,7 @@ def _msa_signal_value(signal):
 def _msa_signals(component, prefix):
     """{name: value} for the signals of one msa component whose names start with
     ``prefix`` (e.g. 'PINV_'). Signals the gateway echoed with no value map to None."""
-    return {s['name']: _msa_signal_value(s)
+    return {s['name']: _signal_value(s)
             for s in (component.get('signals') or [])
             if isinstance(s, dict) and isinstance(s.get('name'), str) and s['name'].startswith(prefix)}
 
