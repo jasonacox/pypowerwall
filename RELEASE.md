@@ -3,6 +3,7 @@
 ## Unreleased
 
 * feat(tedapi): `/api/system_status` `max_charge_power`, `max_discharge_power` and `max_apparent_power` are filled (they were always `null`) with the site's nominal system power from the gateway config (`site_info.nominal_system_power_ac`, in W), the same value Cloud and FleetAPI report and that TEDAPI's `/api/site_info` shows as `max_system_power_kW`. They stay `null` when the config doesn't report it. Thanks @erikgieseler (#423).
+* feat(tedapi): `/api/system_status` `inverter_nominal_usable_power` is filled (it was hard-coded `0`) with the sum of the `esCan.bus.PINV[].PINV_PowerCapability.PINV_Pnom` values of the active inverter slots, matching what the gateway's local API reports for sites whose wiring derates the inverters below nameplate. Slots reporting `isMIA` or no positive numeric value are skipped; it stays `0` when no inverter reports one (Powerwall 3). Thanks @erikgieseler (#423).
 
 ## v0.20.0 - PW3 Battery Health, Truthful Gateway Status and Site Info, Token Hygiene
 

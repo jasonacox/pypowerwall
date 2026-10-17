@@ -95,6 +95,47 @@ class TestGetApiSystemStatus:
         assert data['max_discharge_power'] is None
         assert data['max_apparent_power'] is None
 
+    def _status_with_pinv(self, pinv_units, config=None):
+        backend = self._make_backend()
+        backend.tedapi.get_status.return_value = {
+            'control': {
+                'batteryBlocks': [{'din': 'PW1'}, {'din': 'PW2'}],
+                'systemStatus': {},
+                'alerts': {'active': []},
+            },
+            'esCan': {'bus': {'PINV': pinv_units}},
+        }
+        backend.tedapi.get_config.return_value = config if config is not None else {
+            'site_info': {'nominal_system_power_ac': 10}}
+        backend.tedapi.get_blocks.return_value = {}
+        return backend.get_api_system_status()
+
+    def test_inverter_nominal_usable_power_from_pinv_sum(self):
+        """2x PW2 site: PINV_Pnom sum (2x 4600) = 9200 while the nameplate
+        max_* stay at the site nominal (10000 W here)."""
+        data = self._status_with_pinv([
+            {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
+            {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
+            {'PINV_PowerCapability': {'PINV_Pnom': 0, 'isMIA': True}},
+        ])
+        assert data['inverter_nominal_usable_power'] == 9200
+        assert data['max_charge_power'] == 10000
+
+    def test_inverter_nominal_usable_power_mia_and_malformed_skipped(self):
+        data = self._status_with_pinv([
+            {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
+            {'PINV_PowerCapability': {'PINV_Pnom': '4600', 'isMIA': False}},  # string
+            {'PINV_PowerCapability': {'PINV_Pnom': True}},  # bool, no isMIA
+            {'PINV_PowerCapability': {}},
+            {},
+        ])
+        assert data['inverter_nominal_usable_power'] == 4600
+
+    def test_inverter_nominal_usable_power_zero_without_es_can(self):
+        """PW3 payloads have no esCan section: keep today's stub value 0."""
+        data = self._status_with_config({'site_info': {'nominal_system_power_ac': 13.44}})
+        assert data['inverter_nominal_usable_power'] == 0
+
 
 class TestVitalsPinvGridState:
 
