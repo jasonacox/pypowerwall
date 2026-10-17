@@ -61,7 +61,7 @@ def _parse_label(label: str, owner: str = "TEDAPIApiVersion") -> tuple:
 class TEDAPIApiVersion(str, Enum):
     """Which TEDAPI query + protobuf set to use (date-labeled, not APK version)."""
     V2024_06 = "V2024_06"   # original hand-rolled captures (legacy QueryType path)
-    V2026_06 = "V2026_06"   # Tesla-signed energy_device SignedGraphQLQuery path
+    V2026_06 = "V2026_06"   # pre-signed energy_device SignedGraphQLQuery path
 
     def __str__(self) -> str:
         # Stable display across Python versions (avoids "TEDAPIApiVersion.V2024_06").

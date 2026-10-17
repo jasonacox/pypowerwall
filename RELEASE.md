@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* docs: README, proxy README and AGENTS.md say which TEDAPI query set to use. Keep the default `V2024_06` unless you need bearer mode: it is the only set pypowerwall can extend, so PW3 temperatures, fans and battery health and the gateway uptime are `null` under `V2026_06`. `V2026_06` stays for bearer mode on solar-only gateways.
+* docs: README, proxy README and AGENTS.md say which TEDAPI query set to use. Keep the default `V2024_06` unless you need bearer mode: both sets are pre-signed query payloads, but only `V2024_06` takes its signal names as unsigned variables, so it is the only set pypowerwall can extend, and PW3 temperatures, fans and battery health and the gateway uptime are `null` under `V2026_06`. `V2026_06` stays for bearer mode on solar-only gateways. The docs now describe `V2026_06` as a pre-signed query set rather than a Tesla-signed or Tesla-provided one.
 
 ## v0.20.0 - PW3 Battery Health, Truthful Gateway Status and Site Info, Token Hygiene
 
