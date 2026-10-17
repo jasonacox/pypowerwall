@@ -1,5 +1,10 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* feat(tedapi): `get_api_system_status()` now fills `max_charge_power`, `max_discharge_power` and `max_apparent_power` (all `None` since the stub TODO) with the sum of the `esCan.bus.PINV[].PINV_PowerCapability.PINV_Pnom` values reported for the active units, which the device-controller query already returns. Slots reporting `isMIA` or no positive numeric `PINV_Pnom` are skipped; the fields stay `None` when no positive value is reported (e.g. older firmware without an `esCan` section). No additional query is needed.
+* tests: `test_tedapi_regressions.py` pins the summation on a real 2x PW2 payload, the no-PINV fallback, and malformed `PINV` entries.
+
 ## v0.20.0 - PW3 Battery Health, Truthful Gateway Status and Site Info, Token Hygiene
 
 * feat(tedapi): Powerwall 3 battery health and inverter detail in vitals. Tesla's own app queries (the V2026_06 `PW3Query` and `ComplianceQuery`) request 23 PW3 signals our default V2024_06 query didn't; they are now requested as ComponentsQuery extras (`PW3_APP_SIGNAL_NAMES`) and passed through as delivered. Each battery's `TEPOD` block gains `BMS_kwhDischargeTotal` (lifetime kWh discharged), `BMS_LOG_ahDischargeTotal`, `BMS_LOG_cacAvg`, `BMS_LOG_numFullBattCycles`, `BMS_LOG_overDischargeCounter`, `BMS_LOG_selfDischargeRate`, `HVP_SafetyBiDisconnectState` and `HVP_a061_LockoutOnIsoFaultRetry`. Each Powerwall's `TEPINV` block gains `PCH_AcRealPowerSum`, `PCH_AcVoltageLL`/`CN`, the rapid-shutdown and external-switch states (`PWS_*`), and the battery aggregate's expected energy (`BAGGR_*`). Enum and boolean signals now come through (they arrive in `textValue`/`boolValue`). Empty expansion slots report placeholder values and are still skipped. Validated live on 2x PW3 (firmware 26.26.11): only keys added. Under V2026_06 the `PCH`/`PWS`/`BAGGR`/`HVP` signals also arrive (Tesla's `PW3Query` requests them); the `BMS_*` ones are V2024_06 only.

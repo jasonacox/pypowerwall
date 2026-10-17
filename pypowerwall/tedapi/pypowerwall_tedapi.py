@@ -934,6 +934,20 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
         batteryBlocks = lookup(status, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
+        # The device controller reports a nominal power value per
+        # inverter slot (esCan.bus.PINV[].PINV_PowerCapability.
+        # PINV_Pnom). Sum the values of the active slots and fill all
+        # three max power fields with it. Slots reporting isMIA or no
+        # positive numeric PINV_Pnom are skipped.
+        pinv_units = lookup(status, ["esCan", "bus", "PINV"]) or []
+        max_power = 0
+        for pinv in pinv_units:
+            if lookup(pinv, ("PINV_PowerCapability", "isMIA")):
+                continue
+            value = lookup(pinv, ("PINV_PowerCapability", "PINV_Pnom"))
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                max_power += value
+        max_power = max_power if max_power > 0 else None
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
@@ -942,9 +956,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         data.update({
             "nominal_full_pack_energy": total_pack_energy,
             "nominal_energy_remaining": energy_left,
-            "max_charge_power": None,
-            "max_discharge_power": None,
-            "max_apparent_power": None,
+            "max_charge_power": max_power,
+            "max_discharge_power": max_power,
+            "max_apparent_power": max_power,
             "grid_services_power": None,
             "system_island_state": grid_status,
             "available_blocks": battery_count,
