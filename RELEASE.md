@@ -2,8 +2,7 @@
 
 ## Unreleased
 
-* feat(tedapi): `get_api_system_status()` now fills `max_charge_power`, `max_discharge_power` and `max_apparent_power` (all `None` since the stub TODO) with the sum of the `esCan.bus.PINV[].PINV_PowerCapability.PINV_Pnom` values reported for the active units, which the device-controller query already returns. Slots reporting `isMIA` or no positive numeric `PINV_Pnom` are skipped; the fields stay `None` when no positive value is reported (e.g. older firmware without an `esCan` section). No additional query is needed.
-* tests: `test_tedapi_regressions.py` pins the summation on a real 2x PW2 payload, the no-PINV fallback, and malformed `PINV` entries.
+* feat(tedapi): `/api/system_status` `max_charge_power`, `max_discharge_power` and `max_apparent_power` are filled (they were always `null`) with the site's nominal system power from the gateway config (`site_info.nominal_system_power_ac`, in W), the same value Cloud and FleetAPI report and that TEDAPI's `/api/site_info` shows as `max_system_power_kW`. They stay `null` when the config doesn't report it. Thanks @erikgieseler (#423).
 
 ## v0.20.0 - PW3 Battery Health, Truthful Gateway Status and Site Info, Token Hygiene
 

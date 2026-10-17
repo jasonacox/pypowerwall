@@ -3,9 +3,11 @@
 - get_blocks() returning None crashed get_api_system_status()
 - PINV_GridState was looked up in the THC entry instead of the PINV entry
 
-Also covers the battery max power fields filled from the reported PINV_Pnom values.
+Also covers the max power fields filled from the site's nominal system power.
 """
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from pypowerwall.tedapi import TEDAPI
 from pypowerwall.tedapi.pypowerwall_tedapi import PyPowerwallTEDAPI
@@ -55,80 +57,42 @@ class TestGetApiSystemStatus:
         assert data['available_blocks'] == 1
         assert data['battery_blocks'] == []
 
-    def test_max_power_from_reported_pinv_values(self):
-        """max_charge/discharge/apparent power are filled with the sum of
-        the PINV_Pnom values reported for the active units (real PW2
-        payload: 2x 4600 plus an empty MIA slot)."""
+    def _status_with_config(self, config):
         backend = self._make_backend()
         backend.tedapi.get_status.return_value = {
             'control': {
                 'batteryBlocks': [{'din': 'PW1'}, {'din': 'PW2'}],
-                'systemStatus': {
-                    'nominalFullPackEnergyWh': 26487,
-                    'nominalEnergyRemainingWh': 26487,
-                },
-                'alerts': {'active': []},
-            },
-            'esCan': {
-                'bus': {
-                    'PINV': [
-                        {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
-                        {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
-                        {'PINV_PowerCapability': {'PINV_Pnom': 0, 'isMIA': True}},
-                    ],
-                },
-            },
-        }
-        backend.tedapi.get_config.return_value = {'vin': 'GW--123'}
-        backend.tedapi.get_blocks.return_value = {}
-
-        data = backend.get_api_system_status()
-        assert data['max_charge_power'] == 9200
-        assert data['max_discharge_power'] == 9200
-        assert data['max_apparent_power'] == 9200
-
-    def test_max_power_none_without_pinv(self):
-        backend = self._make_backend()
-        backend.tedapi.get_status.return_value = {
-            'control': {
-                'batteryBlocks': [{'din': 'PW1'}],
                 'systemStatus': {},
                 'alerts': {'active': []},
             },
         }
-        backend.tedapi.get_config.return_value = {'vin': 'GW--123'}
+        backend.tedapi.get_config.return_value = config
         backend.tedapi.get_blocks.return_value = {}
+        return backend.get_api_system_status()
 
-        data = backend.get_api_system_status()
+    def test_max_power_from_site_nominal_power(self):
+        """max charge/discharge/apparent power = config site_info
+        nominal_system_power_ac (kW) in W, the nameplate_power Cloud and
+        FleetAPI report (2x PW3 site: 13.44 kW -> 13440, not 13440.000000000002)."""
+        data = self._status_with_config({'site_info': {'nominal_system_power_ac': 13.44}})
+        assert data['max_charge_power'] == 13440
+        assert data['max_discharge_power'] == 13440
+        assert data['max_apparent_power'] == 13440
+        assert isinstance(data['max_charge_power'], int)
+
+    @pytest.mark.parametrize('config', [
+        {'vin': 'GW--123'},
+        {'site_info': None},
+        {'site_info': {'nominal_system_power_ac': None}},
+        {'site_info': {'nominal_system_power_ac': '13.44'}},
+        {'site_info': {'nominal_system_power_ac': True}},
+        {'site_info': {'nominal_system_power_ac': 0}},
+        {'site_info': {'nominal_system_power_ac': -5}},
+    ])
+    def test_max_power_none_without_usable_nominal_power(self, config):
+        data = self._status_with_config(config)
         assert data['max_charge_power'] is None
         assert data['max_discharge_power'] is None
-        assert data['max_apparent_power'] is None
-
-    def test_max_power_tolerates_malformed_pinv(self):
-        backend = self._make_backend()
-        backend.tedapi.get_status.return_value = {
-            'control': {
-                'batteryBlocks': [{'din': 'PW1'}],
-                'systemStatus': {},
-                'alerts': {'active': []},
-            },
-            'esCan': {
-                'bus': {
-                    'PINV': [
-                        None,
-                        'junk',
-                        {'PINV_PowerCapability': None},
-                        {'PINV_PowerCapability': 'junk'},
-                        {'PINV_PowerCapability': {'PINV_Pnom': None}},
-                        {'PINV_PowerCapability': {'PINV_Pnom': '4600'}},
-                    ],
-                },
-            },
-        }
-        backend.tedapi.get_config.return_value = {'vin': 'GW--123'}
-        backend.tedapi.get_blocks.return_value = {}
-
-        data = backend.get_api_system_status()
         assert data['max_apparent_power'] is None
 
 

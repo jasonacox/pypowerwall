@@ -934,20 +934,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
         batteryBlocks = lookup(status, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
-        # The device controller reports a nominal power value per
-        # inverter slot (esCan.bus.PINV[].PINV_PowerCapability.
-        # PINV_Pnom). Sum the values of the active slots and fill all
-        # three max power fields with it. Slots reporting isMIA or no
-        # positive numeric PINV_Pnom are skipped.
-        pinv_units = lookup(status, ["esCan", "bus", "PINV"]) or []
-        max_power = 0
-        for pinv in pinv_units:
-            if lookup(pinv, ("PINV_PowerCapability", "isMIA")):
-                continue
-            value = lookup(pinv, ("PINV_PowerCapability", "PINV_Pnom"))
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
-                max_power += value
-        max_power = max_power if max_power > 0 else None
+        # Site nameplate power: the value Cloud and FleetAPI report as
+        # nameplate_power, and /api/site_info as max_system_power_kW (kW here)
+        nominal_kw = lookup(config, ["site_info", "nominal_system_power_ac"])
+        max_power = None
+        if isinstance(nominal_kw, (int, float)) and not isinstance(nominal_kw, bool) and nominal_kw > 0:
+            max_power = round(nominal_kw * 1000)
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
