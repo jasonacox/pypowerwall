@@ -934,6 +934,27 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         energy_left = lookup(status, ["control", "systemStatus", "nominalEnergyRemainingWh"])
         batteryBlocks = lookup(status, ["control", "batteryBlocks"]) or []
         battery_count = len(batteryBlocks)
+        # Site nameplate power: the value Cloud and FleetAPI report as
+        # nameplate_power, and /api/site_info as max_system_power_kW (kW here)
+        nominal_kw = lookup(config, ["site_info", "nominal_system_power_ac"])
+        max_power = None
+        if isinstance(nominal_kw, (int, float)) and not isinstance(nominal_kw, bool) and nominal_kw > 0:
+            max_power = round(nominal_kw * 1000)
+        # Inverter usable power: the gateway's local /api/system_status reports
+        # this as inverter_nominal_usable_power, distinct from the nameplate
+        # max_* when the wiring derates the site (e.g. single-phase cap).
+        # Sum the PINV_Pnom values of the active inverter slots the
+        # device-controller payload reports; slots reporting isMIA or no
+        # positive numeric PINV_Pnom are skipped.
+        pinv_units = lookup(status, ["esCan", "bus", "PINV"]) or []
+        pinv_sum = 0
+        for pinv in pinv_units:
+            if lookup(pinv, ("PINV_PowerCapability", "isMIA")):
+                continue
+            value = lookup(pinv, ("PINV_PowerCapability", "PINV_Pnom"))
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                pinv_sum += value
+        pinv_sum = pinv_sum if pinv_sum > 0 else None
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
@@ -942,9 +963,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         data.update({
             "nominal_full_pack_energy": total_pack_energy,
             "nominal_energy_remaining": energy_left,
-            "max_charge_power": None,
-            "max_discharge_power": None,
-            "max_apparent_power": None,
+            "max_charge_power": max_power,
+            "max_discharge_power": max_power,
+            "max_apparent_power": max_power,
+            "inverter_nominal_usable_power": pinv_sum if pinv_sum is not None else 0,
             "grid_services_power": None,
             "system_island_state": grid_status,
             "available_blocks": battery_count,
