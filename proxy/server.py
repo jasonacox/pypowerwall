@@ -41,7 +41,7 @@
     Full TEDAPI mode (PW_GW_PWD set, PW_PASSWORD blank) reads extended metrics
     straight from the gateway. Two settings shape that connection:
     - PW_TEDAPI_API_VERSION=V2024_06|V2026_06 — query/protobuf set (default
-      V2024_06; V2026_06 is the Tesla-signed GraphQL set)
+      V2024_06; V2026_06 is the pre-signed GraphQL set)
     - PW_TEDAPI_AUTH_MODE=basic|bearer — how to authenticate (default basic).
       basic is HTTP Basic Auth to 192.168.91.1, only reachable over the
       Gateway's Wi-Fi; bearer logs in via /api/login/Basic and also works

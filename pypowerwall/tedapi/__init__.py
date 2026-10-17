@@ -19,7 +19,7 @@
     pwconfigexpire - Configuration Cache Expiration in seconds
     host - Powerwall Gateway IP Address (default: 192.168.91.1)
     tedapi_api_version - Query/protobuf set: "V2024_06" (default, legacy QueryType
-                         path) or "V2026_06" (Tesla-signed GraphQL / bearer path).
+                         path) or "V2026_06" (pre-signed GraphQL / bearer path).
                          Accepts a string or TEDAPIApiVersion.
 
  Functions:
