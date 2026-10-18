@@ -124,8 +124,9 @@ class TestFanSignalRequest:
 
     def test_device_controller_query_keeps_pw2_fan_names(self):
         # PW2 fans keep coming from the device-controller capture: its signed text and
-        # every captured msaSignals name (PVAC_Fan_Speed_* included) are unchanged;
-        # extras (GATEWAY_MSA_SIGNAL_NAMES, test_gateway_uptime.py) are only appended
+        # every captured msaSignals name (PVAC_Fan_Speed_* included) are unchanged; the
+        # extras (GATEWAY_MSA_SIGNAL_NAMES, test_gateway_uptime.py, then
+        # PW2_MSA_SIGNAL_NAMES, test_pw2_msa_signals.py) are only appended after them
         captured = q.V2024_06_QUERIES["device_controller_full"]
         request = q.get_query(QueryRole.DEVICE_CONTROLLER_FULL)
         assert (request.text, request.code) == (captured.text, captured.code)

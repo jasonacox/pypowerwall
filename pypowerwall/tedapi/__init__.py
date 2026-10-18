@@ -176,12 +176,104 @@ def _component_signal_value(components, name):
         for signal in component.get('signals') or []:
             if not isinstance(signal, dict) or signal.get('name') != name:
                 continue
-            # numbers arrive in value, booleans in boolValue, enums in textValue;
-            # the gateway sends null for the other two
-            for key in ('value', 'boolValue', 'textValue'):
-                if signal.get(key) is not None:
-                    return signal[key]
+            value = _signal_value(signal)
+            if value is not None:
+                return value
     return None
+
+def _signal_value(signal):
+    """Value of one gateway signal dict as delivered, or None. Shared by the
+    ComponentsQuery reader (``_component_signal_value``) and the DeviceController
+    ``components.msa`` reader (``_msa_signals``). The gateway puts numbers in
+    ``value``, booleans in ``boolValue`` and enums in ``textValue``, leaving the
+    other two null - so ``value`` alone would turn ``SYNC_ExternallyPowered: False``
+    or ``THC_State`` into None. Passed through as delivered: the first of the three
+    that isn't None (PW2 firmware 26.34.0 sends explicit nulls for the unused
+    fields, and all three null for a signal it echoes with no value)."""
+    if not isinstance(signal, dict):
+        return None
+    for key in ('value', 'boolValue', 'textValue'):
+        if signal.get(key) is not None:
+            return signal[key]
+    return None
+
+def _msa_signals(component, prefix):
+    """{name: value} for the signals of one msa component whose names start with
+    ``prefix`` (e.g. 'PINV_'). Signals the gateway echoed with no value map to None."""
+    return {s['name']: _signal_value(s)
+            for s in (component.get('signals') or [])
+            if isinstance(s, dict) and isinstance(s.get('name'), str) and s['name'].startswith(prefix)}
+
+def _msa_family(component):
+    """Signal family of an msa component ('THC', 'PINV', ...) from its signal-name
+    prefixes - msa components carry no type field. '' if mixed or no signals."""
+    families = {s['name'].split('_', 1)[0] for s in (component.get('signals') or [])
+                if isinstance(s, dict) and isinstance(s.get('name'), str)}
+    return families.pop() if len(families) == 1 else ''
+
+def _pw2_msa_module_pairing(msa, package_serials):
+    """Map each Powerwall 2 package serial to the msa TEPINV component of its module.
+
+    PW2 vitals blocks are named by package serial (from ``esCan.bus.THC``), but the
+    DeviceController's msa TEPINV components carry the battery *module* serial.
+    Nothing in the payload links the two: each msa component has only
+    ``partNumber``, ``serialNumber``, ``activeAlerts`` and ``signals`` (no type or
+    parent field), the serials share no substring, and ``esCan.bus.PINV`` has no
+    serial at all. The only link is response order: each package's TETHC component
+    (serial == package serial) is followed by its TEPINV component.
+
+    Hardware basis (2026-10-11, 4x PW2 behind a Backup Gateway 1, firmware 26.34.0,
+    v1r LAN): the layout was identical in 6 reads over 46 hours and the pairing
+    unchanged in 532 reads over 45 hours, all within one gateway boot. Each module's
+    voltages also best-matched the ``esCan.bus.PINV`` slot at the same index as its
+    package in ``esCan.bus.THC``. The layout and pairing were also unchanged across a
+    gateway restart on 2026-10-17 (no firmware change). A second
+    PW2 site (firmware 26.18.3, one warranty-replacement unit with different part
+    numbers) had the same layout, and each package got the counters its own collector
+    recorded.
+
+    Rules, strict on purpose:
+      * Components with an empty ``serialNumber`` are skipped whatever their
+        signals say. The empty battery slots are all-null, but two serial-less
+        components on that gateway return a live ``ISLAND_GridConnected``, so
+        filtering on "has a live signal" would admit phantom devices (cf. #406).
+      * A TETHC opens a slot only if its serial is a known package serial; the next
+        serial-bearing component must be a TEPINV and is that package's module.
+      * Anything irregular - a TEPINV with no TETHC before it, a TETHC followed by
+        another serial-bearing component that isn't a TEPINV, a repeated serial, a
+        TETHC left unpaired, or a pair count that differs from the number of known
+        package serials - returns {} so no pack gets another pack's values.
+
+    Returns {package_serial: msa TEPINV component}, or {} when the pairing can't be
+    proven for this payload.
+    """
+    known = set(package_serials or [])
+    pairs = {}
+    seen = set()
+    pending = None
+    for component in msa or []:
+        if not isinstance(component, dict):
+            continue
+        serial = component.get('serialNumber')
+        if not serial or not isinstance(serial, str):
+            continue
+        family = _msa_family(component)
+        if family == 'THC':
+            if pending is not None or serial in seen or serial not in known:
+                return {}
+            seen.add(serial)
+            pending = serial
+        elif family == 'PINV':
+            if pending is None or serial in seen:
+                return {}
+            seen.add(serial)
+            pairs[pending] = component
+            pending = None
+        elif pending is not None:
+            return {}
+    if pending is not None or len(pairs) != len(known):
+        return {}
+    return pairs
 
 def _extra_signals(variables_key):
     """Signal names requested beyond the ComponentsQuery capture for one component
@@ -2761,6 +2853,25 @@ class TEDAPI:
                     if "name" in s and s["name"] == "THC_AmbientTemp" and "value" in s:
                         temp_sensors[i["serialNumber"]] = s["value"]
 
+        # PW2 per-Powerwall signals from the DeviceController msa components (requested
+        # via EXTRA_SIGNAL_NAMES). TETHC and TESYNC components carry the same serial as
+        # their esCan entry, so they join directly; TEPINV components carry the module
+        # serial and are paired by order (see _pw2_msa_module_pairing) - None if that
+        # pairing can't be proven for this payload.
+        msa_thc = {}
+        for c in lookup(status, ['components', 'msa']) or []:
+            if isinstance(c, dict) and c.get('serialNumber') and _msa_family(c) == 'THC':
+                msa_thc.setdefault(c['serialNumber'], _msa_signals(c, 'THC_'))
+        package_serials = [t.get('packageSerialNumber') for t in (lookup(status, ['esCan', 'bus', 'THC']) or [])
+                           if isinstance(t, dict) and t.get('packageSerialNumber')]
+        msa_pinv = {pkg: _msa_signals(c, 'PINV_') for pkg, c in
+                    _pw2_msa_module_pairing(lookup(status, ['components', 'msa']), package_serials).items()}
+        if package_serials and not msa_pinv and any(
+                isinstance(c, dict) and c.get('serialNumber') and _msa_family(c) == 'PINV'
+                for c in lookup(status, ['components', 'msa']) or []):
+            log.debug("PW2 msa TEPINV components could not be paired with packages; "
+                      "PINV_* msa signals left as None")
+
         # Create TETHC, TEPINV and TEPOD blocks
         tethc = {} # parent
         tepinv = {}
@@ -2775,7 +2886,7 @@ class TEDAPI:
             parent_name = f"TETHC--{packagePartNumber}--{packageSerialNumber}"
             tethc[parent_name] = {
                 "THC_AmbientTemp": temp_sensors.get(packageSerialNumber, None),
-                "THC_State": None,
+                "THC_State": msa_thc.get(packageSerialNumber, {}).get('THC_State'),
                 "alerts": lookup(p, ['alerts', 'active']) or [],
                 "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",
                 "firmwareVersion": None,
@@ -2829,19 +2940,24 @@ class TEDAPI:
             # PINV list can be missing or shorter than the THC list - default to {}
             pinv_data = lookup(status, ['esCan', 'bus', 'PINV']) or []
             pinv = pinv_data[i] if i < len(pinv_data) else {}
+            # msa signals of this package's module; {} -> every msa-sourced key None
+            pinv_msa = msa_pinv.get(packageSerialNumber, {})
             tepinv[name] = {
-                "PINV_EnergyCharged": None,
-                "PINV_EnergyDischarged": None,
+                "PINV_EnergyCharged": pinv_msa.get('PINV_EnergyCharged'),
+                "PINV_EnergyDischarged": pinv_msa.get('PINV_EnergyDischarged'),
                 "PINV_Fout": lookup(pinv, ['PINV_Status', 'PINV_Fout']),
                 "PINV_GridState": lookup(pinv, ['PINV_Status', 'PINV_GridState']),
-                "PINV_HardwareEnableLine": None,
-                "PINV_PllFrequency": None,
-                "PINV_PllLocked": None,
+                "PINV_HardwareEnableLine": pinv_msa.get('PINV_HardwareEnableLine'),
+                "PINV_HeatsinkTemp": pinv_msa.get('PINV_HeatsinkTemp'),
+                "PINV_LifetimeEnergyCharged": pinv_msa.get('PINV_LifetimeEnergyCharged'),
+                "PINV_LifetimeEnergyDischarged": pinv_msa.get('PINV_LifetimeEnergyDischarged'),
+                "PINV_PllFrequency": pinv_msa.get('PINV_PllFrequency'),
+                "PINV_PllLocked": pinv_msa.get('PINV_PllLocked'),
                 "PINV_Pnom": lookup(pinv, ['PINV_PowerCapability', 'PINV_Pnom']),
                 "PINV_Pout": lookup(pinv, ['PINV_Status', 'PINV_Pout']),
-                "PINV_PowerLimiter": None,
-                "PINV_Qout": None,
-                "PINV_ReadyForGridForming": None,
+                "PINV_PowerLimiter": pinv_msa.get('PINV_PowerLimiter'),
+                "PINV_Qout": pinv_msa.get('PINV_Qout'),
+                "PINV_ReadyForGridForming": pinv_msa.get('PINV_ReadyForGridForming'),
                 "PINV_State": lookup(pinv, ['PINV_Status', 'PINV_State']),
                 "PINV_VSplit1": lookup(pinv, ['PINV_AcMeasurements', 'PINV_VSplit1']),
                 "PINV_VSplit2": lookup(pinv, ['PINV_AcMeasurements', 'PINV_VSplit2']),
@@ -2864,6 +2980,14 @@ class TEDAPI:
         islander = lookup(status, ['esCan', 'bus', 'ISLANDER']) or {}
         packagePartNumber = sync.get('packagePartNumber', None)
         packageSerialNumber = sync.get('packageSerialNumber', None)
+        # SYNC_* from the msa TESYNC component, which carries the gateway serial (the
+        # same serial is also on a signal-less msa component, so merge by name)
+        sync_msa = {}
+        for c in lookup(status, ['components', 'msa']) or []:
+            if isinstance(c, dict) and packageSerialNumber and c.get('serialNumber') == packageSerialNumber:
+                for sig_name, sig_value in _msa_signals(c, 'SYNC_').items():
+                    if sync_msa.get(sig_name) is None:
+                        sync_msa[sig_name] = sig_value
         # NOTE: these blocks are emitted even when the SYNC bus is absent and
         # the serial is None (typical PW3, yielding "TESYNC--None--None" /
         # "TESLA--None" names) - the TESLA block's componentParentDin
@@ -2924,8 +3048,8 @@ class TEDAPI:
             "METER_Y_VL1N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL1N']),
             "METER_Y_VL2N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL2N']),
             "METER_Y_VL3N": lookup(sync, ['METER_Y_AcMeasurements', 'METER_Y_VL3N']),
-            "SYNC_ExternallyPowered": None,
-            "SYNC_SiteSwitchEnabled": None,
+            "SYNC_ExternallyPowered": sync_msa.get('SYNC_ExternallyPowered'),
+            "SYNC_SiteSwitchEnabled": sync_msa.get('SYNC_SiteSwitchEnabled'),
             "SYNC_Uptime": _sync_uptime_ms(status),  # ms; see GATEWAY_MSA_SIGNAL_NAMES
             "alerts": lookup(sync, ['alerts', 'active']) or [],
             "componentParentDin": f"STSTSM--{lookup(config, ['vin'])}",

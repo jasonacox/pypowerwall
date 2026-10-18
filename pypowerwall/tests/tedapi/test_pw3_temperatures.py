@@ -136,7 +136,8 @@ class TestComponentsRequestQuery:
         assert json.dumps(request, separators=(",", ":")) == q.V2024_06_QUERIES["components"].b_value
 
     def test_roles_without_extras_are_the_capture_object(self):
-        # DEVICE_CONTROLLER_FULL carries SYNC_Uptime (test_gateway_uptime.py)
+        # DEVICE_CONTROLLER_FULL carries SYNC_Uptime (test_gateway_uptime.py) and the
+        # PW2 msa extras (test_pw2_msa_signals.py)
         for role in (QueryRole.DEVICE_CONTROLLER_BASIC,):
             assert q.get_query(role) is q.V2024_06_QUERIES[role]
 
