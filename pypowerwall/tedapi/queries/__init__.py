@@ -5,7 +5,7 @@ Two date-labeled sets are stored as JSON next to this module and loaded into
 TEDAPIQuery records at import time; `tedapi_api_version` selects between them:
   - V2024_06.json : the original hand-rolled {text, code, b} captures, keyed by
                      call-site role. Sent via the legacy QueryType path.
-  - V2026_06.json : Newer Tesla-signed pairs keyed by Tesla GraphQL operation name.
+  - V2026_06.json : Newer pre-signed pairs keyed by GraphQL operation name.
                      Sent via the energy_device SignedGraphQLQuery path.
 
 The labels are deliberately date-based. Both files share one schema per query: {text, code (hex ECDSA signature), b_value
@@ -58,7 +58,7 @@ V2026_06_QUERIES = _load_query_set("V2026_06.json")   # keyed by Tesla operation
 # (WiFi TEDAPI and v1r LAN). PW3 has no TETHC thermal controller, so the PW2
 # THC_AmbientTemp signal does not exist there. Temperatures are degrees C; the
 # BMS_LOG_tempOutOfBounds* signals are over-temperature event counters (0 at
-# validation; Tesla's own PW3Query requests them). PCH_heatsinkTemp read a constant
+# validation; the V2026_06 PW3Query requests them). PCH_heatsinkTemp read a constant
 # 45.450980 (an 8-bit raw value) on both units while ambient moved over 7 C, so
 # temps() doesn't use it. V2026_06 cannot carry extras: its PW3Query has the
 # signal names inline in the signed text.
@@ -93,7 +93,7 @@ PW3_FAN_SIGNAL_NAMES = ("PCH_FanSpeed_A", "PCH_FanSpeed_B", "PCH_FanDuty_A", "PC
 GATEWAY_MSA_SIGNAL_NAMES = ("SYNC_Uptime",)
 
 #
-# PW3 signals that Tesla's own app queries request (V2026_06 PW3Query and
+# PW3 signals that the V2026_06 queries request (PW3Query and
 # ComplianceQuery list them inline) but our V2024_06 capture doesn't. All 23 were
 # echoed live on 2x PW3 (firmware 26.26.11) on 2026-10-11. Battery health on bms:
 # BMS_kwhDischargeTotal (kWh), BMS_LOG_ahDischargeTotal (Ah), BMS_LOG_cacAvg
@@ -207,8 +207,8 @@ def get_query(role, api_version=TEDAPIApiVersion.V2024_06) -> TEDAPIQuery:
     """Look up a TEDAPIQuery by call-site role for the given api version.
 
     ``role`` is a QueryRole (a plain string also works — QueryRole is a str-enum).
-    V2026_06 resolves strictly to Tesla's own queries (raises if a role has no
-    Tesla equivalent — by design, the V2026_06 path never falls back). V2024_06
+    V2026_06 resolves strictly to its own pre-signed queries (raises if a role has no
+    V2026_06 equivalent — by design, the V2026_06 path never falls back). V2024_06
     returns the request form: the capture plus any EXTRA_SIGNAL_NAMES."""
     if api_version == TEDAPIApiVersion.V2026_06:
         return V2026_06_QUERIES[V2026_06_ROLES[role]]

@@ -1,4 +1,4 @@
-// TEDAPI v2 LAN transport wrapper (reverse-engineered, not from the app bundle).
+// TEDAPI v2 LAN transport wrapper (reverse-engineered, not generated).
 //
 // The gateway's /tedapi/v1 LAN endpoint frames each request as an outer
 // Message { MessageEnvelope message = 1; Tail tail = 2; }. The energy_device

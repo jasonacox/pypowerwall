@@ -619,7 +619,7 @@ print("System Status: %r\n" % pw.system_status())
     rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi (Powerwall 3)
     wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
     tedapi_api_version = "V2024_06"  # TEDAPI query/protobuf set: "V2024_06" (default,
-                                #   legacy QueryType path) or "V2026_06" (Tesla-signed
+                                #   legacy QueryType path) or "V2026_06" (pre-signed
                                 #   GraphQL / bearer path)
     tedapi_auth_mode = "basic"  # How TEDAPI authenticates: "basic" (default) HTTP Basic
                                 #   Auth to 192.168.91.1, which is only reachable over the
@@ -789,6 +789,15 @@ python -m pypowerwall get -tedapi -host 10.0.1.50 -gw_pwd ABCDEXXXXX \
 `PW_TEDAPI_AUTH_MODE`; see the proxy's TEDAPI notes for when each applies
 (bearer works on solar-only gateways, not Powerwall 2 or 3). `set` accepts them
 too.
+
+**Which query set?** Keep the default `V2024_06` unless you need bearer mode. Both
+sets are pre-signed query payloads, but only `V2024_06`'s signal queries take their
+signal names as unsigned variables, so it is the only set pypowerwall can extend.
+The signals it adds are `null` under `V2026_06`: Powerwall 3 temperatures, fans and
+battery health (`BMS_*`), and the gateway start time and uptime in `/api/status`.
+`V2026_06` is needed for bearer mode on solar-only gateways. Its signal names are
+part of the signed text, so it returns only the signals its payloads already
+request, including the PW3 inverter, rapid-shutdown and battery-aggregate signals.
 
 Example output (`-format text`, the default):
 
