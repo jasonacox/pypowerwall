@@ -1,9 +1,0 @@
-fastapi==0.115.12
-uvicorn[standard]==0.29.0
-pydantic==2.11.3
-pydantic-settings==2.9.1
-pypowerwall==0.14.2
-aiohttp==3.12.15
-websockets==13.1
-psutil==6.1.1
-beautifulsoup4==4.12.3
