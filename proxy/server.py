@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t106"
+BUILD = "t107"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
