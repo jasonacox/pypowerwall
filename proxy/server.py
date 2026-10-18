@@ -636,8 +636,9 @@ def _tedapi_probe_and_recover():
 
     Runs only when TEDAPI mode is active. Polls pw.version() every TEDAPI_PROBE_INTERVAL
     seconds to detect SolarOnly entry. After TEDAPI_FALLBACK_THRESHOLD consecutive None
-    results, enters fallback mode and starts attempting reconnect via pw.connect(retry=False).
-    On successful recovery, exits fallback mode and resets exponential backoff.
+    results (or passes where pw has left TEDAPI mode), enters fallback mode and starts
+    attempting reconnect via pw.connect(retry=False). Recovery counts only when pw is
+    back in TEDAPI mode; it then exits fallback mode and resets exponential backoff.
     Stays in SolarOnly if recovery fails — proxy keeps serving available data.
 
     Runtime-reconnect trade-off: pw.connect() swaps pw.client and transiently mutates
@@ -645,10 +646,10 @@ def _tedapi_probe_and_recover():
     bounded — requests were already failing when recovery fires, the attribute swap is
     atomic, and worst case a few in-flight requests hit a transient wrong-mode branch.
 
-    Hybrid-mode note: the gate is pw.tedapi, which includes hybrid mode (v1r + WiFi
-    fallback). In that topology pw.version() is served by the local API, so a WiFi
-    TEDAPI outage may not be detected by this probe. Monitoring is best-effort for
-    hybrid; pure TEDAPI mode (WiFi-only or v1r-only) gets full coverage.
+    Hybrid-mode note: TEDAPI mode here means pw.tedapi is set, which includes hybrid
+    mode (v1r + WiFi fallback). In that topology pw.version() is served by the local
+    API, so a WiFi TEDAPI outage may not be detected by this probe. Monitoring is
+    best-effort for hybrid; pure TEDAPI mode (WiFi-only or v1r-only) gets full coverage.
 
     429-cooldown interaction: during a gateway rate-limit cooldown (~5 min), pw.version()
     returns None, which drives the probe into fallback mode and triggers reconnect
@@ -666,22 +667,16 @@ def _tedapi_probe_and_recover():
             with _fallback_mode_lock:
                 in_fallback = _fallback_mode["is_fallback_mode"]
 
-            # Only probe when in TEDAPI mode — but never let this gate block
-            # recovery once in fallback. A fully-failed pw.connect(retry=False)
-            # used to leave pw.tedapi=False (fixed in Powerwall.connect(), #366),
-            # and with the gate checked first the loop short-circuited here on
-            # every iteration: no further recovery attempt, no log line at any
-            # level, is_fallback_mode stuck True until restart. Checking
-            # in_fallback first makes that wedge structurally impossible even if
-            # some future path corrupts pw.tedapi again.
-            if not in_fallback and not getattr(pw, 'tedapi', None):
-                consecutive_failures = 0
-                continue
-
             if not in_fallback:
-                # Healthy path: probe TEDAPI (treat exceptions as probe failures)
+                # Healthy path: probe TEDAPI (treat exceptions as probe failures).
+                # This thread only runs for a TEDAPI deployment, so a falsy
+                # pw.tedapi means the connection has left TEDAPI mode (e.g. a
+                # failover to cloud): a failed probe, not a reason to stop
+                # probing. Skipping it once left the proxy on cloud until
+                # restart with no log line (#366, #424).
                 try:
-                    version = pw.version()  # direct call — don't want safe_pw_call health side-effects
+                    # direct call — don't want safe_pw_call health side-effects
+                    version = pw.version() if getattr(pw, 'tedapi', None) else None
                 except Exception as probe_exc:
                     log.debug(f"TEDAPI probe exception (counts as failure): {probe_exc}")
                     version = None
@@ -715,10 +710,11 @@ def _tedapi_probe_and_recover():
                 recovered = False
                 with _fallback_recovery_lock:
                     try:
-                        if pw.connect(retry=False):
-                            # Verify data flows after reconnect
-                            version = pw.version()
-                            if version is not None:
+                        # Recovered only when back in TEDAPI mode with data
+                        # flowing: with failover on, connect() can succeed in
+                        # cloud mode, whose version() answers too (#424).
+                        if pw.connect(retry=False) and getattr(pw, 'tedapi', None):
+                            if pw.version() is not None:
                                 recovered = True
                     except Exception as exc:
                         log.warning(f"TEDAPI recovery attempt #{attempt_num} exception: {exc}")
