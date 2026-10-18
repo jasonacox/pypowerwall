@@ -275,6 +275,51 @@ class TestConnectFailureRestoresMode:
         assert pw.tedapi_mode == "full"
         assert pw.mode == "local"
 
+    def test_reconnect_after_cloud_failover_tries_configured_mode_first(self, mock_clients):
+        """After a *successful* failover to cloud, a later connect() must start
+        from the configured local mode again, not resume in cloud (#424): the
+        proxy's TEDAPI recovery reconnects this way, and resuming in cloud kept
+        it on cloud until restart."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(host="192.168.91.1", password="", gw_pwd="ABCDELNDYT")
+        assert pw.mode == "local" and pw.tedapi
+        # Gateway down: local and FleetAPI fail, cloud succeeds
+        mock_clients['tedapi'].return_value.authenticate.side_effect = ConnectionError('down')
+        mock_clients['fleet'].return_value.authenticate.side_effect = ConnectionError('down')
+        assert pw.connect(retry=False) is True
+        assert pw.mode == "cloud" and pw.cloudmode is True
+        assert not pw.tedapi
+        # Gateway back: the reconnect must return to local TEDAPI
+        mock_clients['tedapi'].return_value.authenticate.side_effect = None
+        assert pw.connect(retry=False) is True
+        assert pw.mode == "local"
+        assert pw.cloudmode is False and pw.fleetapi is False
+        assert pw.tedapi
+        assert pw.tedapi_mode == "full"
+
+    @pytest.mark.parametrize("fleetapi, remote", [(False, "cloud"), (True, "fleetapi")])
+    def test_remote_reconnect_after_local_failover_clears_tedapi(self, mock_clients, fleetapi, remote):
+        """A cloud/FleetAPI instance that failed over to local TEDAPI and then
+        reconnects to its remote mode must not keep the local TEDAPI state:
+        remote modes have no TEDAPI, and a stale tedapi_mode="v1r" would send
+        v1r-only calls to the remote client."""
+        import pypowerwall
+        remote_mock = mock_clients['fleet' if fleetapi else 'cloud']
+        for name in ('fleet', 'cloud'):
+            mock_clients[name].return_value.authenticate.side_effect = ConnectionError('down')
+        pw = pypowerwall.Powerwall(host="10.42.1.40", password="", gw_pwd="ABCDELNDYT",
+                                   rsa_key_path="/keys/k.pem", email="x@example.com",
+                                   cloudmode=True, fleetapi=fleetapi)
+        # Remote failed at construction, so it failed over to local v1r
+        assert pw.mode == "local" and pw.tedapi and pw.tedapi_mode == "v1r"
+        # Remote is back: the reconnect returns to it with TEDAPI cleared
+        remote_mock.return_value.authenticate.side_effect = None
+        assert pw.connect(retry=False) is True
+        assert pw.mode == remote and pw.cloudmode is True and pw.fleetapi is fleetapi
+        assert pw.tedapi is False
+        assert pw.tedapi_mode == "off"
+        assert pw.schedule_max_backup(60) is None
+
     def test_failed_initial_connect_leaves_tedapi_off(self, mock_clients):
         """Total failure on the very first connect restores the initial
         (tedapi=False, tedapi_mode="off") state, not a partial mutation."""

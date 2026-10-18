@@ -270,6 +270,9 @@ class Powerwall(object):
         # Validate provided parameters
         self._validate_init_configuration()
 
+        # The mode every connect() starts from, whatever an earlier failover left
+        self._configured_mode = (self.mode, self.cloudmode, self.fleetapi)
+
         # Connect to Powerwall
         if not self.connect(self.retry_modes):
             log.error("Unable to connect to Powerwall. Verify host, credentials, and network connectivity."
@@ -295,6 +298,10 @@ class Powerwall(object):
         if self.mode == "unknown":
             log.error("Unable to determine mode to connect.")
             return False
+        # Start from the mode set at construction, not where a successful
+        # failover left it: after local -> cloud, a reconnect must try local
+        # again first, or recovery can never get back to the gateway (#424).
+        self.mode, self.cloudmode, self.fleetapi = self._configured_mode
         # Snapshot the configured mode - fallback mutates self.mode/cloudmode/
         # fleetapi/tedapi/tedapi_mode, and a total failure must not leave that
         # mutation behind. tedapi/tedapi_mode matter as much as mode: the local-
@@ -391,6 +398,10 @@ class Powerwall(object):
                                                     self.authpath)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = True
+                    # Remote modes have no TEDAPI: drop any left from an
+                    # earlier failover to local
+                    self.tedapi = False
+                    self.tedapi_mode = "off"
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
@@ -404,6 +415,8 @@ class Powerwall(object):
                     self.client.authenticate()
                     self.cloudmode = True
                     self.fleetapi = False
+                    self.tedapi = False
+                    self.tedapi_mode = "off"
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
