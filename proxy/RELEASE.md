@@ -1,7 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t107 (unreleased)
+### Proxy t107 (18 Oct 2026)
 
+* Upgraded to pyPowerwall v0.21.0 - see the library release notes. Proxy-visible changes:
+  * `/vitals` and `/pw/vitals`: Powerwall 2 per-Powerwall values that were `null` (lifetime charged/discharged energy, inverter state and heatsink temperature on each `TEPINV--` block, `THC_State` on `TETHC--`, and `SYNC_ExternallyPowered` / `SYNC_SiteSwitchEnabled` on `TESYNC--`). Powerwall 3 sites with a SYNC device report those two `TESYNC--` values too (`false` instead of `null`). (#416)
+  * `/api/system_status` in TEDAPI mode: `max_charge_power`, `max_discharge_power` and `max_apparent_power` are filled the way the gateway's local API reports them (the site nameplate, capped at the inverters' usable power), and `inverter_nominal_usable_power` reports the inverters' usable power instead of `0` where the inverters report it. (#423)
 * New `PW_FAILOVER` setting (default `yes`). Set `PW_FAILOVER=no` to pin the configured transports: the v1r leader stays on the wired LAN instead of switching to `PW_WIFI_HOST`, a failed request returns no data instead of being rerouted, and the proxy never falls back from local to FleetAPI or Cloud mode. Reported in `/stats` under `config`. Requested by @BJReplay (#427, #402).
 * TEDAPI recovery no longer gets stuck on Tesla cloud after a gateway outage: with cloud credentials present, recovery could fall back to cloud, report "recovered" and stop probing until restart. It now counts recovery only when the connection is back in TEDAPI mode (#425, #424).
 
