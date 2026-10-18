@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+* fix: TEDAPI recovery no longer gets stuck on Tesla cloud after a gateway outage. With failover on (the default) and cloud credentials available, the proxy's recovery `connect()` could succeed by falling back to cloud. The proxy counted that as recovered (cloud answers `version()` too), then stopped probing because `pw.tedapi` was off, and stayed on cloud with no TEDAPI data until restart. Now `Powerwall.connect()` always starts from the mode set at construction, as its docstring says, instead of where an earlier failover left it. The proxy counts recovery only when the connection is back in TEDAPI mode, and treats a connection that has left TEDAPI mode as a failed probe. Cloud data keeps flowing while recovery runs (#424).
 * docs: README, proxy README and AGENTS.md say which TEDAPI query set to use. Keep the default `V2024_06` unless you need bearer mode: both sets are pre-signed query payloads, but only `V2024_06` takes its signal names as unsigned variables, so it is the only set pypowerwall can extend, and PW3 temperatures, fans and battery health and the gateway uptime are `null` under `V2026_06`. `V2026_06` stays for bearer mode on solar-only gateways. The docs now describe `V2026_06` as a pre-signed query set rather than a Tesla-signed or Tesla-provided one.
 
 ## v0.20.0 - PW3 Battery Health, Truthful Gateway Status and Site Info, Token Hygiene

@@ -371,9 +371,9 @@ class TestProbeIntervalEnvParsing(unittest.TestCase):
 
 
 class TestRecoveryLoopGate(unittest.TestCase):
-    """Regression tests for the #366 recovery wedge: the pw.tedapi gate in
-    _tedapi_probe_and_recover() must never short-circuit the recovery branch
-    once the proxy is in fallback mode."""
+    """Regression tests for the #366 and #424 recovery wedges: a falsy
+    pw.tedapi in _tedapi_probe_and_recover() must never stop probing or
+    recovery, and recovery counts only when pw is back in TEDAPI mode."""
 
     def setUp(self):
         _reset_fallback_state()
@@ -402,7 +402,12 @@ class TestRecoveryLoopGate(unittest.TestCase):
         enter_fallback_mode("wedge regression")
         mock_pw = Mock()
         mock_pw.tedapi = False          # corrupted state from failed reconnect
-        mock_pw.connect.return_value = True
+
+        def reconnect_local(retry=False):
+            mock_pw.tedapi = Mock()     # a local reconnect restores TEDAPI
+            return True
+
+        mock_pw.connect.side_effect = reconnect_local
         mock_pw.version.return_value = "25.10.1"
 
         self._run_loop(mock_pw)
@@ -426,16 +431,41 @@ class TestRecoveryLoopGate(unittest.TestCase):
             self.assertIsNotNone(_fallback_mode["next_attempt_at"])
             self.assertGreater(_fallback_mode["next_attempt_at"], time.time())
 
-    def test_gate_still_skips_probe_when_healthy_and_no_tedapi(self):
-        """Outside fallback the gate keeps its original behavior: a falsy
-        pw.tedapi skips probing entirely (non-TEDAPI modes must not be probed)."""
+    def test_recovery_landing_in_cloud_is_not_recovered(self):
+        """#424: with failover on, connect() can succeed by falling back to
+        cloud (pw.tedapi stays False), and cloud answers version() too. That
+        is not a recovery: stay in fallback and keep retrying."""
+        enter_fallback_mode("cloud landing")
+        mock_pw = Mock()
+        mock_pw.tedapi = False
+        mock_pw.connect.return_value = True     # landed in cloud mode
+        mock_pw.version.return_value = "23.28.2 27626f98"
+
+        self._run_loop(mock_pw)
+
+        mock_pw.connect.assert_called()
+        mock_pw.version.assert_not_called()
+        with _fallback_mode_lock:
+            self.assertTrue(_fallback_mode["is_fallback_mode"])
+            self.assertGreater(_fallback_mode["recovery_attempts"], 0)
+
+    def test_drifted_tedapi_counts_as_probe_failure(self):
+        """#424: outside fallback, a pw that has left TEDAPI mode (falsy
+        pw.tedapi) is a failed probe, not a reason to stop probing: after
+        TEDAPI_FALLBACK_THRESHOLD passes it enters fallback and attempts
+        recovery. The thread only runs for TEDAPI deployments, so a falsy
+        pw.tedapi always means drift. version() is not called on the drifted
+        connection (cloud would answer it)."""
         mock_pw = Mock()
         mock_pw.tedapi = None
+        mock_pw.connect.return_value = False
 
         self._run_loop(mock_pw)
 
         mock_pw.version.assert_not_called()
-        mock_pw.connect.assert_not_called()
+        mock_pw.connect.assert_called()
+        with _fallback_mode_lock:
+            self.assertTrue(_fallback_mode["is_fallback_mode"])
 
 
 if __name__ == "__main__":
