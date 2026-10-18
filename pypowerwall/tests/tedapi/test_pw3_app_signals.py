@@ -1,4 +1,4 @@
-"""PW3 signals Tesla's own app queries request (V2026_06 PW3Query/ComplianceQuery),
+"""PW3 signals the V2026_06 queries request (PW3Query/ComplianceQuery),
 requested here as V2024_06 ComponentsQuery extras (PW3_APP_SIGNAL_NAMES).
 
 bms/hvp extras land on each battery's TEPOD block, pch/pws/baggr on the

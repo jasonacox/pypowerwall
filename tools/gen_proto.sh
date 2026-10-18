@@ -54,11 +54,11 @@
 #   tools/namespace_protos.py stages renamed copies for protoc; the checked-in
 #   .proto sources keep their original packages.
 #
-# The bundle's TEDAPI schema spans several protobuf
+# The V2026_06 schema spans several protobuf
 # packages, so it is emitted as one file per package (energy_device.v1,
 # energy_registration.v1, common.v1, google.rpc), referencing google.protobuf
-# well-knowns via protoc's built-in imports. Regenerate the source .proto set
-# from a bundle with: bash tools/tedapi_v2_extractor/regen.sh <bundle-path>
+# well-knowns via protoc's built-in imports. The source .proto set is generated;
+# don't hand-edit it.
 
 set -e
 cd "$(git rev-parse --show-toplevel)"

@@ -19,7 +19,7 @@ dashboard and a mis-parse is silently empty data.
 
 Note the AuthEnvelope always carries externalAuth.type = PRESENCE. That is the
 protobuf-level external-auth enum every local client sets (verified against the
-Tesla app bundle); it is unrelated to the removed "presence" auth mode.
+V2026_06 protobuf schema); it is unrelated to the removed "presence" auth mode.
 """
 import gzip
 import logging
@@ -223,7 +223,7 @@ class TestAuthEnvPostWrap:
 
     def test_external_auth_type_is_presence(self):
         """The protobuf external-auth enum every local client sets — verified
-        against the Tesla app bundle, and unrelated to the removed auth mode."""
+        against the V2026_06 protobuf schema, and unrelated to the removed auth mode."""
         api = make_tedapi("bearer")
         api.session.post.return_value = mock_response(auth_wrapped(make_envelope("{}")))
 
