@@ -3,7 +3,8 @@
 - get_blocks() returning None crashed get_api_system_status()
 - PINV_GridState was looked up in the THC entry instead of the PINV entry
 
-Also covers the max power fields filled from the site's nominal system power.
+Also covers the max power fields (site nameplate capped at the inverter usable
+power) and inverter_nominal_usable_power.
 """
 from unittest.mock import MagicMock, patch
 
@@ -71,9 +72,9 @@ class TestGetApiSystemStatus:
         return backend.get_api_system_status()
 
     def test_max_power_from_site_nominal_power(self):
-        """max charge/discharge/apparent power = config site_info
-        nominal_system_power_ac (kW) in W, the nameplate_power Cloud and
-        FleetAPI report (2x PW3 site: 13.44 kW -> 13440, not 13440.000000000002)."""
+        """Without inverter values, max charge/discharge/apparent power = config
+        site_info nominal_system_power_ac (kW) in W, the nameplate_power Cloud
+        and FleetAPI report (2x PW3 site: 13.44 kW -> 13440, not 13440.000000000002)."""
         data = self._status_with_config({'site_info': {'nominal_system_power_ac': 13.44}})
         assert data['max_charge_power'] == 13440
         assert data['max_discharge_power'] == 13440
@@ -110,16 +111,33 @@ class TestGetApiSystemStatus:
         backend.tedapi.get_blocks.return_value = {}
         return backend.get_api_system_status()
 
-    def test_inverter_nominal_usable_power_from_pinv_sum(self):
-        """2x PW2 site: PINV_Pnom sum (2x 4600) = 9200 while the nameplate
-        max_* stay at the site nominal (10000 W here)."""
-        data = self._status_with_pinv([
-            {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
-            {'PINV_PowerCapability': {'PINV_Pnom': 4600, 'isMIA': False}},
-            {'PINV_PowerCapability': {'PINV_Pnom': 0, 'isMIA': True}},
-        ])
-        assert data['inverter_nominal_usable_power'] == 9200
-        assert data['max_charge_power'] == 10000
+    @staticmethod
+    def _pinv(*pnoms):
+        return [{'PINV_PowerCapability': {'PINV_Pnom': p, 'isMIA': False}} for p in pnoms] + [
+            {'PINV_PowerCapability': {'PINV_Pnom': 0, 'isMIA': True}}]
+
+    # Real local-API captures: max_* = min(site nameplate, inverter usable power)
+    @pytest.mark.parametrize('nominal_kw, pnoms, expected_max, expected_inverter', [
+        (10, (4600, 4600), 9200, 9200),      # 2x PW2, single-phase derate (#423)
+        (10.8, (5800, 5800), 10800, 11600),  # PW2 + PW+ (proxy/web/bogus sample)
+        (10, (5850, 5850), 10000, 11700),    # README sample
+    ])
+    def test_max_power_matches_local_api(self, nominal_kw, pnoms, expected_max, expected_inverter):
+        data = self._status_with_pinv(self._pinv(*pnoms), {'site_info': {'nominal_system_power_ac': nominal_kw}})
+        assert data['inverter_nominal_usable_power'] == expected_inverter
+        assert data['max_charge_power'] == expected_max
+        assert data['max_discharge_power'] == expected_max
+        assert data['max_apparent_power'] == expected_max
+
+    def test_max_power_from_inverters_without_nameplate(self):
+        data = self._status_with_pinv(self._pinv(4600, 4600), {'vin': 'GW--123'})
+        assert data['max_charge_power'] == 9200
+
+    def test_pw3_max_power_is_nameplate(self):
+        """PW3: every esCan PINV slot is MIA with Pnom 0, so max_* = nameplate."""
+        data = self._status_with_pinv(self._pinv(), {'site_info': {'nominal_system_power_ac': 13.44}})
+        assert data['max_charge_power'] == 13440
+        assert data['inverter_nominal_usable_power'] == 0
 
     def test_inverter_nominal_usable_power_mia_and_malformed_skipped(self):
         data = self._status_with_pinv([
