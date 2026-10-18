@@ -2,7 +2,7 @@
 
 The PVAC fan RPMs arrive in one of two places depending on the query set:
 ``components.msa[].signals[]`` for the V2024_06 ``msaSignals`` request, and
-``esCan.bus.PVAC[].PVAC_Logging`` for the Tesla-signed V2026_06
+``esCan.bus.PVAC[].PVAC_Logging`` for the pre-signed V2026_06
 DeviceControllerQuery (whose TEMSA signals filter no longer names the fan
 speeds — reading only ``msa`` made /fans empty on that query set).
 """
