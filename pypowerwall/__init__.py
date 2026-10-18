@@ -398,6 +398,10 @@ class Powerwall(object):
                                                     self.authpath)
                     self.client.authenticate()
                     self.cloudmode = self.fleetapi = True
+                    # Remote modes have no TEDAPI: drop any left from an
+                    # earlier failover to local
+                    self.tedapi = False
+                    self.tedapi_mode = "off"
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
@@ -411,6 +415,8 @@ class Powerwall(object):
                     self.client.authenticate()
                     self.cloudmode = True
                     self.fleetapi = False
+                    self.tedapi = False
+                    self.tedapi_mode = "off"
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
