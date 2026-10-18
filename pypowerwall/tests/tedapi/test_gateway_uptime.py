@@ -52,16 +52,21 @@ class TestRequest:
         request = q.get_query(QueryRole.DEVICE_CONTROLLER_FULL)
         captured_names = json.loads(captured.b_value)["msaSignals"]
         request_names = json.loads(request.b_value)["msaSignals"]
-        # captured names keep their positions, the extra is appended after them (first
-        # of the extras; the PW2 names follow, see test_pw2_msa_signals.py)
+        # captured names keep their positions; SYNC_Uptime is the first of the
+        # appended extras (the PW2 and POD names follow, test_pw2_msa_signals.py)
         assert request_names[:len(captured_names)] == captured_names
         assert request_names[len(captured_names)] == "SYNC_Uptime"
 
-    def test_signed_text_component_types_and_signature_unchanged(self):
+    def test_signed_text_and_captured_component_types_kept(self):
         captured = q.V2024_06_QUERIES["device_controller_full"]
         request = q.get_query(QueryRole.DEVICE_CONTROLLER_FULL)
         assert (request.text, request.code) == (captured.text, captured.code)
-        assert json.loads(request.b_value)["msaComp"] == json.loads(captured.b_value)["msaComp"]
+        captured_types = json.loads(captured.b_value)["msaComp"]["types"]
+        request_types = json.loads(request.b_value)["msaComp"]["types"]
+        # captured types keep their positions (TEPINV appears twice); the TEPOD
+        # extra is appended after them
+        assert request_types[:len(captured_types)] == captured_types
+        assert request_types[len(captured_types):] == list(q.PW2_MSA_COMPONENT_TYPES)
 
     def test_v2026_06_cannot_carry_it(self):
         # Tesla's signed DeviceControllerQuery lists its signals inline

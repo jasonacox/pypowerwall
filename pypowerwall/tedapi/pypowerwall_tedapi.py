@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 from pypowerwall import __version__
 from pypowerwall.pypowerwall_base import PyPowerwallBase
-from pypowerwall.tedapi import GW_IP, TEDAPI, _parse_gateway_time, lookup
+from pypowerwall.tedapi import GW_IP, TEDAPI, _parse_gateway_time, lookup, PW2_POD_POWER_SIGNAL_NAMES
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
@@ -955,6 +955,30 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             nameplate = round(nominal_kw * 1000)
         limits = [v for v in (nameplate, inverter_usable) if v]
         max_power = min(limits) if limits else None
+        # Instantaneous available power: the device controller's msa TEPOD
+        # components (requested via EXTRA_COMPONENT_TYPES, V2024_06 only) carry
+        # each POD module's currently available charge/discharge power - the
+        # local API's site values (same-run capture 14000/15570; see
+        # PW2_POD_POWER_SIGNAL_NAMES). A serial can appear on two
+        # msa components, so per signal only the last value per serial counts;
+        # null placeholders and unusable values contribute nothing. 0 - the stub
+        # value - while no POD reports one (e.g. V2026_06, whose signed query
+        # can't carry the TEPOD type).
+        charge_signal, discharge_signal = PW2_POD_POWER_SIGNAL_NAMES
+        pod_power = {}
+        for index, component in enumerate(lookup(self.tedapi.get_device_controller(force=force),
+                                                 ["components", "msa"]) or []):
+            if not isinstance(component, dict):
+                continue
+            serial = component.get("serialNumber") or f"slot-{index}"
+            for signal in component.get("signals") or []:
+                if not isinstance(signal, dict) or signal.get("name") not in (charge_signal, discharge_signal):
+                    continue
+                value = signal.get("value")
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+                    pod_power.setdefault(serial, {})[signal["name"]] = value
+        instantaneous_charge = sum(v.get(charge_signal, 0) for v in pod_power.values())
+        instantaneous_discharge = sum(v.get(discharge_signal, 0) for v in pod_power.values())
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
@@ -966,6 +990,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "max_charge_power": max_power,
             "max_discharge_power": max_power,
             "max_apparent_power": max_power,
+            "instantaneous_max_charge_power": instantaneous_charge,
+            "instantaneous_max_discharge_power": instantaneous_discharge,
             "inverter_nominal_usable_power": inverter_usable,
             "grid_services_power": None,
             "system_island_state": grid_status,

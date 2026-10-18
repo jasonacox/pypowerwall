@@ -4,7 +4,8 @@
 - PINV_GridState was looked up in the THC entry instead of the PINV entry
 
 Also covers the max power fields (site nameplate capped at the inverter usable
-power) and inverter_nominal_usable_power.
+power), inverter_nominal_usable_power and the instantaneous power fields filled
+from the msa TEPOD components.
 """
 from unittest.mock import MagicMock, patch
 
@@ -153,6 +154,85 @@ class TestGetApiSystemStatus:
         """PW3 payloads have no esCan section: keep today's stub value 0."""
         data = self._status_with_config({'site_info': {'nominal_system_power_ac': 13.44}})
         assert data['inverter_nominal_usable_power'] == 0
+
+    def _status_with_msa(self, msa, config=None):
+        backend = self._make_backend()
+        backend.tedapi.get_status.return_value = {
+            'control': {
+                'batteryBlocks': [{'din': 'PW1'}, {'din': 'PW2'}],
+                'systemStatus': {},
+                'alerts': {'active': []},
+            },
+        }
+        backend.tedapi.get_config.return_value = config if config is not None else {
+            'site_info': {'nominal_system_power_ac': 10}}
+        backend.tedapi.get_blocks.return_value = {}
+        backend.tedapi.get_device_controller.return_value = {'components': {'msa': msa}}
+        return backend.get_api_system_status()
+
+    def test_instantaneous_power_from_tepods(self):
+        """Hardware basis (2026-10-18, 2x PW2, firmware 26.34.1): each POD module's
+        msa TEPOD component reports POD_available_charge_power /
+        POD_available_dischg_power; the site values are the per-unit sums
+        (14000/15570 here) - the local API reported 14000/15570 in the same
+        combined run (an earlier capture read 15590; the values move between
+        reads). The empty serial-less slots echo both names as null and
+        contribute nothing."""
+        def tepod(charge, dischg):
+            return [
+                {"name": "POD_available_charge_power", "value": charge, "boolValue": None, "textValue": None},
+                {"name": "POD_available_dischg_power", "value": dischg, "boolValue": None, "textValue": None}]
+        msa = [
+            {"partNumber": "1152100-13-E", "serialNumber": "GW_SERIAL", "signals": []},
+            {"partNumber": "1092170-05-J", "serialNumber": "TETHC_SERIAL_1", "signals": [
+                {"name": "THC_State", "value": None, "boolValue": None, "textValue": "THC_STATE_AUTONOMOUSCONTROL"}]},
+            {"partNumber": "1081100-10-Q", "serialNumber": "PACKAGE_SERIAL_1", "signals": []},
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": tepod(7000, 7000)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": tepod(7000, 8570)},
+            {"partNumber": "", "serialNumber": "", "signals": tepod(None, None)},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 14000
+        assert data['instantaneous_max_discharge_power'] == 15570
+
+    def test_instantaneous_power_zero_without_tepods(self):
+        """No msa TEPOD components (V2026_06 cannot carry the type): keep
+        today's stub value 0."""
+        data = self._status_with_config({'site_info': {'nominal_system_power_ac': 13.44}})
+        assert data['instantaneous_max_charge_power'] == 0
+        assert data['instantaneous_max_discharge_power'] == 0
+
+    def test_instantaneous_power_duplicate_serial_counted_once(self):
+        """A serial can appear on two msa components (its POD entry plus the
+        empty slots echo names only): per signal only the last value per serial
+        counts, so duplicates cannot double-count."""
+        both = [
+            {"name": "POD_available_charge_power", "value": 7000, "boolValue": None, "textValue": None},
+            {"name": "POD_available_dischg_power", "value": 8570, "boolValue": None, "textValue": None}]
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_1", "signals": both},
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_1", "signals": both},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 7000
+        assert data['instantaneous_max_discharge_power'] == 8570
+
+    def test_instantaneous_power_malformed_values_skipped(self):
+        msa = [
+            None,
+            "not-a-component",
+            {"partNumber": "1081100-10-Q", "serialNumber": "S1", "signals": None},
+            {"partNumber": "1081100-10-Q", "serialNumber": "S2", "signals": [
+                {"name": "POD_available_charge_power", "value": "7000", "boolValue": None, "textValue": None},
+                {"name": "POD_available_dischg_power", "value": True, "boolValue": None, "textValue": None},
+                {"name": "POD_available_charge_power", "value": -5, "boolValue": None, "textValue": None}]},
+            {"partNumber": "1081100-00-W", "serialNumber": "S3", "signals": [
+                {"name": "POD_available_charge_power", "value": 7000, "boolValue": None, "textValue": None},
+                {"name": "POD_available_dischg_power", "value": 8570.5, "boolValue": None, "textValue": None}]},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 7000
+        assert data['instantaneous_max_discharge_power'] == 8570.5
 
 
 class TestVitalsPinvGridState:
