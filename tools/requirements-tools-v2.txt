@@ -1,4 +1,4 @@
-# Pinned build tools for the V2026_06 (Tesla-signed GraphQL) protobufs ONLY.
+# Pinned build tools for the V2026_06 (pre-signed GraphQL) protobufs ONLY.
 #
 # These are DEVELOPER/CI tools only — not runtime dependencies.
 # Used by tools/gen_proto.sh to generate pypowerwall/tedapi/protobuf/V2026_06/*_pb2.py.

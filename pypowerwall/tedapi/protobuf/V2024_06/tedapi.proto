@@ -73,7 +73,7 @@ message FirmwareVersion {
 }
 
 // System firmware-update state (FirmwarePayload field 5). Field names/types are
-// from Tesla's own schema (energy_device.v1 CommonAPIGetSystemInfoResponse).
+// from the V2026_06 schema (energy_device.v1 CommonAPIGetSystemInfoResponse).
 // The original reverse-engineered proto modeled only field 2 (as FirmwareFive.d)
 // -- that is `updateStatus`; the rest of the message was skipped.
 message SystemUpdate {

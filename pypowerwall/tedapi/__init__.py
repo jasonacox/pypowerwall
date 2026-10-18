@@ -19,7 +19,7 @@
     pwconfigexpire - Configuration Cache Expiration in seconds
     host - Powerwall Gateway IP Address (default: 192.168.91.1)
     tedapi_api_version - Query/protobuf set: "V2024_06" (default, legacy QueryType
-                         path) or "V2026_06" (Tesla-signed GraphQL / bearer path).
+                         path) or "V2026_06" (pre-signed GraphQL / bearer path).
                          Accepts a string or TEDAPIApiVersion.
 
  Functions:
@@ -271,7 +271,7 @@ class TEDAPI:
         """
         self.debug = debug
         # Query/protobuf version set: V2024_06 (default, hand-rolled captures) or
-        # V2026_06 (Tesla-signed pairs sent via the energy_device graphql path).
+        # V2026_06 (pre-signed pairs sent via the energy_device graphql path).
         # Accepts a TEDAPIApiVersion or a plain string (e.g. from an env var / CLI).
         self.tedapi_api_version = TEDAPIApiVersion.coerce(tedapi_api_version)
         self.pwcachetime = {}  # holds the cached data timestamps for api
@@ -292,7 +292,7 @@ class TEDAPI:
         self.token = None  # Bearer token (only used in bearer mode)
         if self.auth_mode == AuthMode.BEARER and v1r:
             raise ValueError(f"auth_mode='{self.auth_mode}' is incompatible with v1r mode")
-        # Bearer is the AuthEnvelope transport modality that needs the Tesla-signed
+        # Bearer is the AuthEnvelope transport modality that needs the pre-signed
         # GraphQL query set introduced in V2026_06 (or anything newer — this is a minimum,
         # not an exact match). Pairing it with the older V2024_06 QueryType queries
         # wraps those legacy queries in the AuthEnvelope transport — a combination
@@ -1860,7 +1860,7 @@ class TEDAPI:
 
     @staticmethod
     def _import_v2026_pb2():
-        """Import the V2026_06 (Tesla-signed GraphQL) transport + energy_device
+        """Import the V2026_06 (pre-signed GraphQL) transport + energy_device
         protobuf modules, raising a clear, actionable error on an old runtime.
 
         These are the only protobufs in the package built with the latest protoc:
@@ -1893,7 +1893,7 @@ class TEDAPI:
         """Build a V2026_06 SIGNED GraphQL request: the energy_device
         MessageEnvelope (graphql.queryRequest, format=SIGNED) wrapped in the
         v2 transport Message + Tail. `query` is a V2026_06 TEDAPIQuery whose
-        signed_bytes/code carry the Tesla-signed SignedGraphQLQuery + signature.
+        signed_bytes/code carry the pre-signed SignedGraphQLQuery + signature.
 
         Returns full Message bytes (same shape as the legacy path); _post_tedapi
         extracts the bare envelope for v1r."""
@@ -1949,7 +1949,7 @@ class TEDAPI:
         if resp.errors:
             log.error("GraphQL errors: %s",
                       [(er.code, er.message) for er in resp.errors])
-            # A V2026_06 query carries a Tesla-signed SignedGraphQLQuery. If the
+            # A V2026_06 query carries a pre-signed SignedGraphQLQuery. If the
             # gateway rejects every query after a firmware update, Tesla has most
             # likely rotated the query signing keys and the bundled signatures no
             # longer validate. Point the user at the legacy fallback so a total
@@ -1966,7 +1966,7 @@ class TEDAPI:
                        sender_din: Optional[str] = None, tail: int = 1) -> bytes:
         """Build a TEDAPI request for ``role``, dispatching on tedapi_api_version.
 
-        V2026_06 emits a Tesla-signed GraphQL request; every other version emits
+        V2026_06 emits a pre-signed GraphQL request; every other version emits
         the legacy QueryType protobuf. Single place the version split lives for the
         request side — a future june_20xx adds one branch here, not one at every
         build call site. ``sender_din`` selects follower routing (else local),
@@ -2290,7 +2290,7 @@ class TEDAPI:
 
         Two payload shapes carry the PVAC fan RPMs, depending on the query set:
 
-        * ``esCan.bus.PVAC[].PVAC_Logging`` — where the Tesla-signed V2026_06
+        * ``esCan.bus.PVAC[].PVAC_Logging`` — where the pre-signed V2026_06
           DeviceControllerQuery asks for them (its TEMSA ``signals`` filter no
           longer lists the fan names). Entries flagged ``isMIA`` are skipped.
         * ``components.msa[].signals[]`` — the V2024_06 ``msaSignals`` request.

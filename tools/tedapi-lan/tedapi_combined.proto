@@ -15,7 +15,7 @@ syntax = "proto3";
 package tedapi_combined;
 
 // ===================================================================
-// PART 1: Tesla Signed Message Protocol
+// PART 1: Signed Message Protocol
 // (originally from tesla.proto.universal_message.v1)
 // ===================================================================
 
