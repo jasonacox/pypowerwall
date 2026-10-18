@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t107 (unreleased)
+
+* New `PW_FAILOVER` setting (default `yes`). Set `PW_FAILOVER=no` to pin the configured transports: the v1r leader stays on the wired LAN instead of switching to `PW_WIFI_HOST`, a failed request returns no data instead of being rerouted, and the proxy never falls back from local to FleetAPI or Cloud mode. Reported in `/stats` under `config`. Requested by @BJReplay (#427, #402).
+* TEDAPI recovery no longer gets stuck on Tesla cloud after a gateway outage: with cloud credentials present, recovery could fall back to cloud, report "recovered" and stop probing until restart. It now counts recovery only when the connection is back in TEDAPI mode (#425, #424).
+
 ### Proxy t106 (11 Oct 2026)
 
 * Upgraded to pyPowerwall v0.20.0 - see the library release notes. Proxy-visible changes:

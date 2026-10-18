@@ -287,6 +287,7 @@ Environment Variables Influencing Behavior:
 - `PW_CONTROL_SECRET` Enables control endpoints & required `token` value.
 - `PW_TEDAPI_API_VERSION` TEDAPI query/protobuf set: `V2024_06` (default, legacy QueryType path) or `V2026_06` (pre-signed GraphQL / bearer path).
 - `PW_FIRMWARE_CHECK_INTERVAL` Seconds between gateway firmware version polls for firmware change logging (default 300, minimum 30).
+- `PW_FAILOVER` Fall back between transports and modes (default `yes`). Only `no` (case-insensitive) turns it off, pinning the configured transports: the v1r leader stays on the wired LAN, failed requests are not rerouted, and the proxy never falls back from local to FleetAPI or Cloud mode.
 
 Authentication Overview:
 - Read-only endpoints generally need no client token; underlying gateway/cloud auth is handled internally.

@@ -49,6 +49,11 @@
       PW_TEDAPI_API_VERSION=V2026_06. Bearer works on solar-only
       gateways but NOT Powerwall 2 or 3 (PW3 wired access = v1r mode).
     The active values are reported in /stats and /health.
+    PW_FAILOVER=yes|no (default yes): set no to pin the configured transports.
+    The v1r leader then stays on the wired LAN (no switch to PW_WIFI_HOST),
+    a failed request returns no data instead of being rerouted, and the
+    proxy never falls back from local to FleetAPI or Cloud mode; at startup
+    it retries the configured mode until it connects.
 
  Control Mode
     An optional mode is to enable control commands to set backup reserve
@@ -169,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t106"
+BUILD = "t107"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -231,6 +236,8 @@ control_secret = os.getenv("PW_CONTROL_SECRET", "")
 gw_pwd = os.getenv("PW_GW_PWD", None)
 rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
+# Failover between transports and modes (library default on); only "no" turns it off
+failover = os.getenv("PW_FAILOVER", "yes").lower() != "no"
 tedapi_api_version = os.getenv("PW_TEDAPI_API_VERSION", "V2024_06")
 # default= makes a typo in the env var a logged warning + basic fallback
 # instead of a fatal "Powerwall Connection Error" and a restart loop.
@@ -329,6 +336,7 @@ proxystats = {
         "PW_GW_PWD": "*" * len(gw_pwd) if gw_pwd else None,
         "PW_RSA_KEY_PATH": rsa_key_path,
         "PW_WIFI_HOST": wifi_host,
+        "PW_FAILOVER": failover,
         "PW_TEDAPI_API_VERSION": tedapi_api_version,
         "PW_TEDAPI_AUTH_MODE": str(tedapi_auth_mode),
         "PW_NEG_SOLAR": neg_solar,
@@ -1155,6 +1163,7 @@ try:
         wifi_host=wifi_host,
         tedapi_api_version=tedapi_api_version,
         tedapi_auth_mode=tedapi_auth_mode,
+        failover=failover,
     )
 except Exception as e:
     log.error(f"Powerwall Connection Error: {str(e)}")
@@ -1215,6 +1224,10 @@ else:
         return f"Local ({'+'.join(parts)})"
     proxystats["mode"] = build_mode_string()
 
+if not failover:
+    log.info("Failover disabled (PW_FAILOVER=no): using the configured transport only, "
+             "no WiFi or cloud fallback")
+
 pw_control = None
 if control_secret:
     log.info("Control Commands Activating - WARNING: Use with caution!")
@@ -1234,6 +1247,7 @@ if control_secret:
                 authmode=authmode,
                 cachefile=cachefile,
                 auto_select=True,
+                failover=failover,
             )
     except Exception as e:
         log.error("Control Mode Failed: Unable to connect to cloud - Run Setup")

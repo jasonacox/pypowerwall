@@ -375,7 +375,7 @@ Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to 
 
 Without a `wifi_host` there is nothing to fail over to: every request tries the wired LAN, and data resumes as soon as it answers.
 
-To pin the transports (for example, a script that tests which paths work), turn failover off. The leader then always uses the LAN and followers the WiFi host; a failed request returns `None` instead of being rerouted, and `connect()` no longer falls back to FleetAPI or Cloud mode:
+To pin the transports (for example, a script that tests which paths work), turn failover off (proxy: `PW_FAILOVER=no`). The leader then always uses the LAN and followers the WiFi host; a failed request returns `None` instead of being rerouted, and `connect()` no longer falls back to FleetAPI or Cloud mode:
 
 ```python
 pw = pypowerwall.Powerwall(host="10.42.1.40", gw_pwd="ABCDEFGHIJ",

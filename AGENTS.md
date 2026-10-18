@@ -87,7 +87,7 @@ Local mode passes any `/api/...` URI through automatically. The other three back
 7. If the proxy should expose it: append the URI to `ALLOWLIST` in `proxy/server.py`.
 8. Make it CI-testable: add a handler to `pwsimulator/stub.py`.
 
-### A new proxy route
+### A new proxy route, setting or fix
 
 - Add an `elif request_path == "/myroute":` branch in `Handler.do_GET` in `proxy/server.py`. For cached JSON routes use `cached_route_handler("/myroute", lambda: safe_endpoint_call("/myroute", pw.some_method, jsonformat=True))`; never call `pw.*` directly in a handler — always go through `safe_pw_call`/`safe_endpoint_call` so gateway outages can't crash the handler.
 - `/pw/<name>` convenience routes go in the `simple_mappings` dict instead.
@@ -95,6 +95,7 @@ Local mode passes any `/api/...` URI through automatically. The other three back
 - New config knobs are `PW_*` env vars read at module import; document them in `proxy/README.md` (settings list) and `proxy/API.md`.
 - Bump `BUILD = "tNN"` in `proxy/server.py` and add a `proxy/RELEASE.md` entry.
 - Add tests in `proxy/tests/` following `test_api_endpoints.py` (mock `proxy.server.pw`, clear `_performance_cache`).
+- **Server parity:** the proxy is in maintenance mode and [pypowerwall-server](https://github.com/jasonacox/pypowerwall-server) is its successor, so every new proxy route, setting or behavior fix must also land there, using the same `PW_*` name and meaning. Link the matching server PR or issue in the proxy PR. Library changes reach the server through its pypowerwall pin and need no separate PR.
 
 ### A new backend mode
 
