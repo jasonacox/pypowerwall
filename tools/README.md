@@ -1,5 +1,7 @@
 # Tools
 
+PyPowerwall Server, which replaces the proxy, now lives in its own repository: [jasonacox/pypowerwall-server](https://github.com/jasonacox/pypowerwall-server).
+
 ## Set Reserve
 
 This command line tool allows you to read and set the Powerwall minimum backup reserve battery level (percentage).
