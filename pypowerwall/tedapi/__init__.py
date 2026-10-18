@@ -226,7 +226,8 @@ def _pw2_msa_module_pairing(msa, package_serials):
     v1r LAN): the layout was identical in 6 reads over 46 hours and the pairing
     unchanged in 532 reads over 45 hours, all within one gateway boot. Each module's
     voltages also best-matched the ``esCan.bus.PINV`` slot at the same index as its
-    package in ``esCan.bus.THC``. Not yet observed across a gateway restart. A second
+    package in ``esCan.bus.THC``. The layout and pairing were also unchanged across a
+    gateway restart on 2026-10-17 (no firmware change). A second
     PW2 site (firmware 26.18.3, one warranty-replacement unit with different part
     numbers) had the same layout, and each package got the counters its own collector
     recorded.
