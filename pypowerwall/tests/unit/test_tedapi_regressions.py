@@ -234,6 +234,24 @@ class TestGetApiSystemStatus:
         assert data['instantaneous_max_charge_power'] == 7000
         assert data['instantaneous_max_discharge_power'] == 8570.5
 
+    def test_instantaneous_power_serial_less_slot_skipped(self):
+        """Serial-less placeholder slots can carry live-looking signals (cf.
+        test_pw2_msa_signals.py:179) and must never count as another module:
+        a 7000 W module plus a 7000 W serial-less slot stays 7000; a missing
+        serialNumber key is skipped as well (review comment on #429)."""
+        def tepod(charge, dischg):
+            return [
+                {"name": "POD_available_charge_power", "value": charge, "boolValue": None, "textValue": None},
+                {"name": "POD_available_dischg_power", "value": dischg, "boolValue": None, "textValue": None}]
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": tepod(7000, 8570)},
+            {"partNumber": "", "serialNumber": "", "signals": tepod(7000, 7000)},
+            {"partNumber": "", "signals": tepod(7000, 7000)},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 7000
+        assert data['instantaneous_max_discharge_power'] == 8570
+
 
 class TestVitalsPinvGridState:
 

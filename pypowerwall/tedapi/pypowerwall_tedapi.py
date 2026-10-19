@@ -959,18 +959,21 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         # components (requested via EXTRA_COMPONENT_TYPES, V2024_06 only) carry
         # each POD module's currently available charge/discharge power - the
         # local API's site values (same-run capture 14000/15570; see
-        # PW2_POD_POWER_SIGNAL_NAMES). A serial can appear on two
-        # msa components, so per signal only the last value per serial counts;
-        # null placeholders and unusable values contribute nothing. 0 - the stub
+        # PW2_POD_POWER_SIGNAL_NAMES). Serial-less placeholder slots are skipped
+        # like in the pairing and vitals walks; a serial can appear on two msa
+        # components, so per signal only the last value per serial counts; null
+        # placeholders and unusable values contribute nothing. 0 - the stub
         # value - while no POD reports one (e.g. V2026_06, whose signed query
         # can't carry the TEPOD type).
         charge_signal, discharge_signal = PW2_POD_POWER_SIGNAL_NAMES
         pod_power = {}
-        for index, component in enumerate(lookup(self.tedapi.get_device_controller(force=force),
-                                                 ["components", "msa"]) or []):
+        for component in lookup(self.tedapi.get_device_controller(force=force),
+                                ["components", "msa"]) or []:
             if not isinstance(component, dict):
                 continue
-            serial = component.get("serialNumber") or f"slot-{index}"
+            serial = component.get("serialNumber")
+            if not serial:
+                continue
             for signal in component.get("signals") or []:
                 if not isinstance(signal, dict) or signal.get("name") not in (charge_signal, discharge_signal):
                     continue
