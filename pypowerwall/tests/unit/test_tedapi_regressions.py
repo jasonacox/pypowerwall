@@ -170,6 +170,12 @@ class TestGetApiSystemStatus:
         backend.tedapi.get_device_controller.return_value = {'components': {'msa': msa}}
         return backend.get_api_system_status()
 
+    @staticmethod
+    def _tepod(charge, dischg):
+        return [
+            {"name": "POD_available_charge_power", "value": charge, "boolValue": None, "textValue": None},
+            {"name": "POD_available_dischg_power", "value": dischg, "boolValue": None, "textValue": None}]
+
     def test_instantaneous_power_from_tepods(self):
         """Hardware basis (2026-10-18, 2x PW2, firmware 26.34.1): each POD module's
         msa TEPOD component reports POD_available_charge_power /
@@ -178,18 +184,14 @@ class TestGetApiSystemStatus:
         combined run (an earlier capture read 15590; the values move between
         reads). The empty serial-less slots echo both names as null and
         contribute nothing."""
-        def tepod(charge, dischg):
-            return [
-                {"name": "POD_available_charge_power", "value": charge, "boolValue": None, "textValue": None},
-                {"name": "POD_available_dischg_power", "value": dischg, "boolValue": None, "textValue": None}]
         msa = [
             {"partNumber": "1152100-13-E", "serialNumber": "GW_SERIAL", "signals": []},
             {"partNumber": "1092170-05-J", "serialNumber": "TETHC_SERIAL_1", "signals": [
                 {"name": "THC_State", "value": None, "boolValue": None, "textValue": "THC_STATE_AUTONOMOUSCONTROL"}]},
             {"partNumber": "1081100-10-Q", "serialNumber": "PACKAGE_SERIAL_1", "signals": []},
-            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": tepod(7000, 7000)},
-            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": tepod(7000, 8570)},
-            {"partNumber": "", "serialNumber": "", "signals": tepod(None, None)},
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 7000)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "", "serialNumber": "", "signals": self._tepod(None, None)},
         ]
         data = self._status_with_msa(msa)
         assert data['instantaneous_max_charge_power'] == 14000
@@ -217,7 +219,10 @@ class TestGetApiSystemStatus:
         assert data['instantaneous_max_charge_power'] == 7000
         assert data['instantaneous_max_discharge_power'] == 8570
 
-    def test_instantaneous_power_malformed_values_skipped(self):
+    def test_instantaneous_power_malformed_values_block_the_sum(self):
+        """A component whose echoed POD values are all unusable (string, bool,
+        negative) counts as missing that measurement, not as 0: the sums fall
+        back instead of reporting the usable remainder as complete."""
         msa = [
             None,
             "not-a-component",
@@ -231,22 +236,94 @@ class TestGetApiSystemStatus:
                 {"name": "POD_available_dischg_power", "value": 8570.5, "boolValue": None, "textValue": None}]},
         ]
         data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 0
+        assert data['instantaneous_max_discharge_power'] == 0
+
+    def test_instantaneous_power_missing_charge_value_falls_back(self):
+        """One of several POD components without a charge value (the signal is
+        not echoed) makes only the charge sum incomplete: fallback 0, never the
+        partial sum, while discharge - complete on both - still sums."""
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": [
+                {"name": "POD_available_dischg_power", "value": 8570, "boolValue": None, "textValue": None}]},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 0
+        assert data['instantaneous_max_discharge_power'] == 17140
+
+    def test_instantaneous_power_missing_discharge_value_falls_back(self):
+        """The mirror case: only the discharge sum goes incomplete."""
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": [
+                {"name": "POD_available_charge_power", "value": 7000, "boolValue": None, "textValue": None}]},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 14000
+        assert data['instantaneous_max_discharge_power'] == 0
+
+    def test_instantaneous_power_explicit_zero_is_a_measurement(self):
+        """A component reporting 0 for a signal is reporting a valid measurement:
+        it keeps that signal's sum complete (0 must not read as missing)."""
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(0, 0)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": self._tepod(7000, 8570)},
+        ]
+        data = self._status_with_msa(msa)
         assert data['instantaneous_max_charge_power'] == 7000
-        assert data['instantaneous_max_discharge_power'] == 8570.5
+        assert data['instantaneous_max_discharge_power'] == 8570
+
+    def test_instantaneous_power_null_value_falls_back(self):
+        """A null value (the captures' shape for an unusable echo) is missing,
+        not 0: that signal falls back, while the sibling signal still sums when
+        its values are complete."""
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": self._tepod(None, 7000)},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == 0
+        assert data['instantaneous_max_discharge_power'] == 15570
+
+    @pytest.mark.parametrize('charge, dischg, expected_charge, expected_discharge', [
+        (float('inf'), 8570, 0, 17140),     # +inf is not a measurement
+        (7000, float('-inf'), 14000, 0),    # neither is -inf
+        (float('nan'), 8570, 0, 17140),     # nor nan
+    ])
+    def test_instantaneous_power_non_finite_values_are_unusable(self, charge, dischg,
+                                                                expected_charge, expected_discharge):
+        """inf/-inf/nan are rejected (math.isfinite) like any other malformed
+        value: the signal stays missing for that serial, the completeness check
+        keeps that sum on fallback, and the other signal still sums."""
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "1081100-00-W", "serialNumber": "MODULE_SERIAL_2", "signals": self._tepod(charge, dischg)},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == expected_charge
+        assert data['instantaneous_max_discharge_power'] == expected_discharge
+
+    def test_instantaneous_power_huge_int_is_still_a_measurement(self):
+        """int is always finite: a huge int (beyond float range, where
+        math.isfinite() would raise OverflowError) stays a valid measurement."""
+        huge = 10 ** 400
+        msa = [
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(huge, huge)},
+        ]
+        data = self._status_with_msa(msa)
+        assert data['instantaneous_max_charge_power'] == huge
+        assert data['instantaneous_max_discharge_power'] == huge
 
     def test_instantaneous_power_serial_less_slot_skipped(self):
         """Serial-less placeholder slots can carry live-looking signals (cf.
         test_pw2_msa_signals.py:179) and must never count as another module:
         a 7000 W module plus a 7000 W serial-less slot stays 7000; a missing
         serialNumber key is skipped as well (review comment on #429)."""
-        def tepod(charge, dischg):
-            return [
-                {"name": "POD_available_charge_power", "value": charge, "boolValue": None, "textValue": None},
-                {"name": "POD_available_dischg_power", "value": dischg, "boolValue": None, "textValue": None}]
         msa = [
-            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": tepod(7000, 8570)},
-            {"partNumber": "", "serialNumber": "", "signals": tepod(7000, 7000)},
-            {"partNumber": "", "signals": tepod(7000, 7000)},
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "", "serialNumber": "", "signals": self._tepod(7000, 7000)},
+            {"partNumber": "", "signals": self._tepod(7000, 7000)},
         ]
         data = self._status_with_msa(msa)
         assert data['instantaneous_max_charge_power'] == 7000

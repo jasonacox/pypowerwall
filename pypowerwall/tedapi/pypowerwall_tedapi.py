@@ -961,10 +961,13 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         # local API's site values (same-run capture 14000/15570; see
         # PW2_POD_POWER_SIGNAL_NAMES). Serial-less placeholder slots are skipped
         # like in the pairing and vitals walks; a serial can appear on two msa
-        # components, so per signal only the last value per serial counts; null
-        # placeholders and unusable values contribute nothing. 0 - the stub
-        # value - while no POD reports one (e.g. V2026_06, whose signed query
-        # can't carry the TEPOD type).
+        # components, so per signal only the last usable value per serial counts.
+        # Charge and discharge are judged independently, and a sum is only
+        # reported when every POD component supplied a usable value for that
+        # signal (a valid 0 counts; missing or unusable stays missing, never 0) -
+        # otherwise the stub 0 stays instead of passing off a partial sum. 0 also
+        # while no POD reports one (e.g. V2026_06, whose signed query can't carry
+        # the TEPOD type).
         charge_signal, discharge_signal = PW2_POD_POWER_SIGNAL_NAMES
         pod_power = {}
         for component in lookup(self.tedapi.get_device_controller(force=force),
@@ -977,11 +980,20 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             for signal in component.get("signals") or []:
                 if not isinstance(signal, dict) or signal.get("name") not in (charge_signal, discharge_signal):
                     continue
+                # Register the serial even when the value is unusable: the
+                # component is a POD module reporting no measurement, so the
+                # signal is missing - not 0 - and its sum stays on fallback.
+                pod_power.setdefault(serial, {})
                 value = signal.get("value")
-                if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
-                    pod_power.setdefault(serial, {})[signal["name"]] = value
-        instantaneous_charge = sum(v.get(charge_signal, 0) for v in pod_power.values())
-        instantaneous_discharge = sum(v.get(discharge_signal, 0) for v in pod_power.values())
+                # int is always finite, and math.isfinite() would raise
+                # OverflowError on ints beyond float range; floats are checked
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and (isinstance(value, int) or math.isfinite(value)) and value >= 0):
+                    pod_power[serial][signal["name"]] = value
+        charge_values = [v.get(charge_signal) for v in pod_power.values()]
+        discharge_values = [v.get(discharge_signal) for v in pod_power.values()]
+        instantaneous_charge = sum(charge_values) if charge_values and None not in charge_values else 0
+        instantaneous_discharge = sum(discharge_values) if discharge_values and None not in discharge_values else 0
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
