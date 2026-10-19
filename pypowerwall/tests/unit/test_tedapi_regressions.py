@@ -208,12 +208,9 @@ class TestGetApiSystemStatus:
         """A serial can appear on two msa components (its POD entry plus the
         empty slots echo names only): per signal only the last value per serial
         counts, so duplicates cannot double-count."""
-        both = [
-            {"name": "POD_available_charge_power", "value": 7000, "boolValue": None, "textValue": None},
-            {"name": "POD_available_dischg_power", "value": 8570, "boolValue": None, "textValue": None}]
         msa = [
-            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_1", "signals": both},
-            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_1", "signals": both},
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
+            {"partNumber": "1081100-10-Q", "serialNumber": "MODULE_SERIAL_1", "signals": self._tepod(7000, 8570)},
         ]
         data = self._status_with_msa(msa)
         assert data['instantaneous_max_charge_power'] == 7000
