@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(proxy): `/stats`, `/help` and the power-flow page are unauthenticated, so they no longer show the account email, Tesla site ID or file paths. When set, `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE`, `PW_RSA_KEY_PATH`, `siteid` and `cf` show as `**********`, as in pypowerwall-server, and passwords and secrets no longer reveal their length. Keys and unset (`null`) values are unchanged. Proxy t108.
+
 ## v0.21.0 - Powerwall 2 Per-Unit Vitals, Battery Power Limits, PW_FAILOVER and TEDAPI Recovery Fix
 
 * feat(tedapi): Powerwall 2 per-Powerwall vitals from the DeviceController msa components. The V2024_06 `device_controller_full` request now appends 14 more signal names to its unsigned `msaSignals` variable, after #419's `SYNC_Uptime` (`PW2_MSA_SIGNAL_NAMES`, via `EXTRA_SIGNAL_NAMES`; the capture, its signature and its `msaComp` component types are unchanged). They fill PW2 vitals keys that mirror the original `/api/devices/vitals` and were hard-coded `None`:
