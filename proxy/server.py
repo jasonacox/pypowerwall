@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t107"
+BUILD = "t108"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -289,6 +289,12 @@ try:
 except (ValueError, TypeError):
     FIRMWARE_CHECK_INTERVAL = 300  # seconds between firmware polls (Powerwall-Dashboard#854)
 
+def _masked(value):
+    """/stats is unauthenticated: show that a secret, account detail or path
+    is set without showing it (pypowerwall-server masks the same fields)."""
+    return "**********" if value else value
+
+
 # Global Stats
 proxystats = {
     "pypowerwall": "%s Proxy %s" % (pypowerwall.version, BUILD),
@@ -313,11 +319,11 @@ proxystats = {
     "tedapi_auth_mode": str(AuthMode.BASIC),
     "siteid": None,
     "counter": 0,
-    "cf": cachefile,
+    "cf": _masked(cachefile),
     "config": {
         "PW_BIND_ADDRESS": bind_address,
-        "PW_PASSWORD": "*" * len(password) if password else None,
-        "PW_EMAIL": email,
+        "PW_PASSWORD": _masked(password) or None,
+        "PW_EMAIL": _masked(email),
         "PW_HOST": host,
         "PW_TIMEZONE": timezone,
         "PW_DEBUG": debugmode,
@@ -328,13 +334,13 @@ proxystats = {
         "PW_HTTPS": https_mode,
         "PW_PORT": port,
         "PW_STYLE": style,
-        "PW_SITEID": siteid,
-        "PW_AUTH_PATH": authpath,
+        "PW_SITEID": _masked(siteid),
+        "PW_AUTH_PATH": _masked(authpath),
         "PW_AUTH_MODE": authmode,
-        "PW_CACHE_FILE": cachefile,
-        "PW_CONTROL_SECRET": "*" * len(control_secret) if control_secret else None,
-        "PW_GW_PWD": "*" * len(gw_pwd) if gw_pwd else None,
-        "PW_RSA_KEY_PATH": rsa_key_path,
+        "PW_CACHE_FILE": _masked(cachefile),
+        "PW_CONTROL_SECRET": _masked(control_secret) or None,
+        "PW_GW_PWD": _masked(gw_pwd) or None,
+        "PW_RSA_KEY_PATH": _masked(rsa_key_path),
         "PW_WIFI_HOST": wifi_host,
         "PW_FAILOVER": failover,
         "PW_TEDAPI_API_VERSION": tedapi_api_version,
@@ -1801,7 +1807,7 @@ class Handler(BaseHTTPRequestHandler):
                 proxystats["cloudmode"] = pw.cloudmode
                 proxystats["fleetapi"] = pw.fleetapi
                 if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                    proxystats["siteid"] = pw.client.siteid
+                    proxystats["siteid"] = _masked(pw.client.siteid)
                     proxystats["counter"] = pw.client.counter
 
                 # Add connection health stats if enabled
@@ -2334,7 +2340,7 @@ class Handler(BaseHTTPRequestHandler):
                 proxystats["cloudmode"] = pw.cloudmode
                 proxystats["fleetapi"] = pw.fleetapi
                 if (pw.cloudmode or pw.fleetapi) and pw.client is not None:
-                    proxystats["siteid"] = pw.client.siteid
+                    proxystats["siteid"] = _masked(pw.client.siteid)
                     proxystats["counter"] = pw.client.counter
                 proxystats["authmode"] = pw.authmode
             contenttype = "text/html"
@@ -2617,7 +2623,10 @@ class Handler(BaseHTTPRequestHandler):
                     "{VERSION}", status.get("version", "") or ""
                 )
                 fcontent = fcontent.replace("{HASH}", status.get("git_hash", "") or "")
-                fcontent = fcontent.replace("{EMAIL}", email)
+                # The page is unauthenticated: keep the account email out of it
+                # (the power-flow app doesn't need it; pypowerwall-server does
+                # the same)
+                fcontent = fcontent.replace("{EMAIL}", "")
 
                 static_asset_prefix = (
                     api_base_url + "viz-static/"

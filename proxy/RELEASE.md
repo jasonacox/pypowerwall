@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t108 (19 Oct 2026)
+
+* `/stats` and `/help` no longer show account details or file paths to anyone on the network (both pages are unauthenticated). When set, these values show as `**********`, as in pypowerwall-server: `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE` and `PW_RSA_KEY_PATH` under `config`, and the top-level `siteid` (the connected Tesla site) and `cf` (the auth cache file). Passwords and secrets show a fixed `**********` instead of one `*` per character, which revealed their length. Unset values stay `null`, and every key is still there. The power-flow page (`/`) no longer puts `PW_EMAIL` in its HTML. Behavior change: tools that read those values from `/stats` get the mask instead. Powerwall-Dashboard's `verify.sh` shows the site ID this way (it already does with pypowerwall-server). New `proxy/tests/test_stats_masking.py`.
+
 ### Proxy t107 (18 Oct 2026)
 
 * Upgraded to pyPowerwall v0.21.0 - see the library release notes. Proxy-visible changes:

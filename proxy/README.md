@@ -86,7 +86,8 @@ This pyPowerwall Caching Proxy handles authentication to the Powerwall Gateway a
     curl -i http://localhost:8675/vitals
     curl -i http://localhost:8675/strings
 
-    # Get Proxy Stats
+    # Get Proxy Stats (passwords, secrets, the account email, the site ID
+    # and file paths show as ********** when set)
     curl -i http://localhost:8675/stats
 
     # Clear Proxy Stats
