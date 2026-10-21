@@ -3,6 +3,12 @@
 ## Unreleased
 
 * fix(proxy): `/stats`, `/help` and the power-flow page are unauthenticated, so they no longer show the account email, Tesla site ID or file paths. When set, `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE`, `PW_RSA_KEY_PATH`, `siteid` and `cf` show as `**********`, as in pypowerwall-server, and passwords and secrets no longer reveal their length. Keys and unset (`null`) values are unchanged. Proxy t108.
+* ci: GitHub's `ubuntu-latest` moved to Ubuntu 26.04, which broke every PR's checks:
+  * Python 3.9 has no build there, so the 3.9 jobs now run on `ubuntu-24.04` and the rest stay on `ubuntu-latest`. 3.9 is still supported (`requires-python >= 3.9`).
+  * The simulator readiness check failed although the simulator answered 200: curl 8.18 / OpenSSL 3.5 exit 56 when a server closes TLS without close_notify. The check now looks at the HTTP status.
+  * The simulator (v0.2.6) now sends close_notify.
+  * `pwsim-docker.yml` publishes `jasonacox/pwsimulator:latest` only from `main` (a push to any branch used to replace it).
+  * Pylint and simulator jobs no longer cancel each other on one failure.
 
 ## v0.21.0 - Powerwall 2 Per-Unit Vitals, Battery Power Limits, PW_FAILOVER and TEDAPI Recovery Fix
 

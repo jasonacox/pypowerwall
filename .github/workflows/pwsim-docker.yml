@@ -1,8 +1,10 @@
 name: pwsim-docker
 
-# Only trigger if a push is made to the pwsimulator folder
+# Publish :latest only from main (a push to any other branch would replace
+# the image every CI run uses), and only when the pwsimulator folder changes
 on:
   push:
+    branches: [main]
     paths:
       - 'pwsimulator/**'
 
