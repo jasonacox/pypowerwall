@@ -40,7 +40,7 @@ except ImportError:
     print("Warning: tedapi_pb2 not found - TEDAPI protobuf support disabled", flush=True)
     TEDAPI_ENABLED = False
 
-version_tuple = (0, 2, 5)
+version_tuple = (0, 2, 6)
 version = __version__ = '%d.%d.%d' % version_tuple
 __author__ = 'jasonacox'
 
@@ -761,9 +761,24 @@ def do_test_endpoint(self):
     message = "Invalid test command received."
     self.wfile.write(bytes(message, "utf8"))
 
+
+class TLSHTTPServer(ThreadingHTTPServer):
+    """Ends each TLS session with close_notify before closing the socket.
+    Without it, curl 8.18 / OpenSSL 3.5 (Ubuntu 26.04) report a complete
+    response as an error (exit 56)."""
+
+    def shutdown_request(self, request):
+        try:
+            request.settimeout(2)  # never wait long on a client that doesn't answer
+            request.unwrap()
+        except (OSError, ValueError):
+            pass
+        super().shutdown_request(request)
+
+
 # noinspection PyBroadException
 try:
-    with ThreadingHTTPServer(server_address, Handler) as server:
+    with TLSHTTPServer(server_address, Handler) as server:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(certfile='localhost.pem')
         server.socket = context.wrap_socket(server.socket, server_side=True)

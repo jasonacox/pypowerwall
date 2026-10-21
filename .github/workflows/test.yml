@@ -15,7 +15,8 @@ concurrency:
 jobs:
   tests:
     name: "Python ${{ matrix.python-version }}"
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04, which has no Python 3.9 build
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
 
     strategy:
       fail-fast: false

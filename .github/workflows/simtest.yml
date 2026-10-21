@@ -39,11 +39,13 @@ jobs:
   tests:
     name: "Python ${{ matrix.python-version }}"
     needs: determine-image
-    runs-on: ubuntu-latest
+    # ubuntu-latest is Ubuntu 26.04, which has no Python 3.9 build
+    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     env:
       USING_COVERAGE: '3.13'
 
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
@@ -83,10 +85,12 @@ jobs:
 
       - name: Wait for simulator
         run: |
+          # Check the HTTP status, not curl's exit code: curl 8.18 / OpenSSL
+          # 3.5 exit 56 on a complete response when the server closes TLS
+          # without close_notify (simulator images before this fix)
           for i in {1..10}; do
-            if RESP=$(curl -sk https://localhost/test); then
+            if [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/test)" = 200 ]; then
               echo "Simulator ready"
-              echo "$RESP"
               exit 0
             fi
             sleep 2
