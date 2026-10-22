@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t108"
+BUILD = "t109"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -238,6 +238,10 @@ rsa_key_path = os.getenv("PW_RSA_KEY_PATH", None)
 wifi_host = os.getenv("PW_WIFI_HOST", None)
 # Failover between transports and modes (library default on); only "no" turns it off
 failover = os.getenv("PW_FAILOVER", "yes").lower() != "no"
+# FleetAPI transport override (the library reads this too): set "1.1" to
+# force HTTP/1.1 for all Tesla FleetAPI requests - escape hatch for HTTP/2
+# connection-reuse corruption (issue #433)
+fleetapi_http = os.getenv("PW_FLEETAPI_HTTP", "") or None
 tedapi_api_version = os.getenv("PW_TEDAPI_API_VERSION", "V2024_06")
 # default= makes a typo in the env var a logged warning + basic fallback
 # instead of a fatal "Powerwall Connection Error" and a restart loop.
@@ -343,6 +347,7 @@ proxystats = {
         "PW_RSA_KEY_PATH": _masked(rsa_key_path),
         "PW_WIFI_HOST": wifi_host,
         "PW_FAILOVER": failover,
+        "PW_FLEETAPI_HTTP": fleetapi_http,
         "PW_TEDAPI_API_VERSION": tedapi_api_version,
         "PW_TEDAPI_AUTH_MODE": str(tedapi_auth_mode),
         "PW_NEG_SOLAR": neg_solar,
