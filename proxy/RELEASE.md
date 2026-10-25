@@ -1,6 +1,6 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t109 (22 Oct 2026)
+### Proxy t109 (unreleased)
 
 * FleetAPI mode: fixed the thundering-herd request storm behind the HTTP/2 failure bursts and Tesla 429 cascades reported on EU sites (#433). When `PW_CACHE_EXPIRE` expired, every proxy poller thread issued its own identical FleetAPI fetch (6-8 `live_status` GETs within tens of milliseconds, 1,332 HTTP 429s vs 547 HTTP 200s in a 10-minute log). The library now coalesces concurrent identical FleetAPI GETs into a single in-flight request, honors Tesla's "Retry in N seconds" guidance (Retry-After header or 429 body) with one shared backoff window, and jitters cache expiry so endpoints cached together don't all expire on the same tick. New `PW_FLEETAPI_HTTP=1.1` setting forces HTTP/1.1 for all FleetAPI requests - a clean escape hatch for the intermittent HTTP/2 connection-reuse corruption (`COMPRESSION_ERROR`, h2 state errors) instead of riding the failure-path fallback. Reported in `/stats` under `config`. New `pypowerwall/tests/unit/test_fleetapi_thundering_herd.py`.
 

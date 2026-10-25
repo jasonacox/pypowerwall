@@ -223,7 +223,7 @@ def _parse_retry_after(response, default=10, cap=60):
     if val:
         try:
             delay = int(float(val))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             delay = None
     if delay is None:
         match = _RETRY_SECONDS_RE.search(getattr(response, 'text', '') or '')
@@ -346,7 +346,7 @@ class FleetAPI:
         # one shared FleetAPI instance serves every dashboard poller thread.
         self._inflight = {}  # api -> _InflightRequest (single-flight coalescing)
         self._inflight_lock = threading.Lock()
-        self._backoff_until = 0.0  # epoch time until which reads pause (429 guidance)
+        self._backoff_until = 0.0  # epoch time until which cache-missing reads fail fast (429)
         self._backoff_lock = threading.Lock()
 
         if debug:
@@ -359,20 +359,18 @@ class FleetAPI:
         if not self.site_id:
             log.debug("No site_id set or returned by FleetAPI - Run Setup.")
 
-    # Wait out Tesla's 429 retry guidance (shared across all threads)
-    def _wait_for_rate_backoff(self):
-        """Sleep until the shared 429 backoff window expires (issue #433).
+    # Honor Tesla's 429 retry guidance (shared across all threads)
+    def _rate_backoff_remaining(self):
+        """Seconds left in the shared 429 backoff window (issue #433), or 0.
 
-        Without this, every poller thread that hits a 429 retries on its own
-        schedule and keeps the rate-limit storm alive; one shared window lets
-        the whole process honor Tesla's "Retry in N seconds" at once.
+        Reads never sleep inside the library: while the window is armed a
+        cache-missing GET fails fast with None, so worker threads stay
+        available (pypowerwall-server's executor pool, the proxy's poller
+        threads) while the whole process still honors Tesla's
+        "Retry in N seconds" guidance at once.
         """
-        while True:
-            with self._backoff_lock:
-                remaining = self._backoff_until - time.time()
-            if remaining <= 0:
-                return
-            time.sleep(min(remaining, 5.0))
+        with self._backoff_lock:
+            return max(0.0, self._backoff_until - time.time())
 
     # Function to return a random string of characters and numbers
     def random_string(self, length):
@@ -508,9 +506,15 @@ class FleetAPI:
                     if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
                         log.debug(f"Using cached data for {api}")
                         return self.pwcache[api]
-                # Honor Tesla's 429 retry guidance before touching the network
-                # - one shared backoff window for every poller thread
-                self._wait_for_rate_backoff()
+                # Honor Tesla's 429 retry guidance before touching the
+                # network - one shared backoff window for every poller
+                # thread. Fail fast: a cache-missing GET during the window
+                # returns None without sleeping and without a request, so
+                # no library call ever parks a worker thread.
+                if self._rate_backoff_remaining() > 0:
+                    log.warning("FleetAPI backoff window active - failing "
+                                "fast for %s", api)
+                    return None
                 # Single-flight coalescing (issue #433): when the cache
                 # expires, every poller thread misses at the same moment. The
                 # first thread leads one network fetch; concurrent identical
@@ -519,17 +523,33 @@ class FleetAPI:
                 # this - it would otherwise wait on itself.
                 if not recursive:
                     joined = None
+                    cached = None
                     with self._inflight_lock:
-                        entry = self._inflight.get(api)
-                        if entry is None:
-                            inflight = _InflightRequest()
-                            self._inflight[api] = inflight
-                        else:
-                            joined = entry
+                        # Recheck cache freshness under the lock (respecting
+                        # force): a caller that missed the cache, paused
+                        # before this election, and resumed after another
+                        # thread filled it must share that result instead of
+                        # issuing a duplicate GET.
+                        if not force and api in self.pwcachetime:
+                            if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
+                                cached = self.pwcache[api]
+                        if cached is None:
+                            entry = self._inflight.get(api)
+                            if entry is None:
+                                inflight = _InflightRequest()
+                                self._inflight[api] = inflight
+                            else:
+                                joined = entry
+                    if cached is not None:
+                        log.debug("Using cached data for %s (rechecked under "
+                                  "the in-flight lock)", api)
+                        return cached
                     if joined is not None:
-                        # Bounded wait: leader's worst case is a backoff
-                        # pause, one request timeout, a token refresh, retry
-                        wait_limit = REFRESH_TIMEOUT + 4 * max(self.timeout, 1) + 10
+                        # Bounded wait: with backoff failing fast the leader
+                        # never pauses mid-flight, so its worst case is one
+                        # GET, a 401 token refresh, and the retry GET - at
+                        # most two refresh attempts at REFRESH_TIMEOUT each.
+                        wait_limit = 2 * REFRESH_TIMEOUT
                         if not joined.event.wait(timeout=wait_limit):
                             log.warning("FleetAPI coalesced fetch of %s timed out "
                                         "waiting for the in-flight request", api)
