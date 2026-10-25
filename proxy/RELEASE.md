@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t109 (unreleased)
+
+* FleetAPI mode: fixed the thundering-herd request storm behind the HTTP/2 failure bursts and Tesla 429 cascades reported on EU sites (#433). When `PW_CACHE_EXPIRE` expired, every proxy poller thread issued its own identical FleetAPI fetch (6-8 `live_status` GETs within tens of milliseconds, 1,332 HTTP 429s vs 547 HTTP 200s in a 10-minute log). The library now coalesces concurrent identical FleetAPI GETs into a single in-flight request, honors Tesla's "Retry in N seconds" guidance (Retry-After header or 429 body) with one shared backoff window, and jitters cache expiry so endpoints cached together don't all expire on the same tick. New `PW_FLEETAPI_HTTP=1.1` setting forces HTTP/1.1 for all FleetAPI requests - a clean escape hatch for the intermittent HTTP/2 connection-reuse corruption (`COMPRESSION_ERROR`, h2 state errors) instead of riding the failure-path fallback. Reported in `/stats` under `config`. New `pypowerwall/tests/unit/test_fleetapi_thundering_herd.py`.
+
 ### Proxy t108 (19 Oct 2026)
 
 * `/stats` and `/help` no longer show account details or file paths to anyone on the network (both pages are unauthenticated). When set, these values show as `**********`, as in pypowerwall-server: `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE` and `PW_RSA_KEY_PATH` under `config`, and the top-level `siteid` (the connected Tesla site) and `cf` (the auth cache file). Passwords and secrets show a fixed `**********` instead of one `*` per character, which revealed their length. Unset values stay `null`, and every key is still there. The power-flow page (`/`) no longer puts `PW_EMAIL` in its HTML. Behavior change: tools that read those values from `/stats` get the mask instead. Powerwall-Dashboard's `verify.sh` shows the site ID this way (it already does with pypowerwall-server). New `proxy/tests/test_stats_masking.py`.
