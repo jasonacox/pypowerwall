@@ -86,7 +86,9 @@
 # FleetAPI Class
 
 import os
+import email.utils
 import json
+import math
 import logging
 import random
 import re
@@ -210,9 +212,10 @@ _RETRY_SECONDS_RE = re.compile(r'retry[^0-9]{0,20}(\d{1,5})\s*(?:seconds?|s)\b',
 def _parse_retry_after(response, default=10, cap=60):
     """Extract a retry delay in seconds from a 429 response.
 
-    Prefers the standard Retry-After header (delay-seconds form), then the
-    'Retry in N seconds' phrase Tesla puts in the response body, then a
-    conservative default. Capped so a malformed value can't wedge the client.
+    Prefers the standard Retry-After header (delay-seconds, or an HTTP-date
+    converted to the seconds remaining), then the 'Retry in N seconds' phrase
+    Tesla puts in the response body, then a conservative default. Capped so a
+    malformed value can't wedge the client.
     """
     delay = None
     val = None
@@ -225,6 +228,12 @@ def _parse_retry_after(response, default=10, cap=60):
             delay = int(float(val))
         except (TypeError, ValueError, OverflowError):
             delay = None
+        if delay is None:
+            try:
+                retry_at = email.utils.parsedate_to_datetime(val)
+                delay = math.ceil(retry_at.timestamp() - time.time())
+            except (TypeError, ValueError, OverflowError, IndexError, AttributeError):
+                delay = None
     if delay is None:
         match = _RETRY_SECONDS_RE.search(getattr(response, 'text', '') or '')
         if match:
@@ -522,8 +531,11 @@ class FleetAPI:
                 # first thread leads one network fetch; concurrent identical
                 # GETs wait for and share its result. The recursive 401-retry
                 # below re-enters on the leader's own thread and must skip
-                # this - it would otherwise wait on itself.
-                if not recursive:
+                # this - it would otherwise wait on itself. Forced reads
+                # (re-reads after a write) skip it too and send their own
+                # request, so they never share a fetch that started before
+                # the write.
+                if not recursive and not force:
                     joined = None
                     cached = None
                     in_backoff = False

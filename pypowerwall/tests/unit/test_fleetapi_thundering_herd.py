@@ -229,6 +229,31 @@ def test_parse_retry_after_sources_and_cap():
     assert _parse_retry_after(resp) == 4
     resp = SimpleNamespace(headers={'Retry-After': 'nan'}, text='')
     assert _parse_retry_after(resp) == 10
+    # HTTP-date form: the seconds remaining until that time
+    import email.utils
+    resp = SimpleNamespace(headers={'Retry-After': email.utils.formatdate(time.time() + 45, usegmt=True)},
+                           text='')
+    assert 44 <= _parse_retry_after(resp) <= 46
+    # an HTTP-date already in the past means no wait
+    resp = SimpleNamespace(headers={'Retry-After': email.utils.formatdate(time.time() - 30, usegmt=True)},
+                           text='retry in 9 seconds')
+    assert _parse_retry_after(resp) == 0
+
+
+def test_forced_read_does_not_join_inflight_request(tmp_path):
+    """A forced read (a re-read after a write) sends its own request instead
+    of sharing a fetch that may have started before the write."""
+    fleet = make_fleet(tmp_path)
+    api = 'api/1/energy_sites/SITE123/site_info'
+    stuck = fleetapi_module._InflightRequest()  # a pre-write fetch still running
+    stuck.result = {'response': {'backup_reserve_percent': 20}}
+    fleet._inflight[api] = stuck
+    fresh = SimpleNamespace(status_code=200, headers={}, text='',
+                            json=lambda: {'response': {'backup_reserve_percent': 80}})
+    with patch.object(fleetapi_module, '_http2_request', return_value=fresh) as req:
+        assert fleet.poll(api, force=True) == {'response': {'backup_reserve_percent': 80}}
+        assert req.call_count == 1
+    assert fleet._inflight[api] is stuck  # the other fetch's entry is untouched
 
 
 # --- in-flight cache recheck (review: cache-election race) ---
