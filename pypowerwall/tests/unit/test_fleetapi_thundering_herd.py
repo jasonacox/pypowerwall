@@ -150,9 +150,9 @@ def test_follower_wait_is_bounded(tmp_path):
     fleet._inflight['api/1/energy_sites/SITE123/site_info'] = stuck
     result = fleet.poll('api/1/energy_sites/SITE123/site_info')
     assert result is None
-    # wait_limit = 2 * REFRESH_TIMEOUT: leader worst case after fail-fast
-    # backoff is GET + 401 refresh + retry GET (two refresh attempts max)
-    assert wait_args and wait_args[0] == 2 * fleetapi_module.REFRESH_TIMEOUT
+    # wait_limit covers the leader's worst case after fail-fast: two GETs and
+    # one token refresh, each up to two timeouts (HTTP/2, then HTTP/1.1)
+    assert wait_args and wait_args[0] == 2 * fleetapi_module.REFRESH_TIMEOUT + 4 * 1
 
 
 # --- 429 shared backoff ---

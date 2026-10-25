@@ -512,8 +512,10 @@ class FleetAPI:
                 # returns None without sleeping and without a request, so
                 # no library call ever parks a worker thread.
                 if self._rate_backoff_remaining() > 0:
-                    log.warning("FleetAPI backoff window active - failing "
-                                "fast for %s", api)
+                    # debug: the 429 itself already logged the window, and
+                    # every poller would repeat this line until it ends
+                    log.debug("FleetAPI backoff window active - failing "
+                              "fast for %s", api)
                     return None
                 # Single-flight coalescing (issue #433): when the cache
                 # expires, every poller thread misses at the same moment. The
@@ -547,9 +549,10 @@ class FleetAPI:
                     if joined is not None:
                         # Bounded wait: with backoff failing fast the leader
                         # never pauses mid-flight, so its worst case is one
-                        # GET, a 401 token refresh, and the retry GET - at
-                        # most two refresh attempts at REFRESH_TIMEOUT each.
-                        wait_limit = 2 * REFRESH_TIMEOUT
+                        # GET, a 401 token refresh, and the retry GET. Each
+                        # can take two timeouts (HTTP/2, then the HTTP/1.1
+                        # fallback in _http2_request).
+                        wait_limit = 2 * REFRESH_TIMEOUT + 4 * max(self.timeout, 1)
                         if not joined.event.wait(timeout=wait_limit):
                             log.warning("FleetAPI coalesced fetch of %s timed out "
                                         "waiting for the in-flight request", api)
