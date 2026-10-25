@@ -266,6 +266,31 @@ def test_inflight_recheck_uses_cache_filled_while_paused(tmp_path):
     assert fleet._inflight == {}  # never registered a duplicate entry
 
 
+def test_inflight_recheck_honors_backoff_armed_while_paused(tmp_path):
+    """Regression: a caller that passes the backoff check, pauses before the
+    in-flight lock, and resumes after another leader's 429 armed the window
+    must fail fast instead of starting a new GET during the window."""
+    fleet = make_fleet(tmp_path)
+    api = 'api/1/energy_sites/SITE123/site_info'
+    real_lock = fleet._inflight_lock
+
+    class PausedLock:
+        def __enter__(self):
+            # Another leader got a 429 while this caller was paused
+            with fleet._backoff_lock:
+                fleet._backoff_until = time.time() + 30
+            return real_lock.__enter__()
+
+        def __exit__(self, *args):
+            return real_lock.__exit__(*args)
+
+    fleet._inflight_lock = PausedLock()
+    with patch.object(fleetapi_module, '_http2_request') as req:
+        assert fleet.poll(api) is None
+        assert req.call_count == 0
+    assert fleet._inflight == {}
+
+
 def test_follower_waits_through_leader_401_refresh(tmp_path):
     """Combined path: while the leader rides out a 401 token refresh and
     retries, a follower must wait on the bounded window and share the

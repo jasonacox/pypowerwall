@@ -526,6 +526,7 @@ class FleetAPI:
                 if not recursive:
                     joined = None
                     cached = None
+                    in_backoff = False
                     with self._inflight_lock:
                         # Recheck cache freshness under the lock (respecting
                         # force): a caller that missed the cache, paused
@@ -537,15 +538,25 @@ class FleetAPI:
                                 cached = self.pwcache[api]
                         if cached is None:
                             entry = self._inflight.get(api)
-                            if entry is None:
+                            if entry is not None:
+                                joined = entry
+                            elif self._rate_backoff_remaining() > 0:
+                                # Recheck the 429 window too: a caller that
+                                # passed the backoff check, paused, and resumed
+                                # after another leader's 429 must not start a
+                                # new GET during the window.
+                                in_backoff = True
+                            else:
                                 inflight = _InflightRequest()
                                 self._inflight[api] = inflight
-                            else:
-                                joined = entry
                     if cached is not None:
                         log.debug("Using cached data for %s (rechecked under "
                                   "the in-flight lock)", api)
                         return cached
+                    if in_backoff:
+                        log.debug("FleetAPI backoff window active - failing "
+                                  "fast for %s", api)
+                        return None
                     if joined is not None:
                         # Bounded wait: with backoff failing fast the leader
                         # never pauses mid-flight, so its worst case is one
