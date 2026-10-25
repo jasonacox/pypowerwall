@@ -154,6 +154,52 @@ def test_max_backup_read_uses_wifi_transport():
     ted.v1r_transport.send_teg_message.assert_not_called()
 
 
+def test_reconnect_grid_uses_wifi_transport():
+    ted = _with_ready(_make_tedapi())
+    ted.wifi_v1r_transport.send_island_mode.return_value = {"result": 1}
+    assert ted.reconnect_grid() == {"result": 1}
+    ted.wifi_v1r_transport.send_island_mode.assert_called_once_with(
+        "TEST_DIN", mode=1
+    )
+    ted.v1r_transport.send_island_mode.assert_not_called()
+
+
+def test_schedule_max_backup_uses_wifi_transport():
+    ted = _with_ready(_make_tedapi())
+    ted.cancel_max_backup = MagicMock(return_value=True)
+    response = MagicMock()
+    response.HasField.side_effect = lambda field: field == "teg"
+    response.teg.HasField.return_value = True
+    ted.wifi_v1r_transport.send_teg_message.return_value = response
+    assert ted.schedule_max_backup(60) is True
+    ted.wifi_v1r_transport.send_teg_message.assert_called_once()
+    ted.v1r_transport.send_teg_message.assert_not_called()
+
+
+def test_islanding_uses_same_transport_args_on_lan_and_wifi():
+    lan = _with_ready(_make_tedapi())
+    lan.lan_failed = False
+    wifi = _with_ready(_make_tedapi())
+    lan.v1r_transport.send_island_mode.return_value = {"result": 1}
+    wifi.wifi_v1r_transport.send_island_mode.return_value = {"result": 1}
+    assert lan.go_off_grid() == {"result": 1}
+    assert wifi.go_off_grid() == {"result": 1}
+    assert (
+        lan.v1r_transport.send_island_mode.call_args
+        == wifi.wifi_v1r_transport.send_island_mode.call_args
+    )
+
+
+def test_write_transport_error_does_not_fallback_to_lan():
+    ted = _with_ready(_make_tedapi())
+    ted.wifi_v1r_transport.write_config_v1r.side_effect = TimeoutError("timeout")
+    assert ted._write_config({"site_info.backup_reserve_percent": 9.75}) is False
+    ted.wifi_v1r_transport.write_config_v1r.assert_called_once_with(
+        "TEST_DIN", {"site_info.backup_reserve_percent": 9.75}
+    )
+    ted.v1r_transport.write_config_v1r.assert_not_called()
+
+
 def test_max_backup_cancel_uses_wifi_transport():
     ted = _with_ready(_make_tedapi())
     ted.wifi_v1r_transport.send_teg_message.return_value = None
