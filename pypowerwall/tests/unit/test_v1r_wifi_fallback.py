@@ -514,3 +514,48 @@ def test_auto_login_disabled_does_not_relogin_on_api_get():
     transport.login = MagicMock(return_value=True)
     assert transport.api_get("/api/operation") is None
     transport.login.assert_not_called()
+
+
+def test_auto_login_relogins_on_403_api_get():
+    transport = TEDAPIv1r.__new__(TEDAPIv1r)
+    transport.host = "192.168.1.39"
+    transport.auto_login = True
+    transport.token = "old-token"
+    transport.timeout = 5
+    transport.session = MagicMock()
+    forbidden = MagicMock()
+    forbidden.status_code = 403
+    ok = MagicMock()
+    ok.status_code = 200
+    ok.json.return_value = {"ok": True}
+    transport.session.get.side_effect = [forbidden, ok]
+
+    def relogin():
+        transport.token = "new-token"
+        return True
+
+    transport.login = MagicMock(side_effect=relogin)
+    assert transport.api_get("/api/meters/aggregates") == {"ok": True}
+    transport.login.assert_called_once()
+    assert transport.session.get.call_count == 2
+    assert transport.session.get.call_args.kwargs["headers"]["Authorization"] == (
+        "Bearer new-token"
+    )
+
+
+def test_auto_login_relogins_on_403_post():
+    transport = TEDAPIv1r.__new__(TEDAPIv1r)
+    transport.host = "192.168.1.39"
+    transport.auto_login = True
+    transport.timeout = 5
+    transport.session = MagicMock()
+    forbidden = MagicMock()
+    forbidden.status_code = 403
+    failed_retry = MagicMock()
+    failed_retry.status_code = 500
+    transport.session.post.side_effect = [forbidden, failed_retry]
+    transport.login = MagicMock(return_value=True)
+    with patch.object(transport, "_signed_payload", return_value=b"signed"):
+        assert transport.post_v1r(b"env", "TEST_DIN") is None
+    transport.login.assert_called_once()
+    assert transport.session.post.call_count == 2
