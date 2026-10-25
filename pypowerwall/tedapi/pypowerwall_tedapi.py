@@ -1200,6 +1200,10 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         """Schedule manual backup event (max backup / storm watch mode)."""
         return self.tedapi.schedule_max_backup(duration_seconds=duration_seconds)
 
+    def cancel_max_backup(self):
+        """Cancel the current manual backup event."""
+        return self.tedapi.cancel_max_backup()
+
     def dispatch_battery_power(self, power_watts: float, duration_seconds: int) -> Optional[dict]:
         """Set battery power temporarily via the signed v1r command."""
         return self.tedapi.dispatch_battery_power(power_watts, duration_seconds)
@@ -1207,10 +1211,6 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def resume_battery_operation(self) -> Optional[dict]:
         """Release a v1r battery power setpoint."""
         return self.tedapi.resume_battery_operation()
-
-    def cancel_max_backup(self):
-        """Cancel the current manual backup event."""
-        return self.tedapi.cancel_max_backup()
 
     def get_backup_events(self):
         """Get current backup events."""
