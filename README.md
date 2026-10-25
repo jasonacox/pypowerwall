@@ -368,10 +368,11 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 
 #### v1r WiFi Fallback
 
-Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to give v1r mode a second route to the gateway: its WiFi TEDAPI access point (normally `192.168.91.1`). pyPowerwall uses it in two ways:
+Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to give v1r mode a second route to the gateway: its WiFi TEDAPI access point (normally `192.168.91.1`). pyPowerwall uses it in three ways:
 
 * **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host.
 * **Failover (default)** — after 3 consecutive wired-LAN failures, the leader's queries move to the WiFi host. The LAN is retried after 8 minutes, then at doubling intervals up to about 2 hours, and traffic moves back on the first successful retry. If the LAN is already down when pyPowerwall starts, it starts on the WiFi host.
+* **Signed WiFi-v1r failover (opt-in)** — `wifi_v1r_fallback=True` (pypowerwall-server: `PW_LOCAL_FIRST_WIFI=yes`) gives the leader a second signed `TEDAPIv1r` transport on `wifi_host`, selected only after the LAN failover is tripped. It is the only leader transport then: config reads/writes, TEGMessages (max backup/backup events) and islanding use it, with the same signed request/response shape and 401/403 re-login behavior as LAN v1r, and no fallback to the legacy WiFi TEDAPI path. If signed WiFi-v1r does not answer, that read returns `None` (the next call tries signed WiFi-v1r again) and writes are not dispatched. The read-only `wifi_v1r_ready()` probe gates writes; a dispatched attempt is final. Default `False`.
 
 Without a `wifi_host` there is nothing to fail over to: every request tries the wired LAN, and data resumes as soon as it answers.
 
@@ -621,7 +622,7 @@ print("System Status: %r\n" % pw.system_status())
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize,
         cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd,
-        rsa_key_path, wifi_host, tedapi_api_version)
+        rsa_key_path, wifi_host, tedapi_api_version, tedapi_auth_mode, failover, wifi_v1r_fallback)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway; may include :port for non-standard HTTPS (e.g. 10.0.1.99:8443); default port is 443 if omitted
@@ -643,7 +644,7 @@ print("System Status: %r\n" % pw.system_status())
     gw_pwd = None             # Full gateway password from QR sticker; used for TEDAPI (mode 4)
                                 and auto-derived (last 5 chars) for v1r login (mode 5)
     rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi (Powerwall 3)
-    wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
+    wifi_host = None          # WiFi TEDAPI host for follower fallback and signed v1r
     tedapi_api_version = "V2024_06"  # TEDAPI query/protobuf set: "V2024_06" (default,
                                 #   legacy QueryType path) or "V2026_06" (pre-signed
                                 #   GraphQL / bearer path)
@@ -655,6 +656,13 @@ print("System Status: %r\n" % pw.system_status())
                                 #   with V2026_06. Bearer works on solar-only gateways
                                 #   but NOT Powerwall 2 or 3 — for PW3
                                 #   wired access use v1r mode (rsa_key_path).
+    failover = True            # v1r with wifi_host: after 3 LAN failures, move the
+                                #   leader's queries to wifi_host; recover to LAN later.
+                                #   False pins the configured transport.
+    wifi_v1r_fallback = False  # Strict opt-in signed WiFi-v1r route after LAN failover:
+                                #   all leader v1r reads/writes use wifi_host; no legacy
+                                #   WiFi TEDAPI fallback. Reads return None if it fails;
+                                #   writes are gated by wifi_v1r_ready().
 
  Functions
     connect(retry)            # Connect to Powerwall and select mode (retry=True to keep retrying)
@@ -701,6 +709,7 @@ print("System Status: %r\n" % pw.system_status())
     dispatch_battery_power(power_watts, duration_seconds) # Timed battery power setpoint - v1r only
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
+    wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
     go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode
     reconnect_grid()          # Reconnect to the grid (close contactor) - cloud/FleetAPI or v1r mode
 ```

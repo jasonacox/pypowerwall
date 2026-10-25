@@ -122,7 +122,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                  tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06,
                  auth_mode: Union[AuthMode, str] = AuthMode.BASIC,
                  timezone: str = "America/Los_Angeles",
-                 failover: bool = True) -> None:
+                 failover: bool = True,
+                 wifi_v1r_fallback: bool = False) -> None:
         super().__init__("nobody@nowhere.com")
         self.tedapi = None
         self._git_hash = None  # last git_hash seen (get_api_status)
@@ -146,7 +147,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                              pwconfigexpire=self.pwconfigexpire, poolmaxsize=self.poolmaxsize,
                              v1r=v1r, password=password, rsa_key_path=rsa_key_path,
                              wifi_host=wifi_host, tedapi_api_version=tedapi_api_version,
-                             auth_mode=auth_mode, timezone=timezone, failover=failover)
+                             auth_mode=auth_mode, timezone=timezone, failover=failover,
+                             wifi_v1r_fallback=wifi_v1r_fallback)
         log.debug(f" -- tedapi: Attempting to connect to {self.host}...")
         if not self.tedapi.connect():
             raise ConnectionError(f"Unable to connect to Tesla TEDAPI at {self.host}")
@@ -1146,6 +1148,12 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         return self.tedapi.vitals()
 
 
+
+    def wifi_v1r_ready(self) -> bool:
+        """Read-only probe for the opt-in WiFi-v1r fallback."""
+        if self.tedapi is None:
+            return False
+        return self.tedapi.wifi_v1r_ready()
 
     def post_api_operation(self, **kwargs):
         """Set operation mode and/or backup reserve via LAN config write."""

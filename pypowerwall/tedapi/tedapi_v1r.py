@@ -71,12 +71,17 @@ class TEDAPIv1r:
     """RSA-signed transport for Powerwall /tedapi/v1r endpoint."""
 
     def __init__(self, host: str, password: str, rsa_key_path: str,
-                 timeout: int = 5, poolmaxsize: int = 10) -> None:
+                 timeout: int = 5, poolmaxsize: int = 10,
+                 auto_login: bool = True) -> None:
         self.host = host
         self.password = password
         self.rsa_key_path = rsa_key_path  # for re-registration hints
         self.timeout = timeout
         self.poolmaxsize = poolmaxsize
+        # Auto-login on 401/403 mirrors the LAN v1r transport: the session
+        # cookie can expire even though requests are RSA-signed. Direct
+        # callers that manage the login themselves can pass auto_login=False.
+        self.auto_login = bool(auto_login)
         self.token: Optional[str] = None
         self.din: Optional[str] = None
         # Tracks key-auth failure state so warnings fire once per session
@@ -274,6 +279,9 @@ class TEDAPIv1r:
             r = self.session.post(url, data=payload, headers=headers,
                                   timeout=self.timeout)
             if r.status_code == 401 or r.status_code == 403:
+                if not getattr(self, "auto_login", True):
+                    log.warning(f"v1r auth error ({r.status_code}), auto-login disabled")
+                    return None
                 log.warning(f"v1r auth error ({r.status_code}), attempting re-login")
                 if self.login():
                     # Retry once after re-login, re-signed: the signature
@@ -661,6 +669,10 @@ class TEDAPIv1r:
         try:
             r = self.session.get(url, headers=headers, timeout=self.timeout)
             if r.status_code in (401, 403):
+                if not getattr(self, "auto_login", True):
+                    log.warning(
+                        f"v1r api_get auth error ({r.status_code}), auto-login disabled")
+                    return None
                 log.warning(f"v1r api_get auth error ({r.status_code}), attempting re-login")
                 if self.login():
                     headers['Authorization'] = f'Bearer {self.token}'
