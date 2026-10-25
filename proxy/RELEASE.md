@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t109 (Unreleased)
+
+* Added authenticated POST `/control/dispatch` (`power_watts`, `duration_seconds`, `token`) and `/control/resume` (`token`) for local timed battery dispatch over paired v1r RSA transport. Positive watts discharge, negative watts charge; duration is 1-86400 seconds. The gateway resumes its configured mode at expiry or on resume. Commands require an acknowledgement and always use the local connection. Matching routes are implemented in pypowerwall-server. Requires the library release containing issue #437; the published dependency pin is unchanged until that release is available.
+
 ### Proxy t108 (19 Oct 2026)
 
 * `/stats` and `/help` no longer show account details or file paths to anyone on the network (both pages are unauthenticated). When set, these values show as `**********`, as in pypowerwall-server: `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE` and `PW_RSA_KEY_PATH` under `config`, and the top-level `siteid` (the connected Tesla site) and `cf` (the auth cache file). Passwords and secrets show a fixed `**********` instead of one `*` per character, which revealed their length. Unset values stay `null`, and every key is still there. The power-flow page (`/`) no longer puts `PW_EMAIL` in its HTML. Behavior change: tools that read those values from `/stats` get the mask instead. Powerwall-Dashboard's `verify.sh` shows the site ID this way (it already does with pypowerwall-server). New `proxy/tests/test_stats_masking.py`.

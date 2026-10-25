@@ -28,6 +28,8 @@ import requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
 
+from pypowerwall.helpers import validate_battery_dispatch
+
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -592,6 +594,50 @@ class TEDAPIv1r:
             log.warning(f"send_island_mode: gateway returned result={result} "
                         "(1 is the observed success value)")
         return {"mode": mode, "force": force, "result": result}
+
+    def dispatch_battery_power(self, din: str, power_watts: float,
+                               duration_seconds: int) -> Optional[dict]:
+        """Send a timed setpoint: positive watts discharge, negative charge."""
+        validate_battery_dispatch(power_watts, duration_seconds)
+        teg = combined_pb2.TEGMessages()
+        command = teg.dispatch_battery_power_request.real_power
+        command.power_watts = float(power_watts)
+        command.duration_seconds = duration_seconds
+        if self._send_battery_dispatch(din, teg):
+            return {'power_watts': float(power_watts), 'duration_seconds': duration_seconds}
+        return None
+
+    def resume_battery_operation(self, din: str) -> Optional[dict]:
+        """Release a timed dispatch and resume the configured operating mode."""
+        teg = combined_pb2.TEGMessages()
+        teg.dispatch_battery_power_request.resume_device_mode.SetInParent()
+        if self._send_battery_dispatch(din, teg):
+            return {'resume_battery_operation': True}
+        return None
+
+    def _send_battery_dispatch(self, din: str, teg_message) -> bool:
+        """Require the dispatch acknowledgement, including for a resume.
+
+        An ack confirms acceptance, not measured battery power. Firmware
+        without the command may return common.error_response, code 12.
+        Preserve the library's log-and-return convention on gateway errors.
+        """
+        try:
+            response = self.send_teg_message(din, teg_message)
+            if response is None:
+                log.error('Battery dispatch: no v1r response')
+            elif response.HasField('common') and response.common.HasField('error_response'):
+                status = response.common.error_response.status
+                log.error('Battery dispatch rejected: %s (status code %s%s)',
+                          status.message, status.code,
+                          ', not supported by gateway firmware' if status.code == 12 else '')
+            elif response.HasField('teg') and response.teg.HasField('dispatch_battery_power_response'):
+                return True
+            else:
+                log.error('Battery dispatch: response omitted dispatch_battery_power_response')
+        except Exception as exc:
+            log.error('Battery dispatch failed: %s', exc)
+        return False
 
     # ── Standard API (Bearer token) ──────────────────────────────────
 

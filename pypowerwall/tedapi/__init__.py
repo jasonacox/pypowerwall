@@ -779,6 +779,37 @@ class TEDAPI:
             return None
         return self.v1r_transport.send_island_mode(self.din, mode=1)
 
+    def dispatch_battery_power(self, power_watts: float, duration_seconds: int) -> Optional[dict]:
+        """Request a timed battery power setpoint through signed v1r."""
+        from pypowerwall.helpers import validate_battery_dispatch
+        validate_battery_dispatch(power_watts, duration_seconds)
+        return self._battery_dispatch_command('dispatch_battery_power', power_watts, duration_seconds)
+
+    def resume_battery_operation(self) -> Optional[dict]:
+        """Release an active dispatch through signed v1r."""
+        return self._battery_dispatch_command('resume_battery_operation')
+
+    def _battery_dispatch_command(self, method: str, *args) -> Optional[dict]:
+        """Keep dispatch on the RSA transport, even during WiFi failover."""
+        if not self.v1r or not self.v1r_transport:
+            log.error('%s requires v1r transport', method)
+            return None
+        try:
+            if not self.din and not self.connect():
+                log.error('Not connected - unable to %s', method)
+                return None
+            result = getattr(self.v1r_transport, method)(self.din, *args)
+            if result is not None:
+                # Status/controller contain battery power. Drop their samples
+                # so the next read can observe the accepted setpoint/release.
+                for key in ('status', 'controller'):
+                    self.pwcache.pop(key, None)
+                    self.pwcachetime.pop(key, None)
+            return result
+        except Exception as exc:
+            log.error('%s failed: %s', method, exc)
+            return None
+
     # ── Max Backup (TEGMessages) ─────────────────────────────────────
 
     def schedule_max_backup(self, duration_seconds=7200):

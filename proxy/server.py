@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t108"
+BUILD = "t109"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -1420,7 +1420,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not message:
                     # Check if unable to connect (cloud mode needs client, tedapi needs tedapi)
                     has_tedapi_control = pw.tedapi and pw.tedapi.v1r
-                    if not has_tedapi_control and pw_control.client is None:
+                    if action not in ("dispatch", "resume") and not has_tedapi_control and pw_control.client is None:
                         message = '{"error": "Control Command Error: Unable to connect to cloud mode - Run Setup"}'
                         log.error(
                             "Control Command Error: Unable to connect to cloud mode - Run Setup"
@@ -1428,7 +1428,27 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         # Constant-time compare to avoid timing side channel
                         if token and hmac.compare_digest(token, control_secret):
-                            if action == "reserve":
+                            if action in ("dispatch", "resume"):
+                                if not has_tedapi_control:
+                                    message = '{"error": "Battery dispatch requires v1r LAN transport"}'
+                                else:
+                                    try:
+                                        if action == "dispatch":
+                                            from pypowerwall.helpers import validate_battery_dispatch
+                                            watts = float(query_params.get("power_watts", [""])[0])
+                                            seconds = int(query_params.get("duration_seconds", [""])[0])
+                                            validate_battery_dispatch(watts, seconds)
+                                            result = safe_pw_call(pw.dispatch_battery_power, watts, seconds)
+                                        else:
+                                            result = safe_pw_call(pw.resume_battery_operation)
+                                        message = json.dumps(
+                                            result if isinstance(result, dict) and result
+                                            and "error" not in result and "ERROR" not in result
+                                            else {"error": "Battery dispatch command failed"}
+                                        )
+                                    except (ValueError, OverflowError) as er:
+                                        message = json.dumps({"error": str(er)})
+                            elif action == "reserve":
                                 # ensure value is an integer
                                 if not value:
                                     # return current reserve level in json string

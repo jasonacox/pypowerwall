@@ -372,6 +372,12 @@ curl -X POST -d "value=3600&token=$PW_CONTROL_SECRET" http://localhost:8675/cont
 # Cancel Max Backup (v1r only)
 curl -X POST -d "value=cancel&token=$PW_CONTROL_SECRET" http://localhost:8675/control/max_backup
 
+# Timed battery dispatch (v1r only; negative W charge, positive W discharge)
+curl -X POST -d "power_watts=-500&duration_seconds=30&token=$PW_CONTROL_SECRET" http://localhost:8675/control/dispatch
+
+# Release the dispatch early (otherwise the gateway resumes at expiry)
+curl -X POST -d "token=$PW_CONTROL_SECRET" http://localhost:8675/control/resume
+
 # Read Settings
 curl http://localhost:8675/control/mode
 curl http://localhost:8675/control/reserve

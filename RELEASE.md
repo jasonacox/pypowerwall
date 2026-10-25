@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+* feat(v1r): local timed battery dispatch with `Powerwall.dispatch_battery_power(power_watts, duration_seconds)` and `resume_battery_operation()`. Positive watts discharge, negative watts charge; durations are integers from 1 to 86400 seconds. Uses TEG fields 37/38 without writing gateway configuration. Requires the matching acknowledgement, logs gateway rejection status, and invalidates battery-power samples on success. Proxy t109 adds authenticated POST `/control/dispatch` and `/control/resume`, with matching pypowerwall-server implementation. (#437)
+
 * fix(proxy): `/stats`, `/help` and the power-flow page are unauthenticated, so they no longer show the account email, Tesla site ID or file paths. When set, `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE`, `PW_RSA_KEY_PATH`, `siteid` and `cf` show as `**********`, as in pypowerwall-server, and passwords and secrets no longer reveal their length. Keys and unset (`null`) values are unchanged. Proxy t108.
 * ci: GitHub's `ubuntu-latest` moved to Ubuntu 26.04, which broke every PR's checks:
   * Python 3.9 has no build there, so the 3.9 jobs now run on `ubuntu-24.04` and the rest stay on `ubuntu-latest`. 3.9 is still supported (`requires-python >= 3.9`).

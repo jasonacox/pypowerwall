@@ -15,6 +15,26 @@
     not_implemented_mock_data_factory(log, mode) # Build a per-backend mock-data decorator
 """
 import functools
+import math
+
+
+def validate_battery_dispatch(power_watts: float, duration_seconds: int) -> None:
+    """Reject invalid dispatch inputs before connection or command I/O.
+
+    The wire duration is uint32; cap it at one day so a unit error cannot
+    leave a setpoint running for weeks. Callers should use short durations
+    and renew as needed. Zero watts is a valid setpoint, not a resume.
+    """
+    if isinstance(power_watts, bool) or not isinstance(power_watts, (int, float)):
+        raise ValueError('power_watts must be a finite number')
+    try:
+        finite = math.isfinite(power_watts)
+    except OverflowError:
+        finite = False
+    if not finite:
+        raise ValueError('power_watts must be a finite number')
+    if type(duration_seconds) is not int or not 1 <= duration_seconds <= 86400:
+        raise ValueError('duration_seconds must be an integer from 1 to 86400')
 
 
 def lookup(data, keylist):

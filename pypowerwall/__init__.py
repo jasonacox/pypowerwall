@@ -73,6 +73,8 @@
     get_mode()                # Get Current Battery Operation Mode
     set_reserve(level)        # Set Battery Reserve Percentage
     set_mode(mode)            # Set Current Battery Operation Mode
+    dispatch_battery_power(power_watts, duration_seconds) # Timed local v1r battery power setpoint
+    resume_battery_operation() # Release a local v1r battery power setpoint
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
     set_grid_charging(mode)   # Enable or disable grid charging (mode = True or False)
@@ -1269,6 +1271,44 @@ class Powerwall(object):
         if hasattr(self.client, 'reconnect_grid'):
             return self.client.reconnect_grid()
         log.error("reconnect_grid is not supported by %s backend", type(self.client).__name__)
+        return None
+
+    def dispatch_battery_power(self, power_watts: float, duration_seconds: int) -> Optional[dict]:
+        """Set battery power for 1-86400 seconds using a paired v1r RSA key.
+
+        Positive watts discharge; negative watts charge; zero requests zero
+        battery power. A new dispatch replaces the active power and timer.
+        The gateway resumes its configured mode at expiry, or on
+        resume_battery_operation(). Use short durations and renew as needed.
+
+        Returns the requested power and duration only after an acknowledgement,
+        or None on failure/unsupported backend. An acknowledgement is not
+        measured power: check power() to observe the result. Support depends
+        on firmware; the gateway applies its own operating limits. This does
+        not change config.json, backup reserve, tariff or manual backup events.
+        Raises ValueError for non-finite/bool power or a non-integer/out-of-range
+        duration, before any I/O.
+        """
+        from pypowerwall.helpers import validate_battery_dispatch
+        validate_battery_dispatch(power_watts, duration_seconds)
+        if self._no_client():
+            return None
+        if hasattr(self.client, 'dispatch_battery_power'):
+            return self.client.dispatch_battery_power(power_watts, duration_seconds)
+        log.error('dispatch_battery_power requires v1r transport')
+        return None
+
+    def resume_battery_operation(self) -> Optional[dict]:
+        """Release a v1r dispatch early; return an acknowledgement dict or None.
+
+        Resumes the configured operating mode. This also succeeds when no
+        dispatch is active, and does not cancel a manual backup event.
+        """
+        if self._no_client():
+            return None
+        if hasattr(self.client, 'resume_battery_operation'):
+            return self.client.resume_battery_operation()
+        log.error('resume_battery_operation requires v1r transport')
         return None
 
     def _validate_init_configuration(self):

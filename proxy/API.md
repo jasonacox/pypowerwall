@@ -95,10 +95,32 @@ curl "http://localhost:8675/csv/v2?headers"
 | `/control/grid_charging`| Get/set grid charging enable (POST/GET)          |
 | `/control/grid_export`  | Get/set grid export policy (POST/GET)            |
 | `/control/max_backup`   | Schedule/cancel/query max backup event (POST/GET, v1r only) |
+| `/control/dispatch`     | Timed battery power setpoint (POST, v1r only) |
+| `/control/resume`       | Release a battery dispatch (POST, v1r only) |
 
 > **Note:** Control endpoints require `PW_CONTROL_SECRET` to be set. See [Control Examples](#control-examples) below.
 
 ### Control API Usage & Security
+
+`POST /control/dispatch` takes form fields `power_watts`, `duration_seconds`
+and `token`. Positive watts discharge, negative watts charge, zero requests
+zero battery power. Power must be finite and duration an integer from 1 to
+86400 seconds. `POST /control/resume` takes `token` and releases the dispatch.
+These use the local paired RSA connection even when cloud control is configured.
+Success returns `{"power_watts": -500.0, "duration_seconds": 30}` or
+`{"resume_battery_operation": true}`; failures return HTTP 400 with `{"error": ...}`,
+and an invalid token returns 401. No GET request sends either command.
+
+```bash
+curl -X POST -d 'power_watts=-500&duration_seconds=30&token=<secret>' http://localhost:8675/control/dispatch
+curl -X POST -d 'token=<secret>' http://localhost:8675/control/resume
+```
+
+A new dispatch replaces power and timer. The gateway resumes its configured
+mode at expiry; use short durations and renew as needed. An acknowledgement
+does not confirm measured power: observe `/aggregates`. Reserve, tariff and
+manual backup events are unchanged. Firmware support and gateway limits apply.
+The same routes and form fields are implemented in pypowerwall-server.
 
 Control operations are DISABLED by default. To enable, set the environment variable `PW_CONTROL_SECRET` (any non-empty value). All control POST requests must include a `token` parameter matching this secret.
 
