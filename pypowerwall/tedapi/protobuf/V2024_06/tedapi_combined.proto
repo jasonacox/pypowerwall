@@ -9,6 +9,8 @@
 // Credits:
 // - @Matthew1471's Tesla-API repository (signing protocol)
 // - @Nexarian's TEDAPI protocol updates (Feb 12, 2026)
+// - Teslemetry/tesla-protocol for documenting the battery dispatch protobuf schema:
+//   https://github.com/Teslemetry/tesla-protocol
 
 syntax = "proto3";
 
@@ -251,7 +253,8 @@ message TEGAPISetIslandModeResponse {
   int32 result = 1;
 }
 
-// Timed battery dispatch: tesla-protocol energy_device/teg_api.proto,
+// Timed battery dispatch schema documented by Teslemetry/tesla-protocol:
+// https://github.com/Teslemetry/tesla-protocol/blob/main/proto/energy_device/teg_api.proto
 // TEG fields 37/38.
 // These are independent fields, NOT a oneof. Send exactly one per request.
 message TEGAPIDispatchBatteryPowerRequest {

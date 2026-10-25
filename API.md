@@ -246,6 +246,9 @@ events. Use short durations and renew as needed. An acknowledgement confirms
 acceptance, not measured power; read `power()` to check the effect. The
 gateway applies its operating limits. Gateway rejection status is logged.
 
+The battery dispatch protobuf schema is documented by
+[Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol).
+
 ### Backup Events (v1r mode only)
 
 - `schedule_max_backup(duration_seconds=7200)` → dict/None

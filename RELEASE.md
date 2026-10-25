@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* feat(v1r): local timed battery dispatch with `Powerwall.dispatch_battery_power(power_watts, duration_seconds)` and `resume_battery_operation()`. Positive watts discharge, negative watts charge; durations are integers from 1 to 86400 seconds. Uses TEG fields 37/38 without writing gateway configuration. Requires the matching acknowledgement, logs gateway rejection status, and invalidates battery-power samples on success. (#437)
+* feat(v1r): local timed battery dispatch with `Powerwall.dispatch_battery_power(power_watts, duration_seconds)` and `resume_battery_operation()`. Positive watts discharge, negative watts charge; durations are integers from 1 to 86400 seconds. Uses TEG fields 37/38 without writing gateway configuration. Requires the matching acknowledgement, logs gateway rejection status, and invalidates battery-power samples on success. Thanks to [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol) for documenting the protobuf schema. (#437)
 
 * fix(proxy): `/stats`, `/help` and the power-flow page are unauthenticated, so they no longer show the account email, Tesla site ID or file paths. When set, `PW_EMAIL`, `PW_SITEID`, `PW_AUTH_PATH`, `PW_CACHE_FILE`, `PW_RSA_KEY_PATH`, `siteid` and `cf` show as `**********`, as in pypowerwall-server, and passwords and secrets no longer reveal their length. Keys and unset (`null`) values are unchanged. Proxy t108.
 * ci: GitHub's `ubuntu-latest` moved to Ubuntu 26.04, which broke every PR's checks:

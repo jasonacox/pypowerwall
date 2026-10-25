@@ -409,6 +409,9 @@ Use short durations (for example 30 seconds) and renew as needed. The reply
 acknowledges acceptance; check `pw.power()` to observe actual battery power.
 Gateway limits and firmware support still apply.
 
+Thanks to [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol)
+for documenting the battery dispatch protobuf schema.
+
 > **Cloud/FleetAPI Reserve Limit:** Tesla's cloud APIs enforce a maximum backup reserve of 80%. If you need to set the reserve above 80% (e.g., for a full charge before an outage), use the v1r LAN mode shown below. The `set` CLI will print a warning when you attempt to exceed 80% in cloud or FleetAPI mode.
 
 ```python
