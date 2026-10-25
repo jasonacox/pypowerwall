@@ -1,13 +1,18 @@
 """PW2 per-Powerwall signals: requested via the unsigned msaSignals variable of the
 V2024_06 DeviceControllerQuery and surfaced on the PW2 TEPINV / TETHC / TESYNC
-vitals blocks, filling keys that were placeholders (None).
+vitals blocks, filling keys that were placeholders (None). A second, later change
+appends TEPOD to the unsigned msaComp.types and the POD_available_* names to
+msaSignals, filling the TEPOD blocks' POD_available_* placeholders from the msa
+TEPOD components (see the POD sections below; that hardware basis is in
+queries/__init__.py).
 
 Hardware basis (2026-10-09/11, 4x Powerwall 2 behind a Backup Gateway 1, firmware
-26.34.0, v1r LAN): the gateway honors the extra names with the capture's msaComp
-types unchanged. fixtures/pw2_device_controller_full.json is a raw response to this
-branch's own request from that gateway, with identifiers replaced: PACKAGE_SERIAL_n
-is the n-th package in esCan.bus.THC order and MODULE_SERIAL_n is the msa TEPINV
-component that follows that package's TETHC, so the expected pairing is visible.
+26.34.0, v1r LAN): the gateway honors the extra names with the capture's signature
+and type order intact. fixtures/pw2_device_controller_full.json is a raw response
+to the #416 request from that gateway (before TEPOD was added), with identifiers
+replaced: PACKAGE_SERIAL_n is the n-th package in esCan.bus.THC order and
+MODULE_SERIAL_n is the msa TEPINV component that follows that package's TETHC, so
+the expected pairing is visible.
 """
 import copy
 import json
@@ -34,6 +39,10 @@ PW2_NAMES = [
     "PINV_ReadyForGridForming", "PINV_HardwareEnableLine", "PINV_PowerLimiter",
     "THC_State", "SYNC_ExternallyPowered", "SYNC_SiteSwitchEnabled",
 ]
+
+# requested together with the PW2 names (the TEPOD components carry them)
+POD_POWER_NAMES = ["POD_available_charge_power", "POD_available_dischg_power"]
+
 # TEPINV keys vitals() now fills from the msa module (placeholders + new keys)
 PINV_MSA_KEYS = [n for n in PW2_NAMES if n.startswith("PINV_")]
 
@@ -74,20 +83,31 @@ class TestDeviceControllerRequestQuery:
     def test_only_signal_names_are_appended(self):
         captured = json.loads(q.V2024_06_QUERIES["device_controller_full"].b_value)
         request = json.loads(q.get_query(QueryRole.DEVICE_CONTROLLER_FULL).b_value)
-        # msaComp (component types) untouched - an unknown type nulls the whole response
-        assert request["msaComp"] == captured["msaComp"]
-        # #419's SYNC_Uptime goes first, then the PW2 names
-        assert request["msaSignals"] == captured["msaSignals"] + list(q.GATEWAY_MSA_SIGNAL_NAMES) + PW2_NAMES
+        # the capture's type list stays; TEPOD (validated 2026-10-18) is appended
+        # after it, so TEPINV keeps its two captured positions
+        captured_types = captured["msaComp"]["types"]
+        assert request["msaComp"]["types"][:len(captured_types)] == captured_types
+        assert request["msaComp"]["types"][len(captured_types):] == list(q.PW2_MSA_COMPONENT_TYPES)
+        # #419's SYNC_Uptime goes first, then the PW2 names, then the POD names
+        assert request["msaSignals"] == captured["msaSignals"] + list(q.GATEWAY_MSA_SIGNAL_NAMES) \
+            + PW2_NAMES + POD_POWER_NAMES
         assert set(request) == set(captured)
 
     def test_single_source_of_truth(self):
         assert list(q.PW2_MSA_SIGNAL_NAMES) == PW2_NAMES
+        assert list(q.PW2_POD_POWER_SIGNAL_NAMES) == POD_POWER_NAMES
         assert q.EXTRA_SIGNAL_NAMES[QueryRole.DEVICE_CONTROLLER_FULL]["msaSignals"] == (
-            q.GATEWAY_MSA_SIGNAL_NAMES + q.PW2_MSA_SIGNAL_NAMES)
+            q.GATEWAY_MSA_SIGNAL_NAMES + q.PW2_MSA_SIGNAL_NAMES + q.PW2_POD_POWER_SIGNAL_NAMES)
+        assert q.EXTRA_COMPONENT_TYPES[QueryRole.DEVICE_CONTROLLER_FULL] == {
+            "msaComp": q.PW2_MSA_COMPONENT_TYPES}
 
     def test_basic_query_and_v2026_06_untouched(self):
         assert q.get_query(QueryRole.DEVICE_CONTROLLER_BASIC) is q.V2024_06_QUERIES["device_controller_basic"]
         assert q.get_query(QueryRole.DEVICE_CONTROLLER_FULL, "V2026_06") is q.V2026_06_QUERIES["DeviceControllerQuery"]
+
+    def test_v2026_06_cannot_carry_tepod(self):
+        # Tesla's signed DeviceControllerQuery lists its component types inline
+        assert "TEPOD" not in q.get_query(QueryRole.DEVICE_CONTROLLER_FULL, "V2026_06").text
 
     def test_fixture_was_made_with_this_request(self):
         # every requested PW2 name is echoed on the populated components that own it
@@ -128,6 +148,12 @@ def _pinv(serial):
             "signals": [{"name": "PINV_EnergyCharged", "value": 1}]}
 
 
+def _tepod(serial):
+    return {"partNumber": "1081100-10-Q", "serialNumber": serial,
+            "signals": [{"name": "POD_available_charge_power", "value": 7000},
+                        {"name": "POD_available_dischg_power", "value": 8570}]}
+
+
 def _family_names(component):
     return {s["name"].split("_", 1)[0] for s in component["signals"]}
 
@@ -162,6 +188,20 @@ class TestModulePairing:
                _thc("P2"), _pinv("M2"), _empty("PINV_EnergyCharged")]
         pairs = _pw2_msa_module_pairing(msa, ["P1", "P2"])
         assert {k: v["serialNumber"] for k, v in pairs.items()} == {"P1": "M1", "P2": "M2"}
+
+    def test_tepod_components_after_their_module_are_passed_over(self):
+        # the TEPOD components (requested for the POD_* placeholders) each follow
+        # their module's TEPINV and repeat its serial: family POD with the slot
+        # already closed -> passed over without breaking the walk
+        msa = [_thc("P1"), _pinv("M1"), _tepod("M1"), _thc("P2"), _pinv("M2"), _tepod("M2")]
+        pairs = _pw2_msa_module_pairing(msa, ["P1", "P2"])
+        assert {k: v["serialNumber"] for k, v in pairs.items()} == {"P1": "M1", "P2": "M2"}
+
+    def test_tepod_before_its_module_is_irregular(self):
+        # the validated layout puts each TEPOD after its TEPINV; anything else is
+        # a stray serial-bearing component and voids the pairing, strict on purpose
+        msa = [_thc("P1"), _tepod("M1"), _pinv("M1")]
+        assert _pw2_msa_module_pairing(msa, ["P1"]) == {}
 
     @pytest.mark.parametrize("msa, packages", [
         ([_pinv("M1"), _thc("P1")], ["P1"]),                                    # module before its package
@@ -219,10 +259,42 @@ class TestPw2Vitals:
         tepinv = sorted(k for k in vitals if k.startswith("TEPINV--"))
         assert tepinv == sorted(f"TEPINV--{PART[n]}--PACKAGE_SERIAL_{n}" for n in range(1, 5))
 
-    def test_tepod_placeholders_stay_none(self):
-        # POD_* need TEPOD in msaComp - a later, opt-in change
+    def test_tepod_placeholders_without_tepod_components_stay_none(self):
+        # this fixture predates the TEPOD request: no TEPOD components arrive, so
+        # the POD_* keys keep their placeholder None (the unswept ones always do)
         pod = _vitals(copy.deepcopy(FIXTURE))[f"TEPOD--{PART[1]}--PACKAGE_SERIAL_1"]
         assert pod["POD_ActiveHeating"] is None and pod["POD_state"] is None
+        assert pod["POD_available_charge_power"] is None and pod["POD_available_dischg_power"] is None
+
+    def test_tepod_available_power_filled_from_its_module(self):
+        # a TEPOD carries the serial of its TEPINV module: the package's POD block
+        # takes POD_available_charge_power/dischg_power from it, other packages
+        # keep None
+        status = copy.deepcopy(FIXTURE)
+        msa = status["components"]["msa"]
+        i = next(i for i, c in enumerate(msa) if c["serialNumber"] == "MODULE_SERIAL_2")
+        msa.insert(i + 1, _tepod("MODULE_SERIAL_2"))
+        vitals = _vitals(status)
+        pod1 = vitals[f"TEPOD--{PART[1]}--PACKAGE_SERIAL_1"]
+        assert pod1["POD_available_charge_power"] is None and pod1["POD_available_dischg_power"] is None
+        pod2 = vitals[f"TEPOD--{PART[2]}--PACKAGE_SERIAL_2"]
+        assert pod2["POD_available_charge_power"] == 7000
+        assert pod2["POD_available_dischg_power"] == 8570
+
+    def test_tepod_without_a_paired_module_stays_none(self):
+        status = copy.deepcopy(FIXTURE)
+        status["components"]["msa"].append(_tepod("UNKNOWN_MODULE"))
+        pod = _vitals(status)[f"TEPOD--{PART[1]}--PACKAGE_SERIAL_1"]
+        assert pod["POD_available_charge_power"] is None
+
+    def test_tepod_signals_stay_off_the_pinv_block(self):
+        status = copy.deepcopy(FIXTURE)
+        msa = status["components"]["msa"]
+        i = next(i for i, c in enumerate(msa) if c["serialNumber"] == "MODULE_SERIAL_1")
+        msa.insert(i + 1, _tepod("MODULE_SERIAL_1"))
+        block = _tepinv(_vitals(status), 1)
+        assert block["PINV_EnergyCharged"] == _msa_value("MODULE_SERIAL_1", "PINV_EnergyCharged")
+        assert all(not key.startswith("POD_") for key in block)
 
     def test_ambiguous_pairing_leaves_every_module_value_none(self):
         status = copy.deepcopy(FIXTURE)

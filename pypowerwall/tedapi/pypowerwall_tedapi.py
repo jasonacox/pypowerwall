@@ -5,7 +5,7 @@ from typing import Optional, Union
 
 from pypowerwall import __version__
 from pypowerwall.pypowerwall_base import PyPowerwallBase
-from pypowerwall.tedapi import GW_IP, TEDAPI, _parse_gateway_time, lookup
+from pypowerwall.tedapi import GW_IP, TEDAPI, _parse_gateway_time, lookup, PW2_POD_POWER_SIGNAL_NAMES
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.auth_mode import AuthMode
 from pypowerwall.tedapi.decorators import not_implemented_mock_data
@@ -955,6 +955,45 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             nameplate = round(nominal_kw * 1000)
         limits = [v for v in (nameplate, inverter_usable) if v]
         max_power = min(limits) if limits else None
+        # Instantaneous available power: the device controller's msa TEPOD
+        # components (requested via EXTRA_COMPONENT_TYPES, V2024_06 only) carry
+        # each POD module's currently available charge/discharge power - the
+        # local API's site values (same-run capture 14000/15570; see
+        # PW2_POD_POWER_SIGNAL_NAMES). Serial-less placeholder slots are skipped
+        # like in the pairing and vitals walks; a serial can appear on two msa
+        # components, so per signal only the last usable value per serial counts.
+        # Charge and discharge are judged independently, and a sum is only
+        # reported when every POD component supplied a usable value for that
+        # signal (a valid 0 counts; missing or unusable stays missing, never 0) -
+        # otherwise the stub 0 stays instead of passing off a partial sum. 0 also
+        # while no POD reports one (e.g. V2026_06, whose signed query can't carry
+        # the TEPOD type).
+        charge_signal, discharge_signal = PW2_POD_POWER_SIGNAL_NAMES
+        pod_power = {}
+        for component in lookup(self.tedapi.get_device_controller(force=force),
+                                ["components", "msa"]) or []:
+            if not isinstance(component, dict):
+                continue
+            serial = component.get("serialNumber")
+            if not serial:
+                continue
+            for signal in component.get("signals") or []:
+                if not isinstance(signal, dict) or signal.get("name") not in (charge_signal, discharge_signal):
+                    continue
+                # Register the serial even when the value is unusable: the
+                # component is a POD module reporting no measurement, so the
+                # signal is missing - not 0 - and its sum stays on fallback.
+                pod_power.setdefault(serial, {})
+                value = signal.get("value")
+                # int is always finite, and math.isfinite() would raise
+                # OverflowError on ints beyond float range; floats are checked
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and (isinstance(value, int) or math.isfinite(value)) and value >= 0):
+                    pod_power[serial][signal["name"]] = value
+        charge_values = [v.get(charge_signal) for v in pod_power.values()]
+        discharge_values = [v.get(discharge_signal) for v in pod_power.values()]
+        instantaneous_charge = sum(charge_values) if charge_values and None not in charge_values else 0
+        instantaneous_discharge = sum(discharge_values) if discharge_values and None not in discharge_values else 0
         data = API_SYSTEM_STATUS_STUB()  # TODO: see inside API_SYSTEM_STATUS_STUB definition
         blocks = self.tedapi.get_blocks(force=force) or {}
         b = []
@@ -966,6 +1005,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "max_charge_power": max_power,
             "max_discharge_power": max_power,
             "max_apparent_power": max_power,
+            "instantaneous_max_charge_power": instantaneous_charge,
+            "instantaneous_max_discharge_power": instantaneous_discharge,
             "inverter_nominal_usable_power": inverter_usable,
             "grid_services_power": None,
             "system_island_state": grid_status,

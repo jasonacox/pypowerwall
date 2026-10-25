@@ -80,7 +80,8 @@ from .protobuf.V2024_06 import tedapi_pb2
 from .protobuf.V2024_06 import tedapi_combined_pb2 as combined_pb2
 from .api_version import TEDAPIApiVersion
 from .auth_mode import AuthMode
-from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES, PW3_FAN_SIGNAL_NAMES
+from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES, PW3_FAN_SIGNAL_NAMES, \
+    PW2_POD_POWER_SIGNAL_NAMES
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -243,6 +244,11 @@ def _pw2_msa_module_pairing(msa, package_serials):
         another serial-bearing component that isn't a TEPINV, a repeated serial, a
         TETHC left unpaired, or a pair count that differs from the number of known
         package serials - returns {} so no pack gets another pack's values.
+      * The TEPOD components the request also returns (EXTRA_COMPONENT_TYPES) are
+        not part of this pairing: each follows its module's TEPINV and repeats its
+        serial, so the walk passes over them. A TEPOD before its TEPINV is a stray
+        serial-bearing component like any other and returns {}. vitals() reads the
+        POD values by the paired module's serial.
 
     Returns {package_serial: msa TEPINV component}, or {} when the pairing can't be
     proven for this payload.
@@ -2896,13 +2902,22 @@ class TEDAPI:
                 msa_thc.setdefault(c['serialNumber'], _msa_signals(c, 'THC_'))
         package_serials = [t.get('packageSerialNumber') for t in (lookup(status, ['esCan', 'bus', 'THC']) or [])
                            if isinstance(t, dict) and t.get('packageSerialNumber')]
-        msa_pinv = {pkg: _msa_signals(c, 'PINV_') for pkg, c in
-                    _pw2_msa_module_pairing(lookup(status, ['components', 'msa']), package_serials).items()}
+        msa_modules = _pw2_msa_module_pairing(lookup(status, ['components', 'msa']), package_serials)
+        msa_pinv = {pkg: _msa_signals(c, 'PINV_') for pkg, c in msa_modules.items()}
         if package_serials and not msa_pinv and any(
                 isinstance(c, dict) and c.get('serialNumber') and _msa_family(c) == 'PINV'
                 for c in lookup(status, ['components', 'msa']) or []):
             log.debug("PW2 msa TEPINV components could not be paired with packages; "
                       "PINV_* msa signals left as None")
+        # TEPOD components (requested via EXTRA_COMPONENT_TYPES) carry the POD_*
+        # signals under the same module serial as the paired TEPINV, so a
+        # package's POD values are found by its module's serial. Packages whose
+        # module has no TEPOD component keep the placeholders None.
+        msa_tepods = {c['serialNumber']: c for c in lookup(status, ['components', 'msa']) or []
+                      if isinstance(c, dict) and c.get('serialNumber') and _msa_family(c) == 'POD'}
+        msa_pod = {pkg: _msa_signals(msa_tepods[module['serialNumber']], 'POD_')
+                   for pkg, module in msa_modules.items()
+                   if module.get('serialNumber') in msa_tepods}
 
         # Create TETHC, TEPINV and TEPOD blocks
         tethc = {} # parent
@@ -2941,6 +2956,8 @@ class TEDAPI:
                 energy_to_be_charged = full_pack_energy - energy_remaining
             else:
                 energy_to_be_charged = None
+            # msa TEPOD signals of this package's module; {} -> both stay None
+            pod_msa = msa_pod.get(packageSerialNumber, {})
             tepod[name] = {
                 "POD_ActiveHeating": None,
                 "POD_CCVhold": None,
@@ -2949,8 +2966,8 @@ class TEDAPI:
                 "POD_DischargeComplete": None,
                 "POD_PermanentlyFaulted": None,
                 "POD_PersistentlyFaulted": None,
-                "POD_available_charge_power": None,
-                "POD_available_dischg_power": None,
+                "POD_available_charge_power": pod_msa.get('POD_available_charge_power'),
+                "POD_available_dischg_power": pod_msa.get('POD_available_dischg_power'),
                 "POD_enable_line": None,
                 "POD_nom_energy_remaining": energy_remaining,
                 "POD_nom_energy_to_be_charged": energy_to_be_charged, #computed

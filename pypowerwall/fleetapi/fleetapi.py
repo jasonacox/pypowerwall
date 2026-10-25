@@ -51,6 +51,22 @@
     falling back to HTTP/1.1 via requests. Tesla requires HTTP/2 for Fleet API
     endpoints as of June 2026.
 
+    Set the environment variable PW_FLEETAPI_HTTP=1.1 to force HTTP/1.1 for
+    every FleetAPI request (escape hatch for HTTP/2 connection-reuse issues,
+    issue #433) - the code then bypasses httpx and uses requests, which never
+    upgrades to HTTP/2.
+
+    Concurrency (issue #433): the proxy serves each dashboard poller on its
+    own thread, so a shared cache expiry makes every thread miss at the same
+    moment. Three guards keep that from becoming a request storm against
+    Tesla's rate limit:
+      * single-flight coalescing - concurrent identical GETs share one
+        in-flight request
+      * 429 backoff - Tesla's "Retry in N seconds" guidance (Retry-After
+        header or body) pauses all FleetAPI reads via one shared window
+      * cache expiry jitter - endpoints cached together in a burst don't all
+        expire on the same future tick
+
     HTTP/2 helpers (internal):
        _httpx_auth_verify() - build SSL context pinned to TLS 1.3 when possible
        _HTTP2Response       - requests.Response-compatible wrapper for httpx responses
@@ -70,8 +86,12 @@
 # FleetAPI Class
 
 import os
+import email.utils
 import json
+import math
 import logging
+import random
+import re
 import sys
 import threading
 import time
@@ -121,6 +141,7 @@ class _HTTP2Response:
         self.status_code = resp.status_code
         self.reason = resp.reason_phrase
         self._content = resp.content
+        self.headers = resp.headers  # case-insensitive, like requests (Retry-After)
 
     @property
     def text(self):
@@ -168,6 +189,72 @@ def _requests_fallback(method, url, headers, data, json_data, params, timeout, v
                          timeout=timeout, verify=verify)
 
 
+# PW_FLEETAPI_HTTP=1.1 forces HTTP/1.1 for every FleetAPI request - escape
+# hatch for the intermittent HTTP/2 connection-reuse corruption seen in
+# issue #433. requests never upgrades to HTTP/2, so the requests path is a
+# clean, deterministic HTTP/1.1 transport instead of riding the httpx
+# failure-path fallback.
+_FORCE_HTTP11_VALUES = ('1.1', '1', 'http1.1', 'http/1.1')
+
+
+def _force_http11():
+    """True when PW_FLEETAPI_HTTP requests deterministic HTTP/1.1 transport."""
+    return os.environ.get('PW_FLEETAPI_HTTP', '').strip().lower() in _FORCE_HTTP11_VALUES
+
+
+# Tesla 429 bodies carry guidance like "Retry in 10 seconds" / "Please retry
+# in 10 seconds" - honor it instead of retrying straight back into the wall
+# (issue #433)
+_RETRY_SECONDS_RE = re.compile(r'retry[^0-9]{0,20}(\d{1,5})\s*(?:seconds?|s)\b',
+                               re.IGNORECASE)
+
+
+def _parse_retry_after(response, default=10, cap=60):
+    """Extract a retry delay in seconds from a 429 response.
+
+    Prefers the standard Retry-After header (delay-seconds, or an HTTP-date
+    converted to the seconds remaining), then the 'Retry in N seconds' phrase
+    Tesla puts in the response body, then a conservative default. Capped so a
+    malformed value can't wedge the client.
+    """
+    delay = None
+    val = None
+    try:
+        val = response.headers.get('Retry-After')
+    except AttributeError:
+        pass
+    if val:
+        try:
+            delay = int(float(val))
+        except (TypeError, ValueError, OverflowError):
+            delay = None
+        if delay is None:
+            try:
+                retry_at = email.utils.parsedate_to_datetime(val)
+                delay = math.ceil(retry_at.timestamp() - time.time())
+            except (TypeError, ValueError, OverflowError, IndexError, AttributeError):
+                delay = None
+    if delay is None:
+        match = _RETRY_SECONDS_RE.search(getattr(response, 'text', '') or '')
+        if match:
+            delay = int(match.group(1))
+    if delay is None:
+        delay = default
+    return max(0, min(delay, cap))
+
+
+class _InflightRequest:
+    """Single-flight holder: one leader thread performs a coalesced FleetAPI
+    fetch while concurrent cache-missing threads wait on `event` and then
+    share `result` (None when the leader's request failed)."""
+
+    __slots__ = ('event', 'result')
+
+    def __init__(self):
+        self.event = threading.Event()
+        self.result = None
+
+
 def _http2_request(method, url, *, headers=None, data=None, json_data=None,
                    params=None, timeout=API_TIMEOUT, verify=True):
     """Make an HTTP/2 request via httpx, falling back to requests on failure.
@@ -179,8 +266,11 @@ def _http2_request(method, url, *, headers=None, data=None, json_data=None,
     e.g. set a battery reserve twice) — callers treat None like any other
     request failure.
     """
-    if not HAS_HTTPX:
-        # No httpx available — use requests (HTTP/1.1)
+    if not HAS_HTTPX or _force_http11():
+        # No httpx available, or PW_FLEETAPI_HTTP forces HTTP/1.1 — use
+        # requests (HTTP/1.1)
+        if _force_http11():
+            log.debug('PW_FLEETAPI_HTTP set - using HTTP/1.1 via requests')
         return _requests_fallback(method, url, headers, data, json_data,
                                   params, timeout, verify)
 
@@ -261,6 +351,12 @@ class FleetAPI:
         self.pwcache = {}  # holds the cached data for api
         self.refresh_lock = threading.Lock()  # prevents concurrent token refreshes
         self.timeout = timeout
+        # Concurrency guards for the proxy's threaded pollers (issue #433):
+        # one shared FleetAPI instance serves every dashboard poller thread.
+        self._inflight = {}  # api -> _InflightRequest (single-flight coalescing)
+        self._inflight_lock = threading.Lock()
+        self._backoff_until = 0.0  # epoch time until which cache-missing reads fail fast (429)
+        self._backoff_lock = threading.Lock()
 
         if debug:
             log.setLevel(logging.DEBUG)
@@ -272,9 +368,21 @@ class FleetAPI:
         if not self.site_id:
             log.debug("No site_id set or returned by FleetAPI - Run Setup.")
 
+    # Honor Tesla's 429 retry guidance (shared across all threads)
+    def _rate_backoff_remaining(self):
+        """Seconds left in the shared 429 backoff window (issue #433), or 0.
+
+        Reads never sleep inside the library: while the window is armed a
+        cache-missing GET fails fast with None, so worker threads stay
+        available (pypowerwall-server's executor pool, the proxy's poller
+        threads) while the whole process still honors Tesla's
+        "Retry in N seconds" guidance at once.
+        """
+        with self._backoff_lock:
+            return max(0.0, self._backoff_until - time.time())
+
     # Function to return a random string of characters and numbers
     def random_string(self, length):
-        import random
         import string
         return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
 
@@ -389,53 +497,146 @@ class FleetAPI:
             "Content-Type": "application/json",
             "Authorization": "Bearer " + self.access_token
         }
-        if action == "POST":
-            # Post to FleetAPI with json data payload
-            log.debug(f"POST: {url} {json.dumps(data)}")
-            # Check for timeout exception
-            try:
-                response = _http2_request('POST', url, headers=headers,
-                                         data=json.dumps(data), timeout=self.timeout)
-            except requests.exceptions.Timeout:
-                log.error(f"Timeout error posting to {url}")
-                return None
-        else:
-            # Check if we have a cached response
-            if not force and api in self.pwcachetime:
-                if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
-                    log.debug(f"Using cached data for {api}")
-                    return self.pwcache[api]
-            log.debug(f"GET: {url}")
-            try:
-                response = _http2_request('GET', url, headers=headers, timeout=self.timeout)
-            except requests.exceptions.Timeout:
-                log.error(f"Timeout error polling {url}")
-                return None
-        if response is None:
-            # Request failed without a usable response (e.g. a POST that may
-            # already have been transmitted - never retried to avoid duplicates)
-            log.error(f"No response from FleetAPI for {api}")
-            data = None
-        elif response.status_code == 401 and not recursive:
-            # Token expired, refresh token and try again
-            self.new_token()
-            data = self.poll(api, action, data, True)
-        elif response.status_code == 401:
-            log.error("Token expired, refresh token failed")
-            data = None
-        elif response.status_code != 200:
-            log.error(f"Code {response.status_code}: {response.text}")
-            data = None
-        else:
-            data = response.json()
-        if action == "GET" and data is not None and '?' not in api:
-            # Cache successful responses only - caching errors (None) would
-            # serve failures from cache. Parameterized history URLs (unique
-            # timestamped query strings) are never cached, otherwise each call
-            # would add a permanent entry and grow pwcache without bound.
-            self.pwcachetime[api] = time.time()
-            self.pwcache[api] = data
-        return data
+        inflight = None  # set when this call leads a coalesced single-flight fetch
+        try:
+            if action == "POST":
+                # Post to FleetAPI with json data payload
+                log.debug(f"POST: {url} {json.dumps(data)}")
+                # Check for timeout exception
+                try:
+                    response = _http2_request('POST', url, headers=headers,
+                                             data=json.dumps(data), timeout=self.timeout)
+                except requests.exceptions.Timeout:
+                    log.error(f"Timeout error posting to {url}")
+                    return None
+            else:
+                # Check if we have a cached response
+                if not force and api in self.pwcachetime:
+                    if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
+                        log.debug(f"Using cached data for {api}")
+                        return self.pwcache[api]
+                # Honor Tesla's 429 retry guidance before touching the
+                # network - one shared backoff window for every poller
+                # thread. Fail fast: a cache-missing GET during the window
+                # returns None without sleeping and without a request, so
+                # no library call ever parks a worker thread.
+                if self._rate_backoff_remaining() > 0:
+                    # debug: the 429 itself already logged the window, and
+                    # every poller would repeat this line until it ends
+                    log.debug("FleetAPI backoff window active - failing "
+                              "fast for %s", api)
+                    return None
+                # Single-flight coalescing (issue #433): when the cache
+                # expires, every poller thread misses at the same moment. The
+                # first thread leads one network fetch; concurrent identical
+                # GETs wait for and share its result. The recursive 401-retry
+                # below re-enters on the leader's own thread and must skip
+                # this - it would otherwise wait on itself. Forced reads
+                # (re-reads after a write) skip it too and send their own
+                # request, so they never share a fetch that started before
+                # the write.
+                if not recursive and not force:
+                    joined = None
+                    cached = None
+                    in_backoff = False
+                    with self._inflight_lock:
+                        # Recheck cache freshness under the lock (respecting
+                        # force): a caller that missed the cache, paused
+                        # before this election, and resumed after another
+                        # thread filled it must share that result instead of
+                        # issuing a duplicate GET.
+                        if not force and api in self.pwcachetime:
+                            if time.time() - self.pwcachetime[api] < self.pwcacheexpire:
+                                cached = self.pwcache[api]
+                        if cached is None:
+                            entry = self._inflight.get(api)
+                            if entry is not None:
+                                joined = entry
+                            elif self._rate_backoff_remaining() > 0:
+                                # Recheck the 429 window too: a caller that
+                                # passed the backoff check, paused, and resumed
+                                # after another leader's 429 must not start a
+                                # new GET during the window.
+                                in_backoff = True
+                            else:
+                                inflight = _InflightRequest()
+                                self._inflight[api] = inflight
+                    if cached is not None:
+                        log.debug("Using cached data for %s (rechecked under "
+                                  "the in-flight lock)", api)
+                        return cached
+                    if in_backoff:
+                        log.debug("FleetAPI backoff window active - failing "
+                                  "fast for %s", api)
+                        return None
+                    if joined is not None:
+                        # Bounded wait: with backoff failing fast the leader
+                        # never pauses mid-flight, so its worst case is one
+                        # GET, a 401 token refresh, and the retry GET. Each
+                        # can take two timeouts (HTTP/2, then the HTTP/1.1
+                        # fallback in _http2_request).
+                        wait_limit = 2 * REFRESH_TIMEOUT + 4 * max(self.timeout, 1)
+                        if not joined.event.wait(timeout=wait_limit):
+                            log.warning("FleetAPI coalesced fetch of %s timed out "
+                                        "waiting for the in-flight request", api)
+                        return joined.result
+                log.debug(f"GET: {url}")
+                try:
+                    response = _http2_request('GET', url, headers=headers, timeout=self.timeout)
+                except requests.exceptions.Timeout:
+                    log.error(f"Timeout error polling {url}")
+                    return None
+            if response is None:
+                # Request failed without a usable response (e.g. a POST that may
+                # already have been transmitted - never retried to avoid duplicates)
+                log.error(f"No response from FleetAPI for {api}")
+                data = None
+            elif response.status_code == 401 and not recursive:
+                # Token expired, refresh token and try again
+                self.new_token()
+                data = self.poll(api, action, data, True)
+            elif response.status_code == 401:
+                log.error("Token expired, refresh token failed")
+                data = None
+            elif response.status_code == 429:
+                # Rate limited - honor Tesla's retry guidance with one shared
+                # backoff window across all FleetAPI requests instead of
+                # letting each thread retry into the same wall (issue #433)
+                delay = _parse_retry_after(response)
+                with self._backoff_lock:
+                    self._backoff_until = max(self._backoff_until,
+                                              time.time() + delay)
+                log.error(f"Code 429: {response.text}")
+                log.warning("FleetAPI rate limited - backing off all requests for "
+                            "%ds per Tesla retry guidance", delay)
+                data = None
+            elif response.status_code != 200:
+                log.error(f"Code {response.status_code}: {response.text}")
+                data = None
+            else:
+                data = response.json()
+            if action == "GET" and data is not None and '?' not in api:
+                # Cache successful responses only - caching errors (None) would
+                # serve failures from cache. Parameterized history URLs (unique
+                # timestamped query strings) are never cached, otherwise each call
+                # would add a permanent entry and grow pwcache without bound.
+                # The stamp is backdated by a small random jitter so endpoints
+                # cached together in a burst don't all expire on the same
+                # future tick and re-create a synchronized miss (issue #433).
+                self.pwcachetime[api] = time.time() - random.uniform(
+                    0, min(self.pwcacheexpire * 0.25, 10.0))
+                self.pwcache[api] = data
+            return data
+        finally:
+            if inflight is not None:
+                # Publish the leader's outcome (None on failure - errors are
+                # never cached) and wake the waiting threads. Drop the entry
+                # so the next cache miss starts a fresh fetch.
+                inflight.result = data if action == "GET" else None
+                with self._inflight_lock:
+                    if self._inflight.get(api) is inflight:
+                        self._inflight.pop(api, None)
+                inflight.event.set()
 
     def get_live_status(self, force=False):
         # Get the current power information for the site.

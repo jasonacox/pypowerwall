@@ -12,9 +12,10 @@ The labels are deliberately date-based. Both files share one schema per query: {
 (variables JSON), version (SignedGraphQLQuery version; 0 for V2024_06), signed_bytes (hex; V2026_06 only)}.
 
 The JSON files are pristine captures and are never edited. Signals the library
-requests beyond a capture live in EXTRA_SIGNAL_NAMES and are merged into the
-request variables at import (V2024_06_REQUEST_QUERIES), which is what get_query()
-returns for the V2024_06 wire.
+requests beyond a capture live in EXTRA_SIGNAL_NAMES and component types in
+EXTRA_COMPONENT_TYPES; both are merged into the request variables at import
+(V2024_06_REQUEST_QUERIES), which is what get_query() returns for the V2024_06
+wire.
 """
 import dataclasses
 import json
@@ -138,8 +139,8 @@ PW3_APP_SIGNAL_NAMES = {
 # except SYNC_ExternallyPowered / SYNC_SiteSwitchEnabled on a site that reports a SYNC
 # device (such as a Backup Gateway 2): those now fill TESYNC there too (False, as in the
 # original /api/devices/vitals).
-# The TEPOD POD_* placeholders need TEPOD added to msaComp, which is deliberately not
-# done here: one component type a gateway doesn't recognise nulls the whole response.
+# The TEPOD POD_* placeholders need TEPOD added to msaComp: that is now done, see
+# PW2_POD_POWER_SIGNAL_NAMES and PW2_MSA_COMPONENT_TYPES below.
 PW2_MSA_SIGNAL_NAMES = (
     "PINV_EnergyCharged", "PINV_EnergyDischarged",
     "PINV_LifetimeEnergyCharged", "PINV_LifetimeEnergyDischarged",
@@ -147,6 +148,28 @@ PW2_MSA_SIGNAL_NAMES = (
     "PINV_ReadyForGridForming", "PINV_HardwareEnableLine", "PINV_PowerLimiter",
     "THC_State", "SYNC_ExternallyPowered", "SYNC_SiteSwitchEnabled",
 )
+
+#
+# PW2 instantaneous available power - hardware-validated 2026-10-18 on a 2x
+# Powerwall 2 site (firmware 26.34.1, tedapi "full" mode). The capture's
+# msaComp.types lacks TEPOD, so its POD components never arrived and the TEPOD
+# POD_* vitals placeholders and the instantaneous power fields had no source.
+# With TEPOD appended (PW2_MSA_COMPONENT_TYPES), the gateway returns each POD
+# module's TEPOD component plus 8 serial-less empty slots; the two signal names
+# below echo on the TEPOD components with live values (7000/7000 and 7000/8570
+# on the validation site) and as null on the empty slots. Their per-unit sums
+# (14000/15570) are exactly what the gateway's local /api/system_status
+# reported as instantaneous_max_charge_power / instantaneous_max_discharge_power
+# in the same combined run (an earlier local capture read 15590 - the values
+# follow the battery's state and move between reads). POD_available_apparent_
+# power and the long POD_available_discharge_power name were not echoed. The type is
+# spelled TEPOD: "POD" is not a ComponentType member and fails the whole query
+# ("Variable \"types\" has invalid value POD"), which comes back as an empty
+# response - the trap this block deliberately avoided before TEPOD was
+# validated. Under V2026_06 none of this can be requested (types and signals
+# are inline in its signed query).
+PW2_POD_POWER_SIGNAL_NAMES = ("POD_available_charge_power", "POD_available_dischg_power")
+PW2_MSA_COMPONENT_TYPES = ("TEPOD",)
 
 EXTRA_SIGNAL_NAMES = {
     QueryRole.COMPONENTS: {
@@ -160,8 +183,19 @@ EXTRA_SIGNAL_NAMES = {
         "baggrSignalNames": PW3_APP_SIGNAL_NAMES["baggrSignalNames"],
     },
     QueryRole.DEVICE_CONTROLLER_FULL: {
-        # SYNC_Uptime first (#419), then the PW2 per-Powerwall names
-        "msaSignals": GATEWAY_MSA_SIGNAL_NAMES + PW2_MSA_SIGNAL_NAMES,
+        # SYNC_Uptime first (#419), then the PW2 per-Powerwall names, then the
+        # TEPOD available-power names
+        "msaSignals": GATEWAY_MSA_SIGNAL_NAMES + PW2_MSA_SIGNAL_NAMES + PW2_POD_POWER_SIGNAL_NAMES,
+    },
+}
+
+# Component types requested beyond a V2024_06 capture, per role and variables key:
+# names are appended to the variable's ``types`` list (never inserted), so the
+# capture keeps its type order. Only ComponentType enum members are allowed - one
+# value outside the enum fails the whole query and the response comes back empty.
+EXTRA_COMPONENT_TYPES = {
+    QueryRole.DEVICE_CONTROLLER_FULL: {
+        "msaComp": PW2_MSA_COMPONENT_TYPES,
     },
 }
 
@@ -180,9 +214,29 @@ def _with_extra_signals(query: TEDAPIQuery, extras) -> TEDAPIQuery:
     return dataclasses.replace(query, b_value=json.dumps(variables, separators=(",", ":")))
 
 
-# What the V2024_06 wire actually sends: each capture plus its EXTRA_SIGNAL_NAMES.
+def _with_extra_component_types(query: TEDAPIQuery, extras) -> TEDAPIQuery:
+    """Return ``query`` with ``extras`` appended to its variables' component-type
+    lists (the same object when there is nothing to add)."""
+    if not extras:
+        return query
+    variables = json.loads(query.b_value)
+    for key, names in extras.items():
+        component_filter = variables.get(key)
+        if not isinstance(component_filter, dict):
+            continue
+        current = component_filter.get("types") or []
+        component_filter["types"] = current + [name for name in names if name not in current]
+    # Compact separators, same as _with_extra_signals: the only wire difference
+    # is the appended types.
+    return dataclasses.replace(query, b_value=json.dumps(variables, separators=(",", ":")))
+
+
+# What the V2024_06 wire actually sends: each capture plus its EXTRA_SIGNAL_NAMES
+# and EXTRA_COMPONENT_TYPES.
 V2024_06_REQUEST_QUERIES = {
-    role: _with_extra_signals(query, EXTRA_SIGNAL_NAMES.get(role))
+    role: _with_extra_component_types(
+        _with_extra_signals(query, EXTRA_SIGNAL_NAMES.get(role)),
+        EXTRA_COMPONENT_TYPES.get(role))
     for role, query in V2024_06_QUERIES.items()
 }
 
