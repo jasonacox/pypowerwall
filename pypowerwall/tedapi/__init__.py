@@ -800,9 +800,10 @@ class TEDAPI:
                 return None
             result = getattr(self.v1r_transport, method)(self.din, *args)
             if result is not None:
-                # Status/controller contain battery power. Drop their samples
-                # so the next read can observe the accepted setpoint/release.
-                for key in ('status', 'controller'):
+                # Status/controller (and PW3 vitals, used by vitals() and
+                # get_blocks()) contain battery power. Drop their samples so
+                # the next read can observe the accepted setpoint/release.
+                for key in ('status', 'controller', 'pw3_vitals'):
                     self.pwcache.pop(key, None)
                     self.pwcachetime.pop(key, None)
             return result

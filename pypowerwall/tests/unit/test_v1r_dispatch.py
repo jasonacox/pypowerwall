@@ -30,7 +30,7 @@ def core_for(transport):
     core = TEDAPI.__new__(TEDAPI)
     core.v1r, core.v1r_transport, core.din = True, transport, 'TEST_DIN'
     core.connect = Mock(return_value=False)
-    core.pwcache = {'status': {}, 'controller': {}, 'config': {'keep': True}}
+    core.pwcache = {'status': {}, 'controller': {}, 'pw3_vitals': {}, 'config': {'keep': True}}
     core.pwcachetime = dict.fromkeys(core.pwcache, 123)
     return core
 
@@ -150,7 +150,7 @@ def test_facade_backend_and_core_route_to_v1r_and_invalidate_samples():
 def test_failed_command_preserves_cache():
     core = core_for(transport_for(None))
     assert core.dispatch_battery_power(500, 30) is None
-    assert 'status' in core.pwcache
+    assert {'status', 'controller', 'pw3_vitals'} <= set(core.pwcache)
 
 
 @pytest.mark.parametrize('v1r,connected', [(False, True), (True, False)])

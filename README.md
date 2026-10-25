@@ -409,6 +409,14 @@ Use short durations (for example 30 seconds) and renew as needed. The reply
 acknowledges acceptance; check `pw.power()` to observe actual battery power.
 Gateway limits and firmware support still apply.
 
+Observed on a Powerwall 3 (firmware 26.26.4, v1r LAN, export `battery_ok`):
+discharge beyond the home load is exported to the grid, `0` W holds the
+battery idle while the home draws from the grid, requests above 10,000 W are
+rejected (status code 11), and mode, reserve, grid charging and export
+settings are unchanged afterwards. Not yet verified: charging (negative
+watts), whether discharge stops at the backup reserve, behavior during a grid
+outage, and behavior with export restricted or grid charging disabled.
+
 Thanks to [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol)
 for documenting the battery dispatch protobuf schema.
 
