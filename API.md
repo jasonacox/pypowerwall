@@ -224,6 +224,37 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
 - `get_grid_export()` → str/None
   Get the current grid export mode.
 
+### Timed Battery Dispatch (v1r mode only)
+
+- `dispatch_battery_power(power_watts, duration_seconds)` → dict/None
+  Send a local signed battery power setpoint. Positive watts discharge,
+  negative watts charge, and zero requests zero battery power. Power must be
+  a finite number (not a boolean); duration must be an integer from 1 to 86400
+  seconds. Invalid inputs raise `ValueError` before I/O. A new command replaces
+  the active setpoint and timer. The gateway resumes its configured mode at
+  expiry. Returns `{"power_watts": -500.0, "duration_seconds": 30}` for an
+  acknowledged `dispatch_battery_power(-500, 30)`, or `None` on failure or an
+  unsupported transport/firmware.
+
+- `resume_battery_operation()` → dict/None
+  Release a dispatch early. Returns `{"resume_battery_operation": true}` on
+  acknowledgement, including when no dispatch is active, or `None` on failure.
+
+Both require a paired v1r RSA key and use TEG request/response fields 37/38.
+They do not write `config.json`, reserve or tariff, or cancel manual backup
+events. Use short durations and renew as needed. An acknowledgement confirms
+acceptance, not measured power; read `power()` to check the effect. The
+gateway applies its operating limits. Gateway rejection status is logged.
+
+Observed on a Powerwall 3 (firmware 26.26.4, v1r LAN, export `battery_ok`):
+discharge beyond the home load is exported to the grid, `0` W holds the
+battery idle, requests above 10,000 W are rejected (status code 11), and no
+settings change. Not yet verified: charging, the backup-reserve floor, grid
+outages, and export or grid-charging restrictions.
+
+The battery dispatch protobuf schema is documented by
+[Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol).
+
 ### Backup Events (v1r mode only)
 
 - `schedule_max_backup(duration_seconds=7200)` → dict/None

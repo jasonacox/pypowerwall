@@ -397,6 +397,28 @@ Supported control operations:
 | Operation mode | `set_mode(mode)` | `self_consumption`, `backup` |
 | Grid charging | `set_grid_charging(enable)` | `True` / `False` |
 | Grid export | `set_grid_export(mode)` | `battery_ok`, `pv_only`, `never` |
+| Timed battery power | `dispatch_battery_power(power_watts, duration_seconds)` | Positive W discharge, negative W charge; 1-86400 seconds |
+| Resume battery operation | `resume_battery_operation()` | Release the active dispatch |
+
+Battery dispatch uses a signed TEG command rather than a configuration write.
+Zero watts requests zero battery power. A new dispatch replaces both the power
+and timer; at expiry the gateway resumes its configured operating mode.
+`resume_battery_operation()` releases it early. Neither command changes the
+backup reserve, tariff or `config.json`, or cancels manual backup events.
+Use short durations (for example 30 seconds) and renew as needed. The reply
+acknowledges acceptance; check `pw.power()` to observe actual battery power.
+Gateway limits and firmware support still apply.
+
+Observed on a Powerwall 3 (firmware 26.26.4, v1r LAN, export `battery_ok`):
+discharge beyond the home load is exported to the grid, `0` W holds the
+battery idle while the home draws from the grid, requests above 10,000 W are
+rejected (status code 11), and mode, reserve, grid charging and export
+settings are unchanged afterwards. Not yet verified: charging (negative
+watts), whether discharge stops at the backup reserve, behavior during a grid
+outage, and behavior with export restricted or grid charging disabled.
+
+Thanks to [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol)
+for documenting the battery dispatch protobuf schema.
 
 > **Cloud/FleetAPI Reserve Limit:** Tesla's cloud APIs enforce a maximum backup reserve of 80%. If you need to set the reserve above 80% (e.g., for a full charge before an outage), use the v1r LAN mode shown below. The `set` CLI will print a warning when you attempt to exceed 80% in cloud or FleetAPI mode.
 
@@ -425,6 +447,10 @@ pw.set_grid_export("battery_ok")
 pw.schedule_max_backup(3600)        # 1 hour
 pw.cancel_max_backup()
 print(pw.get_backup_events())       # {"manual_backup": {...}, "backup_events": [...]}
+
+# Charge at 500 W for 30 seconds, then release early if needed
+print(pw.dispatch_battery_power(-500, 30))  # {"power_watts": -500.0, "duration_seconds": 30}
+print(pw.resume_battery_operation())       # {"resume_battery_operation": True}
 ```
 
 For proxy usage, set `PW_CONTROL_SECRET` and use the `/control/*` endpoints — no cloud setup needed when using v1r mode:
@@ -672,6 +698,8 @@ print("System Status: %r\n" % pw.system_status())
     get_grid_export()         # Get the current grid export mode
     schedule_max_backup(duration_seconds) # Schedule manual backup event (max backup / storm watch) - v1r mode only
     cancel_max_backup()       # Cancel the current manual backup event - v1r mode only
+    dispatch_battery_power(power_watts, duration_seconds) # Timed battery power setpoint - v1r only
+    resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
     go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode
     reconnect_grid()          # Reconnect to the grid (close contactor) - cloud/FleetAPI or v1r mode

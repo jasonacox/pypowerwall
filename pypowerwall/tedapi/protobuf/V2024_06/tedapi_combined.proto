@@ -2,13 +2,15 @@
 // Combines tesla_signed.proto and tedapi_nexarian.proto into one file
 //
 // Create Python bindings:
-//     protoc --python_out=. tedapi_combined.proto
+//     bash tools/gen_proto.sh
 //
 // This will generate: tedapi_combined_pb2.py
 //
 // Credits:
 // - @Matthew1471's Tesla-API repository (signing protocol)
 // - @Nexarian's TEDAPI protocol updates (Feb 12, 2026)
+// - Teslemetry/tesla-protocol for documenting the battery dispatch protobuf schema:
+//   https://github.com/Teslemetry/tesla-protocol
 
 syntax = "proto3";
 
@@ -217,7 +219,18 @@ message Tail {
 }
 
 message CommonMessages {
-  bytes placeholder = 1;
+  // common.error_response (field 1), per tesla-protocol common.proto.
+  CommonAPIErrorResponse error_response = 1;
+}
+
+message CommonAPIErrorResponse {
+  // google.rpc.Status wire fields; details (field 3) are not needed here.
+  CommandStatus status = 1;
+}
+
+message CommandStatus {
+  int32 code = 1;
+  string message = 2;
 }
 
 message ControlEventSchedulingInfo {
@@ -239,6 +252,22 @@ message TEGAPISetIslandModeRequest {
 message TEGAPISetIslandModeResponse {
   int32 result = 1;
 }
+
+// Timed battery dispatch schema documented by Teslemetry/tesla-protocol:
+// https://github.com/Teslemetry/tesla-protocol/blob/main/proto/energy_device/teg_api.proto
+// TEG fields 37/38.
+// These are independent fields, NOT a oneof. Send exactly one per request.
+message TEGAPIDispatchBatteryPowerRequest {
+  message ResumeDeviceOperatingMode {}
+  message RealPowerCommand {
+    double power_watts = 1;
+    uint32 duration_seconds = 2;
+  }
+  ResumeDeviceOperatingMode resume_device_mode = 1;
+  RealPowerCommand real_power = 2;
+}
+
+message TEGAPIDispatchBatteryPowerResponse {}
 
 message TEGAPIScheduleManualBackupEventRequest {
   ControlEventSchedulingInfo scheduling_info = 1;
@@ -271,6 +300,8 @@ message TEGMessages {
   oneof message {
     TEGAPISetIslandModeRequest setIslandModeRequest                               = 3;
     TEGAPISetIslandModeResponse setIslandModeResponse                             = 4;
+    TEGAPIDispatchBatteryPowerRequest dispatch_battery_power_request               = 37;
+    TEGAPIDispatchBatteryPowerResponse dispatch_battery_power_response             = 38;
     TEGAPIScheduleManualBackupEventRequest schedule_manual_backup_event_request   = 45;
     TEGAPIScheduleManualBackupEventResponse schedule_manual_backup_event_response = 46;
     TEGAPICancelManualBackupEventRequest cancel_manual_backup_event_request       = 47;
