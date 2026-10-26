@@ -1,4 +1,4 @@
-"""Tests for the strict opt-in signed WiFi-v1r route (PW_LOCAL_FIRST_WIFI).
+"""Tests for the strict opt-in signed WiFi-v1r route (wifi_v1r_fallback).
 
 With the flag, a LAN-failed leader uses signed WiFi-v1r only. The legacy WiFi
 TEDAPI path stays available for flag-off users and for followers, but it is
@@ -20,6 +20,7 @@ def _make_tedapi():
     ted.wifi_host = "192.168.1.39"
     ted.wifi_v1r_fallback = True
     ted.wifi_v1r_transport = MagicMock()
+    ted.wifi_v1r_transport.token = None
     ted.wifi_v1r_transport.get_config_v1r.return_value = {"site_info": {}}
     ted.lan_failed = True
     ted.lan_recover_after = time.time() + 3600
@@ -32,7 +33,7 @@ def _with_ready(ted):
     return ted
 
 
-def test_wifi_transport_keeps_lan_auth_defaults():
+def test_wifi_transport_reuses_lan_transport_args():
     with patch("pypowerwall.tedapi.tedapi_v1r.TEDAPIv1r") as transport_cls, \
             patch("pypowerwall.tedapi.TEDAPI.connect", return_value="TEST_DIN"):
         TEDAPI(
@@ -40,8 +41,11 @@ def test_wifi_transport_keeps_lan_auth_defaults():
             rsa_key_path="key.pem", wifi_host="192.168.91.1",
             v1r=True, wifi_v1r_fallback=True,
         )
-    wifi_call = transport_cls.call_args_list[1]
-    assert wifi_call.kwargs.get("auto_login", True) is True
+    lan_call, wifi_call = transport_cls.call_args_list
+    for key in ("password", "rsa_key_path", "timeout", "poolmaxsize"):
+        assert wifi_call.kwargs[key] == lan_call.kwargs[key]
+    assert wifi_call.kwargs["host"] == "192.168.91.1"
+    assert "auto_login" not in wifi_call.kwargs
 
 
 def test_default_has_no_wifi_v1r_transport():
@@ -460,6 +464,15 @@ def test_get_din_strict_uses_wifi_v1r_directly():
     ted.wifi_v1r_transport.get_din.assert_called_once()
 
 
+def test_get_din_reuses_existing_wifi_v1r_token():
+    ted = _make_tedapi()
+    ted.wifi_session = MagicMock()
+    ted.wifi_v1r_transport.token = "cached-token"
+    ted.wifi_v1r_transport.get_din.return_value = "WIFI_V1R_DIN"
+    assert ted.get_din(force=True) == "WIFI_V1R_DIN"
+    ted.wifi_v1r_transport.login.assert_not_called()
+
+
 def test_get_din_strict_does_not_fallback_to_wifi_tedapi():
     ted = _make_tedapi()
     ted.wifi_session = MagicMock()
@@ -488,41 +501,17 @@ def test_close_session_closes_both_v1r_sessions():
     ted.wifi_v1r_transport.session.close.assert_called_once()
 
 
-def test_auto_login_disabled_does_not_relogin_on_post():
+def _auth_transport(token="old-token"):
     transport = TEDAPIv1r.__new__(TEDAPIv1r)
     transport.host = "192.168.1.39"
-    transport.auto_login = False
+    transport.timeout = 5
+    transport.token = token
     transport.session = MagicMock()
-    response = MagicMock()
-    response.status_code = 401
-    transport.session.post.return_value = response
-    transport.login = MagicMock(return_value=True)
-    with patch.object(transport, "_signed_payload", return_value=b"signed"):
-        assert transport.post_v1r(b"env", "TEST_DIN") is None
-    transport.login.assert_not_called()
-
-
-def test_auto_login_disabled_does_not_relogin_on_api_get():
-    transport = TEDAPIv1r.__new__(TEDAPIv1r)
-    transport.host = "192.168.1.39"
-    transport.auto_login = False
-    transport.token = None
-    transport.session = MagicMock()
-    response = MagicMock()
-    response.status_code = 401
-    transport.session.get.return_value = response
-    transport.login = MagicMock(return_value=True)
-    assert transport.api_get("/api/operation") is None
-    transport.login.assert_not_called()
+    return transport
 
 
 def test_auto_login_relogins_on_403_api_get():
-    transport = TEDAPIv1r.__new__(TEDAPIv1r)
-    transport.host = "192.168.1.39"
-    transport.auto_login = True
-    transport.token = "old-token"
-    transport.timeout = 5
-    transport.session = MagicMock()
+    transport = _auth_transport()
     forbidden = MagicMock()
     forbidden.status_code = 403
     ok = MagicMock()
@@ -544,11 +533,7 @@ def test_auto_login_relogins_on_403_api_get():
 
 
 def test_auto_login_relogins_on_403_post():
-    transport = TEDAPIv1r.__new__(TEDAPIv1r)
-    transport.host = "192.168.1.39"
-    transport.auto_login = True
-    transport.timeout = 5
-    transport.session = MagicMock()
+    transport = _auth_transport(token=None)
     forbidden = MagicMock()
     forbidden.status_code = 403
     failed_retry = MagicMock()

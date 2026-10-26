@@ -1005,7 +1005,7 @@ class Powerwall(object):
         Returns False when WiFi-v1r is not configured, the gateway is not on
         v1r, the LAN failover is not active, or no local DIN is known.
         """
-        tedapi = getattr(self, "tedapi", None)
+        tedapi = self.tedapi
         probe = getattr(tedapi, "wifi_v1r_ready", None)
         if not callable(probe):
             return False
