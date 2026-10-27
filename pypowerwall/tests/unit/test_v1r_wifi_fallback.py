@@ -92,6 +92,22 @@ def test_probe_success_sets_readiness():
     assert ted._wifi_v1r_ready_until > time.monotonic()
 
 
+def test_failed_probe_revokes_earlier_readiness():
+    """A failed probe must not leave an earlier success's write window open."""
+    ted = _with_ready(_make_tedapi())
+    ted.wifi_v1r_transport.get_config_v1r.return_value = None
+    assert ted.wifi_v1r_ready() is False
+    assert ted._wifi_v1r_ready_until == 0.0
+    assert ted._v1r_write_transport() is None  # probes again, fails, no write
+
+
+def test_probe_exception_revokes_earlier_readiness():
+    ted = _with_ready(_make_tedapi())
+    ted.wifi_v1r_transport.get_config_v1r.side_effect = RuntimeError("down")
+    assert ted.wifi_v1r_ready() is False
+    assert ted._wifi_v1r_ready_until == 0.0
+
+
 def test_probe_failure_does_not_set_readiness():
     ted = _make_tedapi()
     ted.wifi_v1r_transport.get_config_v1r.return_value = None
@@ -544,3 +560,44 @@ def test_auto_login_relogins_on_403_post():
         assert transport.post_v1r(b"env", "TEST_DIN") is None
     transport.login.assert_called_once()
     assert transport.session.post.call_count == 2
+
+
+# --- LAN recovers between the lan_failed check and route selection ---
+# Another thread can clear lan_failed after the outer check; _wifi_v1r_requested()
+# then returns False. The opted-in request must stay on a signed transport (the
+# LAN one now), never legacy Wi-Fi TEDAPI.
+
+def _recovered_mid_call(ted):
+    return patch.object(ted, "_wifi_v1r_requested", return_value=False)
+
+
+def test_get_din_lan_recovery_mid_call_stays_signed():
+    ted = _make_tedapi()
+    ted.wifi_session = MagicMock()
+    ted.v1r_transport.get_din.return_value = "LAN_DIN"
+    with _recovered_mid_call(ted), \
+            patch.object(ted, "_fetch_wifi_din", return_value="LEGACY_DIN") as legacy:
+        assert ted.get_din(force=True) == "LAN_DIN"
+    legacy.assert_not_called()
+
+
+def test_get_config_lan_recovery_mid_call_stays_signed():
+    ted = _make_tedapi()
+    ted.wifi_session = MagicMock()
+    ted.v1r_transport.get_config_v1r.return_value = {"site_info": {}}
+    with _recovered_mid_call(ted), \
+            patch.object(ted, "_post_tedapi_wifi", return_value={}) as legacy:
+        assert ted.get_config(force=True) == {"site_info": {}, "battery_blocks": []}
+    legacy.assert_not_called()
+    ted.v1r_transport.get_config_v1r.assert_called_once()
+
+
+def test_post_tedapi_lan_recovery_mid_call_stays_signed():
+    ted = _make_tedapi()
+    ted.wifi_session = MagicMock()
+    ted.v1r_transport.post_v1r.return_value = b"lan"
+    with _recovered_mid_call(ted), \
+            patch.object(ted, "_post_tedapi_wifi", return_value=b"legacy") as legacy, \
+            patch.object(ted, "_envelope_bytes", return_value=b"env"):
+        assert ted._post_tedapi(b"request") == b"lan"
+    legacy.assert_not_called()

@@ -691,8 +691,11 @@ class TEDAPI:
         if not self.v1r:
             din = fetch_http()
         elif self.lan_failed:
-            if self._wifi_v1r_requested():
-                transport = self.wifi_v1r_transport
+            if self.wifi_v1r_fallback:
+                # Opt-in: always a signed transport. _v1r_read_transport()
+                # picks Wi-Fi or (if the LAN just recovered) the LAN, so a
+                # recovery mid-call never reaches legacy Wi-Fi TEDAPI.
+                transport = self._v1r_read_transport()
                 if transport is not None:
                     if not transport.token and not transport.login():
                         din = None
@@ -748,8 +751,10 @@ class TEDAPI:
             normalized to a list, which callers rely on. Returns the config
             dict, or None when nothing came back."""
             wifi_fallback = self.v1r and self.lan_failed and bool(self.wifi_session)
-            if self._wifi_v1r_requested():
-                # Strict opt-in route: signed WiFi-v1r only. A missing
+            if self.v1r and self.wifi_v1r_fallback:
+                # Strict opt-in route: always a signed transport, chosen by
+                # _v1r_read_transport() from the current LAN state, so a LAN
+                # recovery mid-call can't reach legacy Wi-Fi. A missing
                 # transport returns None; it must not retry legacy WiFi.
                 data = self._v1r_call(
                     self._v1r_read_transport(), "get_config_v1r", self.din
@@ -834,7 +839,10 @@ class TEDAPI:
         It performs one signed config read over wifi_host and caches a
         successful result for 60 seconds. It never writes and can therefore
         safely gate writes: a failed probe means no local write was sent.
+        Any probe first revokes an earlier success, so a failed probe or an
+        exception can't leave writes enabled.
         """
+        self._wifi_v1r_ready_until = 0.0
         if not (
             self._wifi_v1r_requested()
             and self.wifi_v1r_transport is not None
@@ -2446,9 +2454,11 @@ class TEDAPI:
 
             # ── LAN failed → one selected WiFi transport ─────────────────────
             if self.lan_failed:
-                if self._wifi_v1r_requested():
-                    # Strict opt-in route: signed WiFi-v1r only. A failed
-                    # request returns None; it must not retry legacy WiFi.
+                if self.wifi_v1r_fallback:
+                    # Strict opt-in route: always a signed transport, chosen
+                    # by _v1r_read_transport() from the current LAN state, so
+                    # a LAN recovery mid-call can't reach legacy WiFi. A
+                    # failed request returns None; it must not retry legacy WiFi.
                     log.debug("v1r: LAN down — routing primary query via signed WiFi v1r")
                     return self._v1r_call(
                         self._v1r_read_transport(), "post_v1r",
