@@ -6,6 +6,7 @@ https://github.com/jasonacox/pypowerwall
 Pin the tesla-protocol field numbers and exercise real envelope parsing at
 the post_v1r boundary. No test loads a key or contacts a Powerwall.
 """
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -29,6 +30,12 @@ def transport_for(reply=ACK):
 def core_for(transport):
     core = TEDAPI.__new__(TEDAPI)
     core.v1r, core.v1r_transport, core.din = True, transport, 'TEST_DIN'
+    core.failover = True
+    core.lan_failed = False
+    core.wifi_v1r_fallback = False
+    core.wifi_v1r_transport = None
+    core._wifi_v1r_ready_until = 0.0
+    core.wifi_session = None
     core.connect = Mock(return_value=False)
     core.pwcache = {'status': {}, 'controller': {}, 'pw3_vitals': {}, 'config': {'keep': True}}
     core.pwcachetime = dict.fromkeys(core.pwcache, 123)
@@ -64,6 +71,34 @@ def test_dispatch_wire_format(watts):
             '0802120220011a0a0a08544553545f44494e'
             '2a10aa020d120b09000000000088b340101e'
         )
+
+
+def test_dispatch_routes_through_strict_wifi_v1r_after_failover():
+    lan = transport_for()
+    wifi = transport_for()
+    core = core_for(lan)
+    core.wifi_v1r_transport = wifi
+    core.wifi_v1r_fallback = True
+    core.lan_failed = True
+    core._wifi_v1r_ready_until = time.monotonic() + 60.0
+    assert core.dispatch_battery_power(-500, 30) == {
+        'power_watts': -500, 'duration_seconds': 30,
+    }
+    wifi.post_v1r.assert_called_once()
+    lan.post_v1r.assert_not_called()
+
+
+def test_dispatch_probe_false_does_not_fall_back_to_lan():
+    lan = transport_for()
+    core = core_for(lan)
+    core.wifi_v1r_transport = transport_for()
+    core.wifi_v1r_fallback = True
+    core.lan_failed = True
+    core._wifi_v1r_ready_until = 0.0
+    core.wifi_v1r_ready = Mock(return_value=False)
+    assert core.dispatch_battery_power(-500, 30) is None
+    lan.post_v1r.assert_not_called()
+    core.wifi_v1r_transport.post_v1r.assert_not_called()
 
 
 def test_resume_wire_format():

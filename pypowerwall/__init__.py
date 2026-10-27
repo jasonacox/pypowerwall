@@ -17,7 +17,8 @@
 
  Classes
     Powerwall(host, password, email, timezone, pwcacheexpire, timeout, poolmaxsize, 
-        cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd)
+        cloudmode, siteid, authpath, authmode, cachefile, fleetapi, auto_select, retry_modes, gw_pwd,
+        rsa_key_path, wifi_host, tedapi_api_version, tedapi_auth_mode, failover, wifi_v1r_fallback)
 
  Parameters
     host                      # Hostname or IP of the Tesla gateway (optionally host:port for 
@@ -39,7 +40,12 @@
     retry_modes = False       # If True, retry connection to Powerwall - WARNING: blocks
                                 indefinitely until a connection succeeds (daemon use)
     gw_pwd = None             # TEG Gateway password (used for local mode access to tedapi)
-    wifi_host = None          # Optional WiFi TEDAPI host for v1r follower fallback
+    rsa_key_path = None       # Path to RSA-4096 private key for v1r LAN TEDapi access
+    wifi_host = None          # WiFi TEDAPI host for follower fallback and signed v1r
+    tedapi_api_version = "V2024_06"  # TEDAPI query/protobuf set
+    tedapi_auth_mode = "basic"       # TEDAPI auth: "basic" or "bearer"
+    failover = True           # Switch transports/modes automatically on failure
+    wifi_v1r_fallback = False # Strict signed WiFi-v1r after LAN failover; no legacy
     
  Functions 
     poll(api, jsonformat, raw, force)   # Return data from Powerwall api (JSON string if jsonformat=True, bypass cache force=True)
@@ -75,6 +81,8 @@
     set_mode(mode)            # Set Current Battery Operation Mode
     dispatch_battery_power(power_watts, duration_seconds) # Timed local v1r battery power setpoint
     resume_battery_operation() # Release a local v1r battery power setpoint
+    wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
+
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
     set_grid_charging(mode)   # Enable or disable grid charging (mode = True or False)
@@ -152,7 +160,8 @@ class Powerwall(object):
                  cloudmode=False, siteid=None, authpath="", authmode="cookie", cachefile=".powerwall",
                  fleetapi=False, auto_select=False, retry_modes=False, gw_pwd=None,
                  rsa_key_path=None, wifi_host=None, tedapi_api_version=TEDAPIApiVersion.V2024_06,
-                 tedapi_auth_mode=AuthMode.BASIC, failover=True):
+                 tedapi_auth_mode=AuthMode.BASIC, failover=True,
+                 wifi_v1r_fallback=False):
         """
         Represents a Tesla Energy Gateway Powerwall device.
 
@@ -179,6 +188,8 @@ class Powerwall(object):
             gw_pwd       = Full gateway password from QR sticker; used for TEDAPI (mode 4)
                            and auto-derived (last 5 chars) for v1r login (mode 5)
             rsa_key_path = Path to RSA-4096 private key PEM for v1r LAN TEDapi access
+            wifi_host    = WiFi TEDAPI host for follower fallback and signed WiFi-v1r
+            tedapi_api_version = TEDAPI query/protobuf set ("V2024_06" or "V2026_06")
             tedapi_auth_mode = TEDAPI authentication mode: "basic" (default) HTTP
                            Basic Auth to 192.168.91.1, which is only reachable
                            over the Gateway's Wi-Fi; or "bearer" to log in via
@@ -195,6 +206,16 @@ class Powerwall(object):
                            it recovers. False = strict: only the configured mode
                            and transport are used, and a failure returns None/False
                            - e.g. for a script that tests which modes work.
+            wifi_v1r_fallback = If True (default False) and v1r has a wifi_host,
+                           the wired LAN failover switches all leader v1r
+                           reads/writes (config, TEGMessages, islanding) to a
+                           signed WiFi-v1r transport. Requests and responses
+                           are the same as LAN v1r. There is no fallback to the
+                           legacy WiFi TEDAPI path: a failed read returns None
+                           for that request (the next call retries signed
+                           WiFi-v1r), and writes are not dispatched. Writes are
+                           gated by the read-only wifi_v1r_ready() probe;
+                           existing setups are unchanged by default.
         """
 
         # Attributes
@@ -220,6 +241,7 @@ class Powerwall(object):
         self.fleetapi = fleetapi
         self.retry_modes = retry_modes
         self.failover = failover  # False: configured mode/transport only (no fallback)
+        self.wifi_v1r_fallback = bool(wifi_v1r_fallback)
         self.mode = "unknown"
         self.gw_pwd = gw_pwd # TEG Gateway password for TEDAPI mode
         self.rsa_key_path = rsa_key_path  # RSA key for v1r LAN TEDapi
@@ -364,7 +386,8 @@ class Powerwall(object):
                             rsa_key_path=self.rsa_key_path,
                             wifi_host=self.wifi_host,
                             tedapi_api_version=self.tedapi_api_version,
-                            failover=self.failover)
+                            failover=self.failover,
+                            wifi_v1r_fallback=self.wifi_v1r_fallback)
                     elif not self.password and self.gw_pwd:  # Full TEDAPI WiFi (mode 4)
                         log.debug("TEDAPI ** full **")
                         self.tedapi_mode = "full"
@@ -975,6 +998,18 @@ class Powerwall(object):
 
         result = self.post(api='/api/operation', payload=payload, din=self.din(), jsonformat=jsonformat)
         return result
+
+    def wifi_v1r_ready(self) -> bool:
+        """True when the opt-in WiFi-v1r fallback answers a read-only probe.
+
+        Returns False when WiFi-v1r is not configured, the gateway is not on
+        v1r, the LAN failover is not active, or no local DIN is known.
+        """
+        tedapi = self.tedapi
+        probe = getattr(tedapi, "wifi_v1r_ready", None)
+        if not callable(probe):
+            return False
+        return bool(probe())  # pylint: disable=not-callable
 
     def schedule_max_backup(self, duration_seconds=7200):
         """Schedule manual backup event (max backup / storm watch mode) via v1r TEGMessages."""

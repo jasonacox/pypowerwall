@@ -64,6 +64,12 @@ def test_tedapi_routes_islanding_calls_to_v1r_transport():
     tedapi.v1r = True
     tedapi.v1r_transport = MagicMock()
     tedapi.din = "TEST_DIN"
+    tedapi.failover = True
+    tedapi.lan_failed = False
+    tedapi.wifi_v1r_fallback = False
+    tedapi.wifi_v1r_transport = None
+    tedapi._wifi_v1r_ready_until = 0.0
+    tedapi.wifi_session = None
     tedapi.v1r_transport.send_island_mode.side_effect = [
         {"mode": 6, "force": True, "result": 0},
         {"mode": 1, "force": False, "result": 0},
