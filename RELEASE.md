@@ -1,8 +1,9 @@
 # RELEASE NOTES
 
-## Unreleased
+## v0.22.1 - Signed Wi-Fi v1r Native Reads
 
 * fix(tedapi): with `wifi_v1r_fallback=True` and the LAN failover tripped, native `/api/*` reads (`get_native_api()`, used for `/api/meters/aggregates`) now go through the selected signed transport's `api_get()` instead of the customer-session WiFi/LAN host loop, so a failed WiFi read no longer retries the dead LAN. A failed read returns `None`. Flag-off and LAN-healthy reads are unchanged. Hardware-validated read-only on a Powerwall 3 (v1r LAN + Wi-Fi, failover simulated with the LAN up): one login and one GET to the Wi-Fi host, none to the LAN, and the same gateway DIN on both routes; with the Wi-Fi host unreachable the read returned `None` without touching the LAN.
+* Library version bumped to `0.22.1`
 
 ## v0.22.0 - Local Battery Dispatch, Signed Wi-Fi v1r Failover, Instantaneous Power Limits and FleetAPI 429 Fix
 
