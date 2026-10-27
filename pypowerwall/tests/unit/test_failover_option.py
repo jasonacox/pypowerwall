@@ -39,8 +39,11 @@ class TestDefaults:
     @pytest.mark.parametrize("cls", [pypowerwall.Powerwall, PyPowerwallTEDAPI, TEDAPI])
     def test_default_is_failover_on_and_last(self, cls):
         params = list(inspect.signature(cls.__init__).parameters.values())
-        assert params[-1].name == "failover"          # appended: positional calls unchanged
-        assert params[-1].default is True
+        assert [p.name for p in params[-2:]] == [  # appended: positional calls unchanged
+            "failover", "wifi_v1r_fallback",
+        ]
+        assert params[-2].default is True
+        assert params[-1].default is False
 
     def test_wrapper_passes_failover_through(self):
         with patch("pypowerwall.tedapi.pypowerwall_tedapi.TEDAPI") as ted_cls:

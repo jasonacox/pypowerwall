@@ -52,7 +52,8 @@ pw = pypowerwall.Powerwall(
     wifi_host=None,
     tedapi_api_version="V2024_06",
     tedapi_auth_mode="basic",
-    failover=True
+    failover=True,
+    wifi_v1r_fallback=False
 )
 ```
 
@@ -74,10 +75,11 @@ pw = pypowerwall.Powerwall(
 - `retry_modes`: Retry connection attempts
 - `gw_pwd`: Full gateway password from QR sticker (used for TEDAPI and v1r modes; last 5 chars auto-derived for Basic login)
 - `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 wired LAN)
-- `wifi_host`: Optional WiFi TEDAPI host used as fallback transport for follower queries in v1r mode
+- `wifi_host`: Optional WiFi TEDAPI host used for follower queries in v1r mode and, with `wifi_v1r_fallback`, the strict signed leader route after LAN failover
 - `tedapi_api_version`: TEDAPI query/protobuf set — `"V2024_06"` (default, legacy QueryType path) or `"V2026_06"` (pre-signed GraphQL / bearer path)
 - `tedapi_auth_mode`: TEDAPI authentication — `"basic"` (default, WiFi access point) or `"bearer"` (solar-only gateways over the wired LAN)
 - `failover`: Switch automatically when the configured transport fails (default: True). `connect()` falls back across modes (local → fleetapi → cloud), and in v1r mode with a `wifi_host` the leader's queries move to the WiFi host while the wired LAN is down and back when it recovers. `False` is strict: only the configured mode and transport are used, and a failed request returns `None` (followers still use `wifi_host`, their only route in v1r mode)
+- `wifi_v1r_fallback`: Opt-in strict signed WiFi-v1r route over `wifi_host` (default: False). When the v1r LAN failover is tripped, all leader v1r reads/writes, config writes, max backup/backup events and islanding use the signed transport. The signed operations, responses and 401/403 re-login behavior are the same as LAN v1r; only the selected host/transport differs. There is no fallback to the legacy WiFi TEDAPI path: a failed read returns `None` for that request and the next call tries signed WiFi-v1r again; writes are not dispatched. `wifi_v1r_ready()` performs a read-only probe before writes; reads do not probe separately. Default off preserves the LAN-only behavior.
 
 ---
 
@@ -271,6 +273,12 @@ The battery dispatch protobuf schema is documented by
 
 - `get_backup_events()` → dict/None
   Get current backup events.
+
+- `wifi_v1r_ready()` → bool
+  Read-only write gate for the opt-in `wifi_v1r_fallback` transport. It performs
+  one signed config read over `wifi_host` and caches success for 60 seconds.
+  Reads do not call it separately; after LAN failure they use signed WiFi-v1r
+  directly and return `None` rather than retrying legacy WiFi TEDAPI.
 
 ### Grid Island Control
 

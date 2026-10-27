@@ -77,6 +77,8 @@ class TEDAPIv1r:
         self.rsa_key_path = rsa_key_path  # for re-registration hints
         self.timeout = timeout
         self.poolmaxsize = poolmaxsize
+        # 401/403 always trigger the same re-login/retry as LAN v1r: the
+        # session cookie can expire even though requests are RSA-signed.
         self.token: Optional[str] = None
         self.din: Optional[str] = None
         # Tracks key-auth failure state so warnings fire once per session

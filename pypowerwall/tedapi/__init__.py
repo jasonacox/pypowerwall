@@ -343,7 +343,8 @@ class TEDAPI:
                  tedapi_api_version: TEDAPIApiVersion = TEDAPIApiVersion.V2024_06,
                  auth_mode: AuthMode | str = AuthMode.BASIC,
                  timezone: str = "America/Los_Angeles",
-                 failover: bool = True) -> None:
+                 failover: bool = True,
+                 wifi_v1r_fallback: bool = False) -> None:
         """Initialize the TEDAPI client for Powerwall Gateway communication.
 
         failover (v1r with a wifi_host) selects what happens when the wired LAN
@@ -356,6 +357,13 @@ class TEDAPI:
         followers on the WiFi host) and returns None when that fails; nothing
         is substituted or suppressed. Without a wifi_host there is nothing to
         fail over to and the two are identical.
+
+        wifi_v1r_fallback (v1r with a wifi_host, opt-in) extends the same
+        LAN->WiFi failover to signed v1r operations: config writes, TEGMessages
+        (max backup/backup events) and islanding use a second TEDAPIv1r
+        transport pointed at wifi_host when lan_failed is set. It is for
+        servers that explicitly want local control to survive a wired-LAN
+        outage; the read-only wifi_v1r_ready() probe gates writes.
 
         auth_mode selects how HTTP requests to the gateway are authenticated:
         "basic" (default) uses HTTP Basic Auth against 192.168.91.1, which is
@@ -415,6 +423,12 @@ class TEDAPI:
         self.wifi_last_success = 0  # timestamp of last successful WiFi call
         self.wifi_fail_count = 0    # consecutive follower WiFi failures (exponential backoff)
         self._wifi_lock = threading.Lock()  # protects wifi_fail_count and wifi_cooldown
+        # Optional signed-v1r transport over wifi_host (opt-in). The regular
+        # v1r_transport remains pinned to the wired LAN; this second instance
+        # is only selected when lan_failed is set and a probe has confirmed it.
+        self.wifi_v1r_fallback = bool(wifi_v1r_fallback)
+        self.wifi_v1r_transport = None
+        self._wifi_v1r_ready_until = 0.0
         # Per-method API locks for the @uses_api_lock getters, created lazily
         # by _api_lock(). Per instance so multiple gateways (one TEDAPI each)
         # never serialize on each other; per method so e.g. a slow
@@ -455,6 +469,16 @@ class TEDAPI:
                 host=host, password=password, rsa_key_path=rsa_key_path,
                 timeout=timeout, poolmaxsize=poolmaxsize
             )
+            if (self.wifi_v1r_fallback and self.wifi_host
+                    and self.wifi_host != self.gw_ip):
+                try:
+                    self.wifi_v1r_transport = TEDAPIv1r(
+                        host=self.wifi_host, password=password,
+                        rsa_key_path=rsa_key_path, timeout=timeout,
+                        poolmaxsize=poolmaxsize,
+                    )
+                except Exception as exc:
+                    log.warning("v1r: WiFi fallback disabled: %s", exc)
             self.gw_pwd = gw_pwd or ""
             # Enable WiFi fallback only when an explicit wifi_host was provided
             if gw_pwd and self.wifi_host:
@@ -663,10 +687,19 @@ class TEDAPI:
             return din
 
         log.debug("Fetching DIN from Powerwall...")
+        din = None
         if not self.v1r:
             din = fetch_http()
         elif self.lan_failed:
-            din = self._fetch_wifi_din()
+            if self.wifi_v1r_fallback:
+                # Opt-in: always a signed transport. _v1r_read_transport()
+                # picks Wi-Fi or (if the LAN just recovered) the LAN, so a
+                # recovery mid-call never reaches legacy Wi-Fi TEDAPI.
+                transport = self._v1r_read_transport()
+                if transport is not None:
+                    din = self._signed_din(transport)
+            else:
+                din = self._fetch_wifi_din() if self.wifi_session else None
         else:
             din = self.v1r_transport.get_din()
         if din:
@@ -709,15 +742,24 @@ class TEDAPI:
         def fetch_config():
             """One config.json fetch on whichever transport is live. v1r reads
             it through the FileStore API over the LAN; basic and bearer send the
-            legacy config.send protobuf through the shared transport, as does
-            v1r while its LAN is down and a WiFi fallback session exists
-            (straight to _post_tedapi_wifi — that request must not take
-            _post_tedapi's LAN route). ``battery_blocks`` is normalized to a
-            list, which callers rely on. Returns the config dict, or None when
-            nothing came back."""
+            legacy config.send protobuf through the shared transport. With the
+            opt-in flag, a LAN-failed leader uses only signed WiFi-v1r; without
+            it, the historical WiFi TEDAPI path applies. ``battery_blocks`` is
+            normalized to a list, which callers rely on. Returns the config
+            dict, or None when nothing came back."""
             wifi_fallback = self.v1r and self.lan_failed and bool(self.wifi_session)
-            if self.v1r and not wifi_fallback:
-                data = self.v1r_transport.get_config_v1r(self.din)
+            if self.v1r and self.wifi_v1r_fallback:
+                # Strict opt-in route: always a signed transport, chosen by
+                # _v1r_read_transport() from the current LAN state, so a LAN
+                # recovery mid-call can't reach legacy Wi-Fi. A missing
+                # transport returns None; it must not retry legacy WiFi.
+                data = self._v1r_call(
+                    self._v1r_read_transport(), "get_config_v1r", self.din
+                )
+            elif self.v1r and not wifi_fallback:
+                data = self._v1r_call(
+                    self.v1r_transport, "get_config_v1r", self.din
+                )
             else:
                 request_bytes = self._build_config_request()
                 if wifi_fallback:
@@ -728,7 +770,10 @@ class TEDAPI:
                 if response is None:
                     return None
                 data = self._decode_json(
-                    self._parse_legacy_response(response, from_wifi=wifi_fallback, config=True))
+                    self._parse_legacy_response(
+                        response, from_wifi=wifi_fallback, config=True
+                    )
+                )
             if data is not None:
                 data.setdefault("battery_blocks", [])
             return data
@@ -736,6 +781,96 @@ class TEDAPI:
         return self._cached_fetch("config", expire=self.pwconfigexpire, force=force,
                                   self_function=self_function, name="config",
                                   fetch=fetch_config)
+
+    def _wifi_v1r_requested(self) -> bool:
+        """True when the leader must use signed WiFi-v1r after LAN failure.
+
+        This says only that the opt-in route was requested; the transport is
+        checked separately, because a missing transport must fail closed
+        rather than fall back to the legacy WiFi TEDAPI path.
+        """
+        return bool(
+            self.v1r
+            and self.failover
+            and self.lan_failed
+            and self.wifi_v1r_fallback
+        )
+
+    def _v1r_write_transport(self):
+        """Pick the signed-v1r transport for a write.
+
+        When the opt-in route is requested, a missing transport or failed
+        read-only probe selects nothing: the write is not dispatched over the
+        LAN or the legacy WiFi TEDAPI path. See wifi_v1r_ready().
+        """
+        if not self._wifi_v1r_requested():
+            return self.v1r_transport
+        transport = self.wifi_v1r_transport
+        if transport is None:
+            return None
+        if self._wifi_v1r_ready_until <= time.monotonic():
+            if not self.wifi_v1r_ready():
+                return None
+        return transport
+
+    def _v1r_read_transport(self):
+        """Pick the signed-v1r transport for a read (no probe needed).
+
+        Returns None when the opt-in route was requested but no transport is
+        configured; the caller must not retry the read over legacy WiFi.
+        """
+        if not self._wifi_v1r_requested():
+            return self.v1r_transport
+        return self.wifi_v1r_transport
+
+    @staticmethod
+    def _signed_din(transport) -> Optional[str]:
+        """DIN over a signed v1r transport. Reuses the token, and logs in
+        again when there is none or the DIN fetch fails (get_din() doesn't
+        re-login on 401/403, and during a cold start nothing else refreshes
+        an expired token)."""
+        din = transport.get_din() if transport.token else None
+        if not din and transport.login():
+            din = transport.get_din()
+        return din
+
+    def _v1r_call(self, transport, method: str, *args, **kwargs):
+        """Call method on the selected signed-v1r transport."""
+        if transport is None:
+            log.error("v1r: no transport selected for %s", method)
+            return None
+        return getattr(transport, method)(*args, **kwargs)
+
+    def wifi_v1r_ready(self) -> bool:
+        """Read-only probe for the opt-in WiFi-v1r fallback.
+
+        It performs one signed config read over wifi_host and caches a
+        successful result for 60 seconds. It never writes and can therefore
+        safely gate writes: a failed probe means no local write was sent.
+        Any probe first revokes an earlier success, so a failed probe or an
+        exception can't leave writes enabled.
+        """
+        self._wifi_v1r_ready_until = 0.0
+        if not (
+            self._wifi_v1r_requested()
+            and self.wifi_v1r_transport is not None
+            and self.wifi_host
+            and self.wifi_host != self.gw_ip
+            and self.din
+        ):
+            return False
+        try:
+            if self.wifi_v1r_transport.get_config_v1r(self.din) is None:
+                # Clear again: a concurrent probe may have succeeded while
+                # this one waited, and the last probe to finish decides.
+                self._wifi_v1r_ready_until = 0.0
+                return False
+            self._wifi_v1r_ready_until = time.monotonic() + 60.0
+            return True
+        except Exception as exc:
+            self._wifi_v1r_ready_until = 0.0
+            log.warning("v1r: WiFi fallback probe failed: %s", exc)
+            return False
 
     def _write_config(self, updates: dict) -> bool:
         """
@@ -754,7 +889,9 @@ class TEDAPI:
                 log.error("Not connected - unable to write config")
                 return False
         try:
-            result = self.v1r_transport.write_config_v1r(self.din, updates)
+            result = self._v1r_call(
+                self._v1r_write_transport(), "write_config_v1r", self.din, updates
+            )
             if result:
                 # Invalidate config cache
                 self.pwcache.pop("config", None)
@@ -773,7 +910,10 @@ class TEDAPI:
         if not self.din and not self.connect():
             log.error("Not connected - unable to go off grid")
             return None
-        return self.v1r_transport.send_island_mode(self.din, mode=6, force=True)
+        return self._v1r_call(
+            self._v1r_write_transport(), "send_island_mode",
+            self.din, mode=6, force=True,
+        )
 
     def reconnect_grid(self) -> Optional[dict]:
         """Request grid reconnection through the signed v1r transport."""
@@ -783,7 +923,9 @@ class TEDAPI:
         if not self.din and not self.connect():
             log.error("Not connected - unable to reconnect grid")
             return None
-        return self.v1r_transport.send_island_mode(self.din, mode=1)
+        return self._v1r_call(
+            self._v1r_write_transport(), "send_island_mode", self.din, mode=1
+        )
 
     def dispatch_battery_power(self, power_watts: float, duration_seconds: int) -> Optional[dict]:
         """Request a timed battery power setpoint through signed v1r."""
@@ -796,15 +938,19 @@ class TEDAPI:
         return self._battery_dispatch_command('resume_battery_operation')
 
     def _battery_dispatch_command(self, method: str, *args) -> Optional[dict]:
-        """Keep dispatch on the RSA transport, even during WiFi failover."""
-        if not self.v1r or not self.v1r_transport:
+        """Dispatch through the same strict signed-v1r route as other writes."""
+        if not self.v1r:
             log.error('%s requires v1r transport', method)
             return None
         try:
             if not self.din and not self.connect():
                 log.error('Not connected - unable to %s', method)
                 return None
-            result = getattr(self.v1r_transport, method)(self.din, *args)
+            transport = self._v1r_write_transport()
+            if transport is None:
+                log.error('%s requires an available signed-v1r transport', method)
+                return None
+            result = self._v1r_call(transport, method, self.din, *args)
             if result is not None:
                 # Status/controller (and PW3 vitals, used by vitals() and
                 # get_blocks()) contain battery power. Drop their samples so
@@ -850,7 +996,9 @@ class TEDAPI:
             req.scheduling_info.start_time.CopyFrom(Timestamp(seconds=int(time.time())))
             req.scheduling_info.duration_seconds = duration_seconds
             req.scheduling_info.priority = (1 << 64) - 1  # MAX_UINT64 = highest priority
-            resp = self.v1r_transport.send_teg_message(self.din, teg)
+            resp = self._v1r_call(
+                self._v1r_write_transport(), "send_teg_message", self.din, teg
+            )
             if resp is None:
                 log.error("schedule_max_backup: no response")
                 return False
@@ -880,7 +1028,9 @@ class TEDAPI:
         try:
             teg = combined_pb2.TEGMessages()
             teg.cancel_manual_backup_event_request.SetInParent()
-            resp = self.v1r_transport.send_teg_message(self.din, teg)
+            resp = self._v1r_call(
+                self._v1r_write_transport(), "send_teg_message", self.din, teg
+            )
             if resp is None:
                 log.error("cancel_max_backup: no response")
                 return False
@@ -911,7 +1061,9 @@ class TEDAPI:
         try:
             teg = combined_pb2.TEGMessages()
             teg.get_backup_events_request.SetInParent()
-            resp = self.v1r_transport.send_teg_message(self.din, teg)
+            resp = self._v1r_call(
+                self._v1r_read_transport(), "send_teg_message", self.din, teg
+            )
             if resp is None:
                 log.error("get_backup_events: no response")
                 return None
@@ -1864,21 +2016,44 @@ class TEDAPI:
         Without this, a container (re)started while the wired LAN is down can
         never come up: the LAN login fails, connect returns None, and the 3
         failures needed to trip the regular failover never happen because no
-        data call is ever made. When the WiFi host answers ``/tedapi/din``, its
-        DIN is adopted and failover starts tripped, with the LAN retry where 3
-        consecutive failures would put it (480s). Returns the DIN, or None when
-        the WiFi host doesn't answer either (the connect() contract: DIN or
-        None). Only called when failover is enabled and no DIN is known yet.
+        data call is ever made. With the opt-in flag, only signed WiFi-v1r is
+        tried; otherwise the historical WiFi TEDAPI ``/tedapi/din`` route is
+        used. On success the DIN is adopted and failover starts tripped, with
+        the LAN retry where 3 consecutive failures would put it (480s). Returns
+        the DIN, or None when the selected WiFi route doesn't answer (the
+        connect() contract: DIN or None). Only called when failover is enabled
+        and no DIN is known yet.
         """
-        din = self._fetch_wifi_din()
+        wifi_v1r = bool(self.wifi_v1r_fallback)
+        if wifi_v1r:
+            transport = self.wifi_v1r_transport
+            if transport is None:
+                log.error(
+                    "v1r: signed WiFi v1r transport is not configured for cold failover"
+                )
+                return None
+            try:
+                din = self._signed_din(transport)
+            except Exception as exc:
+                log.error("v1r: signed WiFi v1r cold failover failed: %s", exc)
+                return None
+        else:
+            din = self._fetch_wifi_din() if self.wifi_session else None
         if not din:
             return None
         self.din = din
         backoff = self._lan_trip_cold()
-        self.wifi_available = True
-        self.wifi_last_success = time.time()
-        log.warning("v1r: LAN unreachable — using WiFi TEDAPI fallback (%s), retry LAN in %.0fs",
-                    self.wifi_host, backoff)
+        if not wifi_v1r and self.wifi_session:
+            self.wifi_available = True
+            self.wifi_last_success = time.time()
+        if wifi_v1r:
+            log.warning(
+                "v1r: LAN unreachable — using signed WiFi v1r fallback (%s), "
+                "retry LAN in %.0fs", self.wifi_host, backoff
+            )
+        else:
+            log.warning("v1r: LAN unreachable — using WiFi fallback (%s), retry LAN in %.0fs",
+                        self.wifi_host, backoff)
         return din
 
     # ── v1r LAN failover state ───────────────────────────────────────────────
@@ -1892,11 +2067,22 @@ class TEDAPI:
     LAN_TRIP_AFTER = 3  # consecutive LAN failures that trip the failover
 
     def _lan_failover_enabled(self) -> bool:
-        """Failover applies: v1r, failover on, and a WiFi host to route to.
-        Without a WiFi host there is nowhere to fail over to, so tripping would
-        only return None without trying the LAN (for 8 minutes, even after it
-        came back); every request keeps trying the LAN instead."""
-        return bool(self.v1r and self.failover and self.wifi_session)
+        """Failover applies: v1r, failover on, and a WiFi route to use.
+
+        With the opt-in flag, only the signed WiFi-v1r transport counts; the
+        legacy WiFi TEDAPI session is never a failover route for the leader.
+        Without the flag, the historical WiFi TEDAPI route applies. Without a
+        usable route there is nowhere to fail over to, so tripping would only
+        return None without trying the LAN (for 8 minutes, even after it came
+        back); every request keeps trying the LAN instead."""
+        failover = self.failover
+        if self.wifi_v1r_fallback:
+            return bool(
+                self.v1r
+                and failover
+                and self.wifi_v1r_transport is not None
+            )
+        return bool(self.v1r and failover and self.wifi_session)
 
     @staticmethod
     def _lan_backoff(fail_count: int) -> float:
@@ -1922,8 +2108,13 @@ class TEDAPI:
             if fail_count >= self.LAN_TRIP_AFTER and self._lan_failover_enabled():
                 tripped = self._lan_trip_locked(fail_count)
         if tripped is not None:
-            log.warning("v1r: LAN failed %d consecutive times — switching to WiFi TEDAPI fallback"
-                        " (retry LAN in %.0fs)", fail_count, tripped)
+            route = (
+                "signed WiFi v1r fallback"
+                if self.wifi_v1r_fallback
+                else "WiFi TEDAPI fallback"
+            )
+            log.warning("v1r: LAN failed %d consecutive times — switching to %s"
+                        " (retry LAN in %.0fs)", fail_count, route, tripped)
 
     def _lan_trip_cold(self) -> float:
         """LAN down at first connect: trip where LAN_TRIP_AFTER consecutive
@@ -1971,6 +2162,11 @@ class TEDAPI:
         # The next fetch logs in on gw_ip (_native_get re-logs in on a switch).
         with self._customer_lock:
             self.customer_host = None
+        # A recovered LAN must re-probe the WiFi-v1r route before using it
+        # again; the old readiness was for the previous failover episode.
+        # Plain assignment is atomic and must not wait behind an in-flight
+        # WiFi request.
+        self._wifi_v1r_ready_until = 0.0
 
     def close_session(self):
         """Close the underlying requests.Session objects to the Gateway."""
@@ -1981,12 +2177,16 @@ class TEDAPI:
                     s.close()
                 except Exception as e:
                     log.debug(f"Error closing {attr}: {e}")
-        v1r_session = getattr(self.v1r_transport, 'session', None) if self.v1r_transport else None
-        if v1r_session is not None:
-            try:
-                v1r_session.close()
-            except Exception as e:
-                log.debug(f"Error closing v1r session: {e}")
+        for name, transport in (
+            ('v1r', self.v1r_transport),
+            ('wifi-v1r', self.wifi_v1r_transport),
+        ):
+            session = getattr(transport, 'session', None) if transport else None
+            if session is not None:
+                try:
+                    session.close()
+                except Exception as e:
+                    log.debug(f"Error closing {name} session: {e}")
 
     @staticmethod
     def _import_v2026_pb2():
@@ -2262,31 +2462,44 @@ class TEDAPI:
                     backoff = self._lan_probe_failed()
                     log.warning("v1r: LAN still unreachable, next retry in %.0fs", backoff)
 
-            # ── LAN failed → full WiFi TEDAPI v1 fallback ────────────────────
+            # ── LAN failed → one selected WiFi transport ─────────────────────
             if self.lan_failed:
-                if not self.wifi_session:
-                    log.error("v1r: LAN down and no WiFi fallback configured")
-                    return None
-                log.debug("v1r: LAN down — routing primary query via WiFi TEDAPI")
-                raw = self._post_tedapi_wifi(pb_bytes, url_suffix)
-                if raw is None:
-                    return None
-                # Normalize to the documented v1r contract: bare MessageEnvelope
-                # bytes. WiFi TEDAPI v1 returns a full transport Message (with
-                # tail); without this re-extract, v1r callers keying their parse
-                # off self.v1r would misparse the wrapper as an envelope —
-                # protobuf decodes it leniently, yielding silently empty data.
-                # Normalizing here (at the transport boundary, where the routing
-                # decision was made) also avoids the race of callers re-checking
-                # self.lan_failed at parse time, which another thread may have
-                # flipped after this request was served over LAN.
-                wifi_msg = self._transport_message()
-                try:
-                    wifi_msg.ParseFromString(raw)
-                    return wifi_msg.message.SerializeToString()
-                except Exception as e:
-                    log.error(f"v1r: Error normalizing WiFi fallback response: {e}")
-                    return None
+                if self.wifi_v1r_fallback:
+                    # Strict opt-in route: always a signed transport, chosen
+                    # by _v1r_read_transport() from the current LAN state, so
+                    # a LAN recovery mid-call can't reach legacy WiFi. A
+                    # failed request returns None; it must not retry legacy WiFi.
+                    log.debug("v1r: LAN down — routing primary query via signed WiFi v1r")
+                    return self._v1r_call(
+                        self._v1r_read_transport(), "post_v1r",
+                        self._envelope_bytes(pb_bytes), self.din,
+                    )
+                if self.wifi_session:
+                    log.debug("v1r: LAN down — routing primary query via WiFi TEDAPI")
+                    raw = self._post_tedapi_wifi(pb_bytes, url_suffix)
+                    if raw is None:
+                        return None
+                    # Normalize to the documented v1r contract: bare
+                    # MessageEnvelope bytes. WiFi TEDAPI v1 returns a full
+                    # transport Message (with tail); without this
+                    # re-extract, v1r callers keying their parse off
+                    # self.v1r would misparse the wrapper as an envelope —
+                    # protobuf decodes it leniently, yielding silently
+                    # empty data. Normalizing here (at the transport
+                    # boundary, where the routing decision was made) also
+                    # avoids the race of callers re-checking
+                    # self.lan_failed at parse time, which another thread
+                    # may have flipped after this request was served over
+                    # LAN.
+                    wifi_msg = self._transport_message()
+                    try:
+                        wifi_msg.ParseFromString(raw)
+                        return wifi_msg.message.SerializeToString()
+                    except Exception as e:
+                        log.error(f"v1r: Error normalizing WiFi fallback response: {e}")
+                        return None
+                log.error("v1r: LAN down and no WiFi fallback configured")
+                return None
 
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message
