@@ -2,7 +2,7 @@
 
 ### Proxy t109 (26 Oct 2026)
 
-* Upgraded to pyPowerwall v0.22.0 - see the library release notes. Proxy-visible changes:
+* Upgraded to pyPowerwall v0.22.1 - see the library release notes. Proxy-visible changes:
   * FleetAPI mode: no more request storms and 429 cascades (#436, #433). Concurrent identical FleetAPI requests from the proxy's poller threads share one in-flight request, Tesla's retry guidance opens one shared backoff window (cache-missing reads return no data during it instead of waiting), and cache expiry is jittered.
   * New `PW_FLEETAPI_HTTP=1.1` setting forces HTTP/1.1 for all FleetAPI requests, an escape hatch for intermittent HTTP/2 connection-reuse errors (`COMPRESSION_ERROR`, h2 state errors). Reported in `/stats` under `config`.
   * `/api/system_status` in TEDAPI mode on Powerwall 2: `instantaneous_max_charge_power` / `instantaneous_max_discharge_power` are filled (they were `0`), and `/vitals` `TEPOD--` blocks carry `POD_available_charge_power` / `POD_available_dischg_power` (#429).
