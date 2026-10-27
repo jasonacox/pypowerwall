@@ -230,10 +230,9 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
 
 > **⚠️ WARNING: USE AT YOUR OWN RISK**
 >
-> We aren't trying to be pedantic, but we want to be clear about how serious
-> this control is. `dispatch_battery_power()` takes direct control of your
-> Powerwall's battery through an undocumented Tesla command. It is meant only
-> for people who know what they are doing.
+> `dispatch_battery_power()` takes direct control of your Powerwall's battery
+> through an undocumented Tesla command. It is meant only for people who know
+> what they are doing.
 >
 > - A **discharge** overrides the backup reserve and the grid export setting.
 >   It can drain the battery below your reserve, leaving you **without backup
