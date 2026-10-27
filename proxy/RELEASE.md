@@ -1,8 +1,12 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t109 (unreleased)
+### Proxy t109 (26 Oct 2026)
 
-* FleetAPI mode: fixed the thundering-herd request storm behind the HTTP/2 failure bursts and Tesla 429 cascades reported on EU sites (#433). When `PW_CACHE_EXPIRE` expired, every proxy poller thread issued its own identical FleetAPI fetch (6-8 `live_status` GETs within tens of milliseconds, 1,332 HTTP 429s vs 547 HTTP 200s in a 10-minute log). The library now coalesces concurrent identical FleetAPI GETs into a single in-flight request, honors Tesla's "Retry in N seconds" guidance (Retry-After header or 429 body) with one shared backoff window, and jitters cache expiry so endpoints cached together don't all expire on the same tick. New `PW_FLEETAPI_HTTP=1.1` setting forces HTTP/1.1 for all FleetAPI requests - a clean escape hatch for the intermittent HTTP/2 connection-reuse corruption (`COMPRESSION_ERROR`, h2 state errors) instead of riding the failure-path fallback. Reported in `/stats` under `config`. New `pypowerwall/tests/unit/test_fleetapi_thundering_herd.py`.
+* Upgraded to pyPowerwall v0.22.1 - see the library release notes. Proxy-visible changes:
+  * FleetAPI mode: no more request storms and 429 cascades (#436, #433). Concurrent identical FleetAPI requests from the proxy's poller threads share one in-flight request, Tesla's retry guidance opens one shared backoff window (cache-missing reads return no data during it instead of waiting), and cache expiry is jittered.
+  * New `PW_FLEETAPI_HTTP=1.1` setting forces HTTP/1.1 for all FleetAPI requests, an escape hatch for intermittent HTTP/2 connection-reuse errors (`COMPRESSION_ERROR`, h2 state errors). Reported in `/stats` under `config`.
+  * `/api/system_status` in TEDAPI mode on Powerwall 2: `instantaneous_max_charge_power` / `instantaneous_max_discharge_power` are filled (they were `0`), and `/vitals` `TEPOD--` blocks carry `POD_available_charge_power` / `POD_available_dischg_power` (#429).
+* The library's new battery dispatch and signed Wi-Fi v1r failover are not exposed by the proxy.
 
 ### Proxy t108 (19 Oct 2026)
 
