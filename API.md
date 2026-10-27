@@ -248,11 +248,17 @@ events. Use short durations and renew as needed. An acknowledgement confirms
 acceptance, not measured power; read `power()` to check the effect. The
 gateway applies its operating limits. Gateway rejection status is logged.
 
-Observed on a Powerwall 3 (firmware 26.26.4, v1r LAN, export `battery_ok`):
-discharge beyond the home load is exported to the grid, `0` W holds the
-battery idle, requests above 10,000 W are rejected (status code 11), and no
-settings change. Not yet verified: charging, the backup-reserve floor, grid
-outages, and export or grid-charging restrictions.
+A dispatch overrides the backup reserve and the grid export setting: on a
+Powerwall 2 (Backup Gateway 1, firmware 26.34.0), a discharge with the reserve
+at 100% and export set to `pv_only` or `never` still discharged and exported
+the excess, and the gateway raised `BackfeedLimited` and
+`BatteryUnexpectedPower` alerts. On Powerwall 3 (v1r LAN; firmware 26.26.4 and
+26.26.11): discharge beyond the home load is exported (export `battery_ok`),
+a charge setpoint charges from the grid when grid charging is enabled, `0` W
+holds the battery idle, discharge requests above 10,000 W are rejected (status
+code 11), and no settings change. Not yet verified: grid outages, charging
+with grid charging disabled, and the reserve and export behavior on Powerwall
+3.
 
 The battery dispatch protobuf schema is documented by
 [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol).
