@@ -218,3 +218,21 @@ def test_schema_field_contract():
     real = request.fields_by_name['real_power'].message_type.fields_by_name
     assert (real['power_watts'].number, real['power_watts'].type) == (1, 1)  # double
     assert (real['duration_seconds'].number, real['duration_seconds'].type) == (2, 13)  # uint32
+
+
+@pytest.mark.parametrize('watts, action', [(5000, 'discharge 5000 W'), (-2000, 'charge 2000 W'), (0, 'hold 0 W')])
+def test_accepted_dispatch_logs_a_use_at_your_own_risk_warning(caplog, watts, action):
+    transport = transport_for()
+    with caplog.at_level('WARNING', logger='pypowerwall.tedapi.tedapi_v1r'):
+        assert transport.dispatch_battery_power('TEST_DIN', watts, 30)
+    [record] = [r for r in caplog.records if 'Battery dispatch accepted' in r.getMessage()]
+    assert record.levelname == 'WARNING'
+    assert f'{action} for 30 s' in record.getMessage()
+    assert 'use at your own risk' in record.getMessage()
+
+
+def test_failed_dispatch_and_resume_log_no_acceptance(caplog):
+    transport = transport_for(None)
+    assert transport.dispatch_battery_power('TEST_DIN', 500, 30) is None
+    assert transport_for().resume_battery_operation('TEST_DIN') == {'resume_battery_operation': True}
+    assert 'Battery dispatch accepted' not in caplog.text

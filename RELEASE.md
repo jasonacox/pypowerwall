@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* docs(v1r): battery dispatch is now clearly marked **use at your own risk** in README, API.md and the `dispatch_battery_power()` docstrings. A dispatch takes direct control of the battery through an undocumented Tesla command and overrides the backup reserve and grid export settings, and we don't know whether incorrect use could damage a home, a Powerwall system or the grid. The docstring no longer says it "does not change backup reserve" without saying the reserve is ignored while a dispatch runs. Each accepted dispatch is now logged at WARNING (action, watts, duration). Paired with pypowerwall-server's `PW_BATTERY_DISPATCH` opt-in (jasonacox/pypowerwall-server#185).
+
 ## v0.22.1 - Signed Wi-Fi v1r Native Reads
 
 * fix(tedapi): with `wifi_v1r_fallback=True` and the LAN failover tripped, native `/api/*` reads (`get_native_api()`, used for `/api/meters/aggregates`) now go through the selected signed transport's `api_get()` instead of the customer-session WiFi/LAN host loop, so a failed WiFi read no longer retries the dead LAN. A failed read returns `None`. Flag-off and LAN-healthy reads are unchanged. Hardware-validated read-only on a Powerwall 3 (v1r LAN + Wi-Fi, failover simulated with the LAN up): one login and one GET to the Wi-Fi host, none to the LAN, and the same gateway DIN on both routes; with the Wi-Fi host unreachable the read returned `None` without touching the LAN.
