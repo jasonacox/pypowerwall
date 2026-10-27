@@ -1311,6 +1311,16 @@ class Powerwall(object):
     def dispatch_battery_power(self, power_watts: float, duration_seconds: int) -> Optional[dict]:
         """Set battery power for 1-86400 seconds using a paired v1r RSA key.
 
+        USE AT YOUR OWN RISK. A dispatch takes direct control of the battery
+        through an undocumented Tesla command, and while it runs it overrides
+        the backup reserve and grid export settings (it doesn't change them):
+        a discharge can drain the battery below the reserve and export to the
+        grid with export set to pv_only or never, and a charge can draw from
+        the grid and may ignore the grid charging setting. Behavior during a
+        grid outage is untested. We don't know whether incorrect use could
+        damage a home, a Powerwall system or the grid. Each accepted dispatch
+        is logged at WARNING.
+
         Positive watts discharge; negative watts charge; zero requests zero
         battery power. A new dispatch replaces the active power and timer.
         The gateway resumes its configured mode at expiry, or on
@@ -1319,8 +1329,8 @@ class Powerwall(object):
         Returns the requested power and duration only after an acknowledgement,
         or None on failure/unsupported backend. An acknowledgement is not
         measured power: check power() to observe the result. Support depends
-        on firmware; the gateway applies its own operating limits. This does
-        not change config.json, backup reserve, tariff or manual backup events.
+        on firmware; the gateway applies its own operating limits. It doesn't
+        write config.json or tariff, or cancel manual backup events.
         Raises ValueError for non-finite/bool power or a non-integer/out-of-range
         duration, before any I/O.
         """

@@ -928,7 +928,11 @@ class TEDAPI:
         )
 
     def dispatch_battery_power(self, power_watts: float, duration_seconds: int) -> Optional[dict]:
-        """Request a timed battery power setpoint through signed v1r."""
+        """Request a timed battery power setpoint through signed v1r.
+
+        Use at your own risk: it overrides the backup reserve and grid export
+        settings (see Powerwall.dispatch_battery_power).
+        """
         from pypowerwall.helpers import validate_battery_dispatch
         validate_battery_dispatch(power_watts, duration_seconds)
         return self._battery_dispatch_command('dispatch_battery_power', power_watts, duration_seconds)

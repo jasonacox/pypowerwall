@@ -228,6 +228,33 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
 
 ### Timed Battery Dispatch (v1r mode only)
 
+> **⚠️ WARNING: USE AT YOUR OWN RISK**
+>
+> We aren't trying to be pedantic, but we want to be clear about how serious
+> this control is. `dispatch_battery_power()` takes direct control of your
+> Powerwall's battery through an undocumented Tesla command. It is meant only
+> for people who know what they are doing.
+>
+> - A **discharge** overrides the backup reserve and the grid export setting.
+>   It can drain the battery below your reserve, leaving you **without backup
+>   power** if the grid goes down, and it can **export to the grid** even with
+>   export set to `pv_only` or `never`, which may conflict with your utility
+>   agreement. On a Powerwall 2 (Backup Gateway 1, firmware 26.34.0), a
+>   discharge with the reserve at 100% and export `pv_only`/`never` still
+>   exported, and the gateway raised `BackfeedLimited` and
+>   `BatteryUnexpectedPower` alerts.
+> - A **charge** can draw power from the grid at your current rate, and may
+>   ignore the grid charging setting (not yet verified).
+> - Behavior during a grid outage, and on firmware we haven't tested, is
+>   unknown, and any Tesla firmware update could change it.
+>
+> **We have no idea whether incorrect use could damage your home, your
+> Powerwall system or the grid.** pyPowerwall is provided "as is", without
+> warranty of any kind (see the [MIT license](LICENSE)), and is not made or
+> supported by Tesla. **By calling it, you accept these risks and full
+> responsibility for the results.** Each accepted dispatch is logged at
+> WARNING.
+
 - `dispatch_battery_power(power_watts, duration_seconds)` → dict/None
   Send a local signed battery power setpoint. Positive watts discharge,
   negative watts charge, and zero requests zero battery power. Power must be
@@ -243,16 +270,13 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
   acknowledgement, including when no dispatch is active, or `None` on failure.
 
 Both require a paired v1r RSA key and use TEG request/response fields 37/38.
-They do not write `config.json`, reserve or tariff, or cancel manual backup
-events. Use short durations and renew as needed. An acknowledgement confirms
+They do not write `config.json`, the reserve setting or tariff, or cancel
+manual backup events, but a running dispatch ignores the reserve and export
+settings (see the warning above). Use short durations and renew as needed. An acknowledgement confirms
 acceptance, not measured power; read `power()` to check the effect. The
 gateway applies its operating limits. Gateway rejection status is logged.
 
-A dispatch overrides the backup reserve and the grid export setting: on a
-Powerwall 2 (Backup Gateway 1, firmware 26.34.0), a discharge with the reserve
-at 100% and export set to `pv_only` or `never` still discharged and exported
-the excess, and the gateway raised `BackfeedLimited` and
-`BatteryUnexpectedPower` alerts. On Powerwall 3 (v1r LAN; firmware 26.26.4 and
+On Powerwall 3 (v1r LAN; firmware 26.26.4 and
 26.26.11): discharge beyond the home load is exported (export `battery_ok`),
 a charge setpoint charges from the grid when grid charging is enabled, `0` W
 holds the battery idle, discharge requests above 10,000 W are rejected (status
