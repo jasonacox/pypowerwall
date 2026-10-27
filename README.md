@@ -416,12 +416,13 @@ Gateway limits and firmware support still apply.
 > `BatteryUnexpectedPower` alerts. Check your utility's export rules before
 > discharging above your home load, and keep durations short.
 
-Observed on a Powerwall 3 (firmware 26.26.4, v1r LAN, export `battery_ok`):
-discharge beyond the home load is exported to the grid, `0` W holds the
-battery idle while the home draws from the grid, requests above 10,000 W are
-rejected (status code 11), and mode, reserve, grid charging and export
-settings are unchanged afterwards. Not yet verified: charging (negative
-watts), behavior during a grid outage, behavior with grid charging disabled,
+Observed on Powerwall 3 (v1r LAN; firmware 26.26.4 single unit, 26.26.11 two
+units): discharge beyond the home load is exported to the grid (export
+`battery_ok`), a charge setpoint charges from the grid when grid charging is
+enabled, `0` W holds the battery idle while the home draws from the grid,
+requests above 10,000 W discharge are rejected (status code 11), and mode,
+reserve, grid charging and export settings are unchanged afterwards. Not yet
+verified: behavior during a grid outage, charging with grid charging disabled,
 and the reserve and export behavior above on Powerwall 3.
 
 Thanks to [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol)
