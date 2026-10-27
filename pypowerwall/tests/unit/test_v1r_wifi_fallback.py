@@ -108,6 +108,28 @@ def test_probe_exception_revokes_earlier_readiness():
     assert ted._wifi_v1r_ready_until == 0.0
 
 
+def test_failed_probe_clears_readiness_set_by_concurrent_probe():
+    """Probe B succeeds while probe A waits; A then fails. The last probe to
+    finish decides, so writes must not stay enabled."""
+    ted = _make_tedapi()
+
+    def concurrent_success_then_fail(*_args):
+        ted._wifi_v1r_ready_until = time.monotonic() + 60.0  # probe B finished
+        return None                                         # probe A fails
+
+    ted.wifi_v1r_transport.get_config_v1r.side_effect = concurrent_success_then_fail
+    assert ted.wifi_v1r_ready() is False
+    assert ted._wifi_v1r_ready_until == 0.0
+
+    def concurrent_success_then_raise(*_args):
+        ted._wifi_v1r_ready_until = time.monotonic() + 60.0
+        raise RuntimeError("down")
+
+    ted.wifi_v1r_transport.get_config_v1r.side_effect = concurrent_success_then_raise
+    assert ted.wifi_v1r_ready() is False
+    assert ted._wifi_v1r_ready_until == 0.0
+
+
 def test_probe_failure_does_not_set_readiness():
     ted = _make_tedapi()
     ted.wifi_v1r_transport.get_config_v1r.return_value = None

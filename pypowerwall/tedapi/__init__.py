@@ -853,10 +853,14 @@ class TEDAPI:
             return False
         try:
             if self.wifi_v1r_transport.get_config_v1r(self.din) is None:
+                # Clear again: a concurrent probe may have succeeded while
+                # this one waited, and the last probe to finish decides.
+                self._wifi_v1r_ready_until = 0.0
                 return False
             self._wifi_v1r_ready_until = time.monotonic() + 60.0
             return True
         except Exception as exc:
+            self._wifi_v1r_ready_until = 0.0
             log.warning("v1r: WiFi fallback probe failed: %s", exc)
             return False
 
