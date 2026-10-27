@@ -511,6 +511,28 @@ def test_get_din_reuses_existing_wifi_v1r_token():
     ted.wifi_v1r_transport.login.assert_not_called()
 
 
+def test_get_din_relogs_in_when_cached_token_is_rejected():
+    ted = _make_tedapi()
+    ted.wifi_v1r_transport.token = "expired-token"
+    ted.wifi_v1r_transport.login.return_value = True
+    ted.wifi_v1r_transport.get_din.side_effect = [None, "WIFI_V1R_DIN"]
+    assert ted.get_din(force=True) == "WIFI_V1R_DIN"
+    ted.wifi_v1r_transport.login.assert_called_once()
+
+
+def test_cold_failover_relogs_in_when_cached_token_is_rejected():
+    """A token left from an earlier attempt may have expired; cold failover
+    must log in again rather than retrying it forever."""
+    ted = _make_tedapi()
+    ted.din = None
+    ted.wifi_session = None
+    ted.wifi_v1r_transport.token = "expired-token"
+    ted.wifi_v1r_transport.login.return_value = True
+    ted.wifi_v1r_transport.get_din.side_effect = [None, "WIFI_V1R_DIN"]
+    assert ted._v1r_cold_failover() == "WIFI_V1R_DIN"
+    ted.wifi_v1r_transport.login.assert_called_once()
+
+
 def test_get_din_strict_does_not_fallback_to_wifi_tedapi():
     ted = _make_tedapi()
     ted.wifi_session = MagicMock()

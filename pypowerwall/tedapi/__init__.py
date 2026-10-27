@@ -697,10 +697,7 @@ class TEDAPI:
                 # recovery mid-call never reaches legacy Wi-Fi TEDAPI.
                 transport = self._v1r_read_transport()
                 if transport is not None:
-                    if not transport.token and not transport.login():
-                        din = None
-                    else:
-                        din = transport.get_din()
+                    din = self._signed_din(transport)
             else:
                 din = self._fetch_wifi_din() if self.wifi_session else None
         else:
@@ -825,6 +822,17 @@ class TEDAPI:
         if not self._wifi_v1r_requested():
             return self.v1r_transport
         return self.wifi_v1r_transport
+
+    @staticmethod
+    def _signed_din(transport) -> Optional[str]:
+        """DIN over a signed v1r transport. Reuses the token, and logs in
+        again when there is none or the DIN fetch fails (get_din() doesn't
+        re-login on 401/403, and during a cold start nothing else refreshes
+        an expired token)."""
+        din = transport.get_din() if transport.token else None
+        if not din and transport.login():
+            din = transport.get_din()
+        return din
 
     def _v1r_call(self, transport, method: str, *args, **kwargs):
         """Call method on the selected signed-v1r transport."""
@@ -2025,9 +2033,7 @@ class TEDAPI:
                 )
                 return None
             try:
-                if not transport.token and not transport.login():
-                    return None
-                din = transport.get_din()
+                din = self._signed_din(transport)
             except Exception as exc:
                 log.error("v1r: signed WiFi v1r cold failover failed: %s", exc)
                 return None
