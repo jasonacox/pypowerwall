@@ -360,8 +360,8 @@ class TEDAPI:
 
         wifi_v1r_fallback (v1r with a wifi_host, opt-in) extends the same
         LAN->WiFi failover to signed v1r operations: config writes, TEGMessages
-        (max backup/backup events) and islanding use a second TEDAPIv1r
-        transport pointed at wifi_host when lan_failed is set. It is for
+        (max backup/backup events), islanding and get_native_api() use a second
+        TEDAPIv1r transport pointed at wifi_host when lan_failed is set. It is for
         servers that explicitly want local control to survive a wired-LAN
         outage; the read-only wifi_v1r_ready() probe gates writes.
 
@@ -3638,8 +3638,10 @@ class TEDAPI:
         """
         Fetch a classic gateway local API endpoint (e.g. /api/meters/aggregates)
         using the customer login (Bearer token). Tries the primary gateway and,
-        when configured and failover is on, the WiFi fallback host. Returns a
-        dict or None when the endpoint is not available on this firmware.
+        when configured and failover is on, the WiFi fallback host. With
+        wifi_v1r_fallback and the LAN failover tripped, it instead uses only
+        the signed transport _v1r_read_transport() selects. Returns a dict or
+        None when the endpoint is not available on this firmware.
         """
         if not self._customer_password():
             return None
@@ -3648,6 +3650,16 @@ class TEDAPI:
             log.debug(f"Gateway local API busy - skipping {path}")
             return None
         try:
+            if self._wifi_v1r_requested():
+                # Strict opt-in route: the one signed transport the selector
+                # picks (WiFi, or the LAN if it just recovered), with its own
+                # token and 401/403 re-login. No second host: the customer
+                # session's host loop would retry the dead LAN and add a
+                # timeout to every poll. A missing transport returns None.
+                transport = self._v1r_read_transport()
+                if transport is not None and not transport.token and not transport.login():
+                    return None
+                return self._v1r_call(transport, "api_get", path)
             # Host order is chosen under _customer_lock: _lan_reset() clears
             # customer_host under it, so a stale order can't outlive the reset
             hosts = [self.gw_ip]
