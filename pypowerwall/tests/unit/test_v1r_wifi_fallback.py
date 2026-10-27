@@ -645,3 +645,140 @@ def test_post_tedapi_lan_recovery_mid_call_stays_signed():
             patch.object(ted, "_envelope_bytes", return_value=b"env"):
         assert ted._post_tedapi(b"request") == b"lan"
     legacy.assert_not_called()
+
+
+# --- Native /api/* reads (get_native_api) ---
+# The flagged, LAN-failed leader reads native endpoints through the selected
+# signed transport's api_get() only: no customer-session host loop, so a
+# failed WiFi read never retries the dead LAN.
+
+AGGREGATES = {s: {"instant_power": 0} for s in ("site", "battery", "load", "solar")}
+
+
+def _native_tedapi():
+    ted = _make_tedapi()
+    ted.wifi_v1r_transport.token = "wifi-token"
+    ted.wifi_v1r_transport.api_get.return_value = {"ok": 1}
+    ted.api_session = MagicMock()
+    return ted
+
+
+def test_native_read_uses_wifi_v1r_api_get():
+    ted = _native_tedapi()
+    with patch.object(ted, "_native_get") as legacy:
+        assert ted.get_native_api("/api/meters/aggregates") == {"ok": 1}
+    ted.wifi_v1r_transport.api_get.assert_called_once_with("/api/meters/aggregates")
+    ted.wifi_v1r_transport.login.assert_not_called()  # token reused
+    ted.v1r_transport.api_get.assert_not_called()
+    legacy.assert_not_called()
+
+
+def test_native_read_signed_failure_does_not_retry_lan():
+    ted = _native_tedapi()
+    ted.wifi_v1r_transport.api_get.return_value = None
+    with patch.object(ted, "_native_get") as legacy:
+        assert ted.get_native_api("/api/meters/aggregates") is None
+    ted.wifi_v1r_transport.api_get.assert_called_once()
+    ted.v1r_transport.api_get.assert_not_called()
+    legacy.assert_not_called()
+    ted.api_session.get.assert_not_called()
+    ted.api_session.post.assert_not_called()
+
+
+def test_native_read_logs_in_when_wifi_v1r_has_no_token():
+    ted = _native_tedapi()
+    ted.wifi_v1r_transport.token = None
+    ted.wifi_v1r_transport.login.return_value = True
+    assert ted.get_native_api("/api/meters/aggregates") == {"ok": 1}
+    ted.wifi_v1r_transport.login.assert_called_once()
+    ted.wifi_v1r_transport.api_get.assert_called_once()
+
+
+def test_native_read_failed_login_returns_none():
+    ted = _native_tedapi()
+    ted.wifi_v1r_transport.token = None
+    ted.wifi_v1r_transport.login.return_value = False
+    with patch.object(ted, "_native_get") as legacy:
+        assert ted.get_native_api("/api/meters/aggregates") is None
+    ted.wifi_v1r_transport.api_get.assert_not_called()
+    legacy.assert_not_called()
+
+
+def test_native_read_without_transport_does_not_fallback():
+    ted = _native_tedapi()
+    ted.wifi_v1r_transport = None
+    with patch.object(ted, "_native_get") as legacy:
+        assert ted.get_native_api("/api/meters/aggregates") is None
+    ted.v1r_transport.api_get.assert_not_called()
+    legacy.assert_not_called()
+
+
+def test_native_read_lan_recovery_mid_call_stays_signed():
+    ted = _native_tedapi()
+    ted.v1r_transport.token = "lan-token"
+    ted.v1r_transport.api_get.return_value = {"lan": 1}
+    with patch.object(ted, "_wifi_v1r_requested", side_effect=[True, False]), \
+            patch.object(ted, "_native_get") as legacy:
+        assert ted.get_native_api("/api/meters/aggregates") == {"lan": 1}
+    ted.wifi_v1r_transport.api_get.assert_not_called()
+    legacy.assert_not_called()
+
+
+def test_native_meters_aggregates_uses_wifi_v1r():
+    ted = _native_tedapi()
+    ted.wifi_v1r_transport.api_get.return_value = AGGREGATES
+    with patch.object(ted, "_native_get") as legacy:
+        assert ted.get_native_meters_aggregates(force=True) == AGGREGATES
+    legacy.assert_not_called()
+
+
+def test_native_read_signed_wire_calls_on_wifi_host():
+    """Real TEDAPIv1r, mocked at its HTTP session: one login and one Bearer
+    GET, both to wifi_host, and nothing to the LAN or the customer session."""
+    ted = _native_tedapi()
+    transport = _auth_transport(token=None)
+    transport.password = "pw"
+    ted.wifi_v1r_transport = transport
+    login = MagicMock(status_code=200)
+    login.json.return_value = {"token": "wifi-token"}
+    ok = MagicMock(status_code=200)
+    ok.json.return_value = AGGREGATES
+    transport.session.post.return_value = login
+    transport.session.get.return_value = ok
+    assert ted.get_native_api("/api/meters/aggregates") == AGGREGATES
+    assert transport.session.post.call_args.args[0] == "https://192.168.1.39/api/login/Basic"
+    get = transport.session.get.call_args
+    assert get.args[0] == "https://192.168.1.39/api/meters/aggregates"
+    assert get.kwargs["headers"]["Authorization"] == "Bearer wifi-token"
+    ted.v1r_transport.api_get.assert_not_called()
+    ted.api_session.get.assert_not_called()
+    ted.api_session.post.assert_not_called()
+
+
+def _legacy_native_hosts(ted):
+    calls = []
+    with patch.object(ted, "_native_get", side_effect=lambda h, p: calls.append(h)):
+        assert ted.get_native_api("/api/x") is None
+    return calls
+
+
+def test_native_read_flag_off_keeps_legacy_host_loop():
+    ted = _native_tedapi()
+    ted.wifi_v1r_fallback = False
+    assert _legacy_native_hosts(ted) == ["192.168.1.39", "10.42.1.1"]
+    ted.wifi_v1r_transport.api_get.assert_not_called()
+    ted.v1r_transport.api_get.assert_not_called()
+
+
+def test_native_read_flag_on_lan_healthy_keeps_legacy_host_loop():
+    ted = _native_tedapi()
+    ted.lan_failed = False
+    assert _legacy_native_hosts(ted) == ["10.42.1.1", "192.168.1.39"]
+    ted.wifi_v1r_transport.api_get.assert_not_called()
+
+
+def test_native_read_flag_on_failover_off_keeps_lan_only():
+    ted = _native_tedapi()
+    ted.failover = False
+    assert _legacy_native_hosts(ted) == ["10.42.1.1"]
+    ted.wifi_v1r_transport.api_get.assert_not_called()
