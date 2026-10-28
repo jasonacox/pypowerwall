@@ -22,9 +22,16 @@ def test_generates_a_private_certificate_once_and_reuses_it(tmp_path):
 
 
 def test_each_install_gets_its_own_key(tmp_path):
-    a, _ = https_certificate(directory=str(tmp_path / "a"))
-    b, _ = https_certificate(directory=str(tmp_path / "b"))
+    _, a = https_certificate(directory=str(tmp_path / "a"))
+    _, b = https_certificate(directory=str(tmp_path / "b"))
     assert open(a, "rb").read() != open(b, "rb").read()
+
+
+def test_generates_without_fchmod(tmp_path, monkeypatch):
+    """Windows has no os.fchmod: generation still works."""
+    monkeypatch.delattr(os, "fchmod")
+    cert, key = https_certificate(directory=str(tmp_path / "tls"))
+    assert os.path.isfile(cert) and os.path.isfile(key)
 
 
 def test_user_certificate_wins_and_needs_both_files(tmp_path):

@@ -2819,7 +2819,8 @@ def https_certificate(cert="", key="", directory=None):
     )
     # The private key is owner-only from before anything is written
     fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    os.fchmod(fd, 0o600)
+    if hasattr(os, "fchmod"):  # POSIX; Windows has no owner-only mode bits
+        os.fchmod(fd, 0o600)
     with os.fdopen(fd, "wb") as file:
         file.write(private_key.private_bytes(
             serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
