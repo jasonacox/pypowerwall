@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(proxy): `PW_HTTPS=yes` uses a self-signed certificate generated once per install (`$PW_AUTH_PATH/tls`, else next to `server.py`) instead of the bundled `localhost.pem`, a private key shared by every proxy and missing from the Docker image (HTTPS failed to start there). New `PW_HTTPS_CERT` / `PW_HTTPS_KEY`, as in pypowerwall-server. Proxy t110.
+
 ## v0.22.2 - Battery Dispatch: Use at Your Own Risk
 
 * docs(v1r): battery dispatch is now clearly marked **use at your own risk** in README, API.md and the `dispatch_battery_power()` docstrings. A dispatch takes direct control of the battery through an undocumented Tesla command and overrides the backup reserve and grid export settings, and we don't know whether incorrect use could damage a home, a Powerwall system or the grid. The docstring no longer says it "does not change backup reserve" without saying the reserve is ignored while a dispatch runs. Each accepted dispatch is now logged at WARNING (action, watts, duration). Paired with pypowerwall-server's `PW_BATTERY_DISPATCH` opt-in (jasonacox/pypowerwall-server#185). (#446)

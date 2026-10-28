@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t110 (unreleased)
+
+* `PW_HTTPS=yes` uses a self-signed certificate generated once for each install, in `$PW_AUTH_PATH/tls` (or next to `server.py`) and reused, instead of the bundled `localhost.pem`. That file was one private key shared by every proxy, and it wasn't in the Docker image, so HTTPS failed to start there. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server.
+
 ### Proxy t109 (26 Oct 2026)
 
 * Upgraded to pyPowerwall v0.22.1 - see the library release notes. Proxy-visible changes:

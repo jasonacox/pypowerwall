@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t109"
+BUILD = "t110"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -223,6 +223,8 @@ browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
 timeout = int(os.getenv("PW_TIMEOUT", "5"))
 pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
 https_mode = os.getenv("PW_HTTPS", "no")
+https_cert = os.getenv("PW_HTTPS_CERT", "")
+https_key = os.getenv("PW_HTTPS_KEY", "")
 port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
 siteid = os.getenv("PW_SITEID", None)
@@ -336,6 +338,8 @@ proxystats = {
         "PW_TIMEOUT": timeout,
         "PW_POOL_MAXSIZE": pool_maxsize,
         "PW_HTTPS": https_mode,
+        "PW_HTTPS_CERT": _masked(https_cert) or None,
+        "PW_HTTPS_KEY": _masked(https_key) or None,
         "PW_PORT": port,
         "PW_STYLE": style,
         "PW_SITEID": _masked(siteid),
@@ -2762,6 +2766,75 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
+def https_certificate(cert="", key="", directory=None):
+    """(certfile, keyfile) for PW_HTTPS=yes.
+
+    PW_HTTPS_CERT/PW_HTTPS_KEY win (both or neither). Otherwise a self-signed
+    certificate is generated once, unique to this install, in
+    $PW_AUTH_PATH/tls (else next to this file) and reused; an expired one is
+    replaced. The proxy used to ship one localhost.pem, a private key shared
+    by every install (and missing from the Docker image).
+    """
+    import datetime
+    import ipaddress
+    import socket
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    if cert or key:
+        if not (cert and key):
+            raise ValueError("PW_HTTPS_CERT and PW_HTTPS_KEY must be set together")
+        return cert, key
+    directory = directory or os.path.join(
+        authpath or os.path.dirname(os.path.abspath(__file__)), "tls")
+    cert_path = os.path.join(directory, "proxy.crt")
+    key_path = os.path.join(directory, "proxy.key")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        with open(cert_path, "rb") as file:
+            existing = x509.load_pem_x509_certificate(file.read())
+        expires = getattr(existing, "not_valid_after_utc", None)  # cryptography 42+
+        if expires is None:
+            expires = existing.not_valid_after.replace(tzinfo=datetime.timezone.utc)
+        if expires > now and os.path.isfile(key_path):
+            return cert_path, key_path
+    except (OSError, ValueError):
+        pass
+    os.makedirs(directory, exist_ok=True)
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    names = [x509.DNSName("localhost")]
+    hostname = socket.gethostname()
+    if hostname and hostname != "localhost":
+        names.append(x509.DNSName(hostname))
+    names += [x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
+              x509.IPAddress(ipaddress.ip_address("::1"))]
+    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "pypowerwall-proxy")])
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject).issuer_name(subject)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(minutes=5))
+        .not_valid_after(now + datetime.timedelta(days=3650))
+        .add_extension(x509.SubjectAlternativeName(names), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(private_key, hashes.SHA256())
+    )
+    # The private key is owner-only from before anything is written
+    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    os.fchmod(fd, 0o600)
+    with os.fdopen(fd, "wb") as file:
+        file.write(private_key.private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption()))
+    with open(cert_path, "wb") as file:
+        file.write(certificate.public_bytes(serialization.Encoding.PEM))
+    log.info(f"Generated a self-signed HTTPS certificate in {directory}")
+    return cert_path, key_path
+
+
 # noinspection PyTypeChecker
 def main() -> None:
     with ThreadingHTTPServer((bind_address, port), Handler) as server:
@@ -2770,9 +2843,7 @@ def main() -> None:
             log.debug("Activating HTTPS")
             # ssl.wrap_socket() was removed in Python 3.12 - use SSLContext instead
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ctx.load_cert_chain(
-                os.path.join(os.path.dirname(__file__), "localhost.pem")
-            )
+            ctx.load_cert_chain(*https_certificate(https_cert, https_key))
             server.socket = ctx.wrap_socket(server.socket, server_side=True)
 
         # noinspection PyBroadException
