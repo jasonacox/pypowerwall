@@ -69,3 +69,23 @@ def test_a_non_ascii_hostname_is_left_out(tmp_path, monkeypatch):
     sans = x509.load_pem_x509_certificate(open(cert, "rb").read()).extensions.get_extension_for_class(
         x509.SubjectAlternativeName).value
     assert sans.get_values_for_type(x509.DNSName) == ["localhost"]
+
+
+def test_an_expired_certificate_is_replaced(tmp_path):
+    import datetime
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.x509.oid import NameOID
+    directory = str(tmp_path / "tls")
+    cert, key = https_certificate(directory=directory)
+    # Sign with the existing key so expiry is the only reason to replace it
+    private = serialization.load_pem_private_key(open(key, "rb").read(), None)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "old")])
+    past = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    expired = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+               .public_key(private.public_key()).serial_number(1)
+               .not_valid_before(past).not_valid_after(past + datetime.timedelta(days=1))
+               .sign(private, hashes.SHA256()))
+    with open(cert, "wb") as f:
+        f.write(expired.public_bytes(serialization.Encoding.PEM))
+    https_certificate(directory=directory)
+    assert x509.load_pem_x509_certificate(open(cert, "rb").read()).subject != name
