@@ -2767,14 +2767,9 @@ class Handler(BaseHTTPRequestHandler):
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
 def https_certificate(cert="", key="", directory=None):
-    """(certfile, keyfile) for PW_HTTPS=yes.
-
-    PW_HTTPS_CERT/PW_HTTPS_KEY win (both or neither). Otherwise a self-signed
-    certificate is generated once, unique to this install, in
-    $PW_AUTH_PATH/tls (else next to this file) and reused; an expired one is
-    replaced. The proxy used to ship one localhost.pem, a private key shared
-    by every install (and missing from the Docker image).
-    """
+    """(certfile, keyfile) for PW_HTTPS=yes: the user's pair if given (both
+    required), else a self-signed pair generated once per install in
+    $PW_AUTH_PATH/tls (or next to this file), replaced when expired."""
     import datetime
     import ipaddress
     import socket
