@@ -285,6 +285,8 @@ Environment Variables Influencing Behavior:
 - `PW_SUPPRESS_NETWORK_ERRORS` Suppress repetitive network error logs.
 - `PW_NETWORK_ERROR_RATE_LIMIT` Maximum network errors logged per minute per function (default 5).
 - `PW_CONTROL_SECRET` Enables control endpoints & required `token` value.
+- `PW_HTTPS` `yes` serves HTTPS (a self-signed certificate generated once per install in `$PW_AUTH_PATH/tls`); `http` keeps HTTP with Secure cookies behind a TLS proxy (default `no`).
+- `PW_HTTPS_CERT` / `PW_HTTPS_KEY` Paths to your own PEM certificate and key files for `PW_HTTPS=yes` (both or neither).
 - `PW_TEDAPI_API_VERSION` TEDAPI query/protobuf set: `V2024_06` (default, legacy QueryType path) or `V2026_06` (pre-signed GraphQL / bearer path).
 - `PW_FIRMWARE_CHECK_INTERVAL` Seconds between gateway firmware version polls for firmware change logging (default 300, minimum 30).
 - `PW_FAILOVER` Fall back between transports and modes (default `yes`). Only `no` (case-insensitive) turns it off, pinning the configured transports: the v1r leader stays on the wired LAN, failed requests are not rerouted, and the proxy never falls back from local to FleetAPI or Cloud mode.

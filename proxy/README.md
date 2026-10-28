@@ -159,7 +159,7 @@ There are three settings for PW_HTTPS:
 * PW_HTTPS='http' - Run in HTTP mode but simulate HTTPS when behind https proxy.
 * PW_HTTPS='yes' - Run in HTTPS mode using self-signed certificate.
 
-With `PW_HTTPS='yes'` the proxy generates a self-signed certificate once, unique to your install, in `$PW_AUTH_PATH/tls` (or next to `server.py`) and reuses it; browsers warn until you accept or trust it. To use your own certificate, set `PW_HTTPS_CERT` and `PW_HTTPS_KEY` to PEM files.
+With `PW_HTTPS='yes'` the proxy generates a self-signed certificate once, unique to your install, in `$PW_AUTH_PATH/tls` (or next to `server.py`) and reuses it; browsers warn until you accept or trust it. To use your own certificate, set `PW_HTTPS_CERT` and `PW_HTTPS_KEY` to the paths of its PEM certificate and key files.
 
 ## Network Robustness for Weak WiFi
 

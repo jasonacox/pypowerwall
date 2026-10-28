@@ -2769,8 +2769,8 @@ class Handler(BaseHTTPRequestHandler):
 def https_certificate(cert="", key="", directory=None):
     """(certfile, keyfile) for PW_HTTPS=yes: the user's pair if given (both
     required), else a self-signed pair generated once per install in
-    $PW_AUTH_PATH/tls (or next to this file), replaced when expired."""
-    import datetime
+    $PW_AUTH_PATH/tls (or next to this file), regenerated when missing,
+    broken or expired."""
     import ipaddress
     import socket
     from cryptography import x509
@@ -2788,12 +2788,17 @@ def https_certificate(cert="", key="", directory=None):
     key_path = os.path.join(directory, "proxy.key")
     now = datetime.datetime.now(datetime.timezone.utc)
     try:
+        # Reuse only a pair that loads together (catches an empty, truncated or
+        # mismatched key); the password callback stops an encrypted key from
+        # prompting. ssl.SSLError is an OSError.
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
+            cert_path, key_path, password=lambda: b"")
         with open(cert_path, "rb") as file:
             existing = x509.load_pem_x509_certificate(file.read())
         expires = getattr(existing, "not_valid_after_utc", None)  # cryptography 42+
         if expires is None:
             expires = existing.not_valid_after.replace(tzinfo=datetime.timezone.utc)
-        if expires > now and os.path.isfile(key_path):
+        if expires > now:
             return cert_path, key_path
     except (OSError, ValueError):
         pass
@@ -2801,7 +2806,7 @@ def https_certificate(cert="", key="", directory=None):
     private_key = ec.generate_private_key(ec.SECP256R1())
     names = [x509.DNSName("localhost")]
     hostname = socket.gethostname()
-    if hostname and hostname != "localhost":
+    if hostname and hostname != "localhost" and hostname.isascii():
         names.append(x509.DNSName(hostname))
     names += [x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
               x509.IPAddress(ipaddress.ip_address("::1"))]

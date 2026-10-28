@@ -174,3 +174,5 @@ tools/tedapi-lan/credentials.json
 fleet_tokens.json
 tedapi_rsa_*
 *.bak
+# Proxy HTTPS certificate generated per install (PW_HTTPS=yes)
+/proxy/tls/
