@@ -174,3 +174,5 @@ tools/tedapi-lan/credentials.json
 fleet_tokens.json
 tedapi_rsa_*
 *.bak
+# Private keys, e.g. a PW_HTTPS_KEY made with the proxy README command
+*.key
