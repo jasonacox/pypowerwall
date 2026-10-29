@@ -12,6 +12,8 @@ tedapi_rsa_*
 
 # Certificates and keys
 *.pem
+# The bundled PW_HTTPS=yes default (a public, shared key)
+!localhost.pem
 *.der
 *.key
 

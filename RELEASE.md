@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-* docs(v1r): battery dispatch now **boldly warns that it could void or limit your Tesla Powerwall warranty**. The Powerwall warranty quoted in #450 gives unlimited cycles only for solar self-consumption, time-based control and backup; any other use is limited to 37.8 MWh of total energy throughput. Added to the README and API.md warnings, the `dispatch_battery_power()` docstrings and the WARNING logged for each accepted dispatch. Thanks @longzheng for spotting this and @BJReplay for working out what the limit means in daily use. (#450)
+* fix(proxy): `PW_HTTPS=yes` starts again in Docker (images since v0.15.0 left out the bundled `localhost.pem`), with an HTTPS-aware health check. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server; the shared bundled certificate stays the default and now logs a warning. Proxy t110. (#449)
+* docs(v1r): battery dispatch now **boldly warns that it could void or limit your Tesla Powerwall warranty**. The Powerwall warranty quoted in #450 gives unlimited cycles only for solar self-consumption, time-based control and backup; any other use is limited to 37.8 MWh of total energy throughput. Added to the README and API.md warnings, the `dispatch_battery_power()` docstrings and the WARNING logged for each accepted dispatch. Thanks @longzheng for spotting this and @BJReplay for working out what the limit means in daily use. (#451, #450)
 
 ## v0.22.2 - Battery Dispatch: Use at Your Own Risk
 

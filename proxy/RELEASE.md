@@ -1,5 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t110 (unreleased)
+
+* Fix: `PW_HTTPS=yes` failed to start in Docker images since v0.15.0, which left out the bundled `localhost.pem`. The images ship it again, and the health check uses HTTPS when `PW_HTTPS=yes`.
+* New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server. The bundled certificate stays the default, so existing setups that trust it keep working; its private key is public, so the proxy now logs a warning when it's in use. See the README to make your own.
+
 ### Proxy t109 (26 Oct 2026)
 
 * Upgraded to pyPowerwall v0.22.1 - see the library release notes. Proxy-visible changes:
