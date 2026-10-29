@@ -229,6 +229,7 @@ def test_accepted_dispatch_logs_a_use_at_your_own_risk_warning(caplog, watts, ac
     assert record.levelname == 'WARNING'
     assert f'{action} for 30 s' in record.getMessage()
     assert 'use at your own risk' in record.getMessage()
+    assert 'warranty' in record.getMessage()
 
 
 def test_failed_dispatch_and_resume_log_no_acceptance(caplog):

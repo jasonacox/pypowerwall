@@ -228,11 +228,16 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
 
 ### Timed Battery Dispatch (v1r mode only)
 
-> **⚠️ WARNING: USE AT YOUR OWN RISK**
+> **⚠️ WARNING: USE AT YOUR OWN RISK. IT COULD VOID YOUR WARRANTY.**
 >
 > `dispatch_battery_power()` takes direct control of your Powerwall's battery
 > through an undocumented Tesla command. It is meant only for people who know
 > what they are doing.
+>
+> **Battery dispatch could void or limit your Tesla Powerwall warranty.** The
+> Powerwall warranty quoted in [#450](https://github.com/jasonacox/pypowerwall/issues/450) gives unlimited cycles only for
+> solar self-consumption, time-based control and backup; any other use is
+> limited to 37.8 MWh of total energy throughput. Check your warranty first.
 >
 > - A **discharge** overrides the backup reserve and the grid export setting.
 >   It can drain the battery below your reserve, leaving you **without backup

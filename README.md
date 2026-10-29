@@ -398,7 +398,7 @@ Supported control operations:
 | Operation mode | `set_mode(mode)` | `self_consumption`, `backup` |
 | Grid charging | `set_grid_charging(enable)` | `True` / `False` |
 | Grid export | `set_grid_export(mode)` | `battery_ok`, `pv_only`, `never` |
-| Timed battery power (**use at your own risk**) | `dispatch_battery_power(power_watts, duration_seconds)` | Positive W discharge, negative W charge; 1-86400 seconds |
+| Timed battery power (**use at your own risk; could void your warranty**) | `dispatch_battery_power(power_watts, duration_seconds)` | Positive W discharge, negative W charge; 1-86400 seconds |
 | Resume battery operation | `resume_battery_operation()` | Release the active dispatch |
 
 Battery dispatch uses a signed TEG command rather than a configuration write.
@@ -412,11 +412,16 @@ Use short durations (for example 30 seconds) and renew as needed. The reply
 acknowledges acceptance; check `pw.power()` to observe actual battery power.
 Gateway limits and firmware support still apply.
 
-> **⚠️ WARNING: USE AT YOUR OWN RISK**
+> **⚠️ WARNING: USE AT YOUR OWN RISK. IT COULD VOID YOUR WARRANTY.**
 >
 > `dispatch_battery_power()` takes direct control of your Powerwall's battery
 > through an undocumented Tesla command. It is meant only for people who know
 > what they are doing.
+>
+> **Battery dispatch could void or limit your Tesla Powerwall warranty.** The
+> Powerwall warranty quoted in [#450](https://github.com/jasonacox/pypowerwall/issues/450) gives unlimited cycles only for
+> solar self-consumption, time-based control and backup; any other use is
+> limited to 37.8 MWh of total energy throughput. Check your warranty first.
 >
 > - A **discharge** overrides the backup reserve and the grid export setting.
 >   It can drain the battery below your reserve, leaving you **without backup
@@ -735,7 +740,7 @@ print("System Status: %r\n" % pw.system_status())
     get_grid_export()         # Get the current grid export mode
     schedule_max_backup(duration_seconds) # Schedule manual backup event (max backup / storm watch) - v1r mode only
     cancel_max_backup()       # Cancel the current manual backup event - v1r mode only
-    dispatch_battery_power(power_watts, duration_seconds) # Timed battery power setpoint - v1r only, use at your own risk
+    dispatch_battery_power(power_watts, duration_seconds) # Timed battery power setpoint - v1r only, use at your own risk (could void your warranty)
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes

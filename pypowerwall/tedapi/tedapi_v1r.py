@@ -602,8 +602,9 @@ class TEDAPIv1r:
         """Send a timed setpoint: positive watts discharge, negative charge.
 
         Use at your own risk: a dispatch overrides the backup reserve and grid
-        export settings (see Powerwall.dispatch_battery_power). Each accepted
-        dispatch is logged at WARNING.
+        export settings and could void your warranty (see
+        Powerwall.dispatch_battery_power). Each accepted dispatch is logged at
+        WARNING.
         """
         validate_battery_dispatch(power_watts, duration_seconds)
         teg = combined_pb2.TEGMessages()
@@ -614,7 +615,8 @@ class TEDAPIv1r:
             action = 'discharge' if power_watts > 0 else 'charge' if power_watts < 0 else 'hold'
             log.warning(
                 "Battery dispatch accepted: %s %g W for %d s. A dispatch overrides "
-                "the backup reserve and grid export settings - use at your own risk.",
+                "the backup reserve and grid export settings and could void your "
+                "warranty - use at your own risk.",
                 action, abs(float(power_watts)), duration_seconds)
             return {'power_watts': float(power_watts), 'duration_seconds': duration_seconds}
         return None

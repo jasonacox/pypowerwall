@@ -1257,7 +1257,7 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         """Set battery power temporarily via the signed v1r command.
 
         Use at your own risk: it overrides the backup reserve and grid export
-        settings (see Powerwall.dispatch_battery_power).
+        settings and could void your warranty (see Powerwall.dispatch_battery_power).
         """
         return self.tedapi.dispatch_battery_power(power_watts, duration_seconds)
 
