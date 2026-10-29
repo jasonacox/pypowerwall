@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(connect): the final `Unable to connect to Powerwall` error now says why the configured mode failed, e.g. `(local mode: RSA private key not found at ...)` or `(local mode: v1r mode requires password or gw_pwd)`. With failover on, the modes tried afterwards fail for unrelated reasons (`No sites found for nobody@nowhere.com`, a missing `.pypowerwall.auth`), and the real cause was only in an earlier fallback warning. Log text only: `connect()` still returns `False` and the fallback order is unchanged. (#373)
+
 ## v0.23.0 - Proxy HTTPS Certificates and Dispatch Warranty Warning
 
 * fix(proxy): `PW_HTTPS=yes` starts again in Docker (images since v0.15.0 left out the bundled `localhost.pem`), with an HTTPS-aware health check. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server; the shared bundled certificate stays the default and now logs a warning. Proxy t110. (#449)

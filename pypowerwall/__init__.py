@@ -240,6 +240,7 @@ class Powerwall(object):
         self.client: Optional[PyPowerwallBase] = None
         self.fleetapi = fleetapi
         self.retry_modes = retry_modes
+        self._connect_error = None  # First connect() failure: the configured mode's (#373)
         self.failover = failover  # False: configured mode/transport only (no fallback)
         self.wifi_v1r_fallback = bool(wifi_v1r_fallback)
         self.mode = "unknown"
@@ -299,8 +300,13 @@ class Powerwall(object):
 
         # Connect to Powerwall
         if not self.connect(self.retry_modes):
-            log.error("Unable to connect to Powerwall. Verify host, credentials, and network connectivity."
-                     " Enable debug logging for detailed diagnostics.")
+            # Name the configured mode's own failure: with failover on, the modes tried
+            # after it fail for unrelated reasons (no cloud auth file, no FleetAPI
+            # config), and a config error such as a missing RSA key or the v1r/bearer
+            # mutual exclusion is otherwise only visible in an earlier warning (#373).
+            reason = f" ({self._connect_error})" if self._connect_error else ""
+            log.error(f"Unable to connect to Powerwall{reason}. Verify host, credentials, and network connectivity."
+                      " Enable debug logging for detailed diagnostics.")
 
     def connect(self, retry=False) -> bool:
         """
@@ -335,6 +341,7 @@ class Powerwall(object):
         # reached the reconnect call again (#366).
         configured_mode = (self.mode, self.cloudmode, self.fleetapi,
                            self.tedapi, self.tedapi_mode)
+        self._connect_error = None
         total_wait = 0
         count = 0
         while count < 3:
@@ -411,6 +418,7 @@ class Powerwall(object):
                         self.tedapi_mode = "off"
                     return True
                 except Exception as exc:
+                    self._note_connect_error("local", exc)
                     log.warning(f"Failed to connect using Local mode: {exc}"
                                 + (" - trying fleetapi mode." if self.failover else ""))
                     self.tedapi = False
@@ -430,6 +438,7 @@ class Powerwall(object):
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
+                    self._note_connect_error("fleetapi", exc)
                     log.warning(f"Failed to connect using FleetAPI mode: {exc}"
                                 + (" - trying cloud mode." if self.failover else ""))
                     self.mode = "cloud"
@@ -445,6 +454,7 @@ class Powerwall(object):
                     self.siteid = self.client.siteid
                     return True
                 except Exception as exc:
+                    self._note_connect_error("cloud", exc)
                     log.warning(f"Failed to connect using Cloud mode: {exc}"
                                 + (" - trying local mode." if self.failover else ""))
                     self.mode = "local"
@@ -454,6 +464,11 @@ class Powerwall(object):
         (self.mode, self.cloudmode, self.fleetapi,
          self.tedapi, self.tedapi_mode) = configured_mode
         return False
+
+    def _note_connect_error(self, mode: str, exc: Exception) -> None:
+        """Keep the first connect() failure, i.e. the configured mode's, for the final error."""
+        if self._connect_error is None:
+            self._connect_error = f"{mode} mode: {exc}"
 
     def _no_client(self) -> bool:
         """Return True (and log an error) if no backend client is connected."""
