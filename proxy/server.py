@@ -2766,74 +2766,22 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
-def https_certificate(cert="", key="", directory=None):
-    """(certfile, keyfile) for PW_HTTPS=yes: the user's pair if given (both
-    required), else a self-signed pair generated once per install in
-    $PW_AUTH_PATH/tls (or next to this file), regenerated when missing,
-    broken or expired."""
-    import ipaddress
-    import socket
-    from cryptography import x509
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-    from cryptography.x509.oid import NameOID
+BUNDLED_CERT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "localhost.pem")
 
+
+def https_certificate(cert="", key=""):
+    """(certfile, keyfile) for PW_HTTPS=yes: the user's pair if given (both
+    required), else the bundled localhost.pem (certificate and key in one file)."""
     if cert or key:
         if not (cert and key):
             raise ValueError("PW_HTTPS_CERT and PW_HTTPS_KEY must be set together")
         return cert, key
-    directory = directory or os.path.join(
-        authpath or os.path.dirname(os.path.abspath(__file__)), "tls")
-    cert_path = os.path.join(directory, "proxy.crt")
-    key_path = os.path.join(directory, "proxy.key")
-    now = datetime.datetime.now(datetime.timezone.utc)
-    try:
-        # Reuse only a pair that loads together (catches an empty, truncated or
-        # mismatched key); the password callback stops an encrypted key from
-        # prompting. ssl.SSLError is an OSError.
-        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
-            cert_path, key_path, password=lambda: b"")
-        with open(cert_path, "rb") as file:
-            existing = x509.load_pem_x509_certificate(file.read())
-        expires = getattr(existing, "not_valid_after_utc", None)  # cryptography 42+
-        if expires is None:
-            expires = existing.not_valid_after.replace(tzinfo=datetime.timezone.utc)
-        if expires > now:
-            return cert_path, key_path
-    except (OSError, ValueError):
-        pass
-    os.makedirs(directory, exist_ok=True)
-    private_key = ec.generate_private_key(ec.SECP256R1())
-    names = [x509.DNSName("localhost")]
-    hostname = socket.gethostname()
-    if hostname and hostname != "localhost" and hostname.isascii():
-        names.append(x509.DNSName(hostname))
-    names += [x509.IPAddress(ipaddress.ip_address("127.0.0.1")),
-              x509.IPAddress(ipaddress.ip_address("::1"))]
-    subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "pypowerwall-proxy")])
-    certificate = (
-        x509.CertificateBuilder()
-        .subject_name(subject).issuer_name(subject)
-        .public_key(private_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=5))
-        .not_valid_after(now + datetime.timedelta(days=3650))
-        .add_extension(x509.SubjectAlternativeName(names), critical=False)
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .sign(private_key, hashes.SHA256())
+    log.warning(
+        "HTTPS is using the bundled localhost.pem, which every proxy shares: its "
+        "private key is public. For a private certificate, set PW_HTTPS_CERT and "
+        "PW_HTTPS_KEY (see the proxy README)."
     )
-    # The private key is owner-only from before anything is written
-    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    if hasattr(os, "fchmod"):  # POSIX; Windows has no owner-only mode bits
-        os.fchmod(fd, 0o600)
-    with os.fdopen(fd, "wb") as file:
-        file.write(private_key.private_bytes(
-            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption()))
-    with open(cert_path, "wb") as file:
-        file.write(certificate.public_bytes(serialization.Encoding.PEM))
-    log.info(f"Generated a self-signed HTTPS certificate in {directory}")
-    return cert_path, key_path
+    return BUNDLED_CERT, None
 
 
 # noinspection PyTypeChecker

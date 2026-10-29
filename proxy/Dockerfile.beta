@@ -31,7 +31,7 @@ COPY beta.txt /app/requirements.txt
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Copy proxy server files (only runtime-needed files)
-COPY server.py transform.py __init__.py /app/
+COPY server.py transform.py __init__.py localhost.pem /app/
 COPY web/ /app/web/
 # Copy local pypowerwall source for beta testing (placed here by upload-beta.sh)
 COPY pypowerwall/ /app/pypowerwall/
@@ -39,7 +39,7 @@ EXPOSE 8675
 
 # Default healthcheck — uses curl (already installed) to hit the /health endpoint.
 # Compose files that set their own healthcheck will override this.
-# PW_HTTPS=yes serves TLS only (self-signed certificate, hence -k)
+# PW_HTTPS=yes serves TLS only (self-signed certificate by default, hence -k)
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
     CMD if [ "$PW_HTTPS" = "yes" ]; then curl -skf https://localhost:8675/health; \
         else curl -sf http://localhost:8675/health; fi > /dev/null || exit 1

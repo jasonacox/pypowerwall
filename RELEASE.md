@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* fix(proxy): `PW_HTTPS=yes` uses a self-signed certificate generated once per install (`$PW_AUTH_PATH/tls`, else next to `server.py`) instead of the bundled `localhost.pem`, a private key shared by every proxy and missing from the Docker image (HTTPS failed to start there). New `PW_HTTPS_CERT` / `PW_HTTPS_KEY`, as in pypowerwall-server. Proxy t110.
+* fix(proxy): `PW_HTTPS=yes` starts again in Docker (images since v0.15.0 left out the bundled `localhost.pem`), with an HTTPS-aware health check. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server; the shared bundled certificate stays the default and now logs a warning. Proxy t110.
 
 ## v0.22.2 - Battery Dispatch: Use at Your Own Risk
 

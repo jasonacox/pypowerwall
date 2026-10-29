@@ -159,7 +159,15 @@ There are three settings for PW_HTTPS:
 * PW_HTTPS='http' - Run in HTTP mode but simulate HTTPS when behind https proxy.
 * PW_HTTPS='yes' - Run in HTTPS mode using self-signed certificate.
 
-With `PW_HTTPS='yes'` the proxy generates a self-signed certificate once, unique to your install, in `$PW_AUTH_PATH/tls` (or next to `server.py`) and reuses it; browsers warn until you accept or trust it. To use your own certificate, set `PW_HTTPS_CERT` and `PW_HTTPS_KEY` to the paths of its PEM certificate and key files.
+With `PW_HTTPS='yes'` the proxy uses the bundled `localhost.pem` unless you set your own certificate. Every proxy shares that certificate and its private key is public, so it encrypts traffic but doesn't prove the server is yours; the proxy logs a warning at startup. For a private certificate, generate one (add your host's name or IP to `subjectAltName`):
+
+```bash
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+  -subj "/CN=pypowerwall" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+  -keyout proxy.key -out proxy.crt
+```
+
+Then set `PW_HTTPS_CERT` and `PW_HTTPS_KEY` to the paths of `proxy.crt` and `proxy.key` (in Docker, mount them into the container and use the container paths).
 
 ## Network Robustness for Weak WiFi
 
