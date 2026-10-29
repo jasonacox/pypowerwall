@@ -931,7 +931,7 @@ class TEDAPI:
         """Request a timed battery power setpoint through signed v1r.
 
         Use at your own risk: it overrides the backup reserve and grid export
-        settings (see Powerwall.dispatch_battery_power).
+        settings and could void your warranty (see Powerwall.dispatch_battery_power).
         """
         from pypowerwall.helpers import validate_battery_dispatch
         validate_battery_dispatch(power_watts, duration_seconds)

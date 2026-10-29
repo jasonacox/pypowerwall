@@ -1312,8 +1312,9 @@ class Powerwall(object):
         """Set battery power for 1-86400 seconds using a paired v1r RSA key.
 
         USE AT YOUR OWN RISK. A dispatch takes direct control of the battery
-        through an undocumented Tesla command, and while it runs it overrides
-        the backup reserve and grid export settings (it doesn't change them):
+        through an undocumented Tesla command and could void or limit your
+        Tesla warranty (#450). While it runs it overrides the backup reserve
+        and grid export settings (it doesn't change them):
         a discharge can drain the battery below the reserve and export to the
         grid with export set to pv_only or never, and a charge can draw from
         the grid and may ignore the grid charging setting. Behavior during a
