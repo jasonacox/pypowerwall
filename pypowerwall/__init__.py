@@ -326,6 +326,12 @@ class Powerwall(object):
         # failover left it: after local -> cloud, a reconnect must try local
         # again first, or recovery can never get back to the gateway (#424).
         self.mode, self.cloudmode, self.fleetapi = self._configured_mode
+        # The client goes with the mode/TEDAPI snapshot below: fallback replaces
+        # it with each mode's attempt, and leaving the last one (an
+        # unauthenticated cloud client) made a local-only install raise
+        # PyPowerwallCloudTeslaNotConnected until the next successful connect
+        # (#454).
+        previous_client = self.client
         # Snapshot the configured mode - fallback mutates self.mode/cloudmode/
         # fleetapi/tedapi/tedapi_mode, and a total failure must not leave that
         # mutation behind. tedapi/tedapi_mode matter as much as mode: the local-
@@ -449,6 +455,8 @@ class Powerwall(object):
                                 + (" - trying local mode." if self.failover else ""))
                     self.mode = "local"
                     continue
+        if previous_client is not None:
+            self.client = previous_client
         # Total failure - restore the configured mode so a subsequent
         # connect() retries in the configured order, not where fallback left off
         (self.mode, self.cloudmode, self.fleetapi,

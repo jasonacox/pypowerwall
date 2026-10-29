@@ -275,6 +275,23 @@ class TestConnectFailureRestoresMode:
         assert pw.tedapi_mode == "full"
         assert pw.mode == "local"
 
+    def test_failed_reconnect_keeps_previous_client(self, mock_clients):
+        """A fully-failed reconnect must not leave the last fallback attempt
+        (an unauthenticated cloud client) as pw.client (#454): a local-only
+        install then raised PyPowerwallCloudTeslaNotConnected on every call
+        until the gateway came back."""
+        import pypowerwall
+        pw = pypowerwall.Powerwall(host="192.168.91.1", password="", gw_pwd="ABCDELNDYT")
+        saved_client = pw.client
+        assert saved_client is mock_clients['tedapi'].return_value
+        self._fail_all(mock_clients)
+        assert pw.connect(retry=False) is False
+        assert pw.client is saved_client
+        # The gateway is back: the next reconnect replaces it as usual
+        mock_clients['tedapi'].return_value = new_client = MagicMock()
+        assert pw.connect(retry=False) is True
+        assert pw.client is new_client
+
     def test_reconnect_after_cloud_failover_tries_configured_mode_first(self, mock_clients):
         """After a *successful* failover to cloud, a later connect() must start
         from the configured local mode again, not resume in cloud (#424): the
