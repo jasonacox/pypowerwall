@@ -2771,10 +2771,20 @@ BUNDLED_CERT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "localho
 
 def https_certificate(cert="", key=""):
     """(certfile, keyfile) for PW_HTTPS=yes: the user's pair if given (both
-    required), else the bundled localhost.pem (certificate and key in one file)."""
+    required, and it must load), else the bundled localhost.pem (certificate
+    and key in one file)."""
     if cert or key:
         if not (cert and key):
             raise ValueError("PW_HTTPS_CERT and PW_HTTPS_KEY must be set together")
+        try:
+            # Without a password callback, OpenSSL would block startup prompting
+            # for an encrypted key's passphrase. ssl.SSLError is an OSError.
+            ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
+                cert, key, password=lambda: b"")
+        except OSError as e:
+            raise ValueError(
+                f"PW_HTTPS_CERT/PW_HTTPS_KEY can't be loaded (encrypted keys aren't supported): {e}"
+            ) from e
         return cert, key
     log.warning(
         "HTTPS is using the bundled localhost.pem, which every proxy shares: its "
