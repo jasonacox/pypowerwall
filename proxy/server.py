@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t109"
+BUILD = "t110"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -223,6 +223,8 @@ browser_cache = int(os.getenv("PW_BROWSER_CACHE", "0"))
 timeout = int(os.getenv("PW_TIMEOUT", "5"))
 pool_maxsize = int(os.getenv("PW_POOL_MAXSIZE", "15"))
 https_mode = os.getenv("PW_HTTPS", "no")
+https_cert = os.getenv("PW_HTTPS_CERT", "")
+https_key = os.getenv("PW_HTTPS_KEY", "")
 port = int(os.getenv("PW_PORT", "8675"))
 style = os.getenv("PW_STYLE", "clear") + ".js"
 siteid = os.getenv("PW_SITEID", None)
@@ -336,6 +338,8 @@ proxystats = {
         "PW_TIMEOUT": timeout,
         "PW_POOL_MAXSIZE": pool_maxsize,
         "PW_HTTPS": https_mode,
+        "PW_HTTPS_CERT": _masked(https_cert) or None,
+        "PW_HTTPS_KEY": _masked(https_key) or None,
         "PW_PORT": port,
         "PW_STYLE": style,
         "PW_SITEID": _masked(siteid),
@@ -2762,6 +2766,34 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log.debug(f"Socket broken sending API response to client [doGET]: {exc}")
 
+BUNDLED_CERT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "localhost.pem")
+
+
+def https_certificate(cert="", key=""):
+    """(certfile, keyfile) for PW_HTTPS=yes: the user's pair if given (both
+    required, and it must load), else the bundled localhost.pem (certificate
+    and key in one file)."""
+    if cert or key:
+        if not (cert and key):
+            raise ValueError("PW_HTTPS_CERT and PW_HTTPS_KEY must be set together")
+        try:
+            # Without a password callback, OpenSSL would block startup prompting
+            # for an encrypted key's passphrase. ssl.SSLError is an OSError.
+            ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(
+                cert, key, password=lambda: b"")
+        except OSError as e:
+            raise ValueError(
+                f"PW_HTTPS_CERT/PW_HTTPS_KEY can't be loaded (encrypted keys aren't supported): {e}"
+            ) from e
+        return cert, key
+    log.warning(
+        "HTTPS is using the bundled localhost.pem, which every proxy shares: its "
+        "private key is public. For a private certificate, set PW_HTTPS_CERT and "
+        "PW_HTTPS_KEY (see the proxy README)."
+    )
+    return BUNDLED_CERT, None
+
+
 # noinspection PyTypeChecker
 def main() -> None:
     with ThreadingHTTPServer((bind_address, port), Handler) as server:
@@ -2770,9 +2802,7 @@ def main() -> None:
             log.debug("Activating HTTPS")
             # ssl.wrap_socket() was removed in Python 3.12 - use SSLContext instead
             ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            ctx.load_cert_chain(
-                os.path.join(os.path.dirname(__file__), "localhost.pem")
-            )
+            ctx.load_cert_chain(*https_certificate(https_cert, https_key))
             server.socket = ctx.wrap_socket(server.socket, server_side=True)
 
         # noinspection PyBroadException

@@ -33,14 +33,16 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy proxy server files (only runtime-needed files)
-COPY server.py transform.py __init__.py /app/
+COPY server.py transform.py __init__.py localhost.pem /app/
 COPY web/ /app/web/
 EXPOSE 8675
 
 # Default healthcheck — uses curl (already installed) to hit the /health endpoint.
 # Compose files that set their own healthcheck will override this.
+# PW_HTTPS=yes serves TLS only (self-signed certificate by default, hence -k)
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=60s \
-    CMD curl -sf http://localhost:8675/health > /dev/null || exit 1
+    CMD if [ "$PW_HTTPS" = "yes" ]; then curl -skf https://localhost:8675/health; \
+        else curl -sf http://localhost:8675/health; fi > /dev/null || exit 1
 
 # Run under tini as PID 1 so orphaned children are reaped and signals forwarded.
 ENTRYPOINT ["tini", "--"]
