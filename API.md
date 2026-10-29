@@ -74,7 +74,7 @@ pw = pypowerwall.Powerwall(
 - `auto_select`: Auto-select best connection mode
 - `retry_modes`: Retry connection attempts
 - `gw_pwd`: Full gateway password from QR sticker (used for TEDAPI and v1r modes; last 5 chars auto-derived for Basic login)
-- `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 wired LAN)
+- `rsa_key_path`: Path to RSA-4096 private key for v1r LAN TEDAPI mode (Powerwall 3 on the LAN, wired or Wi-Fi client)
 - `wifi_host`: Optional WiFi TEDAPI host used for follower queries in v1r mode and, with `wifi_v1r_fallback`, the strict signed leader route after LAN failover
 - `tedapi_api_version`: TEDAPI query/protobuf set — `"V2024_06"` (default, legacy QueryType path) or `"V2026_06"` (pre-signed GraphQL / bearer path)
 - `tedapi_auth_mode`: TEDAPI authentication — `"basic"` (default, WiFi access point) or `"bearer"` (solar-only gateways over the wired LAN)
@@ -381,7 +381,7 @@ pw.set_grid_export("pv_only")
 - **Cloud Mode:** Set `cloudmode=True` and provide your Tesla account email to use the Tesla Cloud API.
 - **FleetAPI:** Set `fleetapi=True` to use Tesla FleetAPI (requires setup).
 - **TEDAPI:** Use `gw_pwd` for TEDAPI mode (advanced/local diagnostics).
-- **v1r LAN:** Use `gw_pwd` + `rsa_key_path` for Powerwall 3 wired LAN access with full local control.
+- **v1r LAN:** Use `gw_pwd` + `rsa_key_path` for Powerwall 3 LAN access (wired or Wi-Fi client) with full local control. With a Backup Gateway 2, `gw_pwd` is the password on the Powerwall 3's QR label.
 - **Caching:** The library caches API responses for 5 seconds by default (`pwcacheexpire`).
 - **Authentication:** Supports both cookie and bearer token authentication (`authmode`).
 

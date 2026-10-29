@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* docs(v1r): v1r also works on the Powerwall 3's address as a client of the home Wi-Fi, not only on its wired address: confirmed on a Powerwall 3 with a Backup Gateway 2 (firmware 26.34.2), with the same DIN and data on both. The requirements no longer say a wired vendor-subnet connection is needed. On Backup Gateway 2 sites, `gw_pwd` is the password on the Powerwall 3's QR label; the gateway's own label password gets a 401. Part of #387.
+
 ## v0.23.0 - Proxy HTTPS Certificates and Dispatch Warranty Warning
 
 * fix(proxy): `PW_HTTPS=yes` starts again in Docker (images since v0.15.0 left out the bundled `localhost.pem`), with an HTTPS-aware health check. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server; the shared bundled certificate stays the default and now logs a warning. Proxy t110. (#449)
