@@ -380,7 +380,10 @@ KEY_STATES = {
 PHYSICAL_PROOF_HINT = (
     "  Within about 10 minutes of registering, switch the Powerwall 3 On/Off\n"
     "  switch (left side of the unit, under the red rapid-shutdown flap) OFF\n"
-    "  for about 15 seconds, then back ON. Do not leave it off until the unit\n"
+    "  for about 15 seconds, then back ON. It is a small black rocker, not the\n"
+    "  large red rotary knob on the right side: on units that have one, that\n"
+    "  knob is the solar DC isolator, and turning it off does not verify the\n"
+    "  key (it only stops solar production). Do not leave it off until the unit\n"
     "  powers down: the gateway then drops off the network for minutes and the\n"
     "  window closes before it can report. A 2 second flick is debounced and\n"
     "  does nothing. On some units toggling one AC breaker also works."

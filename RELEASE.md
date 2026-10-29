@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* docs(v1r): the physical proof step now says which control on the Powerwall 3 to use. The On/Off switch is the small black rocker under the flap on the left side. It is not the large red rotary knob on the right side, which on units that have one is the solar DC isolator: turning it off stops only solar production, and the key stays in state 1. Updated in the README and in the `register` prompt (`PHYSICAL_PROOF_HINT`), and the README gets a second timing data point (Powerwall 3 + Backup Gateway 2, firmware 26.34.2: VERIFIED about 3 minutes after registration).
+
 ## v0.23.0 - Proxy HTTPS Certificates and Dispatch Warranty Warning
 
 * fix(proxy): `PW_HTTPS=yes` starts again in Docker (images since v0.15.0 left out the bundled `localhost.pem`), with an HTTPS-aware health check. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server; the shared bundled certificate stays the default and now logs a warning. Proxy t110. (#449)
