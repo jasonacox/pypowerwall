@@ -92,7 +92,7 @@ python3 -m pypowerwall authtoken
 python3 -m pypowerwall setup -headless
 ```
 
-> ⚠️ **Windows Users:** Native Windows Python bundles an OpenSSL build whose TLS 1.3 ClientHello fingerprint is rejected by Tesla during the PKCE token exchange. The token comes back "tainted" — `setup` and `register` fail with `403 Forbidden` on `owner-api.teslamotors.com`. **As of v0.16.1+, pypowerwall automatically caps TLS to 1.2 on Windows** to avoid this. If you still see 403 errors, use one of these alternatives:
+> ⚠️ **Windows and macOS Users:** Native Windows Python bundles an OpenSSL build whose TLS 1.3 ClientHello fingerprint is rejected by Tesla during the PKCE token exchange. The token comes back "tainted" — `setup` and `register` fail with `403 Forbidden` on `owner-api.teslamotors.com`. Python on macOS does the same (seen with Homebrew Python 3.14 + OpenSSL 3.6). **pypowerwall automatically caps TLS to 1.2 on Windows (v0.16.1+) and on macOS (next release)** to avoid this. If you still see 403 errors on Windows, use one of these alternatives:
 > * **[tesla_auth](https://github.com/adriankumpf/tesla_auth/releases) desktop app** — generates RT+AT tokens on Windows without Python TLS issues. Copy both tokens and use `setup -headless`.
 > * **Full Linux VM** (e.g. Hyper-V Ubuntu) — not WSL2, which lacks the GTK/WebKit stack needed for the WebView login window.
 > * **Another machine** (Mac, Linux, RPi) — run `authtoken` there and paste the tokens into `setup -headless` on Windows.

@@ -3,6 +3,7 @@
 ## Unreleased
 
 * docs(v1r): the physical proof step now says which control on the Powerwall 3 to use. The On/Off switch is the small black rocker under the flap on the left side. It is not the large red rotary knob on the right side, which on units that have one is the solar DC isolator: turning it off stops only solar production, and the key stays in state 1. Updated in the README and in the `register` prompt (`PHYSICAL_PROOF_HINT`), and the README gets a second timing data point (Powerwall 3 + Backup Gateway 2, firmware 26.34.2: VERIFIED about 3 minutes after registration).
+* fix(auth): cap Tesla auth TLS to 1.2 on macOS too, not only on Windows. On macOS (Homebrew Python 3.14.6, OpenSSL 3.6.3) a token refreshed under TLS 1.3 comes back "tainted": `/api/1/products` answers `403 forbidden` over both TLS 1.2 and 1.3, so `register` stops at site discovery. Refreshing the same account under TLS 1.2 gives a token that gets `200` over both; reproduced twice back to back. `_httpx_auth_verify()` (in `tesla_auth.py` and the vendored teslapy) and `v1r_register._ssl_ctx()` now apply the TLS 1.2 cap on `darwin` as well; Linux keeps the TLS 1.3 pin. Found while registering a v1r key for a Powerwall 3 with a Backup Gateway 2 (firmware 26.34.2). (#350)
 
 ## v0.23.0 - Proxy HTTPS Certificates and Dispatch Warranty Warning
 

@@ -105,12 +105,12 @@ def _ssl_ctx():
     """Build an SSLContext matching the platform-aware Tesla TLS policy.
 
     Mirrors _httpx_auth_verify() in tesla_auth.py:
-      * Windows: TLS 1.2 only — Windows OpenSSL's TLS 1.3 fingerprint is
-        rejected by Tesla, causing tainted tokens / 403 errors.
+      * Windows and macOS: TLS 1.2 only — their OpenSSL's TLS 1.3 fingerprint
+        is rejected by Tesla, causing tainted tokens / 403 errors.
       * Other platforms: strict TLS 1.3 pin (unchanged from pre-PR behaviour).
     """
     ctx = ssl.create_default_context()
-    if sys.platform == 'win32' and hasattr(ssl.TLSVersion, 'TLSv1_2'):
+    if sys.platform in ('win32', 'darwin') and hasattr(ssl.TLSVersion, 'TLSv1_2'):
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.maximum_version = ssl.TLSVersion.TLSv1_2
     elif hasattr(ssl.TLSVersion, 'TLSv1_3'):
