@@ -3696,7 +3696,9 @@ class TEDAPI:
         Bearer token - including the lifetime energy_imported / energy_exported
         accumulators that the TEDAPI payloads do not carry (issue #221).
         Returns None when the endpoint is unavailable, with a retry backoff so
-        unsupported gateways are not hammered on every poll.
+        unsupported gateways are not hammered on every poll. A failed fetch on a
+        gateway that has answered before returns the last good payload instead,
+        like the backoff and lock-contention paths do.
         """
         key = "native_meters_aggregates"
         if not force:
@@ -3725,7 +3727,14 @@ class TEDAPI:
                 return data
             # Endpoint missing/blocked - backoff before trying again
             self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
-            return None
+            # Serve the last good payload, as every poll inside the backoff window
+            # does. Returning None here made get_api_meters_aggregates() publish its
+            # stub zeros for this one poll: a lifetime counter that drops to 0 and
+            # comes back reads as a meter reset, and Home Assistant's energy
+            # dashboard counted a battery's whole lifetime again (seen on a Powerwall 3
+            # + Backup Gateway 2 when the local API failed right after a 90 s outage).
+            # A gateway that has never answered has no cache and still gets None.
+            return self.pwcache.get(key)
         finally:
             self._customer_lock.release()
 

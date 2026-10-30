@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): the lifetime `energy_imported` / `energy_exported` values in `/api/meters/aggregates` no longer drop to 0 for one poll when a fetch of the gateway's local API fails. `get_native_meters_aggregates()` now returns the last good payload when a fetch fails, as it already did during the 5-minute retry backoff and on lock contention. Before, the failing poll got `None` and the response kept the stub's 0s, so each counter went N → 0 → N. Home Assistant reads that as a meter reset: on a Powerwall 3 with a Backup Gateway 2 in v1r mode, one such poll right after a 90 s outage added the battery's whole lifetime (about 4.6 MWh charged and 4.5 MWh discharged) to the Energy dashboard. Gateways where the endpoint has never answered still get 0s, as before. (follow-up to #221)
+
 ## v0.23.1 - Reconnect, macOS Login and Battery Level Fixes
 
 Six fixes and doc updates from new contributor @wit3 (Salvatore Scalzi), each found and verified on his Powerwall 3 with a Backup Gateway 2 (firmware 26.34.2). Thank you!
