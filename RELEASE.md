@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* fix(connect): a reconnect that fails in every mode now keeps the client it had, along with the mode and TEDAPI state it already restored. Before, the last fallback attempt was left behind, usually an unauthenticated cloud client, so a local-only install raised `PyPowerwallCloudTeslaNotConnected` on every call until the gateway came back, even though it never uses cloud. Calls during an outage now fail the same way as before it started. The first connect is unchanged. (#454)
+* fix(connect): a reconnect that fails in every mode now keeps the client it had, together with the mode and TEDAPI state it runs in (after a failover to cloud, that is the cloud client in cloud mode). Before, the last fallback attempt was left behind, usually an unauthenticated cloud client, so a local-only install raised `PyPowerwallCloudTeslaNotConnected` on every call until the gateway came back, even though it never uses cloud. Calls during an outage now fail the same way as before it started. The first connect is unchanged. (#454)
 
 ## v0.23.0 - Proxy HTTPS Certificates and Dispatch Warranty Warning
 
