@@ -314,9 +314,9 @@ class Powerwall(object):
 
         Tries the configured mode first and, when failover is on (the
         default), falls back to the other modes (local -> fleetapi -> cloud ->
-        local) on failure. If every mode fails, the configured mode is restored
-        so a later connect() retries in the configured order. With
-        failover=False only the configured mode is tried.
+        local) on failure. Every call starts from the configured mode; if
+        every mode fails, the client, mode and TEDAPI state it started with
+        are kept. With failover=False only the configured mode is tried.
 
         Args:
             retry = If True, keep cycling through the modes (only the configured
@@ -328,17 +328,26 @@ class Powerwall(object):
         if self.mode == "unknown":
             log.error("Unable to determine mode to connect.")
             return False
+        # Snapshot the state this call starts with - the client together with
+        # the mode and TEDAPI state it runs in - for a total failure to put
+        # back. Fallback replaces the client with each mode's attempt and
+        # mutates the rest. Leaving the last attempt (an unauthenticated cloud
+        # client) made a local-only install raise
+        # PyPowerwallCloudTeslaNotConnected until the next successful connect
+        # (#454), and pairing the kept client with another mode would report
+        # one mode while serving another. tedapi/tedapi_mode matter as much as
+        # mode: the local-mode exception handler zeroes them, and a stale
+        # tedapi=False after a fully-failed connect(retry=False) wedged the
+        # proxy's TEDAPI recovery thread forever - its loop gate
+        # (`if not pw.tedapi: continue`) never reached the reconnect call
+        # again (#366).
+        previous = (self.client, self.mode, self.cloudmode, self.fleetapi,
+                    self.tedapi, self.tedapi_mode)
         # Start from the mode set at construction, not where a successful
         # failover left it: after local -> cloud, a reconnect must try local
         # again first, or recovery can never get back to the gateway (#424).
         self.mode, self.cloudmode, self.fleetapi = self._configured_mode
-        # Snapshot the configured mode - fallback mutates self.mode/cloudmode/
-        # fleetapi/tedapi/tedapi_mode, and a total failure must not leave that
-        # mutation behind. tedapi/tedapi_mode matter as much as mode: the local-
-        # mode exception handler zeroes them, and a stale tedapi=False after a
-        # fully-failed connect(retry=False) wedged the proxy's TEDAPI recovery
-        # thread forever - its loop gate (`if not pw.tedapi: continue`) never
-        # reached the reconnect call again (#366).
+        # Strict-mode retries (failover off) restart from here
         configured_mode = (self.mode, self.cloudmode, self.fleetapi,
                            self.tedapi, self.tedapi_mode)
         self._connect_error = None
@@ -459,10 +468,12 @@ class Powerwall(object):
                                 + (" - trying local mode." if self.failover else ""))
                     self.mode = "local"
                     continue
-        # Total failure - restore the configured mode so a subsequent
-        # connect() retries in the configured order, not where fallback left off
+        # Total failure - put the starting state back. A first connect has no
+        # client to keep, so its last attempt stays as before.
+        if previous[0] is not None:
+            self.client = previous[0]
         (self.mode, self.cloudmode, self.fleetapi,
-         self.tedapi, self.tedapi_mode) = configured_mode
+         self.tedapi, self.tedapi_mode) = previous[1:]
         return False
 
     def _note_connect_error(self, mode: str, exc: Exception) -> None:
