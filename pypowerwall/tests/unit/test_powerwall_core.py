@@ -99,6 +99,16 @@ def test_level_and_power(pw):
     assert p['site'] == 1000 and p['solar'] == 2000 and p['battery'] == -500 and p['load'] == 1500
 
 
+@pytest.mark.parametrize("raw, app", [(3.9, 0), (5.0, 0), (24.0, 20.0), (100.0, 100.0)])
+def test_level_scale_matches_tesla_app(pw, raw, app):
+    # Under the 5% reserve the app shows 0%, not a negative level
+    with patch.object(pw, 'poll', return_value={'percentage': raw}):
+        assert pw.level() == raw
+        scaled = pw.level(scale=True)
+        assert scaled == pytest.approx(app)
+        assert isinstance(scaled, float)  # 0.0, not int 0: the proxy serves it as JSON
+
+
 def test_grid_status(pw):
     assert pw.grid_status() == 'UP'
     assert pw.grid_status(type='numeric') == 1
