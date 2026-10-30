@@ -588,7 +588,8 @@ class Powerwall(object):
         Battery Level Percentage 
             Note: Tesla App reserves 5% of battery => ( (batterylevel / 0.95) - (5 / 0.95) )
         Args:
-            scale = If True, convert battery level to app scale value
+            scale = If True, convert battery level to app scale value (never below 0,
+                    like the Tesla App, when the battery dips under the 5% reserve)
         """
         # Return power level percentage for battery
         try:
@@ -596,7 +597,10 @@ class Powerwall(object):
             if payload is not None and 'percentage' in payload:
                 level = payload['percentage']
                 if scale:
-                    level = (level / 0.95) - (5 / 0.95)
+                    # Self-consumption can take the battery under the 5% reserve
+                    # (seen at 3.9%), where the formula goes negative; the Tesla
+                    # App shows 0%, as get_reserve() already does
+                    level = max(0, (level / 0.95) - (5 / 0.95))
                 return level
             return None
         except Exception as e:
