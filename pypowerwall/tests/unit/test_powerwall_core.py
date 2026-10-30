@@ -104,7 +104,9 @@ def test_level_scale_matches_tesla_app(pw, raw, app):
     # Under the 5% reserve the app shows 0%, not a negative level
     with patch.object(pw, 'poll', return_value={'percentage': raw}):
         assert pw.level() == raw
-        assert pw.level(scale=True) == pytest.approx(app)
+        scaled = pw.level(scale=True)
+        assert scaled == pytest.approx(app)
+        assert isinstance(scaled, float)  # 0.0, not int 0: the proxy serves it as JSON
 
 
 def test_grid_status(pw):

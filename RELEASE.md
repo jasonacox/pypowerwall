@@ -2,10 +2,7 @@
 
 ## Unreleased
 
-* fix: `level(scale=True)` no longer goes negative when the battery drops under Tesla's 5% reserve, which self-consumption can do (a Powerwall 3 reached 3.9% raw, so -1.1% on the app scale). It now stops at 0%, like the Tesla App and like `get_reserve()`. The raw `level()` is unchanged. This also covers the proxy's scaled `/api/system_status/soe`.
-
-## Unreleased
-
+* fix: `level(scale=True)` no longer goes negative when the battery drops under Tesla's 5% reserve, which self-consumption can do (a Powerwall 3 reached 3.9% raw, so -1.1% on the app scale). It now stops at 0%, like the Tesla App, `get_reserve()` and pypowerwall-server. The raw `level()` is unchanged. This also covers the proxy's scaled `/api/system_status/soe`. (#460)
 * fix(connect): a reconnect that fails in every mode now keeps the client it had, together with the mode and TEDAPI state it runs in (after a failover to cloud, that is the cloud client in cloud mode). Before, the last fallback attempt was left behind, usually an unauthenticated cloud client, so a local-only install raised `PyPowerwallCloudTeslaNotConnected` on every call until the gateway came back, even though it never uses cloud. Calls during an outage now fail the same way as before it started. The first connect is unchanged. (#454)
 * fix(connect): the final `Unable to connect to Powerwall` error now says why the configured mode failed, e.g. `(local mode: RSA private key not found at ...)` or `(local mode: v1r mode requires password or gw_pwd)`. With failover on, the modes tried afterwards fail for unrelated reasons (`No sites found for nobody@nowhere.com`, a missing `.pypowerwall.auth`), and the real cause was only in an earlier fallback warning. Log text only: `connect()` still returns `False` and the fallback order is unchanged. (#373)
 * docs(v1r): v1r also works on the Powerwall 3's address as a client of the home Wi-Fi, not only on its wired address: confirmed on a Powerwall 3 with a Backup Gateway 2 (firmware 26.34.2), with the same DIN and data on both. The requirements no longer say a wired vendor-subnet connection is needed. On Backup Gateway 2 sites, `gw_pwd` is the password on the Powerwall 3's QR label; the gateway's own label password gets a 401. Part of #387.

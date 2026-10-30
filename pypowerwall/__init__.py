@@ -600,7 +600,7 @@ class Powerwall(object):
                     # Self-consumption can take the battery under the 5% reserve
                     # (seen at 3.9%), where the formula goes negative; the Tesla
                     # App shows 0%, as get_reserve() already does
-                    level = max(0, (level / 0.95) - (5 / 0.95))
+                    level = max(0.0, (level / 0.95) - (5 / 0.95))
                 return level
             return None
         except Exception as e:
