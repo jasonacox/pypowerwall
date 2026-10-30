@@ -1,5 +1,12 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t111 (30 Oct 2026)
+
+* Upgraded to pyPowerwall v0.23.1 - see the library release notes. Proxy-visible changes:
+  * `/api/system_status/soe` (the Tesla App scale) no longer goes negative when the battery drops under the 5% reserve; it stops at `0.0`, like the Tesla App (#460).
+  * After a failover to cloud, a TEDAPI recovery attempt that fails in every mode keeps the working cloud connection (and `/stats` keeps `cloudmode: true`), instead of leaving an unauthenticated client that failed every call (#458, #454).
+  * When the proxy can't connect at startup, the final error names why the configured mode failed, e.g. a missing RSA key (#457, #373).
+
 ### Proxy t110 (28 Oct 2026)
 
 * Upgraded to pyPowerwall v0.23.0 - see the library release notes.
