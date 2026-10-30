@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(auth): cap Tesla auth TLS to 1.2 on macOS too, not only on Windows. On macOS (Homebrew Python 3.14.6, OpenSSL 3.6.3) a token refreshed under TLS 1.3 comes back "tainted": `/api/1/products` answers `403 forbidden` over both TLS 1.2 and 1.3, so `register` stops at site discovery. Refreshing the same account under TLS 1.2 gives a token that gets `200` over both; reproduced twice back to back. `_httpx_auth_verify()` (in `tesla_auth.py` and the vendored teslapy) and `v1r_register._ssl_ctx()` now apply the TLS 1.2 cap on `darwin` as well; Linux keeps the TLS 1.3 pin. Found while registering a v1r key for a Powerwall 3 with a Backup Gateway 2 (firmware 26.34.2). (#350)
+
 ## v0.23.0 - Proxy HTTPS Certificates and Dispatch Warranty Warning
 
 * fix(proxy): `PW_HTTPS=yes` starts again in Docker (images since v0.15.0 left out the bundled `localhost.pem`), with an HTTPS-aware health check. New `PW_HTTPS_CERT` / `PW_HTTPS_KEY` use your own certificate, as in pypowerwall-server; the shared bundled certificate stays the default and now logs a warning. Proxy t110. (#449)
