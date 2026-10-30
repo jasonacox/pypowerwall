@@ -7,7 +7,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/pypowerwall)](https://img.shields.io/pypi/pyversions/pypowerwall)
 [![PyPI Downloads](https://static.pepy.tech/badge/pypowerwall/month)](https://static.pepy.tech/badge/pypowerwall/month)
 
-pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems. For Powerwall 3 on wired LAN, the v1r TEDAPI mode provides full local access using RSA-signed protobuf messages without needing Wi-Fi access.
+pyPowerwall is a Python module to interface with Tesla Energy Gateways for Powerwall and solar power data. It supports local access to Powerwall, Powerwall 2, Powerwall+ and Powerwall 3 systems. It also provides Tesla Owner and FleetAPI cloud access for all systems including Solar-only systems. For Powerwall 3 on the home LAN, wired or as a Wi-Fi client, the v1r TEDAPI mode provides full local access using RSA-signed protobuf messages without connecting to the gateway's Wi-Fi access point.
 
 > ⚠️ **NOTICE:** As of Powerwall Firmware version 25.10.0, network routing to the TEDAPI endpoint (`192.168.91.1`) is no longer supported by Tesla. You must connect directly to the Powerwall's Wi‑Fi access point to access TEDAPI data.
 
@@ -54,7 +54,7 @@ python3 -m pypowerwall setup -v1r
 
 The Tesla Powerwall, Powerwall 2 and Powerwall+ have a local LAN based Web Portal and API that you can use to monitor your Powerwall. It requires that you (or your installer) have the IP address (see scan above) and set up *Customer Login* credentials on your Powerwall Gateway. That is all that is needed to connect. 
 
-The Powerwall 3 does not have a traditional Web Portal or API but you can access it via the cloud (see options 2 and 3), via the TEDAPI Wi-Fi access point (option 4), or via the wired LAN using v1r TEDAPI (option 5).
+The Powerwall 3 does not have a traditional Web Portal or API but you can access it via the cloud (see options 2 and 3), via the TEDAPI Wi-Fi access point (option 4), or via the LAN using v1r TEDAPI (option 5), wired or with the Powerwall 3 as a client of your home Wi-Fi.
 
 Locally accessible extended device vitals metrics are available using the TEDAPI method (see options 4 and 5 below).
 
@@ -172,7 +172,7 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
 
 ### v1r LAN TEDapi Setup - Option 5 (Powerwall 3 Wired LAN)
 
-The Powerwall 3 exposes endpoints on the **wired LAN** (the vendor/third-party Ethernet port) that provide local access to Powerwall data without needing Wi-Fi access to `192.168.91.1`. This is especially useful for always-on monitoring setups where a wired Ethernet connection to the Powerwall gateway is available.
+The Powerwall 3 exposes endpoints on the **wired LAN** (the vendor/third-party Ethernet port) that provide local access to Powerwall data without needing Wi-Fi access to `192.168.91.1`. This is especially useful for always-on monitoring setups. On firmware that answers on the home LAN address, the Powerwall 3's Wi-Fi client address works as well (see Network Requirements below).
 
 Option 5 has two sub-modes:
 
@@ -194,6 +194,8 @@ To reach this subnet you need a Layer 2 connection to the TEG Ethernet port:
 > **Important:** The v1r/Basic LAN endpoints listen on the vendor subnet (10.42.1.x). On many units, requests to the Powerwall’s home LAN IP will not reach these endpoints. Use `ping 10.42.1.x` to verify connectivity before configuration.
 >
 > Some units answer v1r on their home LAN address as well. Two UK Powerwall 3 units on firmware 26.x returned full config and vitals at their home LAN IP with no vendor-subnet route, VLAN or bridge (see [#354](https://github.com/jasonacox/pypowerwall/issues/354)). Try the home LAN address first; set up the vendor subnet only if it does not answer.
+>
+> The Wi-Fi client address works too. A Powerwall 3 with a Backup Gateway 2 (firmware 26.34.2) that is on the home network both by Ethernet and as a client of the home Wi-Fi answered v1r on each of its two home LAN addresses, with the same DIN and the same data: config, vitals and the native `/api/meters/aggregates` (see [#387](https://github.com/jasonacox/pypowerwall/issues/387)). This is the Powerwall 3 joined to your home Wi-Fi, not its own `192.168.91.1` access point.
 
 #### Basic LAN Access (No RSA Key Required)
 
@@ -248,9 +250,9 @@ With an RSA key registered via `v1r_register.py`, you get full TEDapi access ove
 
 ##### Requirements
 
-1. **Wired LAN connection** to the Powerwall 3 gateway vendor subnet (see Network Requirements above)
+1. **Network access** to the Powerwall 3: its home LAN address, wired or Wi-Fi client, or the gateway vendor subnet (see Network Requirements above)
 2. **RSA-4096 key pair** registered with the Powerwall via Tesla Owner API or Fleet API
-3. **Gateway password** (`gw_pwd` — from the QR sticker on the gateway; the last 5 characters are auto-derived for login)
+3. **Gateway password** (`gw_pwd` — from the QR sticker on the gateway; the last 5 characters are auto-derived for login). With a Backup Gateway 2, use the password on the **Powerwall 3's** QR label: the Backup Gateway 2 label password gets a 401.
 
 ##### RSA Key Registration
 
