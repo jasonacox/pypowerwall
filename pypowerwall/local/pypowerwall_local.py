@@ -132,6 +132,22 @@ class PyPowerwallLocal(PyPowerwallBase):
                     f"check that the gateway is reachable and responding correctly"
                 )
 
+    def _renew_session(self) -> bool:
+        """Log in again after an expired session (401/403) inside poll()/post().
+
+        _get_session() raises LoginError (wrong or changed gateway password) or
+        ConnectionError (gateway unreachable). That is right for authenticate(),
+        where the exception drives mode fallback in connect(), but on the read
+        and write paths it escaped to callers, so level(), power() etc. raised
+        instead of returning None. _get_session() has already logged the cause.
+        """
+        try:
+            self._get_session()
+            return True
+        except (LoginError, ConnectionError) as exc:
+            log.error(f'Unable to renew session with Powerwall at {self.host}: {exc}')
+            return False
+
     def close_session(self):
         url = "https://%s/api/logout" % self.host
         if self.authmode == "token":
@@ -225,7 +241,8 @@ class PyPowerwallLocal(PyPowerwallBase):
                         # Drain the stream before retrying
                         # noinspection PyUnusedLocal
                         payload = r.raw.data
-                    self._get_session()
+                    if not self._renew_session():
+                        return None
                     return self.poll(api, raw=raw, recursive=True)
                 else:
                     if r.status_code == 401:
@@ -306,7 +323,8 @@ class PyPowerwallLocal(PyPowerwallBase):
                     # Drain the stream before retrying
                     # noinspection PyUnusedLocal
                     response = r.raw.data
-                self._get_session()
+                if not self._renew_session():
+                    return None
                 return self.post(api=api, payload=payload, din=din, raw=raw, recursive=True)
             else:
                 log.error('Unable to establish session with Powerwall at %s - check password' % url)
