@@ -1104,7 +1104,8 @@ class Powerwall(object):
                 log.warning(f"Unable to parse payload '{payload}' for grid_status of output_type: {output_type}")
             return status
         except Exception as e:
-            log.error(f"grid_status(): Exception {type(e).__name__}: {e}")
+            # `type` is the deprecated parameter here, not the builtin
+            log.error(f"grid_status(): Exception {e.__class__.__name__}: {e}")
             raise
 
     def system_status(self, jsonformat=False) -> Optional[Union[dict, str]]:
