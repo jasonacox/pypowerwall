@@ -1,10 +1,10 @@
 ## pyPowerwall Proxy Release Notes
 
-### Proxy t112 (8 Nov 2026)
+### Proxy t112 (7 Nov 2026)
 
 * Upgraded to pyPowerwall v0.23.2 - see the library release notes. Proxy-visible changes:
   * In TEDAPI modes, the lifetime `energy_imported` / `energy_exported` values in `/aggregates` and `/api/meters/aggregates` no longer drop to 0 for one poll when the gateway's local API fetch fails. Home Assistant read that dip as a meter reset (#463).
-  * In local mode, a failed re-login after the gateway session expires (for example, a changed password) logs an error naming the cause, such as a rejected password, instead of a generic `Unexpected error ... LoginError` warning on each request (#465).
+  * In local mode, a failed re-login after the gateway session expires logs an error naming the cause, such as a rejected password, instead of a generic `Unexpected error ... LoginError` warning on each request (#465).
   * A `grid_status()` failure is logged with its real exception, not a `TypeError` (#464).
 
 ### Proxy t111 (30 Oct 2026)
