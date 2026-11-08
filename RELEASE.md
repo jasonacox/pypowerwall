@@ -4,6 +4,7 @@
 
 * fix(tedapi): the lifetime `energy_imported` / `energy_exported` values in `/api/meters/aggregates` no longer drop to 0 for one poll when a fetch of the gateway's local API fails. The failed fetch now serves the last good payload, as the 5-minute retry backoff already did. Home Assistant read the N → 0 → N dip as a meter reset and counted a Powerwall 3's whole battery lifetime (about 4.6 MWh charged, 4.5 MWh discharged) as new energy. Gateways where the endpoint has never answered still get 0s. (#463, follow-up to #221)
 * fix: `grid_status()` re-raises the backend's exception again. Its error log called `type(e)`, which the deprecated `type` argument shadows, so callers got a `TypeError` and the log line was never written. (#464)
+* fix(local): a failed re-login after an expired session (HTTP 401/403) no longer raises out of `poll()` / `post()`. Reads such as `level()` and `power()` return `None` and log the cause, as the read contract requires. `authenticate()` still raises, so `connect()` can fall back to another mode. (#465)
 
 ## v0.23.1 - Reconnect, macOS Login and Battery Level Fixes
 
