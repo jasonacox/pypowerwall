@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* fix(tedapi): when a TEDAPI read times out waiting for its API lock, it now serves cached data only while it is recent: younger than 10x the cache expiry, and at least 60 s (60 s with the defaults). Older data gives `None`, the documented failure value. Before, data of any age was served, so a stuck call kept `version()` answering and the proxy's TEDAPI probe never triggered recovery (#454). **Behavior change:** while a gateway stays stalled for over a minute, pollers get gaps instead of frozen values. (#467)
+* fix(tedapi): when a TEDAPI read times out waiting for its API lock, it now serves cached data only while it is recent: younger than 10x the cache expiry, and at least 60 s (60 s with the defaults). Older data gives `None`, the documented failure value. Before, data of any age was served, so a stuck call kept `version()` answering and the proxy's TEDAPI probe never triggered recovery (#454). **Behavior change:** while a gateway stays stalled for over a minute, pollers get gaps instead of frozen values. (#468)
 
 ## v0.23.2 - Energy Counter and Error Handling Fixes
 
