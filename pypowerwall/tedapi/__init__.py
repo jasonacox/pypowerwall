@@ -3696,7 +3696,9 @@ class TEDAPI:
         Bearer token - including the lifetime energy_imported / energy_exported
         accumulators that the TEDAPI payloads do not carry (issue #221).
         Returns None when the endpoint is unavailable, with a retry backoff so
-        unsupported gateways are not hammered on every poll.
+        unsupported gateways are not hammered on every poll. A failed fetch on a
+        gateway that has answered before returns the last good payload instead,
+        like the backoff and lock-contention paths do.
         """
         key = "native_meters_aggregates"
         if not force:
@@ -3725,7 +3727,10 @@ class TEDAPI:
                 return data
             # Endpoint missing/blocked - backoff before trying again
             self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
-            return None
+            # Serve the last good payload like the backoff window does: None here put
+            # the stub's 0s in the lifetime counters for one poll, which downstream
+            # reads as a meter reset. No cache yet (never answered) still gives None.
+            return self.pwcache.get(key)
         finally:
             self._customer_lock.release()
 
