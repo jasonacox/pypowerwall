@@ -3727,13 +3727,9 @@ class TEDAPI:
                 return data
             # Endpoint missing/blocked - backoff before trying again
             self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
-            # Serve the last good payload, as every poll inside the backoff window
-            # does. Returning None here made get_api_meters_aggregates() publish its
-            # stub zeros for this one poll: a lifetime counter that drops to 0 and
-            # comes back reads as a meter reset, and Home Assistant's energy
-            # dashboard counted a battery's whole lifetime again (seen on a Powerwall 3
-            # + Backup Gateway 2 when the local API failed right after a 90 s outage).
-            # A gateway that has never answered has no cache and still gets None.
+            # Serve the last good payload like the backoff window does: None here put
+            # the stub's 0s in the lifetime counters for one poll, which downstream
+            # reads as a meter reset. No cache yet (never answered) still gives None.
             return self.pwcache.get(key)
         finally:
             self._customer_lock.release()
