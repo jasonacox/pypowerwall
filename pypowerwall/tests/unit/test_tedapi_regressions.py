@@ -7,6 +7,7 @@ Also covers the max power fields (site nameplate capped at the inverter usable
 power), inverter_nominal_usable_power and the instantaneous power fields filled
 from the msa TEPOD components.
 """
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -455,6 +456,7 @@ class TestApiLockTimeout:
     def test_get_status_lock_timeout_returns_cached(self):
         ted = self._make_tedapi()
         ted.pwcache['status'] = {'cached': True}
+        ted.pwcachetime['status'] = time.time()
         with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
             assert ted.get_status() == {'cached': True}  # used to raise TimeoutError
 
@@ -467,6 +469,7 @@ class TestApiLockTimeout:
     def test_get_config_lock_timeout_returns_cached(self):
         ted = self._make_tedapi()
         ted.pwcache['config'] = {'vin': 'GW--123'}
+        ted.pwcachetime['config'] = time.time()
         with patch('pypowerwall.api_lock.acquire_with_exponential_backoff', return_value=False):
             assert ted.get_config() == {'vin': 'GW--123'}
 
