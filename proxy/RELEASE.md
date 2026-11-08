@@ -3,7 +3,7 @@
 ### Proxy t113 (8 Nov 2026)
 
 * Upgraded to pyPowerwall v0.24.0 - see the library release notes. Proxy-visible change:
-  * When a TEDAPI read times out waiting for its API lock, the proxy serves cached data only while it is under a minute old (with default settings), then `null`. A gateway that stalls while holding the lock now shows up as gaps, and the TEDAPI probe can run recovery, instead of frozen values looking healthy forever (#468, #454).
+  * When a TEDAPI read times out waiting for its API lock, the library serves its cached data only while it is under a minute old (with default settings), then fails. After the proxy's own `PW_CACHE_TTL` cache (30 s by default) also runs out, endpoints report the gap (`null`, or `0` in the CSV routes) instead of frozen values, and the TEDAPI probe can run recovery. Before, a gateway that stalled while holding the lock could look healthy forever (#468, #454).
 
 ### Proxy t112 (7 Nov 2026)
 
