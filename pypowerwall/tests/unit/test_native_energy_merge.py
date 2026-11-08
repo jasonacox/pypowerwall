@@ -7,6 +7,8 @@
   original disclaimers untouched
 - TEDAPI.get_native_meters_aggregates() backs off for NATIVE_FAIL_RETRY seconds
   when the endpoint is unavailable, and caches successful fetches
+- A failed fetch after a good one serves the cached payload, so the merged
+  energy values never drop to the stub's 0s for a poll
 - Customer login/token plumbing: 401 -> re-login retry, tokenless login,
   last-good-host ordering, and stale-cache fallback on lock contention
 """
@@ -128,6 +130,28 @@ class TestNativeEnergyMerge:
             assert data[section]['energy_exported'] == 0
             assert "energy from gateway local API" not in data[section]['disclaimer']
 
+    def test_failed_fetch_after_success_keeps_energy_values(self):
+        # Seen on a Powerwall 3 + Backup Gateway 2 in v1r mode: after a 90 s
+        # outage the first native fetch failed and that one poll carried the
+        # stub's 0s, then the backoff served the cached values again. A lifetime
+        # counter going N -> 0 -> N reads as a meter reset downstream (Home
+        # Assistant counted the battery's whole lifetime as new energy).
+        backend = self._make_backend()
+        with patch.object(TEDAPI, 'connect', return_value=True):
+            ted = TEDAPI(gw_pwd='gateway-password')
+        backend.tedapi.get_native_meters_aggregates = ted.get_native_meters_aggregates
+
+        with patch.object(ted, 'get_native_api', side_effect=[VALID_NATIVE, None]) as mock_get:
+            before = backend.get_api_meters_aggregates()
+            ted.pwcachetime["native_meters_aggregates"] = 0   # cache TTL elapsed
+            after = backend.get_api_meters_aggregates()
+            assert mock_get.call_count == 2
+
+        for section in ("site", "battery", "load", "solar"):
+            for field in ("energy_imported", "energy_exported"):
+                assert after[section][field] == before[section][field] == VALID_NATIVE[section][field]
+            assert after[section]['disclaimer'].endswith("; energy from gateway local API")
+
 
 class TestNativeMetersAggregatesBackoff:
     """TEDAPI.get_native_meters_aggregates() caching and backoff."""
@@ -168,6 +192,20 @@ class TestNativeMetersAggregatesBackoff:
             ted._native_fail_until = time.time() - 1
             result = ted.get_native_meters_aggregates()
             assert result == VALID_NATIVE
+            assert mock_get.call_count == 2
+
+    def test_failed_fetch_after_success_serves_cache_and_backs_off(self):
+        ted = self._make_tedapi()
+        with patch.object(ted, 'get_native_api', side_effect=[VALID_NATIVE, None]) as mock_get:
+            assert ted.get_native_meters_aggregates() == VALID_NATIVE
+            ted.pwcachetime["native_meters_aggregates"] = 0   # cache TTL elapsed
+
+            # The failing fetch itself serves the last good payload...
+            assert ted.get_native_meters_aggregates() == VALID_NATIVE
+            assert mock_get.call_count == 2
+            # ...and still arms the backoff, so the polls after it don't refetch
+            assert ted._native_fail_until > time.time()
+            assert ted.get_native_meters_aggregates() == VALID_NATIVE
             assert mock_get.call_count == 2
 
     def test_successful_fetch_is_cached(self):
