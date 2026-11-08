@@ -133,13 +133,11 @@ class PyPowerwallLocal(PyPowerwallBase):
                 )
 
     def _renew_session(self) -> bool:
-        """Log in again after an expired session (401/403) inside poll()/post().
+        """Log in again after a 401/403 in poll()/post(); return False instead of raising.
 
-        _get_session() raises LoginError (wrong or changed gateway password) or
-        ConnectionError (gateway unreachable). That is right for authenticate(),
-        where the exception drives mode fallback in connect(), but on the read
-        and write paths it escaped to callers, so level(), power() etc. raised
-        instead of returning None. _get_session() has already logged the cause.
+        _get_session() raises LoginError (password rejected) or ConnectionError
+        (gateway unreachable). authenticate() needs that for connect()'s mode
+        fallback, but read and write paths must return None.
         """
         try:
             self._get_session()
