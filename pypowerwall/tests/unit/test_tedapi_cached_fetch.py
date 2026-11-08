@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from pypowerwall.tedapi import TEDAPI, tedapi_pb2, _CACHE_MISS
+from pypowerwall.tedapi import LOCK_TIMEOUT_MAX_AGE_FLOOR, TEDAPI, tedapi_pb2, _CACHE_MISS
 from pypowerwall.tedapi.system_info import SystemInfo
 
 DIN = "1538000-45-D--TESTDIN0000000"
@@ -204,16 +204,41 @@ class TestCachedFetchSkeleton:
         assert "Error fetching" in caplog.text and "boom" in caplog.text
         assert getter.key not in api.pwcache
 
-    def test_lock_timeout_serves_stale_cache(self, getter):
-        """Bounded lock wait: on timeout hand back whatever is cached (even if
-        expired) rather than raising into a poller."""
+    def test_lock_timeout_serves_recent_stale_cache(self, getter):
+        """Bounded lock wait: on timeout hand back an expired cache entry that is
+        still recent rather than raising into a poller."""
         api = make_tedapi()
         api.pwcache[getter.key] = getter.seed
-        api.pwcachetime[getter.key] = 0
+        api.pwcachetime[getter.key] = time.time() - LOCK_TIMEOUT_MAX_AGE_FLOOR / 2
         with patch("pypowerwall.api_lock.acquire_with_exponential_backoff", return_value=False), \
                 patch.object(api, getter.patch_target) as transport:
             assert getter.call(api) == getter.seed_result
         transport.assert_not_called()
+
+    def test_lock_timeout_with_old_cache_returns_none(self, getter, caplog):
+        """#454: an old entry would hide a stuck lock holder from health probes
+        (version() kept answering for 2 hours), so it is not served."""
+        api = make_tedapi()
+        api.pwcache[getter.key] = getter.seed
+        api.pwcachetime[getter.key] = time.time() - LOCK_TIMEOUT_MAX_AGE_FLOOR - 1
+        with patch("pypowerwall.api_lock.acquire_with_exponential_backoff", return_value=False), \
+                patch.object(api, getter.patch_target) as transport, \
+                caplog.at_level(logging.ERROR):
+            assert getter.call(api) is None
+        transport.assert_not_called()
+        assert "no recent cached data" in caplog.text
+
+    def test_lock_timeout_max_age_scales_with_expire(self, getter):
+        """The cap is 10x the getter's expiry when that exceeds the floor."""
+        api = make_tedapi()
+        setattr(api, getter.expire_attr, 20)
+        api.pwcache[getter.key] = getter.seed
+        api.pwcachetime[getter.key] = time.time() - 150   # past the floor, under 10 x 20
+        with patch("pypowerwall.api_lock.acquire_with_exponential_backoff", return_value=False):
+            assert getter.call(api) == getter.seed_result
+        api.pwcachetime[getter.key] = time.time() - 201
+        with patch("pypowerwall.api_lock.acquire_with_exponential_backoff", return_value=False):
+            assert getter.call(api) is None
 
     def test_lock_timeout_without_cache_returns_none(self, getter):
         api = make_tedapi()

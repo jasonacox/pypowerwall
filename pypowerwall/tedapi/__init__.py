@@ -94,6 +94,10 @@ GW_IP = "192.168.91.1"
 CUSTOMER_TOKEN_EXPIRE: Final[float] = 3000.0
 # Backoff before retrying an unavailable local API endpoint
 NATIVE_FAIL_RETRY: Final[float] = 300.0
+# On an API-lock timeout the getters serve their cache only while it is younger
+# than max(10 x the getter's expire, this floor). Older data would hide a stuck
+# lock holder from health probes, so recovery never ran (#454).
+LOCK_TIMEOUT_MAX_AGE_FLOOR: Final[float] = 60.0
 
 # config.json meter types of a Tesla Remote Meter (#386, #400). Both report through the
 # device controller's teslaRemoteMeter field in the same shape.
@@ -572,8 +576,8 @@ class TEDAPI:
            a fetch they don't need (``force`` skips both).
         2. Take the per-instance, per-method lock (``_api_lock(self_function)``,
            keyed by the @uses_api_lock getter's name; bounded wait). On timeout
-           serve the stale cache entry if there is one, else None — never raise
-           into a poller.
+           serve the cache if it is younger than max(10 x ``expire``,
+           LOCK_TIMEOUT_MAX_AGE_FLOOR), else None — never raise into a poller.
         3. Under the lock re-check cache and cooldown (another thread may have
            refreshed while we waited), and reconnect if the DIN is unknown.
         4. ``fetch()`` returns the value to cache and return, or None to leave
@@ -606,9 +610,14 @@ class TEDAPI:
                 self._cache_put(key, data)
                 return data
         except TimeoutError:
+            cached = self._cache_get(key, max(10 * expire, LOCK_TIMEOUT_MAX_AGE_FLOOR))
+            if cached is _CACHE_MISS:
+                log.error(f'Timeout waiting for API lock - unable to fetch {name} - '
+                          'no recent cached data')
+                return None
             log.error(f'Timeout waiting for API lock - unable to fetch {name} - '
-                      'returning cached data if available')
-            return self.pwcache.get(key)
+                      'returning cached data')
+            return cached
 
     @staticmethod
     def _decode_json(payload: Optional[str], *, strict: bool = False) -> Optional[dict]:
