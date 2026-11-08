@@ -1,8 +1,11 @@
 # RELEASE NOTES
 
-## Unreleased
+## v0.24.0 - Visible TEDAPI Stalls
+
+One fix for the second gap in #454, reported by @llamakarma: a gateway that stalls while holding a TEDAPI lock no longer looks healthy forever. Thanks @llamakarma for the detailed report, and @jasonacox-sam for the hardware stall tests on a Powerwall 3.
 
 * fix(tedapi): when a TEDAPI read times out waiting for its API lock, it now serves cached data only while it is recent: younger than 10x the cache expiry, and at least 60 s (60 s with the defaults). Older data gives `None`, the documented failure value. Before, data of any age was served, so a stuck call kept `version()` answering and the proxy's TEDAPI probe never triggered recovery (#454). **Behavior change:** while a gateway stays stalled for over a minute, pollers get gaps instead of frozen values. (#468)
+* Library version bumped to `0.24.0`
 
 ## v0.23.2 - Energy Counter and Error Handling Fixes
 
