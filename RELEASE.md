@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* fix(tedapi): `/api/status` `start_time` and `up_time_seconds` are filled on gateways whose `SYNC_Uptime` is not usable. A Backup Gateway 2 (1118431-00-G, firmware 26.34.2) lists `SYNC_Uptime` on its sync board's msa component but leaves its value and timestamp null, so both fields stayed `null` after #419. They now fall back to the gateway's native `/api/status` (customer login), taken verbatim in the gateway's own formats, through the new cached `TEDAPI.get_native_status()` with the same retry backoff as the native aggregates merge (#221). Gateways with a usable `SYNC_Uptime` are unchanged, and both fields stay `null` when neither source answers (#418). Hardware-validated on a Backup Gateway 2 with 2x Powerwall 2 (v1r LAN).
+
 ## v0.24.0 - Visible TEDAPI Stalls
 
 One fix for the second gap in #454, reported by @llamakarma: a gateway that stalls while holding a TEDAPI lock no longer looks healthy forever. Thanks @llamakarma for the detailed report, and @jasonacox-sam for the hardware stall tests on a Powerwall 3.

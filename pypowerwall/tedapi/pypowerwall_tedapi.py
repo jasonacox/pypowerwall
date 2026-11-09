@@ -326,14 +326,25 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             # When the gateway last started, in the gateway's formats; None without
             # a sync board. The commission date has its own key (#418).
             uptime = self.tedapi.get_gateway_uptime(force=force)
+            start_time = uptime["start_time"].strftime(GATEWAY_START_TIME_FORMAT) if uptime else None
+            up_time_seconds = go_duration(uptime["uptime_ms"]) if uptime else None
+            if uptime is None:
+                # No usable SYNC_Uptime (e.g. a Backup Gateway 2 lists the signal but
+                # leaves it null): take both values verbatim from the gateway's native
+                # /api/status when the customer login can read it. Still None otherwise.
+                native = self.tedapi.get_native_status(force=force)
+                if isinstance(native, dict):
+                    start_time = native.get("start_time") if isinstance(native.get("start_time"), str) else None
+                    up_time_seconds = (native.get("up_time_seconds")
+                                       if isinstance(native.get("up_time_seconds"), str) else None)
             # A failed lookup keeps the last hash: the gateway UI reloads the page
             # whenever git_hash changes.
             git_hash = lookup(firmware, ["system", "version", "githash"]) or getattr(self, '_git_hash', None)
             self._git_hash = git_hash
             data = {
                 "din": config.get("vin"),
-                "start_time": uptime["start_time"].strftime(GATEWAY_START_TIME_FORMAT) if uptime else None,
-                "up_time_seconds": go_duration(uptime["uptime_ms"]) if uptime else None,
+                "start_time": start_time,
+                "up_time_seconds": up_time_seconds,
                 "is_new": False,
                 "version": firmware_version,
                 "git_hash": git_hash,

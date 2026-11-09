@@ -465,6 +465,7 @@ class TEDAPI:
         # get_native_api
         self._customer_lock = threading.RLock()
         self._native_fail_until: float = 0.0  # backoff when endpoint unavailable
+        self._native_status_fail_until: float = 0.0  # same, for the native /api/status
         if v1r:
             if not password or not rsa_key_path:
                 raise ValueError("v1r mode requires password and rsa_key_path")
@@ -3696,6 +3697,32 @@ class TEDAPI:
             return None
         finally:
             self._customer_lock.release()
+
+    def get_native_status(self, force: bool = False) -> Optional[Dict[Any, Any]]:
+        """
+        Fetch the gateway's native /api/status payload (customer login), cached like
+        get_native_meters_aggregates() and with its own retry backoff.
+
+        Used for start_time / up_time_seconds when SYNC_Uptime is not usable: a
+        Backup Gateway 2 (1118431-00-G, firmware 26.34.2) lists SYNC_Uptime on its
+        sync board's msa component but leaves value and timestamp null, while its
+        native /api/status reports both in the gateway's own formats (#418).
+        Returns None when unavailable; a failed fetch after a good one serves the
+        last good payload, so the values don't blink to None for one poll.
+        """
+        key = "native_status"
+        if not force:
+            if key in self.pwcachetime and time.time() - self.pwcachetime[key] < self.pwcacheexpire:
+                return self.pwcache.get(key)
+            if self._native_status_fail_until > time.time():
+                return self.pwcache.get(key)
+        data = self.get_native_api("/api/status")
+        if isinstance(data, dict) and data.get("up_time_seconds") and data.get("start_time"):
+            self.pwcachetime[key] = time.time()
+            self.pwcache[key] = data
+            return data
+        self._native_status_fail_until = time.time() + NATIVE_FAIL_RETRY
+        return self.pwcache.get(key)
 
     def get_native_meters_aggregates(self, force: bool = False) -> Optional[Dict[Any, Any]]:
         """
