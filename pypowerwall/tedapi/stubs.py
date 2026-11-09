@@ -82,6 +82,36 @@ _API_METERS_AGGREGATES_TEMPLATE = {
     }
 }
 
+# Generator section, added to /api/meters/aggregates only when the gateway config declares a
+# generator meter (config.json "meters" entry with location "generator"). Same shape as the
+# section the gateway's native /api/meters/aggregates returns for such sites.
+_API_METERS_AGGREGATES_GENERATOR_TEMPLATE = {
+    "last_communication_time": None,
+    "instant_power": None,
+    "instant_reactive_power": 0,
+    "instant_apparent_power": 0,
+    "frequency": 0,
+    "energy_exported": 0,
+    "energy_imported": 0,
+    "instant_average_voltage": 0,
+    "instant_average_current": 0,
+    "i_a_current": 0,
+    "i_b_current": 0,
+    "i_c_current": 0,
+    "last_phase_voltage_communication_time": "0001-01-01T00:00:00Z",
+    "last_phase_power_communication_time": "0001-01-01T00:00:00Z",
+    "last_phase_energy_communication_time": "0001-01-01T00:00:00Z",
+    "timeout": 1500000000,
+    "num_meters_aggregated": 1,
+    "instant_total_current": None
+}
+
+
+def API_METERS_AGGREGATES_GENERATOR_STUB():
+    """Return a fresh copy of the generator section stub to prevent shared-state mutation."""
+    return copy.deepcopy(_API_METERS_AGGREGATES_GENERATOR_TEMPLATE)
+
+
 def API_METERS_AGGREGATES_STUB():
     """Return a fresh copy of the API meters aggregates stub to prevent shared-state mutation."""
     return copy.deepcopy(_API_METERS_AGGREGATES_TEMPLATE)
