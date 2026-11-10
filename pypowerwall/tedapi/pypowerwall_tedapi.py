@@ -468,7 +468,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         """
         Return Powerwall-style /api/meters/aggregates using TEDAPI data.
-        Each section (site, load, solar, battery) is handled by a helper for clarity.
+        Each section (site, load, solar, battery, and generator when config.json
+        declares a generator meter) is handled by a helper for clarity.
         A section's power is None when its location is missing from meterAggregates
         (or control is null, as when the gateway's site manager isn't running) while a
         voltage source may still report; its current is then None rather than raising.
@@ -515,8 +516,17 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         battery_vals = self._extract_battery_section(status, config, force)
         data['battery'].update(battery_vals)
 
+        # --- Generator ---
+        # Only for sites whose gateway config declares a generator meter. meterAggregates
+        # lists a GENERATOR location on sites without one too (realPowerW 0), so its
+        # presence alone would add a misleading section everywhere.
+        generator_vals = self._extract_generator_section(status, config, force)
+        if generator_vals is not None:
+            data['generator'] = API_METERS_AGGREGATES_GENERATOR_STUB()
+            data['generator'].update(generator_vals)
+
         # Add timestamp to all
-        for section in (data['site'], data['load'], data['solar'], data['battery']):
+        for section in data.values():
             section['last_communication_time'] = timestamp
 
         # Merge lifetime energy accumulators from the gateway's local API when
@@ -525,7 +535,9 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         # that the TEDAPI payloads do not (see issue #221).
         native = self.tedapi.get_native_meters_aggregates(force=force)
         if isinstance(native, dict):
-            for section in ("site", "battery", "load", "solar"):
+            for section in ("site", "battery", "load", "solar", "generator"):
+                if section not in data:
+                    continue
                 native_section = native.get(section)
                 if not isinstance(native_section, dict):
                     continue
@@ -919,6 +931,29 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
             "instant_total_current": i_battery,
             "num_meters_aggregated": count_battery,
             "disclaimer": "battery: voltage from PINV, calculated current from power",
+        }
+
+    @staticmethod
+    def _has_generator_meter(config) -> bool:
+        """True when config.json declares a generator meter (a "meters" entry with location "generator")."""
+        meters = config.get("meters") if isinstance(config, dict) else None
+        if not isinstance(meters, list):
+            return False
+        return any(isinstance(m, dict) and str(m.get("location") or "").lower() == "generator" for m in meters)
+
+    def _extract_generator_section(self, status, config, force):
+        """Extract the generator section from meterAggregates' GENERATOR location.
+
+        Returns None (no section) when the gateway config declares no generator meter. Lifetime
+        energy is merged afterwards from the gateway's native /api/meters/aggregates when it serves
+        a generator section there (seen on a Backup Gateway 2, firmware 26.34.2).
+        """
+        if not self._has_generator_meter(config):
+            return None
+        generator_power = self.tedapi.current_power(force=force, location="generator")
+        return {
+            "instant_power": generator_power,
+            "disclaimer": "generator: power from meterAggregates, no voltage/current",
         }
 
     def get_api_operation(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
