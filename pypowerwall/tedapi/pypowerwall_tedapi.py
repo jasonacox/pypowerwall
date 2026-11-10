@@ -458,7 +458,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
     def get_api_meters_aggregates(self, **kwargs) -> Optional[Union[dict, list, str, bytes]]:
         """
         Return Powerwall-style /api/meters/aggregates using TEDAPI data.
-        Each section (site, load, solar, battery) is handled by a helper for clarity.
+        Each section (site, load, solar, battery, and generator when config.json
+        declares a generator meter) is handled by a helper for clarity.
         A section's power is None when its location is missing from meterAggregates
         (or control is null, as when the gateway's site manager isn't running) while a
         voltage source may still report; its current is then None rather than raising.
@@ -942,7 +943,6 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
         generator_power = self.tedapi.current_power(force=force, location="generator")
         return {
             "instant_power": generator_power,
-            "num_meters_aggregated": 1,
             "disclaimer": "generator: power from meterAggregates, no voltage/current",
         }
 
