@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* feat(tedapi): `/api/meters/aggregates` (and the proxy's `/aggregates`) has a `generator` section again in TEDAPI/v1r mode, so dashboards that store `generator_*` no longer go flat after switching from local mode. It appears only when `config.json` declares a generator meter, since meterAggregates lists `GENERATOR` (0 W) on sites without one too. `instant_power` comes from meterAggregates, and lifetime energy from the gateway's native `/api/meters/aggregates` when it serves a generator section (#221). Thanks @clonea1 (#472, #473).
+
 ## v0.24.0 - Visible TEDAPI Stalls
 
 One fix for the second gap in #454, reported by @llamakarma: a gateway that stalls while holding a TEDAPI lock no longer looks healthy forever. Thanks @llamakarma for the detailed report, and @jasonacox-sam for the hardware stall tests on a Powerwall 3.
