@@ -40,6 +40,7 @@
     get_remote_meter_readings() - Get Tesla Remote Meter (trm_mb / trm_wifi) CT readings
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
+    get_native_status() - Get the gateway's native /api/status
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -465,6 +466,7 @@ class TEDAPI:
         # get_native_api
         self._customer_lock = threading.RLock()
         self._native_fail_until: float = 0.0  # backoff when endpoint unavailable
+        self._native_status_fail_until: float = 0.0  # same, for the native /api/status
         if v1r:
             if not password or not rsa_key_path:
                 raise ValueError("v1r mode requires password and rsa_key_path")
@@ -3697,6 +3699,57 @@ class TEDAPI:
         finally:
             self._customer_lock.release()
 
+    def _get_native_cached(self, key: str, path: str, is_valid, fail_attr: str,
+                           force: bool = False) -> Optional[Dict[Any, Any]]:
+        """
+        Fetch a native gateway endpoint through the 5s cache with a retry backoff.
+
+        Serves the last good payload (None if there never was one) during the
+        backoff, on lock contention and after a failed fetch, so a hiccup doesn't
+        blink values to None for one poll. fail_attr names the endpoint's own
+        backoff attribute, so one endpoint's failure doesn't hold off another.
+        """
+        def cached():
+            if key in self.pwcachetime and time.time() - self.pwcachetime[key] < self.pwcacheexpire:
+                return True
+            return getattr(self, fail_attr) > time.time()
+
+        if not force and cached():
+            return self.pwcache.get(key)
+        # Bounded acquisition - on contention serve cached data instead of queuing
+        if not self._customer_lock.acquire(timeout=self.timeout):
+            log.debug(f"Gateway local API busy - returning cached {path}")
+            return self.pwcache.get(key)
+        try:
+            # Double-check after acquiring - another thread may have refreshed
+            if not force and cached():
+                return self.pwcache.get(key)
+            data = self.get_native_api(path)
+            if isinstance(data, dict) and is_valid(data):
+                self.pwcachetime[key] = time.time()
+                self.pwcache[key] = data
+                return data
+            # Endpoint missing/blocked - backoff before trying again
+            setattr(self, fail_attr, time.time() + NATIVE_FAIL_RETRY)
+            return self.pwcache.get(key)
+        finally:
+            self._customer_lock.release()
+
+    def get_native_status(self, force: bool = False) -> Optional[Dict[Any, Any]]:
+        """
+        Fetch the gateway's native /api/status payload (customer login).
+
+        Used for start_time / up_time_seconds when SYNC_Uptime is not usable: a
+        Backup Gateway 2 (1118431-00-G, firmware 26.34.2) lists SYNC_Uptime but
+        leaves it null, while its native /api/status reports both (#418). A payload
+        without both as non-empty strings counts as unavailable. Returns None when
+        unavailable; cached and backed off like get_native_meters_aggregates().
+        """
+        return self._get_native_cached(
+            "native_status", "/api/status",
+            lambda d: all(isinstance(d.get(k), str) and d.get(k) for k in ("start_time", "up_time_seconds")),
+            "_native_status_fail_until", force)
+
     def get_native_meters_aggregates(self, force: bool = False) -> Optional[Dict[Any, Any]]:
         """
         Fetch the gateway's native /api/meters/aggregates payload.
@@ -3706,41 +3759,13 @@ class TEDAPI:
         accumulators that the TEDAPI payloads do not carry (issue #221).
         Returns None when the endpoint is unavailable, with a retry backoff so
         unsupported gateways are not hammered on every poll. A failed fetch on a
-        gateway that has answered before returns the last good payload instead,
-        like the backoff and lock-contention paths do.
+        gateway that has answered before returns the last good payload instead:
+        None would put the stub's 0s in the lifetime counters for one poll, which
+        downstream reads as a meter reset.
         """
-        key = "native_meters_aggregates"
-        if not force:
-            if key in self.pwcachetime and time.time() - self.pwcachetime[key] < self.pwcacheexpire:
-                return self.pwcache.get(key)
-            if self._native_fail_until > time.time():
-                return self.pwcache.get(key)
-        # Bounded acquisition - on contention serve cached data instead of queuing
-        if not self._customer_lock.acquire(timeout=self.timeout):
-            log.debug("Gateway local API busy - returning cached aggregates")
-            return self.pwcache.get(key)
-        try:
-            # Double-check after acquiring - another thread may have refreshed
-            if not force:
-                if key in self.pwcachetime and \
-                        time.time() - self.pwcachetime[key] < self.pwcacheexpire:
-                    return self.pwcache.get(key)
-                if self._native_fail_until > time.time():
-                    return self.pwcache.get(key)
-            data = self.get_native_api("/api/meters/aggregates")
-            if isinstance(data, dict) and all(
-                isinstance(data.get(s), dict) for s in ("site", "battery", "load", "solar")
-            ):
-                self.pwcachetime[key] = time.time()
-                self.pwcache[key] = data
-                return data
-            # Endpoint missing/blocked - backoff before trying again
-            self._native_fail_until = time.time() + NATIVE_FAIL_RETRY
-            # Serve the last good payload like the backoff window does: None here put
-            # the stub's 0s in the lifetime counters for one poll, which downstream
-            # reads as a meter reset. No cache yet (never answered) still gives None.
-            return self.pwcache.get(key)
-        finally:
-            self._customer_lock.release()
+        return self._get_native_cached(
+            "native_meters_aggregates", "/api/meters/aggregates",
+            lambda d: all(isinstance(d.get(s), dict) for s in ("site", "battery", "load", "solar")),
+            "_native_fail_until", force)
 
     # End of TEDAPI Class

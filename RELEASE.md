@@ -3,6 +3,7 @@
 ## Unreleased
 
 * feat(tedapi): `/api/meters/aggregates` (and the proxy's `/aggregates`) has a `generator` section again in TEDAPI/v1r mode, so dashboards that store `generator_*` no longer go flat after switching from local mode. It appears only when `config.json` declares a generator meter, since meterAggregates lists `GENERATOR` (0 W) on sites without one too. `instant_power` comes from meterAggregates, and lifetime energy from the gateway's native `/api/meters/aggregates` when it serves a generator section (#221). Thanks @clonea1 (#472, #473).
+* fix(tedapi): `/api/status` fills `start_time` and `up_time_seconds` from the gateway's native `/api/status` (customer login) when `SYNC_Uptime` isn't usable. A Backup Gateway 2 with Powerwall 2s (firmware 26.34.2) lists the signal but leaves it null, so both stayed `null` after #419. Sites where `SYNC_Uptime` works are unchanged. New `TEDAPI.get_native_status()`, cached and backed off like the native aggregates merge (#221). Thanks @clonea1 (#418, #474).
 
 ## v0.24.0 - Visible TEDAPI Stalls
 
