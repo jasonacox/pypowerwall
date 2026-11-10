@@ -7,6 +7,7 @@
 - TEDAPI.get_native_status() caches, backs off when unavailable, and serves the
   last good payload after a failed fetch
 """
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -64,12 +65,6 @@ class TestApiStatusNativeFallback:
         assert data['start_time'] is None
         assert data['up_time_seconds'] is None
 
-    def test_non_string_native_values_ignored(self):
-        backend = _make_backend(uptime=None, native={'start_time': 12345, 'up_time_seconds': None})
-        data = backend.get_api_status()
-        assert data['start_time'] is None
-        assert data['up_time_seconds'] is None
-
 
 class TestGetNativeStatus:
 
@@ -99,13 +94,47 @@ class TestGetNativeStatus:
             assert ted.get_native_status() is None
             assert ted._native_status_fail_until > time.time()
 
-    def test_failed_fetch_after_success_serves_cache(self):
+    def test_non_string_values_are_unavailable(self):
         ted = self._make_tedapi()
-        with patch.object(ted, 'get_native_api', side_effect=[NATIVE_STATUS, None]) as mock_get:
+        with patch.object(ted, 'get_native_api', return_value={'start_time': 12345, 'up_time_seconds': '1h0m0s'}):
+            assert ted.get_native_status() is None
+            assert ted._native_status_fail_until > time.time()
+
+    def test_lock_contention_serves_cache_without_backoff(self):
+        # A busy customer lock (e.g. an aggregates fetch in flight) is not an
+        # unavailable endpoint: serve the cache and don't start the 300s backoff.
+        ted = self._make_tedapi()
+        ted.timeout = 0.01
+        ted.pwcache['native_status'] = NATIVE_STATUS
+        ted.pwcachetime['native_status'] = 0   # cache TTL elapsed
+        holder = threading.Thread(target=ted._customer_lock.acquire)
+        holder.start()
+        holder.join()
+        try:
+            with patch.object(ted, 'get_native_api') as mock_get:
+                assert ted.get_native_status() == NATIVE_STATUS
+                mock_get.assert_not_called()
+            assert ted._native_status_fail_until == 0.0
+        finally:
+            ted._customer_lock = threading.RLock()   # the holder thread exited holding the old one
+
+    def test_refreshed_while_waiting_is_not_fetched_again(self):
+        # Double-check after taking the lock: a thread that waited behind another
+        # thread's refresh uses that result instead of fetching again.
+        ted = self._make_tedapi()
+        ted.pwcachetime['native_status'] = 0   # cache TTL elapsed
+
+        def other_thread_refreshed(*args, **kwargs):
+            ted.pwcache['native_status'] = NATIVE_STATUS
+            ted.pwcachetime['native_status'] = time.time()
+            return True
+
+        with patch.object(ted, '_customer_lock') as lock, \
+                patch.object(ted, 'get_native_api') as mock_get:
+            lock.acquire.side_effect = other_thread_refreshed
             assert ted.get_native_status() == NATIVE_STATUS
-            ted.pwcachetime['native_status'] = 0   # cache TTL elapsed
-            assert ted.get_native_status() == NATIVE_STATUS
-            assert mock_get.call_count == 2
+            mock_get.assert_not_called()
+            lock.release.assert_called_once()
 
     def test_backoff_separate_from_meters_aggregates(self):
         ted = self._make_tedapi()

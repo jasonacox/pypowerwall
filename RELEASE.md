@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-* fix(tedapi): `/api/status` `start_time` and `up_time_seconds` are filled on gateways whose `SYNC_Uptime` is not usable. A Backup Gateway 2 (1118431-00-G, firmware 26.34.2) lists `SYNC_Uptime` on its sync board's msa component but leaves its value and timestamp null, so both fields stayed `null` after #419. They now fall back to the gateway's native `/api/status` (customer login), taken verbatim in the gateway's own formats, through the new cached `TEDAPI.get_native_status()` with the same retry backoff as the native aggregates merge (#221). Gateways with a usable `SYNC_Uptime` are unchanged, and both fields stay `null` when neither source answers (#418). Hardware-validated on a Backup Gateway 2 with 2x Powerwall 2 (v1r LAN).
+* fix(tedapi): `/api/status` fills `start_time` and `up_time_seconds` from the gateway's native `/api/status` (customer login) when `SYNC_Uptime` isn't usable. A Backup Gateway 2 with Powerwall 2s (firmware 26.34.2) lists the signal but leaves it null, so both stayed `null` after #419. Sites where `SYNC_Uptime` works are unchanged. New `TEDAPI.get_native_status()`, cached and backed off like the native aggregates merge (#221). Thanks @clonea1 (#418, #474).
 
 ## v0.24.0 - Visible TEDAPI Stalls
 

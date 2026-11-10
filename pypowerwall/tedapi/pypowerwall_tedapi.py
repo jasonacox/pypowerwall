@@ -334,9 +334,8 @@ class PyPowerwallTEDAPI(PyPowerwallBase):
                 # /api/status when the customer login can read it. Still None otherwise.
                 native = self.tedapi.get_native_status(force=force)
                 if isinstance(native, dict):
-                    start_time = native.get("start_time") if isinstance(native.get("start_time"), str) else None
-                    up_time_seconds = (native.get("up_time_seconds")
-                                       if isinstance(native.get("up_time_seconds"), str) else None)
+                    start_time = native.get("start_time")
+                    up_time_seconds = native.get("up_time_seconds")
             # A failed lookup keeps the last hash: the gateway UI reloads the page
             # whenever git_hash changes.
             git_hash = lookup(firmware, ["system", "version", "githash"]) or getattr(self, '_git_hash', None)
