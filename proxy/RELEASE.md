@@ -1,5 +1,11 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t114 (9 Nov 2026)
+
+* Upgraded to pyPowerwall v0.25.0 - see the library release notes. Proxy-visible changes, both in TEDAPI/v1r modes:
+  * `/aggregates` and `/api/meters/aggregates` include a `generator` section again when the gateway config declares a generator meter, so Dashboard's `generator_*` fields fill in after switching from local mode. Other sites are unchanged (#473).
+  * `/api/status` reports `start_time` and `up_time_seconds` on gateways that leave `SYNC_Uptime` null, such as a Backup Gateway 2 with Powerwall 2s, by reading the gateway's native `/api/status` (#474).
+
 ### Proxy t113 (8 Nov 2026)
 
 * Upgraded to pyPowerwall v0.24.0 - see the library release notes. Proxy-visible change:
