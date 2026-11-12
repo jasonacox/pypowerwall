@@ -248,6 +248,54 @@ class TestPodEndpoint(BaseDoGetTest):
     @common_patches
     @patch('proxy.server.pw')
     @patch('proxy.server.safe_pw_call')
+    def test_pod_status_flags_null_when_unavailable(self, proxystats_lock, mock_safe_pw_call, mock_pw):
+        """POD status flags stay null when vitals have no value, ints otherwise (#179)"""
+        flags = (
+            'POD_ActiveHeating', 'POD_ChargeComplete', 'POD_ChargeRequest',
+            'POD_DischargeComplete', 'POD_PermanentlyFaulted',
+            'POD_PersistentlyFaulted', 'POD_enable_line',
+        )
+        with patch.dict('proxy.server._performance_cache', {}, clear=True):
+            self.handler.path = "/pod"
+
+            def safe_pw_call_side_effect(*args, **kwargs):
+                if args[0] == mock_pw.system_status:
+                    return {'battery_blocks': [{}, {}]}
+                elif args[0] == mock_pw.vitals:
+                    return {
+                        # TEDAPI vitals: no source for the flags
+                        'TEPOD--1': {f: None for f in flags},
+                        # Local vitals: real booleans, one key missing
+                        'TEPOD--2': {
+                            'POD_ActiveHeating': False,
+                            'POD_ChargeComplete': True,
+                            'POD_ChargeRequest': 0,
+                            'POD_DischargeComplete': 1,
+                            'POD_PermanentlyFaulted': False,
+                            'POD_PersistentlyFaulted': False,
+                        },
+                    }
+                return None
+
+            mock_safe_pw_call.side_effect = safe_pw_call_side_effect
+
+            self.handler.do_GET()
+
+            data = json.loads(self.get_written_text())
+            for f in flags:
+                self.assertIn('PW1_%s' % f, data)
+                self.assertIsNone(data['PW1_%s' % f], f)
+            self.assertEqual(data['PW2_POD_ActiveHeating'], 0)
+            self.assertEqual(data['PW2_POD_ChargeComplete'], 1)
+            self.assertEqual(data['PW2_POD_ChargeRequest'], 0)
+            self.assertEqual(data['PW2_POD_DischargeComplete'], 1)
+            self.assertEqual(data['PW2_POD_PermanentlyFaulted'], 0)
+            self.assertEqual(data['PW2_POD_PersistentlyFaulted'], 0)
+            self.assertIsNone(data['PW2_POD_enable_line'])
+
+    @common_patches
+    @patch('proxy.server.pw')
+    @patch('proxy.server.safe_pw_call')
     def test_pod_null_handling(self, proxystats_lock, mock_safe_pw_call, mock_pw):
         """Test /pod endpoint with null values"""
         with patch.dict('proxy.server._performance_cache', {}, clear=True):

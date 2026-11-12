@@ -1,5 +1,9 @@
 ## pyPowerwall Proxy Release Notes
 
+### Proxy t115 (11 Nov 2026)
+
+* `/pod` status flags (`POD_ActiveHeating`, `POD_ChargeComplete`, `POD_ChargeRequest`, `POD_DischargeComplete`, `POD_PermanentlyFaulted`, `POD_PersistentlyFaulted`, `POD_enable_line`) are `null` when the gateway gives no value, instead of `0`. TEDAPI/v1r vitals have no source for them, so the `0` read like a measured "not faulted" (#179). Values the gateway does report are unchanged. Telegraf skips `null` fields, and no Powerwall-Dashboard panel uses these flags.
+
 ### Proxy t114 (9 Nov 2026)
 
 * Upgraded to pyPowerwall v0.25.0 - see the library release notes. Proxy-visible changes, both in TEDAPI/v1r modes:
