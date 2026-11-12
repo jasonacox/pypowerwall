@@ -174,7 +174,7 @@ from pypowerwall.fleetapi.exceptions import (
     PyPowerwallFleetAPIInvalidPayload,
 )
 
-BUILD = "t114"
+BUILD = "t115"
 ALLOWLIST = [
     "/api/status",
     "/api/site_info/site_name",
@@ -1148,6 +1148,18 @@ if hasattr(signal, "SIGCHLD") and os.getpid() == 1:
 
 
 # Get Value Function - Key to Value or Return Null
+# Per-battery status flags in /pod, in output order
+POD_STATUS_FLAGS = (
+    "POD_ActiveHeating",
+    "POD_ChargeComplete",
+    "POD_ChargeRequest",
+    "POD_DischargeComplete",
+    "POD_PermanentlyFaulted",
+    "POD_PersistentlyFaulted",
+    "POD_enable_line",
+)
+
+
 def get_value(a, key):
     if key in a:
         return a[key]
@@ -2228,27 +2240,13 @@ class Handler(BaseHTTPRequestHandler):
                     v = vitals[device]
                     if device.startswith("TEPOD"):
                         pod["PW%d_name" % idx] = device
-                        pod["PW%d_POD_ActiveHeating" % idx] = int(
-                            get_value(v, "POD_ActiveHeating") or 0
-                        )
-                        pod["PW%d_POD_ChargeComplete" % idx] = int(
-                            get_value(v, "POD_ChargeComplete") or 0
-                        )
-                        pod["PW%d_POD_ChargeRequest" % idx] = int(
-                            get_value(v, "POD_ChargeRequest") or 0
-                        )
-                        pod["PW%d_POD_DischargeComplete" % idx] = int(
-                            get_value(v, "POD_DischargeComplete") or 0
-                        )
-                        pod["PW%d_POD_PermanentlyFaulted" % idx] = int(
-                            get_value(v, "POD_PermanentlyFaulted") or 0
-                        )
-                        pod["PW%d_POD_PersistentlyFaulted" % idx] = int(
-                            get_value(v, "POD_PersistentlyFaulted") or 0
-                        )
-                        pod["PW%d_POD_enable_line" % idx] = int(
-                            get_value(v, "POD_enable_line") or 0
-                        )
+                        # Status flags stay null when the gateway gives no value
+                        # (TEDAPI vitals have no source for them), not a fake 0.
+                        for flag in POD_STATUS_FLAGS:
+                            value = get_value(v, flag)
+                            pod["PW%d_%s" % (idx, flag)] = (
+                                None if value is None else int(value or 0)
+                            )
                         pod["PW%d_POD_available_charge_power" % idx] = get_value(
                             v, "POD_available_charge_power"
                         )
