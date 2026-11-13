@@ -17,6 +17,7 @@ syntax = "proto3";
 package tedapi_combined;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 
 // ===================================================================
 // PART 1: Signed Message Protocol
@@ -219,8 +220,15 @@ message Tail {
 }
 
 message CommonMessages {
-  // common.error_response (field 1), per tesla-protocol common.proto.
-  CommonAPIErrorResponse error_response = 1;
+  // Tesla's schema models these as one oneof (tesla-protocol common_api.proto);
+  // only the members pypowerwall uses are listed.
+  oneof message {
+    // common.error_response (field 1), per tesla-protocol common.proto.
+    CommonAPIErrorResponse error_response = 1;
+    // Networking status (read-only). See "Networking status" below.
+    CommonAPIGetNetworkingStatusRequest get_networking_status_request = 22;
+    CommonAPIGetNetworkingStatusResponse get_networking_status_response = 23;
+  }
 }
 
 message CommonAPIErrorResponse {
@@ -231,6 +239,116 @@ message CommonAPIErrorResponse {
 message CommandStatus {
   int32 code = 1;
   string message = 2;
+}
+
+// -------------------------------------------------------------------
+// Networking status (CommonMessages fields 22/23) -- read-only.
+//
+// Reports, per gateway interface (Wi-Fi, Ethernet, cellular), whether it is
+// enabled, whether it carries the active route, link / internet / Tesla
+// connectivity and signal strength.
+//
+// Provenance: field numbers, names and enums are from Teslemetry/tesla-protocol
+// (common_api.proto / networking.proto); the same messages appear in camelCase
+// in the generated V2026_06 set. They are added here, in the legacy file, so the
+// request works on the default V2024_06 path with the protobuf>=4.25.1 floor.
+//
+// Hardware validation: Powerwall 3, firmware 26.34.3, 2026-11-14, over both the
+// signed v1r LAN transport and Gateway Wi-Fi basic auth (deliveryChannel
+// LOCAL_HTTPS, sender.local INSTALLER) -- the gateway answered with all three
+// interfaces populated. Not validated on the bearer transport or on Powerwall 2
+// / Powerwall+. Firmware that does not implement the request answers
+// common.error_response instead.
+// -------------------------------------------------------------------
+
+enum WifiNetworkSecurityType {
+  WIFI_NETWORK_SECURITY_TYPE_INVALID         = 0;
+  WIFI_NETWORK_SECURITY_TYPE_NONE            = 1;
+  WIFI_NETWORK_SECURITY_TYPE_DYNAMIC_WEP     = 2;
+  WIFI_NETWORK_SECURITY_TYPE_WPA2_PERSONAL   = 3;
+  WIFI_NETWORK_SECURITY_TYPE_WPA2_ENTERPRISE = 4;
+}
+
+enum NetworkDeviceState {
+  NETWORK_DEVICE_STATE_INVALID       = 0;
+  NETWORK_DEVICE_STATE_UNMANAGED     = 1;
+  NETWORK_DEVICE_STATE_UNAVAILABLE   = 2;
+  NETWORK_DEVICE_STATE_IDLE          = 3;
+  NETWORK_DEVICE_STATE_ASSOCIATION   = 4;
+  NETWORK_DEVICE_STATE_CONFIGURATION = 5;
+  NETWORK_DEVICE_STATE_READY         = 6;
+  NETWORK_DEVICE_STATE_DISCONNECT    = 7;
+  NETWORK_DEVICE_STATE_FAILURE       = 8;
+}
+
+enum NetworkDeviceStateReason {
+  NETWORK_DEVICE_STATE_REASON_INVALID               = 0;
+  NETWORK_DEVICE_STATE_REASON_NONE                  = 1;
+  NETWORK_DEVICE_STATE_REASON_CONFIG_FAILED         = 2;
+  NETWORK_DEVICE_STATE_REASON_DHCP_FAILED           = 3;
+  NETWORK_DEVICE_STATE_REASON_IP_ADDRESS_DUPLICATE  = 4;
+  NETWORK_DEVICE_STATE_REASON_IP_CONFIG_EXPIRED     = 5;
+  NETWORK_DEVICE_STATE_REASON_IP_CONFIG_UNAVAILABLE = 6;
+  NETWORK_DEVICE_STATE_REASON_IP_METHOD_UNSUPPORTED = 7;
+  NETWORK_DEVICE_STATE_REASON_NEW_ACTIVATION        = 8;
+  NETWORK_DEVICE_STATE_REASON_NO_SECRETS            = 9;
+  NETWORK_DEVICE_STATE_REASON_PPP_FAILED            = 10;
+  NETWORK_DEVICE_STATE_REASON_SSID_NOT_FOUND        = 11;
+  NETWORK_DEVICE_STATE_REASON_SIM_PIN_INCORRECT     = 12;
+  NETWORK_DEVICE_STATE_REASON_SUPPLICANT_FAILED     = 13;
+  NETWORK_DEVICE_STATE_REASON_REMOVED               = 14;
+  NETWORK_DEVICE_STATE_REASON_MODEM_FAILED          = 15;
+}
+
+message CommonAPIGetNetworkingStatusRequest {}
+
+message CommonAPIGetNetworkingStatusResponse {
+  WifiConfig wifi_config = 1;
+  NetworkInterface wifi  = 2;
+  NetworkInterface eth   = 3;
+  NetworkInterface gsm   = 4;
+}
+
+message WifiConfig {
+  string ssid = 1;
+  // Field 2 is the Wi-Fi password (WifiPassword) in Tesla's schema. It is
+  // deliberately NOT modelled: reserving it keeps the secret an opaque unknown
+  // field, so pypowerwall can never parse, log or return it.
+  reserved 2;
+  WifiNetworkSecurityType security_type = 3;
+}
+
+message NetworkInterface {
+  bytes mac_address                             = 1;
+  bool enabled                                  = 2;
+  bool active_route                             = 3;
+  NetworkInterfaceIPv4Config ipv4_config        = 4;
+  NetworkConnectivityStatus connectivity_status = 5;
+  NetworkDeviceState device_state               = 6;
+  NetworkDeviceStateReason device_state_reason  = 7;
+}
+
+message NetworkInterfaceIPv4Config {
+  reserved 1;
+  bool dhcp_enabled    = 2;
+  // IPv4 values are fixed32 in host order: 192.168.1.2 == 0xC0A80102.
+  fixed32 address      = 3;
+  fixed32 subnet_mask  = 4;
+  fixed32 gateway      = 5;
+  repeated fixed32 dns = 6;
+}
+
+message NetworkConnectivityStatus {
+  bool connected_physical        = 1;
+  bool connected_internet        = 2;
+  bool connected_tesla           = 3;
+  Rssi rssi                      = 4;
+  google.protobuf.Int32Value snr = 5;
+}
+
+message Rssi {
+  sint32 value                                        = 1;
+  google.protobuf.UInt32Value signal_strength_percent = 2;
 }
 
 message ControlEventSchedulingInfo {

@@ -41,6 +41,7 @@
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
     get_native_status() - Get the gateway's native /api/status
+    get_network_status() - Get the gateway's Wi-Fi / Ethernet / cellular network status
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -83,6 +84,7 @@ from .api_version import TEDAPIApiVersion
 from .auth_mode import AuthMode
 from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES, PW3_FAN_SIGNAL_NAMES, \
     PW2_POD_POWER_SIGNAL_NAMES
+from .network_status import NetworkStatus
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -1286,6 +1288,99 @@ class TEDAPI:
         env = envelope_cls() if bare else message_cls()
         env.ParseFromString(response)
         return SystemInfo.from_proto(env if bare else env.message, schema)
+
+    @uses_api_lock
+    def get_network_status(self, self_function=None, force=False, details=False):
+        """
+        Get the gateway's networking status: for each network interface (Wi-Fi,
+        Ethernet, cellular) whether it is enabled, whether it carries the active
+        route, its link / internet / Tesla connectivity and its signal strength.
+
+        Read-only. Sent over whichever TEDAPI transport is active; validated
+        on Powerwall 3 over Gateway Wi-Fi (basic) and signed v1r.
+
+        Args:
+            force (bool): Force a refresh, bypassing the cache
+            details (bool): Also return each interface's MAC address and IPv4
+                            settings and the configured Wi-Fi network's SSID and
+                            security type. The Wi-Fi password is never returned.
+
+        Example payload:
+            {
+                "wifi": {
+                    "enabled": true, "active_route": true,
+                    "connected_physical": true, "connected_internet": true,
+                    "connected_tesla": true, "signal_strength_percent": 58,
+                    "rssi": null, "snr": null,
+                    "device_state": "NETWORK_DEVICE_STATE_READY",
+                    "device_state_reason": "NETWORK_DEVICE_STATE_REASON_NONE"
+                },
+                "eth": {...},
+                "gsm": {...}
+            }
+
+        Returns None if the gateway did not answer, or answered with an error
+        (firmware that does not implement the request).
+        """
+        # The cache holds the NetworkStatus, so a cache hit can answer either shape.
+        status = self._cached_fetch('network_status', expire=self.pwcacheexpire, force=force,
+                                    self_function=self_function, name='network status',
+                                    fetch=self._get_network_status)
+        if status is None:
+            return None
+        return status.to_dict(details=details)
+
+    def _get_network_status(self) -> Optional[NetworkStatus]:
+        """Fetch the gateway networking status and normalize it into a
+        :class:`NetworkStatus`. Returns None if the transport produced nothing or
+        the gateway did not answer with a networking status.
+
+        The request is built from the legacy combined proto for every
+        tedapi_api_version: CommonMessages field 22 has the same wire shape in
+        the V2026_06 set, so one builder and one parser serve both. Validated on
+        PW3 firmware 26.34.3 over signed v1r and Wi-Fi basic auth (2026-11-14).
+        """
+        pb = combined_pb2.Message()
+        pb.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+        pb.message.sender.local = combined_pb2.LOCAL_PARTICIPANT_INSTALLER
+        pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+        # The request message is empty; SetInParent() marks it present so it is
+        # put on the wire (and selects it in the CommonMessages oneof).
+        pb.message.common.get_networking_status_request.SetInParent()
+        pb.tail.value = 1
+        response = self._post_tedapi(pb.SerializeToString())
+        if response is None:
+            return None
+        return self._parse_network_status(response)
+
+    def _parse_network_status(self, response: bytes) -> Optional[NetworkStatus]:
+        """Parse a networking status response into a NetworkStatus, or None when
+        the gateway answered with something else (logged)."""
+        # v1r and bearer transports hand back a bare MessageEnvelope (no outer
+        # Message/Tail); basic returns the full Message. See _parse_system_info.
+        bare = self.v1r or self.auth_mode == AuthMode.BEARER
+        if bare:
+            envelope = combined_pb2.MessageEnvelope()
+            envelope.ParseFromString(response)
+        else:
+            message = combined_pb2.Message()
+            message.ParseFromString(response)
+            envelope = message.message
+        # Deliberately no logging of the raw response or the parsed message: the
+        # reply carries Wi-Fi credentials (see network_status.py).
+        if not envelope.HasField('common'):
+            log.error('Network status: unexpected response from gateway (no common payload)')
+            return None
+        common = envelope.common
+        if common.HasField('get_networking_status_response'):
+            return NetworkStatus.from_proto(common.get_networking_status_response)
+        if common.HasField('error_response'):
+            # e.g. code 12 (UNIMPLEMENTED) on firmware without this request.
+            status = common.error_response.status
+            log.error(f'Network status: gateway returned error {status.code}: {status.message}')
+            return None
+        log.error('Network status: unexpected response from gateway')
+        return None
 
     @uses_api_lock
     def get_components(self, self_function=None, force=False):

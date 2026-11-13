@@ -32,8 +32,12 @@ def _build_tedapi_arg_parser(default_host):
                         help='Query/protobuf version set (default: V2024_06)')
     parser.add_argument('-firmware', action='store_true',
                         help='Fetch and print the gateway firmware version, then exit')
+    parser.add_argument('-network', action='store_true',
+                        help='Fetch and print the gateway network status (Wi-Fi, Ethernet, '
+                             'cellular), then exit')
     parser.add_argument('-details', action='store_true',
-                        help='With -firmware: include full system info (part/serial, githash)')
+                        help='With -firmware: include full system info (part/serial, githash). '
+                             'With -network: include MAC, IPv4 settings and Wi-Fi SSID')
     parser.add_argument('--auth-mode', default=AuthMode.BASIC.value,
                         choices=[m.value for m in AuthMode],
                         help='Authentication mode: basic (default, Gateway Wi-Fi only via '
@@ -69,6 +73,16 @@ def _render_firmware(info, details=False):
     if details:
         return json.dumps(info, indent=2, default=_json_bytes_safe)
     return str(info)
+
+
+def _render_network(status):
+    """Format a get_network_status() result for display. Pure (no I/O) so it is
+    unit-testable. `status` is the per-interface dict, or None when the gateway
+    returned nothing (no answer, or firmware without the request)."""
+    import json
+    if status is None:
+        return 'unavailable (no network status from gateway)'
+    return json.dumps(status, indent=2, default=_json_bytes_safe)
 
 
 def run_tedapi_test(argv=None, debug=False):
@@ -177,6 +191,15 @@ def run_tedapi_test(argv=None, debug=False):
             print(_render_firmware(info, details=True))
         else:
             print(f" - Firmware Version: {_render_firmware(info)}")
+        print()
+        return
+
+    # Focused network entrypoint: fetch + print the gateway network status and
+    # exit (read-only; no config/status fetch, no files written).
+    if args.network:
+        print()
+        print(' - Network Status:')
+        print(_render_network(ted.get_network_status(force=True, details=args.details)))
         print()
         return
 

@@ -82,6 +82,7 @@
     dispatch_battery_power(power_watts, duration_seconds) # Timed local v1r battery power setpoint
     resume_battery_operation() # Release a local v1r battery power setpoint
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
+    network_status()          # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
 
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
@@ -1040,6 +1041,48 @@ class Powerwall(object):
         if not callable(probe):
             return False
         return bool(probe())  # pylint: disable=not-callable
+
+    def network_status(self, details: bool = False, jsonformat: bool = False,
+                       force: bool = False) -> Optional[Union[dict, str]]:
+        """
+        Gateway network status (Wi-Fi, Ethernet and cellular)
+
+        For each gateway network interface: whether it is enabled, whether it
+        carries the active route, link / internet / Tesla connectivity and the
+        signal strength. Read-only. Requires a TEDAPI connection (full, hybrid or
+        v1r mode); returns None in the other modes, when the gateway does not
+        answer, or on firmware that does not implement the request.
+
+        Args:
+          details    = If True, add each interface's MAC address and IPv4 settings
+                       and the configured Wi-Fi network (SSID and security type).
+                       The Wi-Fi password is never returned.
+          jsonformat = If True, return JSON format otherwise return Python Dictionary
+          force      = If True, bypass the cache
+
+        Returns (signal values are None where the gateway does not report them):
+          {
+            'wifi': {'enabled': True, 'active_route': True, 'connected_physical': True,
+                     'connected_internet': True, 'connected_tesla': True,
+                     'signal_strength_percent': 58, 'rssi': None, 'snr': None,
+                     'device_state': 'NETWORK_DEVICE_STATE_READY',
+                     'device_state_reason': 'NETWORK_DEVICE_STATE_REASON_NONE'},
+            'eth': {...},
+            'gsm': {...}
+          }
+        """
+        if self._no_client():
+            return None
+        fetch = getattr(self.tedapi, 'get_network_status', None)
+        if not callable(fetch):
+            log.error('network_status requires a TEDAPI connection (tedapi_mode=%s)', self.tedapi_mode)
+            return None
+        payload = fetch(force=force, details=details)  # pylint: disable=not-callable
+        if payload is None:
+            return None
+        if jsonformat:
+            return json.dumps(payload, indent=4, sort_keys=True)
+        return payload
 
     def schedule_max_backup(self, duration_seconds=7200):
         """Schedule manual backup event (max backup / storm watch mode) via v1r TEGMessages."""

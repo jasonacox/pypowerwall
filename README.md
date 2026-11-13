@@ -159,6 +159,10 @@ python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX
 # Test v1r LAN TEDAPI
 python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
    -rsa_key_path /path/to/tedapi_rsa_private.pem
+
+# Show the gateway's network status (Wi-Fi, Ethernet, cellular) and exit.
+# Add -details for MAC, IPv4 settings and Wi-Fi SSID.
+python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -network
 ```
 
 #### TEDAPI Troubleshooting
@@ -315,6 +319,7 @@ print(pw.version())     # Firmware version
 print(pw.vitals())      # Per-device vitals (PVAC, PVS, TEPOD, PINV, etc.)
 print(pw.strings())     # Solar string data
 print(pw.alerts())      # Active device alerts
+print(pw.network_status())  # Gateway Wi-Fi / Ethernet / cellular status and signal strength
 
 # API polling:
 pw.poll('/api/meters/aggregates')              # Detailed meter data
@@ -746,6 +751,7 @@ print("System Status: %r\n" % pw.system_status())
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
+    network_status()          # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
     go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode
     reconnect_grid()          # Reconnect to the grid (close contactor) - cloud/FleetAPI or v1r mode
 ```
