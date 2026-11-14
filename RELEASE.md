@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* feat(tedapi): new `Powerwall.network_status()` (and `TEDAPI.get_network_status()`) returns the gateway's network status per interface (Wi-Fi, Ethernet, cellular): enabled, active route, link / internet / Tesla connectivity and signal strength. `details=True` adds MAC address, IPv4 settings and the Wi-Fi SSID; the Wi-Fi password in the gateway's reply is not modelled in the protobuf, so it is never parsed, logged or returned. Read-only, cached like the other TEDAPI getters, and available from the command line as `python -m pypowerwall tedapi -network [-details]`. Validated on a Powerwall 3 (firmware 26.34.3) over Gateway Wi-Fi and signed v1r, and on a Powerwall 2 (firmware 26.42.0) over Gateway Wi-Fi; firmware without the request returns `None`. A Powerwall 2 does not answer the request over v1r, so it returns `None` there: use Gateway Wi-Fi (full TEDAPI) on a Powerwall 2. The messages are added to `tedapi_combined.proto` from the Teslemetry/tesla-protocol schema, and `CommonMessages` becomes a `oneof` as in that schema (wire-compatible).
+
 ## v0.25.0 - Generator Aggregates and Powerwall 2 Gateway Uptime
 
 Two TEDAPI/v1r gaps closed by @clonea1 in their first contributions, both found and hardware-tested on a Backup Gateway 2 with 2x Powerwall 2 and a standby generator. Thank you @clonea1, @cavedon for reporting #418, and @jasonacox-sam for verifying #472 and reviewing both! (Minor bump: `/api/meters/aggregates` gains a `generator` section.)

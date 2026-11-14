@@ -522,8 +522,11 @@ def main():
                              help="TEDAPI query/protobuf version to use (V2024_06 or V2026_06)")
     tedapi_args.add_argument("-firmware", action="store_true", default=False,
                              help="Fetch and print gateway firmware version, then exit")
+    tedapi_args.add_argument("-network", action="store_true", default=False,
+                             help="Fetch and print gateway network status (Wi-Fi, Ethernet, cellular), then exit")
     tedapi_args.add_argument("-details", action="store_true", default=False,
-                             help="With -firmware: include full system info")
+                             help="With -firmware: include full system info. "
+                                  "With -network: include MAC, IPv4 settings and Wi-Fi SSID")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -784,6 +787,8 @@ def main():
             tedapi_argv.extend(['-tedapi_api_version', args.tedapi_api_version])
         if getattr(args, 'firmware', False):
             tedapi_argv.append('-firmware')
+        if getattr(args, 'network', False):
+            tedapi_argv.append('-network')
         if getattr(args, 'details', False):
             tedapi_argv.append('-details')
         if args.debug:
