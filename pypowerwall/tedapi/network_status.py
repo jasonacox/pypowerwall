@@ -20,10 +20,11 @@
     * ``device_state`` / ``device_state_reason`` are only populated for Wi-Fi
       (Ethernet and cellular report the INVALID zero value), and the Wi-Fi
       ``security_type`` is left at its INVALID zero value.
- Over signed v1r the request goes out in the signed-command envelope the
- other v1r commands use; a Powerwall 2 did not route the local installer
- envelope over v1r, and the signed-command envelope is not yet confirmed there.
- Not validated on the bearer transport or on Powerwall+.
+ That Powerwall 2 does not answer the request over signed v1r: the gateway
+ returns MESSAGEFAULT_ERROR_TIMEOUT (tested directly on the LAN and through a
+ bridge, with the local installer envelope and with the signed-command
+ envelope), so the result there is None. Use Gateway Wi-Fi TEDAPI on a
+ Powerwall 2. Not validated on the bearer transport or on Powerwall+.
 
  Privacy:
     The gateway's reply also carries the Wi-Fi password. The protobuf definition

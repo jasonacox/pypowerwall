@@ -162,8 +162,9 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
 
 # Show the gateway's network status (Wi-Fi, Ethernet, cellular) and exit.
 # Add -details for MAC, IPv4 settings and Wi-Fi SSID. With only -gw_pwd this
-# needs the Gateway Wi-Fi address (192.168.91.1); on the home LAN address add
-# the -v1r options above.
+# needs the Gateway Wi-Fi address (192.168.91.1). On a Powerwall 3 it also
+# works on the home LAN address with the -v1r options above; a Powerwall 2
+# answers it over Gateway Wi-Fi only.
 python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -network
 ```
 

@@ -186,7 +186,7 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
     - Values the gateway does not report are `None`, and an interface it leaves out is `None`. A Powerwall 3 on firmware 26.34.3 reports the signal as a percentage only (`rssi` and `snr` are `None`) and fills `device_state` for Wi-Fi only.
     - `details=True` adds `mac_address` and `ipv4` (`dhcp_enabled`, `address`, `subnet_mask`, `gateway`, `dns`) to each interface, and a `wifi_config` entry with the `ssid` and `security_type` of the configured Wi-Fi network. The Wi-Fi password is never returned.
     - `force=True` bypasses the cache (`pwcacheexpire`).
-    - Validated on Powerwall 3 over Gateway Wi-Fi and v1r, and on Powerwall 2 over Gateway Wi-Fi. Command line: `python -m pypowerwall tedapi -network [-details]`.
+    - Validated on Powerwall 3 over Gateway Wi-Fi and v1r, and on Powerwall 2 over Gateway Wi-Fi (full TEDAPI). A Powerwall 2 does not answer this request over v1r and returns `None` there. Command line: `python -m pypowerwall tedapi -network [-details]`.
 
   ```python
   net = pw.network_status()

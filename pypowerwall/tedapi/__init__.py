@@ -1298,7 +1298,8 @@ class TEDAPI:
 
         Read-only. Sent over whichever TEDAPI transport is active; validated
         on Powerwall 3 over Gateway Wi-Fi (basic) and signed v1r, and on
-        Powerwall 2 over Gateway Wi-Fi (basic).
+        Powerwall 2 over Gateway Wi-Fi (basic). A Powerwall 2 does not answer
+        this request over v1r (returns None).
 
         Args:
             force (bool): Force a refresh, bypassing the cache
@@ -1338,47 +1339,30 @@ class TEDAPI:
 
         The request is built from the legacy combined proto for every
         tedapi_api_version: CommonMessages field 22 has the same wire shape in
-        the V2026_06 set, so one builder and one parser serve both.
-
-        Two envelopes carry it, like the config read (see get_config_v1r):
-            * basic and bearer send the local installer envelope
-              (LOCAL_HTTPS, sender.local INSTALLER) -- validated over Gateway
-              Wi-Fi basic auth on PW3 firmware 26.34.3 and on a Powerwall 2,
-              firmware 26.42.0;
-            * signed v1r sends the signed-command envelope the other v1r
-              commands use (HERMES_COMMAND, sender.authorizedClient) --
-              validated on PW3 firmware 26.34.3 (2026-11-15). A Powerwall 2
-              (firmware 26.42.0) did not route the local installer envelope
-              over v1r (MESSAGEFAULT_ERROR_TIMEOUT); this envelope is not yet
-              confirmed there.
+        the V2026_06 set, so one builder and one parser serve both. Validated on
+        PW3 firmware 26.34.3 over signed v1r and Wi-Fi basic auth (2026-11-14)
+        and on a Powerwall 2, firmware 26.42.0, over Wi-Fi basic auth. Over
+        signed v1r that Powerwall 2 answered MESSAGEFAULT_ERROR_TIMEOUT, both
+        to this envelope and to the signed-command one (HERMES_COMMAND,
+        sender.authorizedClient), so there is no v1r variant to switch to.
         """
         pb = combined_pb2.Message()
-        self._network_status_envelope(pb.message, signed=False)
-        pb.tail.value = 1
-        v1r_envelope = None
-        if self.v1r:
-            envelope = combined_pb2.MessageEnvelope()
-            self._network_status_envelope(envelope, signed=True)
-            v1r_envelope = envelope.SerializeToString()
-        response = self._post_tedapi(pb.SerializeToString(), v1r_envelope=v1r_envelope)
-        if response is None:
-            return None
-        return self._parse_network_status(response)
-
-    def _network_status_envelope(self, envelope, signed: bool) -> None:
-        """Fill ``envelope`` (a combined MessageEnvelope) with the networking
-        status request: the signed-command form for the signed v1r transports,
-        else the local installer form."""
-        if signed:
-            envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
-            envelope.sender.authorizedClient = combined_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
-        else:
-            envelope.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
-            envelope.sender.local = combined_pb2.LOCAL_PARTICIPANT_INSTALLER
-        envelope.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+        pb.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+        pb.message.sender.local = combined_pb2.LOCAL_PARTICIPANT_INSTALLER
+        pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
         # The request message is empty; SetInParent() marks it present so it is
         # put on the wire (and selects it in the CommonMessages oneof).
-        envelope.common.get_networking_status_request.SetInParent()
+        pb.message.common.get_networking_status_request.SetInParent()
+        pb.tail.value = 1
+        response = self._post_tedapi(pb.SerializeToString())
+        if response is None:
+            if self.v1r:
+                # The v1r transport reports the gateway's timeout fault at
+                # debug level only; say why the result is None.
+                log.error('Network status: no answer from the gateway over v1r (a Powerwall 2 '
+                          'does not answer this request over v1r; use Gateway Wi-Fi TEDAPI there)')
+            return None
+        return self._parse_network_status(response)
 
     def _parse_network_status(self, response: bytes) -> Optional[NetworkStatus]:
         """Parse a networking status response into a NetworkStatus, or None when
@@ -2550,8 +2534,7 @@ class TEDAPI:
             return pb_bytes
         return msg.message.SerializeToString()
 
-    def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1',
-                     v1r_envelope: Optional[bytes] = None) -> Optional[bytes]:
+    def _post_tedapi(self, pb_bytes: bytes, din: str = None, url_suffix: str = '/tedapi/v1') -> Optional[bytes]:
         """
         Transport abstraction: POST protobuf bytes to the appropriate TEDAPI endpoint.
 
@@ -2567,14 +2550,6 @@ class TEDAPI:
                       bare MessageEnvelope bytes.
             din: DIN for v1r envelope (ignored in WiFi mode)
             url_suffix: URL suffix for WiFi mode (e.g., '/tedapi/v1' or '/tedapi/device/{din}/v1')
-            v1r_envelope: Bare MessageEnvelope bytes to send instead of pb_bytes
-                      when the request goes out on a signed v1r transport (LAN
-                      or the opt-in WiFi-v1r route), for requests that use a
-                      different envelope there. Every other route, including
-                      the legacy WiFi TEDAPI fallback, sends pb_bytes. The
-                      choice is made here, with the routing decision, so a LAN
-                      state change mid-call cannot pair an envelope with the
-                      wrong transport.
 
         Returns:
             Raw response content bytes, or None on error.
@@ -2618,7 +2593,7 @@ class TEDAPI:
                     log.debug("v1r: LAN down — routing primary query via signed WiFi v1r")
                     return self._v1r_call(
                         self._v1r_read_transport(), "post_v1r",
-                        v1r_envelope or self._envelope_bytes(pb_bytes), self.din,
+                        self._envelope_bytes(pb_bytes), self.din,
                     )
                 if self.wifi_session:
                     log.debug("v1r: LAN down — routing primary query via WiFi TEDAPI")
@@ -2650,7 +2625,7 @@ class TEDAPI:
             # ── Normal v1r LAN path ───────────────────────────────────────────
             # v1r requires just the MessageEnvelope bytes (NOT the full Message
             # wrapper with tail). Extract the envelope from the full Message.
-            envelope_bytes = v1r_envelope or self._envelope_bytes(pb_bytes)
+            envelope_bytes = self._envelope_bytes(pb_bytes)
             # Always sign with leader DIN (self.din) — the RSA key is registered
             # on the leader only. The follower DIN is in the envelope's recipient
             # field for routing, but TLV personalization must match the leader.

@@ -7,8 +7,7 @@ Wi-Fi password the gateway includes in its reply never reaches a caller or a log
 """
 import json
 import logging
-import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -37,10 +36,10 @@ MASK = 0xFFFFFF00           # 255.255.255.0
 ROUTER = 0xC0A80101         # 192.168.1.1
 DNS = 0x09090909            # 9.9.9.9
 
-# The local installer envelope the gateway answered over Gateway Wi-Fi basic
-# auth on a Powerwall 3 (firmware 26.34.3, 2026-11-14) and a Powerwall 2
-# (firmware 26.42.0): deliveryChannel LOCAL_HTTPS, sender.local INSTALLER,
-# recipient.din, and an empty common.get_networking_status_request
+# The bare MessageEnvelope the gateway answered on a Powerwall 3 (firmware
+# 26.34.3, signed v1r, 2026-11-14) and, over Gateway Wi-Fi basic auth, on a
+# Powerwall 2 (firmware 26.42.0): deliveryChannel LOCAL_HTTPS, sender.local
+# INSTALLER, recipient.din, and an empty common.get_networking_status_request
 # (CommonMessages field 22 -> tag 0xB2 0x01, length 0).
 PINNED_ENVELOPE = (b'\x08\x01'
                    b'\x12\x02\x18\x01'
@@ -48,14 +47,6 @@ PINNED_ENVELOPE = (b'\x08\x01'
                    b'\x22\x03\xb2\x01\x00')
 # Basic (Gateway Wi-Fi) wraps the envelope in a transport Message with a tail.
 PINNED_MESSAGE = b'\x0a' + bytes([len(PINNED_ENVELOPE)]) + PINNED_ENVELOPE + b'\x12\x02\x08\x01'
-# The signed-command envelope the gateway answered over signed v1r on a
-# Powerwall 3 (firmware 26.34.3, 2026-11-15): deliveryChannel HERMES_COMMAND,
-# sender.authorizedClient CUSTOMER_MOBILE_APP, same recipient and request. A
-# Powerwall 2 (firmware 26.42.0) timed out on the installer envelope over v1r.
-PINNED_V1R_ENVELOPE = (b'\x08\x02'
-                       b'\x12\x02\x20\x01'
-                       b'\x1a\x1e\x0a\x1c' + DIN.encode() +
-                       b'\x22\x03\xb2\x01\x00')
 
 
 def _make_api(v1r=False, auth_mode=AuthMode.BASIC, api_version=TEDAPIApiVersion.V2024_06):
@@ -149,70 +140,12 @@ TRANSPORTS = [
 
 # ── Request ──────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize('auth_mode', [AuthMode.BASIC, AuthMode.BEARER])
-def test_request_bytes_are_pinned(auth_mode):
+def test_request_bytes_are_pinned():
     """The request must stay byte-identical to the hardware-validated one."""
-    api = _make_api(auth_mode=auth_mode)
+    api = _make_api()
     with patch.object(api, '_post_tedapi', return_value=None) as post:
         assert api.get_network_status() is None
-    post.assert_called_once_with(PINNED_MESSAGE, v1r_envelope=None)
-
-
-def test_v1r_request_adds_the_pinned_signed_command_envelope():
-    """v1r hands the transport both forms: the signed-command envelope for the
-    signed transports, the installer Message for the legacy Wi-Fi fallback."""
-    api = _make_api(v1r=True)
-    with patch.object(api, '_post_tedapi', return_value=None) as post:
-        assert api.get_network_status() is None
-    post.assert_called_once_with(PINNED_MESSAGE, v1r_envelope=PINNED_V1R_ENVELOPE)
-
-
-def _v1r_api_with_transports():
-    api = _make_api(v1r=True)
-    api.v1r_transport = MagicMock()
-    api.v1r_transport.post_v1r.return_value = _response(bare=True)
-    api.wifi_v1r_transport = MagicMock()
-    api.wifi_v1r_transport.post_v1r.return_value = _response(bare=True)
-    return api
-
-
-def _fail_lan(api):
-    api.lan_failed = True
-    api.lan_recover_after = time.time() + 3600
-
-
-def test_v1r_lan_sends_the_signed_command_envelope():
-    api = _v1r_api_with_transports()
-    assert api.get_network_status()['wifi'] == EXPECTED_WIFI
-    api.v1r_transport.post_v1r.assert_called_once_with(PINNED_V1R_ENVELOPE, DIN)
-
-
-def test_signed_wifi_v1r_fallback_sends_the_signed_command_envelope():
-    api = _v1r_api_with_transports()
-    api.wifi_v1r_fallback = True
-    _fail_lan(api)
-    assert api.get_network_status()['wifi'] == EXPECTED_WIFI
-    api.wifi_v1r_transport.post_v1r.assert_called_once_with(PINNED_V1R_ENVELOPE, DIN)
-    api.v1r_transport.post_v1r.assert_not_called()
-
-
-def test_legacy_wifi_fallback_keeps_the_installer_envelope():
-    """With the LAN down and no signed Wi-Fi route, v1r falls back to Gateway
-    Wi-Fi basic auth, which was validated with the installer envelope."""
-    api = _v1r_api_with_transports()
-    api.wifi_session = MagicMock()
-    _fail_lan(api)
-    with patch.object(api, '_post_tedapi_wifi', return_value=_response(bare=False)) as wifi:
-        assert api.get_network_status()['wifi'] == EXPECTED_WIFI
-    wifi.assert_called_once_with(PINNED_MESSAGE, '/tedapi/v1')
-    api.v1r_transport.post_v1r.assert_not_called()
-
-
-def test_other_requests_are_unchanged_on_v1r():
-    """Without v1r_envelope the transport still strips the Message wrapper."""
-    api = _v1r_api_with_transports()
-    api._post_tedapi(PINNED_MESSAGE)
-    api.v1r_transport.post_v1r.assert_called_once_with(PINNED_ENVELOPE, DIN)
+    post.assert_called_once_with(PINNED_MESSAGE)
 
 
 @pytest.mark.parametrize('api_version', [
@@ -396,6 +329,24 @@ def test_failures_are_not_cached():
         assert api.get_network_status() is None
         assert api.get_network_status() is None
     assert post.call_count == 2
+
+
+def test_no_answer_over_v1r_is_explained(caplog):
+    """A Powerwall 2 answers a timeout fault over v1r, which the transport only
+    logs at debug level: the getter says why it returns None."""
+    api = _make_api(v1r=True)
+    with caplog.at_level(logging.ERROR), \
+         patch.object(api, '_post_tedapi', return_value=None):
+        assert api.get_network_status() is None
+    assert 'no answer from the gateway over v1r' in caplog.text
+
+
+def test_no_answer_on_other_transports_adds_no_v1r_hint(caplog):
+    api = _make_api()
+    with caplog.at_level(logging.ERROR), \
+         patch.object(api, '_post_tedapi', return_value=None):
+        assert api.get_network_status() is None
+    assert 'no answer from the gateway over v1r' not in caplog.text
 
 
 def test_not_connected_returns_none():

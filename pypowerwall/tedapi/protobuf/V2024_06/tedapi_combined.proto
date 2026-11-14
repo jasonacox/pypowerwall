@@ -256,14 +256,13 @@ message CommandStatus {
 // Hardware validation: Powerwall 3, firmware 26.34.3, 2026-11-14, over both the
 // signed v1r LAN transport and Gateway Wi-Fi basic auth -- the gateway answered
 // with all three interfaces populated -- and Powerwall 2, firmware 26.42.0,
-// over Gateway Wi-Fi basic auth. Basic auth sends deliveryChannel LOCAL_HTTPS,
-// sender.local INSTALLER. The Powerwall 3 answers that envelope over v1r too,
-// but the Powerwall 2 did not route it there (MESSAGEFAULT_ERROR_TIMEOUT), so
-// v1r sends deliveryChannel HERMES_COMMAND, sender.authorizedClient, like the
-// other v1r commands (validated on the Powerwall 3, 2026-11-15; not yet
-// confirmed on Powerwall 2). Not validated on the bearer transport or on
-// Powerwall+. Firmware that does not implement the request answers
-// common.error_response instead.
+// over Gateway Wi-Fi basic auth. The request is sent with deliveryChannel
+// LOCAL_HTTPS, sender.local INSTALLER on every transport. Over signed v1r the
+// Powerwall 3 answers that envelope and also deliveryChannel HERMES_COMMAND,
+// sender.authorizedClient (2026-11-15); the Powerwall 2 answers neither
+// (MESSAGEFAULT_ERROR_TIMEOUT), so on a Powerwall 2 the request needs Gateway
+// Wi-Fi. Not validated on the bearer transport or on Powerwall+. Firmware that
+// does not implement the request answers common.error_response instead.
 // -------------------------------------------------------------------
 
 enum WifiNetworkSecurityType {
