@@ -161,7 +161,9 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
    -rsa_key_path /path/to/tedapi_rsa_private.pem
 
 # Show the gateway's network status (Wi-Fi, Ethernet, cellular) and exit.
-# Add -details for MAC, IPv4 settings and Wi-Fi SSID.
+# Add -details for MAC, IPv4 settings and Wi-Fi SSID. With only -gw_pwd this
+# needs the Gateway Wi-Fi address (192.168.91.1); on the home LAN address add
+# the -v1r options above.
 python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -network
 ```
 

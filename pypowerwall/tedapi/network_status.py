@@ -12,14 +12,18 @@
  changes nothing on the gateway.
 
  Validated on a Powerwall 3, firmware 26.34.3, over the signed v1r LAN transport
- and Gateway Wi-Fi basic auth (2026-11-14). Observed on that firmware:
+ and Gateway Wi-Fi basic auth (2026-11-14), and on a Powerwall 2, firmware
+ 26.42.0, over Gateway Wi-Fi basic auth. Observed on the Powerwall 3:
     * all three interfaces are reported, including ones that are not in use;
     * signal strength arrives as a percentage; the dBm ``rssi`` value and the
       ``snr`` wrapper are left unset;
     * ``device_state`` / ``device_state_reason`` are only populated for Wi-Fi
       (Ethernet and cellular report the INVALID zero value), and the Wi-Fi
       ``security_type`` is left at its INVALID zero value.
- Not validated on the bearer transport or on Powerwall 2 / Powerwall+.
+ Over signed v1r the request goes out in the signed-command envelope the
+ other v1r commands use; a Powerwall 2 did not route the local installer
+ envelope over v1r, and the signed-command envelope is not yet confirmed there.
+ Not validated on the bearer transport or on Powerwall+.
 
  Privacy:
     The gateway's reply also carries the Wi-Fi password. The protobuf definition
