@@ -2211,6 +2211,18 @@ class TEDAPI:
         consecutive LAN failures: 60 * 2**n, capped at 7680s (~2h)."""
         return min(60 * (2 ** fail_count), 7680)
 
+    def _v1r_request_refused(self) -> bool:
+        """Whether the last LAN v1r request on this thread got a request-level
+        fault back (TEDAPIv1r.request_fault()): the gateway answered, so the
+        None it returned isn't a LAN failure."""
+        try:
+            fault = getattr(self.v1r_transport, 'request_fault', lambda: None)()
+        except Exception:  # pylint: disable=broad-except
+            return False
+        # An int only: a transport without request_fault(), or a Mock standing
+        # in for one, keeps counting a None as a LAN failure.
+        return isinstance(fault, int)
+
     def _lan_record(self, ok: bool) -> None:
         """Count one LAN request's outcome; the LAN_TRIP_AFTER-th consecutive
         failure trips the failover (when enabled). Once tripped, the recovery
@@ -2630,9 +2642,15 @@ class TEDAPI:
             # on the leader only. The follower DIN is in the envelope's recipient
             # field for routing, but TLV personalization must match the leader.
             inner = self.v1r_transport.post_v1r(envelope_bytes, self.din)
-            self._lan_record(inner is not None)
             if inner is not None:
+                self._lan_record(True)
                 self.lan_last_success = time.time()
+            elif not self._v1r_request_refused():
+                self._lan_record(False)
+            # else: the gateway answered and refused this one request (for
+            # example a Powerwall 2 timing out on the network status). The LAN
+            # works, so this neither counts toward the failover nor resets the
+            # count: a LAN that drops other requests still trips it.
             return inner
         elif self.auth_mode == AuthMode.BEARER:
             # Bearer, like v1r, sends just the MessageEnvelope: strip the
