@@ -122,7 +122,7 @@ Your machine must be able to reach `192.168.91.1`. Options:
 
 > **💡 PW3 Direct LAN Access:** Some users have reported success accessing TEDAPI by pointing `host` to the Powerwall 3’s home-network IP (the IP your router/DHCP assigns to the PW3 — whichever subnet your LAN uses, e.g. `192.168.1.x` or `10.0.x.x`) instead of the Gateway address `192.168.91.1`. This can work when the standard Gateway address is unreachable or rate-limited. Use the Gateway Wi‑Fi password as `gw_pwd`. ([Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312))
 
-> ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally — these return `None` in TEDAPI mode with a log warning. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
+> ⚠️ **TEDAPI Limitations:** Grid charging and grid export work locally only in part. `get_grid_charging()` and `get_grid_export()` read the gateway's config, so they work in WiFi TEDAPI mode and v1r LAN mode. `set_grid_charging()` and `set_grid_export()` write that config, which needs v1r LAN mode (Option 5, see [LAN Control (v1r)](#lan-control-v1r)): in WiFi TEDAPI mode they log an error and return `None`. In Local and Hybrid modes all four log an error and return `None`. Cloud mode (Option 3) and FleetAPI (Option 2) support all four.
 
 In the examples below, change **192.168.0.100** to the IP address of the Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
 
@@ -373,14 +373,14 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 | Per-device vitals (PVAC/PINV/POD) | Yes | Yes |
 | Component queries (PCH/BMS/HVP) | Yes | Yes |
 | Solar string data | Yes | Yes |
-| Multi-PW follower queries | Yes | Yes |
+| Multi-PW follower queries | Yes | With `wifi_host` ([below](#v1r-wifi-fallback)) |
 | LAN control (reserve/mode/grid) | No | Yes |
 
 #### v1r WiFi Fallback
 
 Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to give v1r mode a second route to the gateway: its WiFi TEDAPI access point (normally `192.168.91.1`). pyPowerwall uses it in three ways:
 
-* **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host.
+* **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host. Without `wifi_host`, per-Powerwall data covers only the leader, while site-level data (power, capacity) still covers every Powerwall. Wired v1r has no other route to a follower: as tested on sites with two Powerwall 3s (#478), a follower accepts the v1r handshake on its own address but returns no data, and the leader answers follower-addressed queries with its own data.
 * **Failover (default)** — after 3 consecutive wired-LAN failures, the leader's queries move to the WiFi host. A request the gateway answers with a request-level fault (for example a Powerwall 2 timing out on `network_status()`) is not a LAN failure. The LAN is retried after 8 minutes, then at doubling intervals up to about 2 hours, and traffic moves back on the first successful retry. If the LAN is already down when pyPowerwall starts, it starts on the WiFi host.
 * **Signed WiFi-v1r failover (opt-in)** — `wifi_v1r_fallback=True` gives the leader a second signed `TEDAPIv1r` transport on `wifi_host`, selected only after the LAN failover is tripped. It is the only leader transport then: config reads/writes, TEGMessages (max backup/backup events), islanding and native `/api/*` reads (`/api/meters/aggregates`) use it, with the same signed request/response shape and 401/403 re-login behavior as LAN v1r, and no fallback to the legacy WiFi TEDAPI path. If signed WiFi-v1r does not answer, that read returns `None` (the next call tries signed WiFi-v1r again) and writes are not dispatched. The read-only `wifi_v1r_ready()` probe gates writes; a dispatched attempt is final. Default `False`.
 
