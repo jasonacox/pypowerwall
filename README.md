@@ -365,14 +365,14 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 | Per-device vitals (PVAC/PINV/POD) | Yes | Yes |
 | Component queries (PCH/BMS/HVP) | Yes | Yes |
 | Solar string data | Yes | Yes |
-| Multi-PW follower queries | Yes | Yes |
+| Multi-PW follower queries | Yes | With `wifi_host` ([below](#v1r-wifi-fallback)) |
 | LAN control (reserve/mode/grid) | No | Yes |
 
 #### v1r WiFi Fallback
 
 Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to give v1r mode a second route to the gateway: its WiFi TEDAPI access point (normally `192.168.91.1`). pyPowerwall uses it in three ways:
 
-* **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host.
+* **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host. Without `wifi_host`, per-Powerwall data covers only the leader, while site-level data (power, capacity) still covers every Powerwall. Wired v1r has no other route to a follower: as tested on sites with two Powerwall 3s (#478), a follower accepts the v1r handshake on its own address but returns no data, and the leader answers follower-addressed queries with its own data.
 * **Failover (default)** — after 3 consecutive wired-LAN failures, the leader's queries move to the WiFi host. The LAN is retried after 8 minutes, then at doubling intervals up to about 2 hours, and traffic moves back on the first successful retry. If the LAN is already down when pyPowerwall starts, it starts on the WiFi host.
 * **Signed WiFi-v1r failover (opt-in)** — `wifi_v1r_fallback=True` gives the leader a second signed `TEDAPIv1r` transport on `wifi_host`, selected only after the LAN failover is tripped. It is the only leader transport then: config reads/writes, TEGMessages (max backup/backup events), islanding and native `/api/*` reads (`/api/meters/aggregates`) use it, with the same signed request/response shape and 401/403 re-login behavior as LAN v1r, and no fallback to the legacy WiFi TEDAPI path. If signed WiFi-v1r does not answer, that read returns `None` (the next call tries signed WiFi-v1r again) and writes are not dispatched. The read-only `wifi_v1r_ready()` probe gates writes; a dispatched attempt is final. Default `False`.
 
