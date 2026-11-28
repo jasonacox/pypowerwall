@@ -52,6 +52,18 @@ def test_jsonformat(pw):
     assert json.loads(out) == STATUS
 
 
+def test_positional_order_matches_the_other_getters(pw):
+    """jsonformat comes first, as in vitals(jsonformat), alerts(jsonformat, ...)
+    and system_status(jsonformat): network_status(True) means JSON."""
+    tedapi = _attach_tedapi(pw)
+    out = pw.network_status(True)
+    assert json.loads(out) == STATUS
+    tedapi.get_network_status.assert_called_once_with(force=False, details=False)
+    tedapi.get_network_status.reset_mock()
+    assert pw.network_status(False, True, True) == STATUS
+    tedapi.get_network_status.assert_called_once_with(force=True, details=True)
+
+
 def test_gateway_failure_returns_none(pw):
     tedapi = _attach_tedapi(pw)
     tedapi.get_network_status.return_value = None

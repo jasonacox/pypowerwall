@@ -331,22 +331,51 @@ def test_failures_are_not_cached():
     assert post.call_count == 2
 
 
-def test_no_answer_over_v1r_is_explained(caplog):
+POWERWALL2_HINT = 'a Powerwall 2 does not answer it over v1r'
+
+
+def test_refused_over_v1r_is_explained(caplog):
     """A Powerwall 2 answers a timeout fault over v1r, which the transport only
     logs at debug level: the getter says why it returns None."""
     api = _make_api(v1r=True)
     with caplog.at_level(logging.ERROR), \
-         patch.object(api, '_post_tedapi', return_value=None):
+         patch.object(api, '_post_tedapi', return_value=None), \
+         patch.object(api, '_v1r_request_refused', return_value=True):
         assert api.get_network_status() is None
-    assert 'no answer from the gateway over v1r' in caplog.text
+    assert 'the gateway refused this request over v1r' in caplog.text
+    assert POWERWALL2_HINT in caplog.text
+
+
+def test_no_answer_over_v1r_adds_no_powerwall2_hint(caplog):
+    """No answer without a refusal (a LAN outage, a key problem) is logged by
+    the transport; the Powerwall 2 hint would point the wrong way."""
+    api = _make_api(v1r=True)
+    with caplog.at_level(logging.ERROR), \
+         patch.object(api, '_post_tedapi', return_value=None), \
+         patch.object(api, '_v1r_request_refused', return_value=False):
+        assert api.get_network_status() is None
+    assert POWERWALL2_HINT not in caplog.text
+
+
+def test_refusal_from_before_the_failover_adds_no_hint(caplog):
+    """With the LAN failed the request goes over Wi-Fi: a refusal the LAN
+    transport recorded earlier is not this request's."""
+    api = _make_api(v1r=True)
+    api.lan_failed = True
+    with caplog.at_level(logging.ERROR), \
+         patch.object(api, '_post_tedapi', return_value=None), \
+         patch.object(api, '_v1r_request_refused', return_value=True):
+        assert api.get_network_status() is None
+    assert POWERWALL2_HINT not in caplog.text
 
 
 def test_no_answer_on_other_transports_adds_no_v1r_hint(caplog):
     api = _make_api()
     with caplog.at_level(logging.ERROR), \
-         patch.object(api, '_post_tedapi', return_value=None):
+         patch.object(api, '_post_tedapi', return_value=None), \
+         patch.object(api, '_v1r_request_refused', return_value=True):
         assert api.get_network_status() is None
-    assert 'no answer from the gateway over v1r' not in caplog.text
+    assert POWERWALL2_HINT not in caplog.text
 
 
 def test_not_connected_returns_none():

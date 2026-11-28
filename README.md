@@ -754,7 +754,7 @@ print("System Status: %r\n" % pw.system_status())
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
-    network_status()          # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
+    network_status(jsonformat, details) # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
     go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode
     reconnect_grid()          # Reconnect to the grid (close contactor) - cloud/FleetAPI or v1r mode
 ```

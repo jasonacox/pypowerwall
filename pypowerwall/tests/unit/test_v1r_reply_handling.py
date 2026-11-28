@@ -11,6 +11,8 @@ LAN failover counts it (review of #477).
    that one request, e.g. a Powerwall 2 timing out on the network status) is
    not a LAN failure: it neither counts toward the LAN->WiFi failover nor
    resets the count. Key, signature and clock faults still count, as before.
+3. The network status logs its Powerwall 2 hint only for such a refusal, not
+   for a LAN outage or a key problem.
 
 Everything is mocked at the HTTP session / transport boundary.
 """
@@ -274,3 +276,39 @@ class TestLanFailover:
             for _ in range(3):
                 ted._post_tedapi(b"req")
         assert ted.lan_failed is True
+
+
+# ---------------------------------------------------------------------------
+# 3. The network status's Powerwall 2 hint follows the gateway's refusal
+# ---------------------------------------------------------------------------
+
+class TestNetworkStatusHint:
+    """get_network_status() over the real transport: the Powerwall 2 hint is
+    logged only when the gateway refused the request, not for a LAN outage or a
+    key problem, which the transport logs itself."""
+
+    HINT = "a Powerwall 2 does not answer it over v1r"
+
+    def _network_status(self, transport, caplog):
+        ted = _tedapi(transport)
+        with patch.object(ted, "_post_tedapi_wifi") as wifi, \
+                warnings.catch_warnings(), caplog.at_level(logging.DEBUG):
+            warnings.simplefilter("ignore")
+            assert ted.get_network_status() is None
+        wifi.assert_not_called()
+        return caplog.text
+
+    def test_powerwall2_timeout_is_explained(self, caplog):
+        transport = _transport()
+        _reply(transport, _routable(fault=combined_pb2.MESSAGEFAULT_ERROR_TIMEOUT))
+        assert self.HINT in self._network_status(transport, caplog)
+
+    def test_lan_outage_gets_no_hint(self, caplog):
+        transport = _transport()
+        transport.session.post.side_effect = OSError("no route")
+        assert self.HINT not in self._network_status(transport, caplog)
+
+    def test_key_fault_gets_no_hint(self, caplog):
+        transport = _transport()
+        _reply(transport, _routable(fault=combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID))
+        assert self.HINT not in self._network_status(transport, caplog)

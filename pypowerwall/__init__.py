@@ -82,7 +82,7 @@
     dispatch_battery_power(power_watts, duration_seconds) # Timed local v1r battery power setpoint
     resume_battery_operation() # Release a local v1r battery power setpoint
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
-    network_status()          # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
+    network_status(json, details) # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
 
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
@@ -1042,7 +1042,7 @@ class Powerwall(object):
             return False
         return bool(probe())  # pylint: disable=not-callable
 
-    def network_status(self, details: bool = False, jsonformat: bool = False,
+    def network_status(self, jsonformat: bool = False, details: bool = False,
                        force: bool = False) -> Optional[Union[dict, str]]:
         """
         Gateway network status (Wi-Fi, Ethernet and cellular)
@@ -1054,10 +1054,10 @@ class Powerwall(object):
         answer, or on firmware that does not implement the request.
 
         Args:
+          jsonformat = If True, return JSON format otherwise return Python Dictionary
           details    = If True, add each interface's MAC address and IPv4 settings
                        and the configured Wi-Fi network (SSID and security type).
                        The Wi-Fi password is never returned.
-          jsonformat = If True, return JSON format otherwise return Python Dictionary
           force      = If True, bypass the cache
 
         Returns (signal values are None where the gateway does not report them):

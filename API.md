@@ -181,7 +181,7 @@ Cloud mode also recovers when Tesla replaces or re-provisions a site: if a site 
 - `alerts(jsonformat=False, alertsonly=True)` → list/str  
   Returns array of alerts from devices.
 
-- `network_status(details=False, jsonformat=False, force=False)` → dict/str/None  
+- `network_status(jsonformat=False, details=False, force=False)` → dict/str/None  
   Returns the gateway's network status, keyed by interface (`wifi`, `eth`, `gsm`). Each interface reports `enabled`, `active_route`, `connected_physical`, `connected_internet`, `connected_tesla`, `signal_strength_percent`, `rssi` (dBm), `snr`, `device_state` and `device_state_reason`. Read-only. Requires a TEDAPI connection (full, hybrid or v1r mode) and returns `None` in the other modes, when the gateway does not answer, or on firmware that does not implement the request.
     - Values the gateway does not report are `None`, and an interface it leaves out is `None`. A Powerwall 3 on firmware 26.34.3 reports the signal as a percentage only (`rssi` and `snr` are `None`) and fills `device_state` for Wi-Fi only.
     - `details=True` adds `mac_address` and `ipv4` (`dhcp_enabled`, `address`, `subnet_mask`, `gateway`, `dns`) to each interface, and a `wifi_config` entry with the `ssid` and `security_type` of the configured Wi-Fi network. The Wi-Fi password is never returned.

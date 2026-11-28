@@ -1356,11 +1356,15 @@ class TEDAPI:
         pb.tail.value = 1
         response = self._post_tedapi(pb.SerializeToString())
         if response is None:
-            if self.v1r:
-                # The v1r transport reports the gateway's timeout fault at
-                # debug level only; say why the result is None.
-                log.error('Network status: no answer from the gateway over v1r (a Powerwall 2 '
-                          'does not answer this request over v1r; use Gateway Wi-Fi TEDAPI there)')
+            # Only when the gateway answered and refused the request: the v1r
+            # transport logs that timeout fault at debug level only, so say why
+            # the result is None. A LAN outage or a key problem is logged by the
+            # transport, and the hint would point the wrong way there. With the
+            # LAN failed the request went over Wi-Fi, so the LAN transport's
+            # fault is from an earlier request.
+            if self.v1r and not self.lan_failed and self._v1r_request_refused():
+                log.error('Network status: the gateway refused this request over v1r (a Powerwall 2 '
+                          'does not answer it over v1r; use Gateway Wi-Fi TEDAPI there)')
             return None
         return self._parse_network_status(response)
 
