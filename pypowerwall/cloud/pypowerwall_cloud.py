@@ -732,6 +732,51 @@ class PyPowerwallCloud(PyPowerwallBase):
         (response, _) = self._site_api("SITE_CONFIG", SITE_CONFIG_TTL, language="en", force=force)
         return response
 
+    def get_calendar_history(self, kind=None, duration=None, time_zone=None,
+                             start=None, end=None) -> Optional[dict]:
+        """
+        Get site history from Tesla Cloud (``calendar_history``)
+
+        Same arguments and return value as FleetAPI's ``get_calendar_history()``.
+        Always a live request: each kind, duration and range is a different
+        query, so the result is not cached.
+
+        Arguments:
+            kind - energy, power, soe, backup, self_consumption,
+                   time_of_use_energy or savings
+            duration - day, week, month, year or lifetime
+            time_zone - e.g. America/Los_Angeles
+            start, end - RFC3339 strings (2024-05-01T00:00:00-07:00) or datetimes
+
+        Returns:
+            Tesla's ``response`` object, or None if not connected or the
+            request failed.
+        """
+        if self.tesla is None:
+            log.debug(" -- cloud: No connection to Tesla Cloud")
+            return None
+        params = {"kind": kind, "period": duration, "time_zone": time_zone,
+                  "start_date": start, "end_date": end}
+        params = {key: (value.isoformat() if hasattr(value, "isoformat") else value)
+                  for key, value in params.items() if value is not None}
+        name = "CALENDAR_HISTORY_DATA"
+        # Same per-name lock as _site_api, so only one request is in flight
+        with self._api_locks_guard:
+            lock = self._api_locks.setdefault(name, threading.Lock())
+        if not lock.acquire(timeout=self.timeout):
+            log.debug(f" -- cloud: Timeout waiting for {name} (unable to acquire lock)")
+            return None
+        try:
+            response = self._call_site_api(name, **params)
+        except Exception as err:
+            log.error(f"Failed to retrieve {name} - {repr(err)}")
+            return None
+        finally:
+            lock.release()
+        if isinstance(response, dict):
+            return response.get("response")
+        return None
+
     def get_time_remaining(self, force: bool = False) -> Optional[float]:
         """
         Get backup time remaining from Tesla Cloud
