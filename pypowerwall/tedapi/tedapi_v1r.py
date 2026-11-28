@@ -48,6 +48,58 @@ def _decode_payload_preview(raw: bytes, max_len: int = 200) -> str:
     return raw[:max_len].hex()
 
 
+# The plain-text error a gateway sends in place of the inner protobuf while a
+# registered key waits for its physical verification ("v1r: client
+# authorization not verified").
+AUTH_NOT_VERIFIED = b'authorization not verified'
+
+# Faults the gateway returns about one request it received and refused or could
+# not complete (an unsupported request, a sub-device that didn't answer). The
+# gateway answered, so they say nothing about the LAN path; key, signature and
+# clock faults affect every signed request and are not in this set.
+REQUEST_FAULTS = frozenset({
+    combined_pb2.MESSAGEFAULT_ERROR_BUSY,
+    combined_pb2.MESSAGEFAULT_ERROR_TIMEOUT,
+    combined_pb2.MESSAGEFAULT_ERROR_INVALID_COMMAND,
+    combined_pb2.MESSAGEFAULT_ERROR_DECODING,
+    combined_pb2.MESSAGEFAULT_ERROR_INTERNAL,
+    combined_pb2.MESSAGEFAULT_ERROR_BAD_PARAMETER,
+    combined_pb2.MESSAGEFAULT_ERROR_REMOTE_SERVICE_REQUEST_NOT_SUPPORTED,
+})
+
+
+def _plain_text(payload: bytes, max_len: int = 512) -> Optional[str]:
+    """``payload`` as text when it is a short plain-text message (printable
+    ASCII and whitespace only), else None.
+
+    The gateway's plain-text errors are short ASCII strings. A protobuf payload
+    always carries field tags and length bytes outside that range, so text that
+    a reply happens to contain (a Wi-Fi SSID, a key description) never makes
+    the whole payload read as plain text."""
+    if not payload or len(payload) > max_len:
+        return None
+    if all(32 <= b < 127 or b in (9, 10, 13) for b in payload):
+        return payload.decode('ascii').strip()
+    return None
+
+
+def _envelope_preview(resp_msg) -> str:
+    """Preview of a RoutableMessage for diagnostics, without its inner payload.
+
+    The inner payload can hold private data (the network status reply carries
+    the Wi-Fi SSID and password), so previews never include it: only the
+    envelope's own fields and the payload's size."""
+    try:
+        envelope = combined_pb2.RoutableMessage()
+        envelope.CopyFrom(resp_msg)
+        size = len(envelope.protobuf_message_as_bytes)
+        envelope.ClearField('protobuf_message_as_bytes')
+        preview = _decode_payload_preview(envelope.SerializeToString())
+        return f"{preview} (inner payload: {size} bytes, not shown)" if size else preview
+    except Exception:  # pylint: disable=broad-except
+        return '(unavailable)'
+
+
 REGISTER_KEY_FILENAME = 'tedapi_rsa_private.pem'  # the key file `pypowerwall register` reuses
 
 
@@ -252,6 +304,26 @@ class TEDAPIv1r:
         routable.signature_data.rsa_data.signature = signature
         return routable.SerializeToString()
 
+    def _set_request_fault(self, fault: Optional[int]) -> None:
+        # Per thread: concurrent requests on one transport each see their own.
+        # Created on first use (some callers build the transport without
+        # __init__).
+        local = self.__dict__.get('_request_local')
+        if local is None:
+            local = self.__dict__.setdefault('_request_local', threading.local())
+        local.fault = fault
+
+    def request_fault(self) -> Optional[int]:
+        """The request-level fault (one of REQUEST_FAULTS) that this thread's
+        last post_v1r() call got back, or None.
+
+        A request-level fault means the gateway answered but refused or could
+        not complete that one request, for example a Powerwall 2 timing out on
+        the network status request. Callers that track LAN health use it to
+        tell such an answer from a LAN that doesn't answer: both return None."""
+        local = self.__dict__.get('_request_local')
+        return getattr(local, 'fault', None) if local is not None else None
+
     def post_v1r(self, envelope_bytes: bytes, din: str) -> Optional[bytes]:
         """
         Wrap envelope_bytes in a signed RoutableMessage and POST to /tedapi/v1r.
@@ -263,6 +335,7 @@ class TEDAPIv1r:
         Returns:
             Raw protobuf_message_as_bytes from the response RoutableMessage, or None on error.
         """
+        self._set_request_fault(None)
         if not din:
             # The DIN personalizes the signature; without one there is nothing
             # valid to send (and din.encode() would raise into the caller).
@@ -300,8 +373,10 @@ class TEDAPIv1r:
             fault = resp_msg.signed_message_status.message_fault
             if fault != combined_pb2.MESSAGEFAULT_ERROR_NONE:
                 fault_name = combined_pb2.MessageFault_E.Name(fault)
+                if fault in REQUEST_FAULTS:
+                    self._set_request_fault(fault)
                 if fault == combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID:
-                    raw_preview = _decode_payload_preview(r.content)
+                    raw_preview = _envelope_preview(resp_msg)
                     msg = (
                         "v1r RSA key is not recognized by the gateway (UNKNOWN_KEY_ID). "
                         "The key file may not match the registered key, or no key has been "
@@ -320,15 +395,23 @@ class TEDAPIv1r:
 
             # Extract inner protobuf bytes
             inner = resp_msg.protobuf_message_as_bytes
-            raw_lower = r.content.lower()
 
-            # Check for plain-text authorization errors in raw response or inner payload.
-            # When the RSA key is registered but not yet verified, the gateway
-            # returns HTTP 200 with MESSAGEFAULT_ERROR_NONE but the payload
-            # contains a plain-text error like "v1r: client authorization not verified"
-            # instead of a valid protobuf inner payload.
-            if b'authorization not verified' in raw_lower or (inner and b'authorization not verified' in inner.lower()):
-                raw_preview = _decode_payload_preview(r.content)
+            # Check for the plain-text authorization error. When the RSA key is
+            # registered but not yet verified, the gateway returns HTTP 200 with
+            # MESSAGEFAULT_ERROR_NONE and the plain text "v1r: client
+            # authorization not verified" in place of the inner protobuf.
+            # Only a payload that is entirely plain text counts, and the rest
+            # of the envelope is searched without the payload: a valid reply
+            # that merely contains the phrase (a Wi-Fi SSID in the network
+            # status, a key description) must not be taken for an auth error,
+            # and its private data must not reach the warning below.
+            inner_text = _plain_text(inner)
+            outside = combined_pb2.RoutableMessage()
+            outside.CopyFrom(resp_msg)
+            outside.ClearField('protobuf_message_as_bytes')
+            if ((inner_text is not None and AUTH_NOT_VERIFIED.decode() in inner_text.lower())
+                    or AUTH_NOT_VERIFIED in outside.SerializeToString().lower()):
+                raw_preview = repr(inner_text) if inner_text is not None else _envelope_preview(resp_msg)
                 msg = (
                     "v1r RSA key is registered but not yet VERIFIED by the gateway "
                     "(PENDING_VERIFICATION). "
@@ -348,7 +431,7 @@ class TEDAPIv1r:
                 # Empty inner payload with no recognized fault code — the response
                 # may be a plain-text or binary auth rejection the gateway didn't
                 # encode as a fault.  Reveal the raw payload so users can troubleshoot.
-                raw_preview = _decode_payload_preview(r.content)
+                raw_preview = _envelope_preview(resp_msg)
                 msg = (
                     f"v1r key authentication failed — gateway returned an unexpected "
                     f"response ({response_size} bytes) with no data. "

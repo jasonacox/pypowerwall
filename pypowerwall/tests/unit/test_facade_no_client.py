@@ -62,3 +62,8 @@ def test_grid_charging_export_return_none(pw):
 
 def test_is_connected_returns_false(pw):
     assert pw.is_connected() is False
+
+
+def test_network_status_returns_none(pw):
+    assert pw.network_status() is None
+    assert pw.network_status(details=True, jsonformat=True) is None

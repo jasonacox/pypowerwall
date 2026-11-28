@@ -1,6 +1,8 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def test_main_forwards_tedapi_v1r_args():
     from pypowerwall.__main__ import main
@@ -134,7 +136,6 @@ def test_main_forwards_tedapi_firmware_flags():
 
 def test_get_local_without_host_exits_with_error(capsys):
     """CLI 'get -local' without -host used to silently flip to cloud mode."""
-    import pytest
     from pypowerwall.__main__ import main
 
     argv = ['pypowerwall', 'get', '-local']
@@ -321,3 +322,51 @@ def test_run_tedapi_test_null_config_fields(tmp_path, monkeypatch, capsys):
     assert "Site Name: Unknown" in out
     assert "Number of Powerwalls: 0" in out
     assert json.loads((tmp_path / "config.json").read_text()) == config
+
+
+def test_main_forwards_tedapi_network_flags():
+    from pypowerwall.__main__ import main
+
+    argv = ['pypowerwall', 'tedapi', '-gw_pwd', 'ABCDEXXXXX', '-network', '-details']
+
+    with patch('sys.argv', argv), \
+         patch('pypowerwall.tedapi.__main__.run_tedapi_test') as mock_run:
+        main()
+
+    mock_run.assert_called_once_with(
+        argv=['-gw_pwd', 'ABCDEXXXXX', '-network', '-details'],
+        debug=False,
+    )
+
+
+def test_render_network_status_and_none():
+    from pypowerwall.tedapi.__main__ import _render_network
+
+    # missing: friendly message, never raises
+    assert "no network status" in _render_network(None)
+    status = {"wifi": {"enabled": True, "signal_strength_percent": 58}, "eth": None}
+    assert json.loads(_render_network(status)) == status
+
+
+@pytest.mark.parametrize("extra, details", [([], False), (['-details'], True)])
+def test_run_tedapi_test_network_mode_exits_early(tmp_path, monkeypatch, capsys, extra, details):
+    """`-network` fetches the network status, prints it, and skips config/status."""
+    from pypowerwall.tedapi.__main__ import run_tedapi_test
+
+    mock_ted = MagicMock()
+    mock_ted.din = 'DIN123'
+    mock_ted.get_network_status.return_value = {"wifi": {"signal_strength_percent": 58}}
+    monkeypatch.chdir(tmp_path)
+
+    with patch('requests.get') as mock_get, \
+         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted):
+        mock_get.return_value.status_code = 200
+        run_tedapi_test(['-host', '10.42.1.40', '-gw_pwd', 'ABCDEXXXXX', '-network'] + extra)
+
+    mock_ted.get_network_status.assert_called_once_with(force=True, details=details)
+    mock_ted.get_config.assert_not_called()
+    mock_ted.get_status.assert_not_called()
+    mock_ted.get_firmware_version.assert_not_called()
+    out = capsys.readouterr().out
+    assert "Network Status" in out and '"signal_strength_percent": 58' in out
+    assert not list(tmp_path.iterdir())  # no status.json / config.json written

@@ -41,6 +41,7 @@
     get_native_api(path) - Fetch a classic gateway /api/* endpoint via customer login
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
     get_native_status() - Get the gateway's native /api/status
+    get_network_status() - Get the gateway's Wi-Fi / Ethernet / cellular network status
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -83,6 +84,7 @@ from .api_version import TEDAPIApiVersion
 from .auth_mode import AuthMode
 from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES, PW3_FAN_SIGNAL_NAMES, \
     PW2_POD_POWER_SIGNAL_NAMES
+from .network_status import NetworkStatus
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
 
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -1288,6 +1290,114 @@ class TEDAPI:
         return SystemInfo.from_proto(env if bare else env.message, schema)
 
     @uses_api_lock
+    def get_network_status(self, self_function=None, force=False, details=False):
+        """
+        Get the gateway's networking status: for each network interface (Wi-Fi,
+        Ethernet, cellular) whether it is enabled, whether it carries the active
+        route, its link / internet / Tesla connectivity and its signal strength.
+
+        Read-only. Sent over whichever TEDAPI transport is active; validated
+        on Powerwall 3 over Gateway Wi-Fi (basic) and signed v1r, and on
+        Powerwall 2 over Gateway Wi-Fi (basic). A Powerwall 2 does not answer
+        this request over v1r (returns None).
+
+        Args:
+            force (bool): Force a refresh, bypassing the cache
+            details (bool): Also return each interface's MAC address and IPv4
+                            settings and the configured Wi-Fi network's SSID and
+                            security type. The Wi-Fi password is never returned.
+
+        Example payload:
+            {
+                "wifi": {
+                    "enabled": true, "active_route": true,
+                    "connected_physical": true, "connected_internet": true,
+                    "connected_tesla": true, "signal_strength_percent": 58,
+                    "rssi": null, "snr": null,
+                    "device_state": "NETWORK_DEVICE_STATE_READY",
+                    "device_state_reason": "NETWORK_DEVICE_STATE_REASON_NONE"
+                },
+                "eth": {...},
+                "gsm": {...}
+            }
+
+        Returns None if the gateway did not answer, or answered with an error
+        (firmware that does not implement the request).
+        """
+        # The cache holds the NetworkStatus, so a cache hit can answer either shape.
+        status = self._cached_fetch('network_status', expire=self.pwcacheexpire, force=force,
+                                    self_function=self_function, name='network status',
+                                    fetch=self._get_network_status)
+        if status is None:
+            return None
+        return status.to_dict(details=details)
+
+    def _get_network_status(self) -> Optional[NetworkStatus]:
+        """Fetch the gateway networking status and normalize it into a
+        :class:`NetworkStatus`. Returns None if the transport produced nothing or
+        the gateway did not answer with a networking status.
+
+        The request is built from the legacy combined proto for every
+        tedapi_api_version: CommonMessages field 22 has the same wire shape in
+        the V2026_06 set, so one builder and one parser serve both. Validated on
+        PW3 firmware 26.34.3 over signed v1r and Wi-Fi basic auth (2026-11-14)
+        and on a Powerwall 2, firmware 26.42.0, over Wi-Fi basic auth. Over
+        signed v1r that Powerwall 2 answered MESSAGEFAULT_ERROR_TIMEOUT, both
+        to this envelope and to the signed-command one (HERMES_COMMAND,
+        sender.authorizedClient), so there is no v1r variant to switch to.
+        """
+        pb = combined_pb2.Message()
+        pb.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+        pb.message.sender.local = combined_pb2.LOCAL_PARTICIPANT_INSTALLER
+        pb.message.recipient.din = self.din  # DIN of the Tesla Energy Gateway
+        # The request message is empty; SetInParent() marks it present so it is
+        # put on the wire (and selects it in the CommonMessages oneof).
+        pb.message.common.get_networking_status_request.SetInParent()
+        pb.tail.value = 1
+        response = self._post_tedapi(pb.SerializeToString())
+        if response is None:
+            # Only when the gateway answered and refused the request: the v1r
+            # transport logs that timeout fault at debug level only, so say why
+            # the result is None. A LAN outage or a key problem is logged by the
+            # transport, and the hint would point the wrong way there. With the
+            # LAN failed the request went over Wi-Fi, so the LAN transport's
+            # fault is from an earlier request.
+            if self.v1r and not self.lan_failed and self._v1r_request_refused():
+                log.error('Network status: the gateway refused this request over v1r (a Powerwall 2 '
+                          'does not answer it over v1r; use Gateway Wi-Fi TEDAPI there)')
+            return None
+        return self._parse_network_status(response)
+
+    def _parse_network_status(self, response: bytes) -> Optional[NetworkStatus]:
+        """Parse a networking status response into a NetworkStatus, or None when
+        the gateway answered with something else (logged)."""
+        # v1r and bearer transports hand back a bare MessageEnvelope (no outer
+        # Message/Tail); basic returns the full Message. See _parse_system_info.
+        bare = self.v1r or self.auth_mode == AuthMode.BEARER
+        if bare:
+            envelope = combined_pb2.MessageEnvelope()
+            envelope.ParseFromString(response)
+        else:
+            message = combined_pb2.Message()
+            message.ParseFromString(response)
+            envelope = message.message
+        # Deliberately no logging of the raw response or the parsed message: the
+        # reply carries Wi-Fi credentials (see network_status.py).
+        if not envelope.HasField('common'):
+            log.error('Network status: unexpected response from gateway (no common payload)')
+            return None
+        common = envelope.common
+        if common.HasField('get_networking_status_response'):
+            return NetworkStatus.from_proto(common.get_networking_status_response)
+        if common.HasField('error_response'):
+            # e.g. code 12 (UNIMPLEMENTED) on firmware without this request.
+            status = common.error_response.status
+            log.error(f'Network status: gateway returned error {status.code}: {status.message}')
+            return None
+        log.error('Network status: unexpected response from gateway')
+        return None
+
+    @uses_api_lock
     def get_components(self, self_function=None, force=False):
         """
         Get Powerwall 3 device component information.
@@ -2105,6 +2215,18 @@ class TEDAPI:
         consecutive LAN failures: 60 * 2**n, capped at 7680s (~2h)."""
         return min(60 * (2 ** fail_count), 7680)
 
+    def _v1r_request_refused(self) -> bool:
+        """Whether the last LAN v1r request on this thread got a request-level
+        fault back (TEDAPIv1r.request_fault()): the gateway answered, so the
+        None it returned isn't a LAN failure."""
+        try:
+            fault = getattr(self.v1r_transport, 'request_fault', lambda: None)()
+        except Exception:  # pylint: disable=broad-except
+            return False
+        # An int only: a transport without request_fault(), or a Mock standing
+        # in for one, keeps counting a None as a LAN failure.
+        return isinstance(fault, int)
+
     def _lan_record(self, ok: bool) -> None:
         """Count one LAN request's outcome; the LAN_TRIP_AFTER-th consecutive
         failure trips the failover (when enabled). Once tripped, the recovery
@@ -2524,9 +2646,15 @@ class TEDAPI:
             # on the leader only. The follower DIN is in the envelope's recipient
             # field for routing, but TLV personalization must match the leader.
             inner = self.v1r_transport.post_v1r(envelope_bytes, self.din)
-            self._lan_record(inner is not None)
             if inner is not None:
+                self._lan_record(True)
                 self.lan_last_success = time.time()
+            elif not self._v1r_request_refused():
+                self._lan_record(False)
+            # else: the gateway answered and refused this one request (for
+            # example a Powerwall 2 timing out on the network status). The LAN
+            # works, so this neither counts toward the failover nor resets the
+            # count: a LAN that drops other requests still trips it.
             return inner
         elif self.auth_mode == AuthMode.BEARER:
             # Bearer, like v1r, sends just the MessageEnvelope: strip the

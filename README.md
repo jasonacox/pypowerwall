@@ -159,6 +159,13 @@ python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX
 # Test v1r LAN TEDAPI
 python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
    -rsa_key_path /path/to/tedapi_rsa_private.pem
+
+# Show the gateway's network status (Wi-Fi, Ethernet, cellular) and exit.
+# Add -details for MAC, IPv4 settings and Wi-Fi SSID. With only -gw_pwd this
+# needs the Gateway Wi-Fi address (192.168.91.1). On a Powerwall 3 it also
+# works on the home LAN address with the -v1r options above; a Powerwall 2
+# answers it over Gateway Wi-Fi only.
+python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -network
 ```
 
 #### TEDAPI Troubleshooting
@@ -315,6 +322,7 @@ print(pw.version())     # Firmware version
 print(pw.vitals())      # Per-device vitals (PVAC, PVS, TEPOD, PINV, etc.)
 print(pw.strings())     # Solar string data
 print(pw.alerts())      # Active device alerts
+print(pw.network_status())  # Gateway Wi-Fi / Ethernet / cellular status and signal strength
 
 # API polling:
 pw.poll('/api/meters/aggregates')              # Detailed meter data
@@ -373,7 +381,7 @@ pyPowerwall accepts the gateway password via `PW_GW_PWD` (the full password from
 Set `wifi_host` (proxy: `PW_WIFI_HOST`) together with `gw_pwd` (`PW_GW_PWD`) to give v1r mode a second route to the gateway: its WiFi TEDAPI access point (normally `192.168.91.1`). pyPowerwall uses it in three ways:
 
 * **Follower Powerwalls** — v1r reaches only the leader, so follower queries always go over the WiFi host. Without `wifi_host`, per-Powerwall data covers only the leader, while site-level data (power, capacity) still covers every Powerwall. Wired v1r has no other route to a follower: as tested on sites with two Powerwall 3s (#478), a follower accepts the v1r handshake on its own address but returns no data, and the leader answers follower-addressed queries with its own data.
-* **Failover (default)** — after 3 consecutive wired-LAN failures, the leader's queries move to the WiFi host. The LAN is retried after 8 minutes, then at doubling intervals up to about 2 hours, and traffic moves back on the first successful retry. If the LAN is already down when pyPowerwall starts, it starts on the WiFi host.
+* **Failover (default)** — after 3 consecutive wired-LAN failures, the leader's queries move to the WiFi host. A request the gateway answers with a request-level fault (for example a Powerwall 2 timing out on `network_status()`) is not a LAN failure. The LAN is retried after 8 minutes, then at doubling intervals up to about 2 hours, and traffic moves back on the first successful retry. If the LAN is already down when pyPowerwall starts, it starts on the WiFi host.
 * **Signed WiFi-v1r failover (opt-in)** — `wifi_v1r_fallback=True` gives the leader a second signed `TEDAPIv1r` transport on `wifi_host`, selected only after the LAN failover is tripped. It is the only leader transport then: config reads/writes, TEGMessages (max backup/backup events), islanding and native `/api/*` reads (`/api/meters/aggregates`) use it, with the same signed request/response shape and 401/403 re-login behavior as LAN v1r, and no fallback to the legacy WiFi TEDAPI path. If signed WiFi-v1r does not answer, that read returns `None` (the next call tries signed WiFi-v1r again) and writes are not dispatched. The read-only `wifi_v1r_ready()` probe gates writes; a dispatched attempt is final. Default `False`.
 
 Without a `wifi_host` there is nothing to fail over to: every request tries the wired LAN, and data resumes as soon as it answers.
@@ -746,6 +754,7 @@ print("System Status: %r\n" % pw.system_status())
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
+    network_status(jsonformat, details) # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
     go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode
     reconnect_grid()          # Reconnect to the grid (close contactor) - cloud/FleetAPI or v1r mode
 ```
