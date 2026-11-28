@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+* docs: the README's v1r feature table and **v1r WiFi Fallback** section say that follower Powerwall data needs `wifi_host`, and that wired v1r can't reach it any other way, as tested on sites with two Powerwall 3s. Thanks @JEMcats for running the tests (#478).
 * docs: the README's TEDAPI Limitations note and the `get_grid_charging()` / `get_grid_export()` docstrings no longer say these reads need Cloud or FleetAPI. In WiFi TEDAPI and v1r LAN mode they read the gateway's config, and in v1r LAN mode `set_grid_charging()` / `set_grid_export()` write it (see LAN Control (v1r)). The `set_*` docstrings now say which modes support them, and the note now says Local and Hybrid mode return `None`.
 
 ## v0.25.0 - Generator Aggregates and Powerwall 2 Gateway Uptime
