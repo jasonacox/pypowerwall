@@ -122,7 +122,7 @@ Your machine must be able to reach `192.168.91.1`. Options:
 
 > **💡 PW3 Direct LAN Access:** Some users have reported success accessing TEDAPI by pointing `host` to the Powerwall 3’s home-network IP (the IP your router/DHCP assigns to the PW3 — whichever subnet your LAN uses, e.g. `192.168.1.x` or `10.0.x.x`) instead of the Gateway address `192.168.91.1`. This can work when the standard Gateway address is unreachable or rate-limited. Use the Gateway Wi‑Fi password as `gw_pwd`. ([Discussion #312](https://github.com/jasonacox/pypowerwall/discussions/312))
 
-> ⚠️ **TEDAPI Limitations:** Some functions are only available via FleetAPI or Cloud mode. Known limitations include `get_grid_charging()` and `get_grid_export()`, which rely on Fleet API endpoints not exposed locally — these return `None` in TEDAPI mode with a log warning. Use FleetAPI (Option 2) or Cloud mode (Option 3) for full functionality.
+> ⚠️ **TEDAPI Limitations:** Grid charging and grid export work locally only in part. `get_grid_charging()` and `get_grid_export()` read the gateway's config, so they work in WiFi TEDAPI mode and v1r LAN mode. `set_grid_charging()` and `set_grid_export()` write that config, which needs v1r LAN mode (Option 5, see [LAN Control (v1r)](#lan-control-v1r)): in WiFi TEDAPI mode they log an error and return `None`. In Local and Hybrid modes all four log an error and return `None`. Cloud mode (Option 3) and FleetAPI (Option 2) support all four.
 
 In the examples below, change **192.168.0.100** to the IP address of the Powerwall Gateway (or Inverter) on your LAN. Also, the **onlink** parameter may be necessary for Linux.
 

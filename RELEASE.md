@@ -1,5 +1,9 @@
 # RELEASE NOTES
 
+## Unreleased
+
+* docs: the README's TEDAPI Limitations note and the `get_grid_charging()` / `get_grid_export()` docstrings no longer say these reads need Cloud or FleetAPI. In WiFi TEDAPI and v1r LAN mode they read the gateway's config, and in v1r LAN mode `set_grid_charging()` / `set_grid_export()` write it (see LAN Control (v1r)). The `set_*` docstrings now say which modes support them, and the note now says Local and Hybrid mode return `None`.
+
 ## v0.25.0 - Generator Aggregates and Powerwall 2 Gateway Uptime
 
 Two TEDAPI/v1r gaps closed by @clonea1 in their first contributions, both found and hardware-tested on a Backup Gateway 2 with 2x Powerwall 2 and a standby generator. Thank you @clonea1, @cavedon for reporting #418, and @jasonacox-sam for verifying #472 and reviewing both! (Minor bump: `/api/meters/aggregates` gains a `generator` section.)

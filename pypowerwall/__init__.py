@@ -1223,8 +1223,15 @@ class Powerwall(object):
         Args:
             mode: Set to True to enable grid charging, False to disable it
 
+        Note:
+            Works in Cloud, FleetAPI and v1r LAN mode (v1r writes the gateway's
+            config). WiFi TEDAPI, Local and Hybrid mode log an error and return
+            None.
+
         Returns:
-            Dictionary with operation results.
+            Cloud and FleetAPI: Tesla's API response (False for an invalid
+            mode). v1r LAN: True on success. None if unsupported or the write
+            fails.
         """
         if self._no_client():
             return None
@@ -1235,8 +1242,9 @@ class Powerwall(object):
         Get the current grid charging mode
 
         Note:
-            This function requires FleetAPI or Cloud mode. It is not available
-            in local TEDAPI mode. Returns None if not supported by the current mode.
+            Works in Cloud, FleetAPI, WiFi TEDAPI and v1r LAN mode (TEDAPI and
+            v1r read the gateway's config). Local and Hybrid mode log an error
+            and return None.
 
         Returns:
             True if grid charging is enabled, False if it is disabled, None if unsupported
@@ -1252,8 +1260,17 @@ class Powerwall(object):
         Args:
             mode: Set grid export mode (battery_ok, pv_only, or never)
 
+        Note:
+            Works in Cloud, FleetAPI and v1r LAN mode (v1r writes the gateway's
+            config). WiFi TEDAPI, Local and Hybrid mode log an error and return
+            None.
+
         Returns:
-            Dictionary with operation results.
+            Cloud and FleetAPI: Tesla's API response. v1r LAN: True on
+            success. None if unsupported or the write fails.
+
+        Raises:
+            ValueError: if mode is not battery_ok, pv_only or never.
         """
         # Check for valid mode
         if mode not in ['battery_ok', 'pv_only', 'never']:
@@ -1267,8 +1284,9 @@ class Powerwall(object):
         Get the current grid export mode
 
         Note:
-            This function requires FleetAPI or Cloud mode. It is not available
-            in local TEDAPI mode. Returns None if not supported by the current mode.
+            Works in Cloud, FleetAPI, WiFi TEDAPI and v1r LAN mode (TEDAPI and
+            v1r read the gateway's config). Local and Hybrid mode log an error
+            and return None.
 
         Returns:
             The current grid export mode, or None if unsupported
