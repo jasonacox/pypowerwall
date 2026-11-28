@@ -1229,7 +1229,9 @@ class Powerwall(object):
             None.
 
         Returns:
-            Dictionary with operation results.
+            Cloud and FleetAPI: Tesla's API response (False for an invalid
+            mode). v1r LAN: True on success. None if unsupported or the write
+            fails.
         """
         if self._no_client():
             return None
@@ -1264,7 +1266,11 @@ class Powerwall(object):
             None.
 
         Returns:
-            Dictionary with operation results.
+            Cloud and FleetAPI: Tesla's API response. v1r LAN: True on
+            success. None if unsupported or the write fails.
+
+        Raises:
+            ValueError: if mode is not battery_ok, pv_only or never.
         """
         # Check for valid mode
         if mode not in ['battery_ok', 'pv_only', 'never']:
