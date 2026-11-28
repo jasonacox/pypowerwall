@@ -461,6 +461,20 @@ def test_remove_client_yes_skips_the_question_and_reports_failure(tmp_path, monk
         _run_clients_cli(V1R + ['-remove_client', 'x.pem', '-yes'], mock_ted, tmp_path, monkeypatch)
 
 
+def test_bad_keys_exit_with_the_error(tmp_path, monkeypatch, capsys):
+    import pytest
+    mock_ted = _clients_ted()
+    mock_ted.add_authorized_client.side_effect = ValueError('only RSA keys can be added')
+    mock_ted.remove_authorized_client.side_effect = ValueError('public key is empty')
+    with pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-add_client', 'k'], mock_ted, tmp_path, monkeypatch)
+    with pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-remove_client', 'k', '-yes'], mock_ted, tmp_path, monkeypatch)
+    out = capsys.readouterr().out
+    assert 'ERROR: only RSA keys can be added' in out
+    assert 'ERROR: public key is empty' in out
+
+
 def test_client_writes_need_v1r(tmp_path, monkeypatch):
     import pytest
     mock_ted = _clients_ted()

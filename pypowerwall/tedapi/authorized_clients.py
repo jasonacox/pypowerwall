@@ -235,11 +235,6 @@ class AuthorizedClients:
         return cls(clients=[AuthorizedClient.from_proto(r) for r in response.clients],
                    enable_line_switch_off=response.enable_line_switch_off)
 
-    def find(self, prefix: str) -> List[AuthorizedClient]:
-        """Clients whose fingerprint starts with ``prefix`` (case-insensitive)."""
-        prefix = prefix.lower()
-        return [c for c in self.clients if c.fingerprint and c.fingerprint.startswith(prefix)]
-
     def to_dict(self, details: bool = False, current_key: Optional[bytes] = None) -> Dict[str, Any]:
         """Render the ``get_authorized_clients()`` payload."""
         return {

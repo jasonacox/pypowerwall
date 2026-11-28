@@ -10,6 +10,8 @@ output and logs.
 import base64
 import hashlib
 import logging
+import threading
+import warnings
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -320,11 +322,12 @@ def test_add_command_matches_the_v2026_schema():
 
 
 @pytest.mark.parametrize('key', [EC_PEM, b'', '', 'not a key!', b'\x00\x01garbage', 42])
-def test_add_rejects_bad_keys_without_sending(key, caplog):
+def test_add_rejects_bad_keys_without_sending(key):
+    """An invalid argument raises ValueError, as the other setters do."""
     api = _make_api(v1r=True)
-    assert api.add_authorized_client(key) is None
+    with pytest.raises(ValueError):
+        api.add_authorized_client(key)
     api.v1r_transport.post_v1r.assert_not_called()
-    assert 'add_authorized_client:' in caplog.text
 
 
 def test_add_needs_v1r(caplog):
@@ -342,7 +345,8 @@ def test_add_gateway_error_and_no_reply(caplog):
     assert 'gateway returned error 7: Permission denied' in caplog.text
     api.v1r_transport.post_v1r.return_value = None
     assert api.add_authorized_client(OTHER_DER) is None
-    assert 'add_authorized_client: no response' in caplog.text
+    assert 'add_authorized_client: the gateway did not confirm the request' in caplog.text
+    assert 'refused' not in caplog.text
 
 
 def test_add_transport_exception_is_logged(caplog):
@@ -441,16 +445,33 @@ def test_remove_refuses_current_key_found_by_fingerprint():
     api.v1r_transport.post_v1r.assert_not_called()
 
 
-@pytest.mark.parametrize('key', ['', b'', 'not base64!', '-----BEGIN PUBLIC KEY-----\nxx\n-----END PUBLIC KEY-----'])
+@pytest.mark.parametrize('key', ['', b'', 'not base64!',
+                                 '-----BEGIN PUBLIC KEY-----\nxx\n-----END PUBLIC KEY-----', 42])
 def test_remove_rejects_bad_keys(key):
+    """An invalid argument raises ValueError, as the other setters do."""
     api = _make_api(v1r=True)
-    assert api.remove_authorized_client(key) is False
+    with pytest.raises(ValueError):
+        api.remove_authorized_client(key)
     api.v1r_transport.post_v1r.assert_not_called()
+
+
+def test_fingerprint_lookup_reads_through_the_locked_getter():
+    """The lookup is a get_authorized_clients() read under its API lock, like
+    the other TEDAPI reads, not an unlocked fetch."""
+    api = _make_api(v1r=True)
+    with patch.object(api, '_post_tedapi', return_value=_wrap(_list_envelope(), True)), \
+            patch.object(api, '_api_lock', wraps=api._api_lock) as lock:
+        api.v1r_transport.post_v1r.return_value = _remove_reply()
+        assert api.remove_authorized_client(fingerprint(OTHER_DER)[:8]) is True
+    assert [getattr(c.args[0], '__name__', None) for c in lock.call_args_list] == ['get_authorized_clients']
 
 
 def test_remove_needs_v1r_and_reports_errors(caplog):
     api = _make_api()
-    assert api.remove_authorized_client(OTHER_DER) is False
+    with patch.object(api, '_post_tedapi') as post:
+        assert api.remove_authorized_client(OTHER_DER) is False
+        assert api.remove_authorized_client('abcdef12') is False   # no lookup read either
+    post.assert_not_called()
     assert 'remove_authorized_client requires v1r transport' in caplog.text
     api = _make_api(v1r=True)
     api.v1r_transport.post_v1r.return_value = _error_envelope(5, 'not found').SerializeToString()
@@ -520,7 +541,6 @@ def test_details_copy_is_independent_and_timestamps_are_utc():
     env = _list_envelope()
     clients = AuthorizedClients.from_proto(env.authorization.list_authorized_clients_response)
     assert clients.clients[0].added_time == datetime(2024, 10, 27, 3, 33, 20, tzinfo=timezone.utc)
-    assert [c.fingerprint for c in clients.find(fingerprint(OWN_DER)[:10])] == [fingerprint(OWN_DER)]
     data = clients.to_dict(details=True)
     data['clients'][0]['roles'].append('X')
     assert clients.to_dict(details=True)['clients'][0]['roles'] == ['CUSTOMER']
@@ -532,3 +552,104 @@ def test_authorization_messages_oneof():
     assert message.WhichOneof('message') == 'list_authorized_clients_request'
     message.remove_authorized_client_request.public_key = b'\x01'
     assert message.WhichOneof('message') == 'remove_authorized_client_request'
+
+
+# ── refusals: named only when the gateway refused ──────────────────────────
+
+TIMEOUT = combined_pb2.MESSAGEFAULT_ERROR_TIMEOUT
+
+
+def _refusing(api, fault=TIMEOUT):
+    """The v1r transport's last request on this thread got ``fault`` back."""
+    api.v1r_transport.post_v1r.return_value = None
+    api.v1r_transport._set_request_fault(fault)
+    return api
+
+
+def test_refused_list_over_v1r_is_named(caplog):
+    api = _refusing(_make_api(v1r=True))
+    with patch.object(api, '_post_tedapi', return_value=None):
+        assert api.get_authorized_clients() is None
+    assert 'Authorized clients: the gateway refused the request over v1r (MESSAGEFAULT_ERROR_TIMEOUT)' in caplog.text
+
+
+def test_list_failure_without_a_refusal_adds_nothing(caplog):
+    """No answer without a refusal (a LAN outage, a key problem) is logged by
+    the transport; with the LAN failed over, the request went over Wi-Fi and
+    the LAN transport's fault is from an earlier request; outside v1r there
+    is no fault to report."""
+    plain = _make_api(v1r=True)
+    failed_over = _refusing(_make_api(v1r=True))
+    failed_over.lan_failed = True
+    wifi = _make_api()
+    for api in (plain, failed_over, wifi):
+        with patch.object(api, '_post_tedapi', return_value=None):
+            assert api.get_authorized_clients(force=True) is None
+    assert 'refused' not in caplog.text
+
+
+@pytest.mark.parametrize('call', [lambda api: api.add_authorized_client(OTHER_DER),
+                                  lambda api: api.remove_authorized_client(OTHER_DER)],
+                         ids=['add', 'remove'])
+def test_refused_write_is_named(call, caplog):
+    api = _refusing(_make_api(v1r=True), combined_pb2.MESSAGEFAULT_ERROR_INVALID_COMMAND)
+    assert not call(api)
+    assert 'the gateway refused the request (MESSAGEFAULT_ERROR_INVALID_COMMAND)' in caplog.text
+    assert 'did not confirm' not in caplog.text
+
+
+def _gateway(content=None, error=None) -> TEDAPIv1r:
+    """A real TEDAPIv1r (no key or socket) whose gateway answers every POST
+    with ``content``, or whose LAN raises ``error``."""
+    transport = TEDAPIv1r.__new__(TEDAPIv1r)
+    transport.pending_verification = False
+    transport.key_unknown = False
+    transport._flag_lock = threading.Lock()
+    transport.host = '10.42.1.1'
+    transport.timeout = 5
+    transport.din = DIN
+    transport.key_fingerprint = 'f' * 64
+    transport._private_key = MagicMock()
+    transport._private_key.sign.return_value = b'\x00' * 64
+    transport._public_key_der = OWN_DER
+    transport.session = MagicMock()
+    transport.session.post.side_effect = error
+    transport.session.post.return_value = MagicMock(status_code=200, content=content)
+    return transport
+
+
+def _fault(fault) -> bytes:
+    msg = combined_pb2.RoutableMessage()
+    msg.signed_message_status.message_fault = fault
+    return msg.SerializeToString()
+
+
+class TestThroughTheRealTransport:
+    """End to end through TEDAPIv1r.post_v1r(): a refusal is named, a LAN
+    outage and a key fault (which the transport logs itself) are not."""
+
+    def _run(self, transport, caplog):
+        api = _make_api(v1r=True)
+        api.v1r_transport = transport
+        with warnings.catch_warnings(), caplog.at_level(logging.DEBUG):
+            warnings.simplefilter('ignore')
+            assert api.get_authorized_clients() is None
+            assert api.add_authorized_client(OTHER_DER) is None
+            assert api.remove_authorized_client(OTHER_DER) is False
+        return caplog.text
+
+    def test_timeout_fault_is_named(self, caplog):
+        text = self._run(_gateway(_fault(TIMEOUT)), caplog)
+        assert 'Authorized clients: the gateway refused the request over v1r (MESSAGEFAULT_ERROR_TIMEOUT)' in text
+        assert 'add_authorized_client: the gateway refused the request (MESSAGEFAULT_ERROR_TIMEOUT)' in text
+        assert 'remove_authorized_client: the gateway refused the request (MESSAGEFAULT_ERROR_TIMEOUT)' in text
+
+    def test_lan_outage_is_not_a_refusal(self, caplog):
+        text = self._run(_gateway(error=OSError('no route')), caplog)
+        assert 'refused' not in text
+        assert 'add_authorized_client: the gateway did not confirm the request' in text
+
+    def test_key_fault_is_not_a_refusal(self, caplog):
+        text = self._run(_gateway(_fault(combined_pb2.MESSAGEFAULT_ERROR_UNKNOWN_KEY_ID)), caplog)
+        assert 'refused' not in text
+        assert 'remove_authorized_client: the gateway did not confirm the request' in text

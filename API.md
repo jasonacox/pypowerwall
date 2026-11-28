@@ -313,7 +313,7 @@ The battery dispatch protobuf schema is documented by
 The gateway's authorized clients are the public keys (Tesla app, vehicles, v1r
 clients such as pypowerwall) that may send it signed commands.
 
-- `authorized_clients(details=False, jsonformat=False, force=False)` → dict/str/None
+- `authorized_clients(jsonformat=False, details=False, force=False)` → dict/str/None
   Read-only, in any TEDAPI mode (Gateway Wi-Fi or v1r). Returns
   `{"clients": [...], "enable_line_switch_off": bool}`. Each client has
   `fingerprint` (SHA-256 of the DER public key, as printed by the register
@@ -331,14 +331,16 @@ clients such as pypowerwall) that may send it signed commands.
   Keys added locally have not been seen to verify; register keys with
   `python -m pypowerwall register`. Validated on Powerwall 3 (firmware
   26.34.3): the new key is `PENDING_VERIFICATION` with verification
-  `HERMES_COMMAND` and no `authorized_by`.
+  `HERMES_COMMAND` and no `authorized_by`. Raises `ValueError` for a key that
+  isn't RSA or can't be read; nothing is sent.
 
 - `remove_authorized_client(public_key, allow_current_key=False)` → bool
   v1r only. Removes a key, given as the listed base64 `public_key`, PEM, DER,
   or a fingerprint prefix (8+ hex characters) matching exactly one client.
   Removing the key this connection signs with is refused unless
   `allow_current_key=True`. Validated on Powerwall 3 (firmware 26.34.3): the
-  key disappears from the list.
+  key disappears from the list. Raises `ValueError` for a key that can't be
+  decoded; nothing is sent.
 
 ### Backup Events (v1r mode only)
 

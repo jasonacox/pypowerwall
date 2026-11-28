@@ -59,6 +59,7 @@
 # evaluated at runtime — keeps import working on Python < 3.10.
 from __future__ import annotations
 
+import base64
 import gzip
 import json
 import logging
@@ -1336,6 +1337,14 @@ class TEDAPI:
         pb.tail.value = 1
         response = self._post_tedapi(pb.SerializeToString())
         if response is None:
+            # Only when the gateway answered and refused the request (the v1r
+            # transport logs a timeout fault at debug level only). A LAN outage
+            # or a key problem is logged by the transport. With the LAN failed
+            # the request went over Wi-Fi, so the LAN transport's fault is from
+            # an earlier request.
+            fault = self._request_fault_name(self.v1r_transport) if self.v1r and not self.lan_failed else None
+            if fault:
+                log.error('Authorized clients: the gateway refused the request over v1r (%s)', fault)
             return None
         bare = self.v1r or self.auth_mode == AuthMode.BEARER
         try:
@@ -1368,6 +1377,22 @@ class TEDAPI:
             return None
         log.error(f'{name}: unexpected response from gateway')
         return None
+
+    @staticmethod
+    def _request_fault_name(transport) -> Optional[str]:
+        """Name of the request-level fault (TEDAPIv1r.request_fault()) that
+        ``transport``'s last request on this thread got back, or None: no
+        fault, or a transport without request_fault() (or a Mock for one)."""
+        try:
+            fault = getattr(transport, 'request_fault', lambda: None)()
+        except Exception:  # pylint: disable=broad-except
+            return None
+        if not isinstance(fault, int):
+            return None
+        try:
+            return combined_pb2.MessageFault_E.Name(fault)
+        except ValueError:
+            return f'fault {fault}'
 
     def _current_public_key(self) -> Optional[bytes]:
         """PKCS#1 DER of the key this connection signs with (v1r), else None."""
@@ -1402,7 +1427,13 @@ class TEDAPI:
             self.pwcache.pop('authorized_clients', None)
             self.pwcachetime.pop('authorized_clients', None)
         if resp is None:
-            log.error('%s: no response', name)
+            fault = self._request_fault_name(transport)
+            if fault:
+                log.error('%s: the gateway refused the request (%s)', name, fault)
+            else:
+                # Not sent, not answered or not readable: the transport has
+                # logged which.
+                log.error('%s: the gateway did not confirm the request', name)
             return None
         return self._authorization_reply(resp, field, name)
 
@@ -1428,12 +1459,12 @@ class TEDAPI:
         Returns:
             The new client record (as in get_authorized_clients(), with
             details), or None on error.
+
+        Raises:
+            ValueError: ``public_key`` is not an RSA key in one of those forms
+                        (nothing is sent).
         """
-        try:
-            key_der = rsa_public_key_der(public_key)
-        except ValueError as exc:
-            log.error('add_authorized_client: %s', exc)
-            return None
+        key_der = rsa_public_key_der(public_key)
         description = '' if description is None else str(description)
 
         def populate(message):
@@ -1473,20 +1504,34 @@ class TEDAPI:
 
         Returns:
             True when the gateway acknowledged the removal, else False.
+
+        Raises:
+            ValueError: ``public_key`` is empty or not a key in one of those
+                        forms (nothing is sent).
         """
+        if not self.v1r:
+            # Before the fingerprint lookup, which would read the gateway.
+            log.error('remove_authorized_client requires v1r transport')
+            return False
         try:
             key = self._resolve_client_key(public_key)
-            if key is None:
-                return False
-            current = self._current_public_key()
-            if current is not None and key == current and not allow_current_key:
-                log.error('remove_authorized_client: refusing to remove the key this connection '
-                          'signs with (pass allow_current_key=True to remove it anyway)')
-                return False
+        except ValueError:
+            raise
+        except Exception as exc:  # pylint: disable=broad-except
+            log.error('remove_authorized_client failed: %s', exc)
+            return False
+        if key is None:
+            return False
+        current = self._current_public_key()
+        if current is not None and key == current and not allow_current_key:
+            log.error('remove_authorized_client: refusing to remove the key this connection '
+                      'signs with (pass allow_current_key=True to remove it anyway)')
+            return False
 
-            def populate(message):
-                message.remove_authorized_client_request.public_key = key
+        def populate(message):
+            message.remove_authorized_client_request.public_key = key
 
+        try:
             reply = self._authorization_command('remove_authorized_client', populate,
                                                 'remove_authorized_client_response')
         except Exception as exc:  # pylint: disable=broad-except
@@ -1499,25 +1544,23 @@ class TEDAPI:
 
     def _resolve_client_key(self, public_key) -> Optional[bytes]:
         """Key bytes for remove_authorized_client: a listed key, or the unique
-        client whose fingerprint starts with a hex prefix."""
+        client whose fingerprint starts with a hex prefix (None, logged, when
+        the list can't be read or the prefix doesn't match exactly one).
+        Raises ValueError for a key that can't be decoded."""
         if isinstance(public_key, str) and re.fullmatch(r'[0-9a-fA-F]{8,64}', public_key.strip()):
-            clients = self._cached_fetch('authorized_clients', expire=self.pwcacheexpire, force=True,
-                                         self_function=None, name='authorized clients',
-                                         fetch=self._get_authorized_clients)
-            if clients is None:
+            # A fresh list through the getter, so the read takes its API lock.
+            listing = self.get_authorized_clients(force=True, details=True)
+            if listing is None:
                 log.error('remove_authorized_client: could not list clients to match the fingerprint')
                 return None
-            matches = clients.find(public_key.strip())
+            prefix = public_key.strip().lower()
+            matches = [c for c in listing['clients'] if (c.get('fingerprint') or '').startswith(prefix)]
             if len(matches) != 1:
                 log.error('remove_authorized_client: fingerprint prefix matches %d clients (need exactly 1)',
                           len(matches))
                 return None
-            return matches[0].public_key
-        try:
-            return public_key_bytes(public_key)
-        except ValueError as exc:
-            log.error('remove_authorized_client: %s', exc)
-            return None
+            return base64.b64decode(matches[0]['public_key'])
+        return public_key_bytes(public_key)
 
     @uses_api_lock
     def get_network_status(self, self_function=None, force=False, details=False):

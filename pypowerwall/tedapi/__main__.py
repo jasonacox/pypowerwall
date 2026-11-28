@@ -252,7 +252,11 @@ def run_tedapi_test(argv=None, debug=False):
         except OSError as e:
             print(f"ERROR: unable to read {args.add_client}: {e}")
             sys.exit(1)
-        client = ted.add_authorized_client(key, description=args.description)
+        try:
+            client = ted.add_authorized_client(key, description=args.description)
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
         if client is None:
             print("ERROR: the gateway did not add the key (see the log above)")
             sys.exit(1)
@@ -273,7 +277,12 @@ def run_tedapi_test(argv=None, debug=False):
             if answer.strip().lower() not in ('y', 'yes'):
                 print("Cancelled")
                 return
-        if not ted.remove_authorized_client(key):
+        try:
+            removed = ted.remove_authorized_client(key)
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            sys.exit(1)
+        if not removed:
             print("ERROR: the key was not removed (see the log above)")
             sys.exit(1)
         print(" - Authorized client removed")

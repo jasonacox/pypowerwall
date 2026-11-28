@@ -83,7 +83,7 @@
     resume_battery_operation() # Release a local v1r battery power setpoint
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
     network_status(json, details) # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
-    authorized_clients(details, jsonformat, force) # Gateway's authorized clients (paired keys) via TEDAPI
+    authorized_clients(json, details) # Gateway's authorized clients (paired keys) - TEDAPI modes only
     add_authorized_client(public_key, description) # Register an RSA public key with the gateway (v1r)
     remove_authorized_client(public_key, allow_current_key) # Remove an authorized client's key (v1r)
 
@@ -1122,7 +1122,7 @@ class Powerwall(object):
             return None
         return method
 
-    def authorized_clients(self, details: bool = False, jsonformat: bool = False,
+    def authorized_clients(self, jsonformat: bool = False, details: bool = False,
                            force: bool = False) -> Optional[Union[dict, str]]:
         """
         Get the gateway's authorized clients: the public keys (Tesla app,
@@ -1130,9 +1130,9 @@ class Powerwall(object):
         key's state. Read-only; needs a TEDAPI connection (v1r or Gateway Wi-Fi).
 
         Args:
+            jsonformat: return a JSON string instead of a dict
             details: also include each client's description, identifier and
                      base64 public key
-            jsonformat: return a JSON string instead of a dict
             force: bypass the cache
 
         Returns:
@@ -1155,6 +1155,7 @@ class Powerwall(object):
         starts in PENDING_VERIFICATION and times out if it isn't verified in
         about 10 minutes; keys added locally have not been seen to verify (see
         TEDAPI.add_authorized_client). Returns the new client record or None.
+        Raises ValueError when ``public_key`` is not an RSA key (nothing is sent).
         """
         add = self._tedapi_method("add_authorized_client", v1r_only=True)
         if add is None:
@@ -1167,6 +1168,7 @@ class Powerwall(object):
         ``public_key`` is the listed base64 key, PEM, DER bytes, or a unique
         fingerprint prefix. Removing the key this connection signs with is
         refused unless ``allow_current_key=True``. Returns True on success.
+        Raises ValueError when ``public_key`` can't be decoded (nothing is sent).
         """
         remove = self._tedapi_method("remove_authorized_client", v1r_only=True)
         if remove is None:

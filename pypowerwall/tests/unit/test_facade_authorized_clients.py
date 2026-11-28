@@ -42,6 +42,28 @@ def test_list_details_force_and_json(pw):
     assert json.loads(out) == CLIENTS
 
 
+def test_positional_order_matches_the_other_getters(pw):
+    """jsonformat comes first, as in vitals(jsonformat), alerts(jsonformat, ...)
+    and network_status(jsonformat, ...): authorized_clients(True) means JSON."""
+    tedapi = _attach_tedapi(pw)
+    assert json.loads(pw.authorized_clients(True)) == CLIENTS
+    tedapi.get_authorized_clients.assert_called_once_with(force=False, details=False)
+    tedapi.get_authorized_clients.reset_mock()
+    assert pw.authorized_clients(False, True, True) == CLIENTS
+    tedapi.get_authorized_clients.assert_called_once_with(force=True, details=True)
+
+
+def test_bad_keys_raise_like_the_other_setters(pw):
+    """An invalid argument raises ValueError (as set_grid_export('bad') does)."""
+    tedapi = _attach_tedapi(pw)
+    tedapi.add_authorized_client.side_effect = ValueError('only RSA keys can be added')
+    tedapi.remove_authorized_client.side_effect = ValueError('public key is empty')
+    with pytest.raises(ValueError):
+        pw.add_authorized_client('KEY')
+    with pytest.raises(ValueError):
+        pw.remove_authorized_client('')
+
+
 def test_list_failure_returns_none(pw):
     tedapi = _attach_tedapi(pw)
     tedapi.get_authorized_clients.return_value = None

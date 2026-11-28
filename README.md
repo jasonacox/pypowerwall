@@ -762,7 +762,7 @@ print("System Status: %r\n" % pw.system_status())
     dispatch_battery_power(power_watts, duration_seconds) # Timed battery power setpoint - v1r only, use at your own risk (could void your warranty)
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
-    authorized_clients(details, jsonformat, force) # Keys paired with the gateway and their state - TEDAPI modes
+    authorized_clients(jsonformat, details) # Keys paired with the gateway and their state - TEDAPI modes
     add_authorized_client(public_key, description) # Register an RSA public key with the gateway - v1r only
     remove_authorized_client(public_key, allow_current_key) # Remove a paired key - v1r only
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
