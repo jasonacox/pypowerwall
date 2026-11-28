@@ -42,6 +42,9 @@
     get_native_meters_aggregates() - Get the gateway's native /api/meters/aggregates
     get_native_status() - Get the gateway's native /api/status
     get_network_status() - Get the gateway's Wi-Fi / Ethernet / cellular network status
+    get_authorized_clients() - Get the gateway's authorized clients (paired keys)
+    add_authorized_client(public_key) - Register a public key with the gateway (signed v1r)
+    remove_authorized_client(public_key) - Remove an authorized client's key (signed v1r)
 
  Note:
     This module requires access to the Powerwall Gateway. You can add a route to
@@ -56,6 +59,7 @@
 # evaluated at runtime — keeps import working on Python < 3.10.
 from __future__ import annotations
 
+import base64
 import gzip
 import json
 import logging
@@ -86,6 +90,7 @@ from .queries import apply_query, get_query, QueryRole, EXTRA_SIGNAL_NAMES, PW3_
     PW2_POD_POWER_SIGNAL_NAMES
 from .network_status import NetworkStatus
 from .system_info import SystemInfo, V2026_SYS_SCHEMA, V2024_SYS_SCHEMA
+from .authorized_clients import AuthorizedClient, AuthorizedClients, public_key_bytes, rsa_public_key_der
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -1288,6 +1293,274 @@ class TEDAPI:
         env = envelope_cls() if bare else message_cls()
         env.ParseFromString(response)
         return SystemInfo.from_proto(env if bare else env.message, schema)
+
+    # ── Authorized clients (AuthorizationMessages) ────────────────────
+
+    @uses_api_lock
+    def get_authorized_clients(self, self_function=None, force=False, details=False):
+        """
+        Get the gateway's authorized clients: the public keys (Tesla app,
+        vehicles, v1r clients such as this one) that may send it signed
+        commands, with each key's state (VERIFIED, PENDING_VERIFICATION, ...).
+
+        Read-only. Sent over whichever TEDAPI transport is active; validated
+        on Powerwall 3 over Gateway Wi-Fi (basic) and signed v1r.
+
+        Args:
+            force: bypass the cache
+            details: also return each client's description, identifier and
+                     base64 public key (descriptions are often a person's or
+                     device's name)
+
+        Returns:
+            Dict ``{'clients': [...], 'enable_line_switch_off': bool}``, or
+            None on error. Each client has ``fingerprint`` (SHA-256 of the
+            DER key), ``type``, ``key_type``, ``roles``, ``state``,
+            ``verification``, ``added_time`` (ISO 8601), ``authorized_by``
+            (fingerprint of the key that authorized it, or None) and
+            ``current_key`` (True for the key this v1r connection signs with;
+            None when not connected over v1r).
+        """
+        clients = self._cached_fetch('authorized_clients', expire=self.pwcacheexpire, force=force,
+                                     self_function=self_function, name='authorized clients',
+                                     fetch=self._get_authorized_clients)
+        if clients is None:
+            return None
+        return clients.to_dict(details=details, current_key=self._current_public_key())
+
+    def _get_authorized_clients(self) -> Optional[AuthorizedClients]:
+        pb = combined_pb2.Message()
+        pb.message.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_LOCAL_HTTPS
+        pb.message.sender.local = combined_pb2.LOCAL_PARTICIPANT_INSTALLER
+        pb.message.recipient.din = self.din
+        pb.message.authorization.list_authorized_clients_request.SetInParent()
+        pb.tail.value = 1
+        response = self._post_tedapi(pb.SerializeToString())
+        if response is None:
+            # Only when the gateway answered and refused the request (the v1r
+            # transport logs a timeout fault at debug level only). A LAN outage
+            # or a key problem is logged by the transport. With the LAN failed
+            # the request went over Wi-Fi, so the LAN transport's fault is from
+            # an earlier request.
+            fault = self._request_fault_name(self.v1r_transport) if self.v1r and not self.lan_failed else None
+            if fault:
+                log.error('Authorized clients: the gateway refused the request over v1r (%s)', fault)
+            return None
+        bare = self.v1r or self.auth_mode == AuthMode.BEARER
+        try:
+            if bare:
+                envelope = combined_pb2.MessageEnvelope()
+                envelope.ParseFromString(response)
+            else:
+                message = combined_pb2.Message()
+                message.ParseFromString(response)
+                envelope = message.message
+        except Exception:  # pylint: disable=broad-except
+            log.error('Authorized clients: undecodable response from gateway')
+            return None
+        reply = self._authorization_reply(envelope, 'list_authorized_clients_response',
+                                          'Authorized clients')
+        if reply is None:
+            return None
+        return AuthorizedClients.from_proto(reply)
+
+    @staticmethod
+    def _authorization_reply(envelope, field: str, name: str):
+        """The ``authorization.<field>`` message of a response envelope, or None
+        (with the reason logged) for a gateway error or any other reply. The
+        raw reply is never logged: it carries keys and descriptions."""
+        if envelope.HasField('authorization') and envelope.authorization.HasField(field):
+            return getattr(envelope.authorization, field)
+        if envelope.HasField('common') and envelope.common.HasField('error_response'):
+            status = envelope.common.error_response.status
+            log.error(f'{name}: gateway returned error {status.code}: {status.message}')
+            return None
+        log.error(f'{name}: unexpected response from gateway')
+        return None
+
+    @staticmethod
+    def _request_fault_name(transport) -> Optional[str]:
+        """Name of the request-level fault (TEDAPIv1r.request_fault()) that
+        ``transport``'s last request on this thread got back, or None: no
+        fault, or a transport without request_fault() (or a Mock for one)."""
+        try:
+            fault = getattr(transport, 'request_fault', lambda: None)()
+        except Exception:  # pylint: disable=broad-except
+            return None
+        if not isinstance(fault, int):
+            return None
+        try:
+            return combined_pb2.MessageFault_E.Name(fault)
+        except ValueError:
+            return f'fault {fault}'
+
+    def _current_public_key(self) -> Optional[bytes]:
+        """PKCS#1 DER of the key this connection signs with (v1r), else None."""
+        if not self.v1r:
+            return None
+        for transport in (self.v1r_transport, self.wifi_v1r_transport):
+            key = getattr(transport, 'public_key_der', None)
+            if isinstance(key, bytes) and key:
+                return key
+        return None
+
+    def _authorization_command(self, name: str, populate, field: str):
+        """Send one AuthorizationMessages command over the signed v1r write
+        transport; the response's ``authorization.<field>``, or None (logged).
+        Drops the cached client list either way: a timed-out reply may still
+        have changed it."""
+        if not self.v1r:
+            log.error('%s requires v1r transport', name)
+            return None
+        if not self.din and not self.connect():
+            log.error('Not connected - unable to %s', name)
+            return None
+        transport = self._v1r_write_transport()
+        if transport is None:
+            log.error('%s requires an available signed-v1r transport', name)
+            return None
+        message = combined_pb2.AuthorizationMessages()
+        populate(message)
+        try:
+            resp = self._v1r_call(transport, 'send_authorization_message', self.din, message)
+        finally:
+            self.pwcache.pop('authorized_clients', None)
+            self.pwcachetime.pop('authorized_clients', None)
+        if resp is None:
+            fault = self._request_fault_name(transport)
+            if fault:
+                log.error('%s: the gateway refused the request (%s)', name, fault)
+            else:
+                # Not sent, not answered or not readable: the transport has
+                # logged which.
+                log.error('%s: the gateway did not confirm the request', name)
+            return None
+        return self._authorization_reply(resp, field, name)
+
+    def add_authorized_client(self, public_key, description: str = 'pypowerwall') -> Optional[dict]:
+        """
+        Register an RSA public key with the gateway as a customer app client
+        (Tesla's AddAuthorizedClient), over signed v1r.
+
+        The key starts in PENDING_VERIFICATION and must then be verified
+        within about 10 minutes, or it times out. Validated on Powerwall 3
+        (firmware 26.34.3): the key is listed as PENDING_VERIFICATION with
+        verification HERMES_COMMAND, and the signing key does not vouch for it
+        (no authorized_by). A key added locally over Gateway Wi-Fi basic auth never verified
+        on a Powerwall 3 (firmware 26.34.1): the On/Off switch toggle did not
+        verify it. To register a key that verifies, use
+        ``python -m pypowerwall register`` (Tesla cloud).
+
+        Args:
+            public_key: the RSA key as PEM (public, or a private key whose
+                        public half is used), DER bytes, or base64 DER
+            description: label stored with the key (shown in the client list)
+
+        Returns:
+            The new client record (as in get_authorized_clients(), with
+            details), or None on error.
+
+        Raises:
+            ValueError: ``public_key`` is not an RSA key in one of those forms
+                        (nothing is sent).
+        """
+        key_der = rsa_public_key_der(public_key)
+        description = '' if description is None else str(description)
+
+        def populate(message):
+            req = message.add_authorized_client_request
+            req.type = combined_pb2.AUTHORIZED_CLIENT_TYPE_CUSTOMER_MOBILE_APP
+            req.key_type = combined_pb2.AUTHORIZED_KEY_TYPE_RSA
+            req.public_key = key_der
+            req.description = description
+
+        try:
+            reply = self._authorization_command('add_authorized_client', populate,
+                                                'add_authorized_client_response')
+        except Exception as exc:  # pylint: disable=broad-except
+            log.error('add_authorized_client failed: %s', exc)
+            return None
+        if reply is None:
+            return None
+        client = AuthorizedClient.from_proto(reply.client)
+        log.info('add_authorized_client: key %s is %s', client.fingerprint, client.state_name)
+        return client.to_dict(details=True, current_key=self._current_public_key())
+
+    def remove_authorized_client(self, public_key, allow_current_key: bool = False) -> bool:
+        """
+        Remove an authorized client's key from the gateway (Tesla's
+        RemoveAuthorizedClient), over signed v1r. The client can no longer
+        send signed commands; re-adding it needs registration and
+        verification again. Validated on Powerwall 3 (firmware 26.34.3): the
+        key disappears from the client list.
+
+        Args:
+            public_key: the key as listed (base64 ``public_key`` from
+                        get_authorized_clients(details=True)), PEM, DER bytes,
+                        or a fingerprint prefix (at least 8 hex characters)
+                        that matches exactly one listed client
+            allow_current_key: remove the key this connection signs with.
+                        Refused by default: it would lock this client out.
+
+        Returns:
+            True when the gateway acknowledged the removal, else False.
+
+        Raises:
+            ValueError: ``public_key`` is empty or not a key in one of those
+                        forms (nothing is sent).
+        """
+        if not self.v1r:
+            # Before the fingerprint lookup, which would read the gateway.
+            log.error('remove_authorized_client requires v1r transport')
+            return False
+        try:
+            key = self._resolve_client_key(public_key)
+        except ValueError:
+            raise
+        except Exception as exc:  # pylint: disable=broad-except
+            log.error('remove_authorized_client failed: %s', exc)
+            return False
+        if key is None:
+            return False
+        current = self._current_public_key()
+        if current is not None and key == current and not allow_current_key:
+            log.error('remove_authorized_client: refusing to remove the key this connection '
+                      'signs with (pass allow_current_key=True to remove it anyway)')
+            return False
+
+        def populate(message):
+            message.remove_authorized_client_request.public_key = key
+
+        try:
+            reply = self._authorization_command('remove_authorized_client', populate,
+                                                'remove_authorized_client_response')
+        except Exception as exc:  # pylint: disable=broad-except
+            log.error('remove_authorized_client failed: %s', exc)
+            return False
+        if reply is None:
+            return False
+        log.info('remove_authorized_client: removed key %s', AuthorizedClient(public_key=key).fingerprint)
+        return True
+
+    def _resolve_client_key(self, public_key) -> Optional[bytes]:
+        """Key bytes for remove_authorized_client: a listed key, or the unique
+        client whose fingerprint starts with a hex prefix (None, logged, when
+        the list can't be read or the prefix doesn't match exactly one).
+        Raises ValueError for a key that can't be decoded."""
+        if isinstance(public_key, str) and re.fullmatch(r'[0-9a-fA-F]{8,64}', public_key.strip()):
+            # A fresh list through the getter, so the read takes its API lock.
+            listing = self.get_authorized_clients(force=True, details=True)
+            if listing is None:
+                log.error('remove_authorized_client: could not list clients to match the fingerprint')
+                return None
+            prefix = public_key.strip().lower()
+            matches = [c for c in listing['clients'] if (c.get('fingerprint') or '').startswith(prefix)]
+            if len(matches) != 1:
+                log.error('remove_authorized_client: fingerprint prefix matches %d clients (need exactly 1)',
+                          len(matches))
+                return None
+            return base64.b64decode(matches[0]['public_key'])
+        return public_key_bytes(public_key)
 
     @uses_api_lock
     def get_network_status(self, self_function=None, force=False, details=False):

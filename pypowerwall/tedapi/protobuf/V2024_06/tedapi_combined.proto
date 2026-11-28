@@ -445,8 +445,103 @@ message EnergySiteNetMessages {
   bytes placeholder = 1;
 }
 
+// Authorized clients (the gateway's paired keys). Message and field numbers
+// from Tesla's energy_device.v1 AuthorizationAPI (tesla-protocol; the same
+// numbers as V2026_06 tedapi_v2_energy_device.proto).
+//
+// Validated on Powerwall 3, firmware 26.34.3 (2026-11-14):
+//   * list_authorized_clients_request answers over signed v1r and over Gateway
+//     Wi-Fi basic auth (LOCAL_HTTPS envelope, sender local INSTALLER; sender
+//     CUSTOMER is rejected with "unexpected MessageEnvelope.Sender").
+//   * add_authorized_client_request over Gateway Wi-Fi basic auth (firmware
+//     26.34.1, 2026-10-29) is accepted and the key enters
+//     PENDING_VERIFICATION, but a key added that way never verified: toggling
+//     the Powerwall On/Off switch inside the window did not verify it and it
+//     timed out (verification type HERMES_COMMAND).
+//   * add / remove over signed v1r (HERMES_COMMAND envelope, sender
+//     authorizedClient, as the TEG writes), signed by a VERIFIED key, work
+//     (firmware 26.34.3, 2026-11-14): the added key is listed as
+//     PENDING_VERIFICATION with verification HERMES_COMMAND and no
+//     authorized_by_public_key (the signing key does not vouch for it), and a
+//     removed key disappears from the list (no REMOVED record is kept).
+// Keys are DER; RSA keys are PKCS#1 (the encoding v1r_register.py registers
+// and the gateway lists back).
 message AuthorizationMessages {
-  bytes placeholder = 1;
+  oneof message {
+    AuthorizationAPIAddAuthorizedClientRequest add_authorized_client_request = 1;
+    AuthorizationAPIAddAuthorizedClientResponse add_authorized_client_response = 2;
+    AuthorizationAPIRemoveAuthorizedClientRequest remove_authorized_client_request = 3;
+    AuthorizationAPIRemoveAuthorizedClientResponse remove_authorized_client_response = 4;
+    AuthorizationAPIListAuthorizedClientsRequest list_authorized_clients_request = 5;
+    AuthorizationAPIListAuthorizedClientsResponse list_authorized_clients_response = 6;
+  }
+}
+
+enum AuthorizedKeyType {
+  AUTHORIZED_KEY_TYPE_INVALID = 0;
+  AUTHORIZED_KEY_TYPE_RSA = 1;
+  AUTHORIZED_KEY_TYPE_ECC = 2;
+}
+
+enum AuthorizationRole {
+  AUTHORIZATION_ROLE_INVALID = 0;
+  AUTHORIZATION_ROLE_CUSTOMER = 1;
+  AUTHORIZATION_ROLE_VEHICLE = 2;
+}
+
+enum AuthorizedState {
+  AUTHORIZED_STATE_INVALID = 0;
+  AUTHORIZED_STATE_PENDING_VERIFICATION = 1;
+  AUTHORIZED_STATE_PENDING_VERIFICATION_TIMEOUT = 2;
+  AUTHORIZED_STATE_VERIFIED = 3;
+  AUTHORIZED_STATE_REMOVED = 4;
+}
+
+enum AuthorizedVerificationType {
+  AUTHORIZED_VERIFICATION_TYPE_INVALID = 0;
+  AUTHORIZED_VERIFICATION_TYPE_PRESENCE_PROOF = 1;
+  AUTHORIZED_VERIFICATION_TYPE_BLE = 2;
+  AUTHORIZED_VERIFICATION_TYPE_SIGNED = 3;
+  AUTHORIZED_VERIFICATION_TYPE_HERMES_COMMAND = 4;
+}
+
+message AuthorizationRecord {
+  AuthorizedClientType type = 1;
+  string description = 2;
+  AuthorizedKeyType key_type = 3;
+  bytes public_key = 4;
+  repeated AuthorizationRole roles = 5;
+  AuthorizedState state = 6;
+  AuthorizedVerificationType verification = 7;
+  google.protobuf.Timestamp added_time = 8;
+  string identifier = 9;
+  bytes authorized_by_public_key = 10;
+}
+
+message AuthorizationAPIAddAuthorizedClientRequest {
+  AuthorizedClientType type = 1;
+  string description = 2;
+  AuthorizedKeyType key_type = 3;
+  bytes public_key = 4;
+}
+
+message AuthorizationAPIAddAuthorizedClientResponse {
+  AuthorizationRecord client = 1;
+}
+
+message AuthorizationAPIRemoveAuthorizedClientRequest {
+  bytes public_key = 1;
+}
+
+message AuthorizationAPIRemoveAuthorizedClientResponse {
+}
+
+message AuthorizationAPIListAuthorizedClientsRequest {
+}
+
+message AuthorizationAPIListAuthorizedClientsResponse {
+  repeated AuthorizationRecord clients = 1;
+  bool enable_line_switch_off = 2;
 }
 
 message GraphQLMessages {

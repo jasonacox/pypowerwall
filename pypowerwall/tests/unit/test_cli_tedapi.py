@@ -370,3 +370,129 @@ def test_run_tedapi_test_network_mode_exits_early(tmp_path, monkeypatch, capsys,
     out = capsys.readouterr().out
     assert "Network Status" in out and '"signal_strength_percent": 58' in out
     assert not list(tmp_path.iterdir())  # no status.json / config.json written
+
+
+# ── authorized clients (-clients / -add_client / -remove_client) ────────────
+
+def _run_clients_cli(argv, mock_ted, tmp_path, monkeypatch, answer=None):
+    from pypowerwall.tedapi.__main__ import run_tedapi_test
+    monkeypatch.chdir(tmp_path)
+    with patch('requests.get') as mock_get, \
+         patch('pypowerwall.tedapi.TEDAPI', return_value=mock_ted), \
+         patch('builtins.input', return_value=answer) as mock_input:
+        mock_get.return_value.status_code = 200
+        run_tedapi_test(['-host', '10.42.1.40', '-gw_pwd', 'ABCDEXXXXX'] + argv)
+    return mock_input
+
+
+def _clients_ted():
+    mock_ted = MagicMock()
+    mock_ted.din = 'DIN123'
+    mock_ted.get_authorized_clients.return_value = {'clients': [{'state': 'VERIFIED'}],
+                                                    'enable_line_switch_off': False}
+    mock_ted.add_authorized_client.return_value = {'state': 'PENDING_VERIFICATION'}
+    mock_ted.remove_authorized_client.return_value = True
+    return mock_ted
+
+
+def test_render_clients():
+    from pypowerwall.tedapi.__main__ import _render_clients
+    assert 'unavailable' in _render_clients(None)
+    assert json.loads(_render_clients({'clients': []})) == {'clients': []}
+
+
+def test_clients_mode_lists_and_exits(tmp_path, monkeypatch, capsys):
+    mock_ted = _clients_ted()
+    _run_clients_cli(['-clients', '-details'], mock_ted, tmp_path, monkeypatch)
+    mock_ted.get_authorized_clients.assert_called_once_with(force=True, details=True)
+    mock_ted.get_config.assert_not_called()
+    assert 'Authorized Clients' in capsys.readouterr().out
+
+
+V1R = ['-v1r', '-rsa_key_path', '/tmp/test.pem']
+
+
+def test_add_client_reads_the_key_file(tmp_path, monkeypatch, capsys):
+    key_file = tmp_path / 'new.pem'
+    key_file.write_bytes(b'-----BEGIN PUBLIC KEY-----\n')
+    mock_ted = _clients_ted()
+    _run_clients_cli(V1R + ['-add_client', str(key_file), '-description', 'HA'], mock_ted, tmp_path, monkeypatch)
+    mock_ted.add_authorized_client.assert_called_once_with(b'-----BEGIN PUBLIC KEY-----\n', description='HA')
+    assert 'PENDING_VERIFICATION' in capsys.readouterr().out
+
+
+def test_add_client_failure_exits(tmp_path, monkeypatch):
+    import pytest
+    mock_ted = _clients_ted()
+    mock_ted.add_authorized_client.return_value = None
+    with pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-add_client', 'not-a-file'], mock_ted, tmp_path, monkeypatch)
+    mock_ted.add_authorized_client.assert_called_once_with('not-a-file', description='pypowerwall')
+
+
+def test_add_client_unreadable_file_exits(tmp_path, monkeypatch):
+    import pytest
+    mock_ted = _clients_ted()
+    with patch('pypowerwall.tedapi.__main__._read_key_argument', side_effect=OSError('denied')), \
+            pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-add_client', 'x.pem'], mock_ted, tmp_path, monkeypatch)
+    mock_ted.add_authorized_client.assert_not_called()
+
+
+def test_remove_client_asks_first(tmp_path, monkeypatch, capsys):
+    mock_ted = _clients_ted()
+    _run_clients_cli(V1R + ['-remove_client', 'abcdef12'], mock_ted, tmp_path, monkeypatch, answer='n')
+    mock_ted.remove_authorized_client.assert_not_called()
+    assert 'Cancelled' in capsys.readouterr().out
+    _run_clients_cli(V1R + ['-remove_client', 'abcdef12'], mock_ted, tmp_path, monkeypatch, answer='y')
+    mock_ted.remove_authorized_client.assert_called_once_with('abcdef12')
+
+
+def test_remove_client_yes_skips_the_question_and_reports_failure(tmp_path, monkeypatch):
+    import pytest
+    mock_ted = _clients_ted()
+    mock_input = _run_clients_cli(V1R + ['-remove_client', 'abcdef12', '-yes'], mock_ted, tmp_path, monkeypatch)
+    mock_input.assert_not_called()
+    mock_ted.remove_authorized_client.return_value = False
+    with pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-remove_client', 'abcdef12', '-yes'], mock_ted, tmp_path, monkeypatch)
+    with patch('pypowerwall.tedapi.__main__._read_key_argument', side_effect=OSError('denied')), \
+            pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-remove_client', 'x.pem', '-yes'], mock_ted, tmp_path, monkeypatch)
+
+
+def test_bad_keys_exit_with_the_error(tmp_path, monkeypatch, capsys):
+    import pytest
+    mock_ted = _clients_ted()
+    mock_ted.add_authorized_client.side_effect = ValueError('only RSA keys can be added')
+    mock_ted.remove_authorized_client.side_effect = ValueError('public key is empty')
+    with pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-add_client', 'k'], mock_ted, tmp_path, monkeypatch)
+    with pytest.raises(SystemExit):
+        _run_clients_cli(V1R + ['-remove_client', 'k', '-yes'], mock_ted, tmp_path, monkeypatch)
+    out = capsys.readouterr().out
+    assert 'ERROR: only RSA keys can be added' in out
+    assert 'ERROR: public key is empty' in out
+
+
+def test_client_writes_need_v1r(tmp_path, monkeypatch):
+    import pytest
+    mock_ted = _clients_ted()
+    for argv in (['-add_client', 'x.pem'], ['-remove_client', 'abcdef12']):
+        with pytest.raises(SystemExit):
+            _run_clients_cli(argv, mock_ted, tmp_path, monkeypatch)
+    mock_ted.add_authorized_client.assert_not_called()
+    mock_ted.remove_authorized_client.assert_not_called()
+
+
+def test_main_forwards_tedapi_client_flags():
+    from pypowerwall.__main__ import main
+    argv = ['pypowerwall', 'tedapi', '-gw_pwd', 'ABCDEXXXXX', '-clients', '-add_client', 'k.pem',
+            '-description', 'HA', '-remove_client', 'abcdef12', '-yes', '-details']
+    with patch('sys.argv', argv), patch('pypowerwall.tedapi.__main__.run_tedapi_test') as mock_run:
+        main()
+    mock_run.assert_called_once_with(
+        argv=['-gw_pwd', 'ABCDEXXXXX', '-clients', '-add_client', 'k.pem', '-description', 'HA',
+              '-remove_client', 'abcdef12', '-yes', '-details'],
+        debug=False,
+    )

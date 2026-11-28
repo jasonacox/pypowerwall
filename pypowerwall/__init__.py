@@ -83,6 +83,9 @@
     resume_battery_operation() # Release a local v1r battery power setpoint
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
     network_status(json, details) # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
+    authorized_clients(json, details) # Gateway's authorized clients (paired keys) - TEDAPI modes only
+    add_authorized_client(public_key, description) # Register an RSA public key with the gateway (v1r)
+    remove_authorized_client(public_key, allow_current_key) # Remove an authorized client's key (v1r)
 
     get_time_remaining()      # Get the backup time remaining on the battery
     set_operation(level, mode, json)        # Set Battery Reserve Percentage and/or Operation Mode
@@ -1104,6 +1107,73 @@ class Powerwall(object):
             log.error("get_backup_events requires v1r LAN mode (tedapi_mode=%s)", self.tedapi_mode)
             return None
         return self.client.get_backup_events()
+
+    def _tedapi_method(self, name: str, *, v1r_only: bool = False):
+        """The TEDAPI client's ``name`` method, or None (logged) when there is
+        no client, no TEDAPI connection, or (``v1r_only``) no signed v1r."""
+        if self._no_client():
+            return None
+        if v1r_only and self.tedapi_mode != "v1r":
+            log.error("%s requires v1r LAN mode (tedapi_mode=%s)", name, self.tedapi_mode)
+            return None
+        method = getattr(self.tedapi, name, None)
+        if not callable(method):
+            log.error("%s requires a TEDAPI connection (tedapi_mode=%s)", name, self.tedapi_mode)
+            return None
+        return method
+
+    def authorized_clients(self, jsonformat: bool = False, details: bool = False,
+                           force: bool = False) -> Optional[Union[dict, str]]:
+        """
+        Get the gateway's authorized clients: the public keys (Tesla app,
+        vehicles, v1r clients) that may send it signed commands, with each
+        key's state. Read-only; needs a TEDAPI connection (v1r or Gateway Wi-Fi).
+
+        Args:
+            jsonformat: return a JSON string instead of a dict
+            details: also include each client's description, identifier and
+                     base64 public key
+            force: bypass the cache
+
+        Returns:
+            ``{'clients': [...], 'enable_line_switch_off': bool}`` (see
+            TEDAPI.get_authorized_clients), or None on error.
+        """
+        fetch = self._tedapi_method("get_authorized_clients")
+        if fetch is None:
+            return None
+        payload = fetch(force=force, details=details)  # pylint: disable=not-callable
+        if payload is None:
+            return None
+        if jsonformat:
+            return json.dumps(payload, indent=4, sort_keys=True)
+        return payload
+
+    def add_authorized_client(self, public_key, description: str = "pypowerwall") -> Optional[dict]:
+        """
+        Register an RSA public key with the gateway (signed v1r only). The key
+        starts in PENDING_VERIFICATION and times out if it isn't verified in
+        about 10 minutes; keys added locally have not been seen to verify (see
+        TEDAPI.add_authorized_client). Returns the new client record or None.
+        Raises ValueError when ``public_key`` is not an RSA key (nothing is sent).
+        """
+        add = self._tedapi_method("add_authorized_client", v1r_only=True)
+        if add is None:
+            return None
+        return add(public_key, description=description)  # pylint: disable=not-callable
+
+    def remove_authorized_client(self, public_key, allow_current_key: bool = False) -> bool:
+        """
+        Remove an authorized client's key from the gateway (signed v1r only).
+        ``public_key`` is the listed base64 key, PEM, DER bytes, or a unique
+        fingerprint prefix. Removing the key this connection signs with is
+        refused unless ``allow_current_key=True``. Returns True on success.
+        Raises ValueError when ``public_key`` can't be decoded (nothing is sent).
+        """
+        remove = self._tedapi_method("remove_authorized_client", v1r_only=True)
+        if remove is None:
+            return False
+        return bool(remove(public_key, allow_current_key=allow_current_key))  # pylint: disable=not-callable
 
     # noinspection PyShadowingBuiltins
     def grid_status(self, output_type="string", type=None) -> Optional[Union[str, int]]:

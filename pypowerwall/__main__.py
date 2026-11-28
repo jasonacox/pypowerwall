@@ -524,9 +524,21 @@ def main():
                              help="Fetch and print gateway firmware version, then exit")
     tedapi_args.add_argument("-network", action="store_true", default=False,
                              help="Fetch and print gateway network status (Wi-Fi, Ethernet, cellular), then exit")
+    tedapi_args.add_argument("-clients", action="store_true", default=False,
+                             help="Fetch and print the gateway's authorized clients (paired keys), then exit")
+    tedapi_args.add_argument("-add_client", metavar="KEY_FILE", type=str, default=None,
+                             help="Register the RSA key in KEY_FILE with the gateway (needs -v1r)")
+    tedapi_args.add_argument("-description", type=str, default=None,
+                             help="With -add_client: label stored with the key")
+    tedapi_args.add_argument("-remove_client", metavar="KEY", type=str, default=None,
+                             help="Remove an authorized client by fingerprint prefix, base64 key "
+                                  "or PEM file (needs -v1r)")
+    tedapi_args.add_argument("-yes", action="store_true", default=False,
+                             help="With -remove_client: do not ask for confirmation")
     tedapi_args.add_argument("-details", action="store_true", default=False,
                              help="With -firmware: include full system info. "
-                                  "With -network: include MAC, IPv4 settings and Wi-Fi SSID")
+                                  "With -network: include MAC, IPv4 settings and Wi-Fi SSID. "
+                                  "With -clients: include descriptions and public keys")
 
     register_args = subparsers.add_parser("register", parents=[common],
                                            help='Register RSA key with Powerwall via Tesla Owner API or Fleet API (for v1r LAN mode)')
@@ -789,6 +801,16 @@ def main():
             tedapi_argv.append('-firmware')
         if getattr(args, 'network', False):
             tedapi_argv.append('-network')
+        if getattr(args, 'clients', False):
+            tedapi_argv.append('-clients')
+        if getattr(args, 'add_client', None):
+            tedapi_argv.extend(['-add_client', args.add_client])
+        if getattr(args, 'description', None):
+            tedapi_argv.extend(['-description', args.description])
+        if getattr(args, 'remove_client', None):
+            tedapi_argv.extend(['-remove_client', args.remove_client])
+        if getattr(args, 'yes', False):
+            tedapi_argv.append('-yes')
         if getattr(args, 'details', False):
             tedapi_argv.append('-details')
         if args.debug:
