@@ -166,6 +166,9 @@ python3 -m pypowerwall tedapi -host 10.42.1.40 -v1r -gw_pwd ABCDEXXXXX \
 # works on the home LAN address with the -v1r options above; a Powerwall 2
 # answers it over Gateway Wi-Fi only.
 python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -network
+
+# List the keys paired with the gateway (Wi-Fi TEDAPI or v1r)
+python3 -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -clients
 ```
 
 #### TEDAPI Troubleshooting
@@ -293,6 +296,8 @@ The gateway reports one of these states for the key. The values match `tesla_fle
 | 2 | `PENDING_VERIFICATION_TIMEOUT` | The window closed. This key cannot reach 3. Run the tool again: re-registering the **same** public key reopens the window. No new key pair is needed. |
 | 3 | `VERIFIED` | Ready for use. |
 | 4 | `REMOVED` | The key was removed from the gateway. |
+
+To see every key paired with your gateway and its state, run `python -m pypowerwall tedapi -gw_pwd ABCDEXXXXX -clients` (add `-details` for descriptions and public keys), or call `pw.authorized_clients()`. Over v1r, `current_key` marks the key you are connected with. A stale key (for example one stuck in state 2) can be removed over v1r with `-remove_client <fingerprint prefix>` or `pw.remove_authorized_client(...)`; removing the key you are connected with is refused unless you pass `allow_current_key=True`. `-add_client <key file>` / `pw.add_authorized_client(...)` registers a key locally over v1r, but locally added keys have not been seen to verify: use the registration tool above for a usable key.
 
 State 2 is a timeout, not a stage between 1 and 3. Every "1 → 2" seen after a breaker toggle is the window expiring, not the toggle being noticed. Thanks to [@LAE1990](https://github.com/LAE1990) for working this out on UK Powerwall 3 units, firmware 26.x ([#354](https://github.com/jasonacox/pypowerwall/issues/354)).
 
@@ -492,6 +497,10 @@ pw.set_grid_export("battery_ok")
 pw.schedule_max_backup(3600)        # 1 hour
 pw.cancel_max_backup()
 print(pw.get_backup_events())       # {"manual_backup": {...}, "backup_events": [...]}
+
+# Keys paired with the gateway (any TEDAPI mode); remove a stale one (v1r only)
+print(pw.authorized_clients())      # {"clients": [{"fingerprint": "...", "state": "VERIFIED", ...}], ...}
+pw.remove_authorized_client("1a2b3c4d")   # unique fingerprint prefix, listed base64 key or PEM
 
 # Charge at 500 W for 30 seconds, then release early if needed
 print(pw.dispatch_battery_power(-500, 30))  # {"power_watts": -500.0, "duration_seconds": 30}
@@ -753,6 +762,9 @@ print("System Status: %r\n" % pw.system_status())
     dispatch_battery_power(power_watts, duration_seconds) # Timed battery power setpoint - v1r only, use at your own risk (could void your warranty)
     resume_battery_operation() # Release a battery power setpoint - v1r only
     get_backup_events()       # Get current backup events - v1r mode only
+    authorized_clients(details, jsonformat, force) # Keys paired with the gateway and their state - TEDAPI modes
+    add_authorized_client(public_key, description) # Register an RSA public key with the gateway - v1r only
+    remove_authorized_client(public_key, allow_current_key) # Remove a paired key - v1r only
     wifi_v1r_ready()          # Read-only probe for opt-in WiFi-v1r writes
     network_status(jsonformat, details) # Gateway Wi-Fi / Ethernet / cellular status and signal strength - TEDAPI modes only
     go_off_grid(confirm)      # Disconnect from the grid (open contactor) - requires confirm=True; cloud/FleetAPI or v1r mode

@@ -35,9 +35,24 @@ def _build_tedapi_arg_parser(default_host):
     parser.add_argument('-network', action='store_true',
                         help='Fetch and print the gateway network status (Wi-Fi, Ethernet, '
                              'cellular), then exit')
+    parser.add_argument('-clients', action='store_true',
+                        help='Fetch and print the gateway\'s authorized clients (paired keys), then exit')
+    parser.add_argument('-add_client', metavar='KEY_FILE', default=None,
+                        help='Register the RSA key in KEY_FILE (PEM, public or private) with the '
+                             'gateway, then exit. Needs -v1r. Locally added keys have not been '
+                             'seen to verify; use "python -m pypowerwall register" for a usable key')
+    parser.add_argument('-description', default='pypowerwall',
+                        help='With -add_client: label stored with the key (default: pypowerwall)')
+    parser.add_argument('-remove_client', metavar='KEY', default=None,
+                        help='Remove an authorized client, then exit. KEY is a fingerprint prefix '
+                             '(8+ hex characters, from -clients), the listed base64 key, or a PEM '
+                             'key file. Needs -v1r; asks for confirmation unless -yes')
+    parser.add_argument('-yes', action='store_true',
+                        help='With -remove_client: do not ask for confirmation')
     parser.add_argument('-details', action='store_true',
                         help='With -firmware: include full system info (part/serial, githash). '
-                             'With -network: include MAC, IPv4 settings and Wi-Fi SSID')
+                             'With -network: include MAC, IPv4 settings and Wi-Fi SSID. '
+                             'With -clients: include descriptions and public keys')
     parser.add_argument('--auth-mode', default=AuthMode.BASIC.value,
                         choices=[m.value for m in AuthMode],
                         help='Authentication mode: basic (default, Gateway Wi-Fi only via '
@@ -85,6 +100,25 @@ def _render_network(status):
     return json.dumps(status, indent=2, default=_json_bytes_safe)
 
 
+def _render_clients(payload):
+    """Format a get_authorized_clients() result for display. Pure (no I/O) so it
+    is unit-testable."""
+    import json
+    if payload is None:
+        return 'unavailable (no authorized clients from gateway)'
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _read_key_argument(value):
+    """The bytes of a key file when ``value`` names one, else ``value`` itself
+    (a fingerprint prefix or base64 key)."""
+    import os
+    if value and os.path.isfile(value):
+        with open(value, 'rb') as f:
+            return f.read()
+    return value
+
+
 def run_tedapi_test(argv=None, debug=False):
     # Imports
     from pypowerwall.tedapi import TEDAPI, GW_IP
@@ -124,6 +158,8 @@ def run_tedapi_test(argv=None, debug=False):
         set_debug(True)
     host = args.host
 
+    if (args.add_client or args.remove_client) and not args.v1r:
+        parser.error('-add_client and -remove_client require -v1r (signed commands)')
     if args.v1r:
         if not args.rsa_key_path:
             parser.error('-v1r requires -rsa_key_path')
@@ -200,6 +236,47 @@ def run_tedapi_test(argv=None, debug=False):
         print()
         print(' - Network Status:')
         print(_render_network(ted.get_network_status(force=True, details=args.details)))
+        print()
+        return
+    # Focused authorized-client entrypoints: list / add / remove, then exit.
+    if args.clients:
+        print()
+        print(" - Authorized Clients:")
+        print(_render_clients(ted.get_authorized_clients(force=True, details=args.details)))
+        print()
+        return
+    if args.add_client:
+        print()
+        try:
+            key = _read_key_argument(args.add_client)
+        except OSError as e:
+            print(f"ERROR: unable to read {args.add_client}: {e}")
+            sys.exit(1)
+        client = ted.add_authorized_client(key, description=args.description)
+        if client is None:
+            print("ERROR: the gateway did not add the key (see the log above)")
+            sys.exit(1)
+        print(" - Added Authorized Client:")
+        print(_render_clients(client))
+        print()
+        return
+    if args.remove_client:
+        print()
+        try:
+            key = _read_key_argument(args.remove_client)
+        except OSError as e:
+            print(f"ERROR: unable to read {args.remove_client}: {e}")
+            sys.exit(1)
+        if not args.yes:
+            answer = input(f"Remove authorized client {args.remove_client}? "
+                           "It will no longer be able to send signed commands. [y/N] ")
+            if answer.strip().lower() not in ('y', 'yes'):
+                print("Cancelled")
+                return
+        if not ted.remove_authorized_client(key):
+            print("ERROR: the key was not removed (see the log above)")
+            sys.exit(1)
+        print(" - Authorized client removed")
         print()
         return
 

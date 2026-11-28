@@ -308,6 +308,38 @@ with grid charging disabled, and the reserve and export behavior on Powerwall
 The battery dispatch protobuf schema is documented by
 [Teslemetry/tesla-protocol](https://github.com/Teslemetry/tesla-protocol).
 
+### Authorized Clients
+
+The gateway's authorized clients are the public keys (Tesla app, vehicles, v1r
+clients such as pypowerwall) that may send it signed commands.
+
+- `authorized_clients(details=False, jsonformat=False, force=False)` → dict/str/None
+  Read-only, in any TEDAPI mode (Gateway Wi-Fi or v1r). Returns
+  `{"clients": [...], "enable_line_switch_off": bool}`. Each client has
+  `fingerprint` (SHA-256 of the DER public key, as printed by the register
+  tool), `type`, `key_type`, `roles`, `state` (`PENDING_VERIFICATION`,
+  `PENDING_VERIFICATION_TIMEOUT`, `VERIFIED`, `REMOVED`), `verification`,
+  `added_time` (ISO 8601), `authorized_by` (fingerprint of the key that
+  authorized it, or `None`) and `current_key` (`True` for the key this v1r
+  connection signs with; `None` outside v1r). `details=True` adds
+  `description`, `identifier` and the base64 `public_key`.
+
+- `add_authorized_client(public_key, description="pypowerwall")` → dict/None
+  v1r only. Registers an RSA public key (PEM, DER or base64; a private key PEM
+  is reduced to its public half) as a customer app client. The key starts in
+  `PENDING_VERIFICATION` and times out after about 10 minutes unless verified.
+  Keys added locally have not been seen to verify; register keys with
+  `python -m pypowerwall register`. Validated on Powerwall 3 (firmware
+  26.34.3): the new key is `PENDING_VERIFICATION` with verification
+  `HERMES_COMMAND` and no `authorized_by`.
+
+- `remove_authorized_client(public_key, allow_current_key=False)` → bool
+  v1r only. Removes a key, given as the listed base64 `public_key`, PEM, DER,
+  or a fingerprint prefix (8+ hex characters) matching exactly one client.
+  Removing the key this connection signs with is refused unless
+  `allow_current_key=True`. Validated on Powerwall 3 (firmware 26.34.3): the
+  key disappears from the list.
+
 ### Backup Events (v1r mode only)
 
 - `schedule_max_backup(duration_seconds=7200)` → dict/None

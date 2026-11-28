@@ -164,6 +164,12 @@ class TEDAPIv1r:
         # HTTP session (no Basic auth — v1r uses RSA signatures)
         self.session = self._init_session()
 
+    @property
+    def public_key_der(self) -> bytes:
+        """PKCS#1 DER of this client's public key (the key the gateway lists
+        among its authorized clients)."""
+        return self._public_key_der
+
     def _init_session(self) -> requests.Session:
         """Initialize requests session for v1r communication."""
         session = requests.Session()
@@ -623,14 +629,37 @@ class TEDAPIv1r:
         Returns:
             Parsed MessageEnvelope from the response, or None on error.
         """
+        return self._send_command(din, 'teg', teg_message, 'send_teg_message')
+
+    def send_authorization_message(self, din: str,
+                                   authorization_message) -> Optional[combined_pb2.MessageEnvelope]:
+        """
+        Send an AuthorizationMessages command (add / remove / list authorized
+        clients) via v1r, return the parsed response envelope.
+
+        Args:
+            din: Device DIN (leader)
+            authorization_message: A populated AuthorizationMessages protobuf instance
+
+        Returns:
+            Parsed MessageEnvelope from the response, or None on error.
+        """
+        return self._send_command(din, 'authorization', authorization_message,
+                                  'send_authorization_message')
+
+    def _send_command(self, din: str, payload_field: str, message,
+                      name: str) -> Optional[combined_pb2.MessageEnvelope]:
+        """Sign and send one command envelope (HERMES_COMMAND channel, sender
+        authorizedClient CUSTOMER_MOBILE_APP) carrying ``message`` in the
+        MessageEnvelope ``payload_field``; return the parsed response envelope."""
         if not din:
-            log.error("send_teg_message: no DIN (not connected)")
+            log.error(f"{name}: no DIN (not connected)")
             return None
         msg = combined_pb2.MessageEnvelope()
         msg.deliveryChannel = combined_pb2.DELIVERY_CHANNEL_HERMES_COMMAND
         msg.sender.authorizedClient = 1  # CUSTOMER_MOBILE_APP
         msg.recipient.din = din
-        msg.teg.CopyFrom(teg_message)
+        getattr(msg, payload_field).CopyFrom(message)
 
         envelope_bytes = msg.SerializeToString()
         inner = self.post_v1r(envelope_bytes, din)
@@ -641,7 +670,7 @@ class TEDAPIv1r:
             resp.ParseFromString(inner)
             return resp
         except Exception as e:
-            log.error(f"send_teg_message: failed to parse response: {e}")
+            log.error(f"{name}: failed to parse response: {e}")
             return None
 
     def send_island_mode(self, din: str, mode: int, force: bool = False) -> Optional[dict]:
